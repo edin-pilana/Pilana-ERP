@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import Papa from 'papaparse';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -30,11 +31,9 @@ export default function Page() {
     const userInp = e.target.user.value.trim();
     const passInp = e.target.pass.value.trim();
 
-    const { data, error } = await supabase.from('radnici').select('*').ilike('username', userInp).eq('password', passInp).maybeSingle();
-    if (data) {
-      localStorage.setItem('smart_timber_user', JSON.stringify(data));
-      setLoggedUser(data);
-    } else alert("Pogrešan Username ili Password!");
+    const { data } = await supabase.from('radnici').select('*').ilike('username', userInp).eq('password', passInp).maybeSingle();
+    if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data)); setLoggedUser(data); } 
+    else alert("Pogrešan Username ili Password!");
   };
 
   if (authLoading) return <div className="min-h-screen bg-[#0f172a]" />;
@@ -43,9 +42,7 @@ export default function Page() {
     return (
       <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 font-bold">
         <form onSubmit={handleLogin} className="w-full max-w-sm bg-[#1e293b] p-10 rounded-[3rem] border border-slate-700 shadow-2xl space-y-6">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-black text-white tracking-tighter">Smart<span className="text-blue-500">Timber</span></h1>
-          </div>
+          <div className="text-center mb-8"><h1 className="text-4xl font-black text-white tracking-tighter">Smart<span className="text-blue-500">Timber</span></h1></div>
           <div className="space-y-4">
             <input name="user" placeholder="Username" required className="w-full p-4 bg-[#0f172a] border border-slate-700 rounded-2xl text-white outline-none text-center" />
             <input name="pass" type="password" placeholder="Password" required className="w-full p-4 bg-[#0f172a] border border-slate-700 rounded-2xl text-white outline-none text-center" />
@@ -62,17 +59,21 @@ export default function Page() {
         <div className="p-6 md:p-10 flex flex-col items-center justify-center space-y-6 animate-in fade-in max-w-xl mx-auto">
            <div className="w-full flex justify-between items-center bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-xl mb-6">
               <div className="text-left">
-                <p className="text-[10px] text-blue-500 uppercase tracking-widest font-black">Dobrodošli nazad</p>
+                <p className="text-[10px] text-blue-500 uppercase tracking-widest font-black">Operater</p>
                 <p className="text-white text-xl font-black uppercase tracking-tighter">{loggedUser.ime_prezime}</p>
               </div>
               <button onClick={() => {localStorage.removeItem('smart_timber_user'); setLoggedUser(null);}} className="bg-red-900/20 text-red-500 px-5 py-3 rounded-2xl text-[10px] font-black hover:bg-red-500 hover:text-white transition-all">ODJAVA ✕</button>
            </div>
            
+           <div className="grid grid-cols-2 gap-4 w-full">
+             <MenuBtn label="PONUDE" icon="📝" color="pink" onClick={() => setActiveModule('ponude')} />
+             <MenuBtn label="R. NALOZI" icon="📋" color="purple" onClick={() => setActiveModule('nalozi')} />
+             <MenuBtn label="PRIJEM TRUPACA" icon="📥" color="indigo" onClick={() => setActiveModule('prijem')} />
+             <MenuBtn label="PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />
+           </div>
            <div className="grid grid-cols-1 gap-4 w-full">
-             <MenuBtn label="1. PRIJEM TRUPACA" icon="📥" color="indigo" onClick={() => setActiveModule('prijem')} />
-             <MenuBtn label="2. PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />
-             <MenuBtn label="3. PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />
-             <MenuBtn label="4. DORADA (Ulaz & Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />
+             <MenuBtn label="PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />
+             <MenuBtn label="DORADA (Ulaz/Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />
              {loggedUser.uloga === 'admin' && (
                 <button onClick={() => {const p = prompt("PIN:"); if(p==="0111") setActiveModule('settings')}} className="mt-8 text-slate-500 text-xs uppercase tracking-[0.3em] font-black hover:text-blue-400 transition-colors w-full border border-slate-800 rounded-3xl py-4">⚙️ Sistemska Podešavanja</button>
              )}
@@ -88,6 +89,10 @@ export default function Page() {
         <DoradaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
       ) : activeModule === 'settings' ? (
         <SettingsModule onExit={() => setActiveModule('dashboard')} />
+      ) : activeModule === 'ponude' ? (
+        <PonudeModule onExit={() => setActiveModule('dashboard')} />
+      ) : activeModule === 'nalozi' ? (
+        <RadniNaloziModule onExit={() => setActiveModule('dashboard')} />
       ) : null}
     </div>
   );
@@ -121,7 +126,7 @@ function SmartSearchableInput({ label, value, onChange, list = [], storageKey })
             <label className="text-[8px] text-slate-500 uppercase ml-3 block mb-1">{label}</label>
             <input type="text" value={value} onFocus={() => setOpen(true)} onChange={e => { onChange(e.target.value.toUpperCase()); setOpen(true); }} className="w-full p-3 bg-[#0f172a] border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500 uppercase" />
             {open && sortedList.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto z-50">
                     {sortedList.filter(i => i.includes(value.toUpperCase())).map((item, idx) => (
                         <div key={idx} onClick={() => handleSelect(item)} className="p-3 text-[10px] border-b border-slate-700 hover:bg-indigo-600 uppercase cursor-pointer text-white flex justify-between">
                             <span>{item}</span>
@@ -142,7 +147,7 @@ function SearchableInput({ label, value, onChange, list = [] }) {
             <label className="text-[8px] text-slate-500 uppercase ml-3 block mb-1">{label}</label>
             <input type="text" value={value} onFocus={() => setOpen(true)} onChange={e => { onChange(e.target.value.toUpperCase()); setOpen(true); }} className="w-full p-3 bg-[#0f172a] border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-blue-500 uppercase" />
             {open && list.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-40 overflow-y-auto z-50">
                     {list.filter(i => i.includes(value)).map((item, idx) => (
                         <div key={idx} onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-slate-700 hover:bg-blue-600 uppercase cursor-pointer text-white">{item}</div>
                     ))}
@@ -280,17 +285,17 @@ function ScannerOverlay({ onScan, onClose }) {
 }
 
 function MenuBtn({ label, icon, color, onClick }) {
-    const colors = { indigo: 'border-indigo-500/30 text-indigo-500 bg-indigo-900/10 hover:border-indigo-500', cyan: 'border-cyan-500/30 text-cyan-500 bg-cyan-900/10 hover:border-cyan-500', emerald: 'border-emerald-500/30 text-emerald-500 bg-emerald-900/10 hover:border-emerald-500', amber: 'border-amber-500/30 text-amber-500 bg-amber-900/10 hover:border-amber-500' };
+    const colors = { indigo: 'border-indigo-500/30 text-indigo-500 bg-indigo-900/10 hover:border-indigo-500', cyan: 'border-cyan-500/30 text-cyan-500 bg-cyan-900/10 hover:border-cyan-500', emerald: 'border-emerald-500/30 text-emerald-500 bg-emerald-900/10 hover:border-emerald-500', amber: 'border-amber-500/30 text-amber-500 bg-amber-900/10 hover:border-amber-500', pink: 'border-pink-500/30 text-pink-500 bg-pink-900/10 hover:border-pink-500', purple: 'border-purple-500/30 text-purple-500 bg-purple-900/10 hover:border-purple-500' };
     return (
-        <button onClick={onClick} className={`border-2 p-6 rounded-[2.5rem] shadow-lg active:scale-95 text-center flex items-center justify-start gap-4 transition-all ${colors[color]}`}>
+        <button onClick={onClick} className={`border-2 p-6 rounded-[2.5rem] shadow-lg active:scale-95 text-center flex flex-col justify-center items-center gap-2 transition-all ${colors[color]}`}>
             <span className="text-4xl drop-shadow-xl">{icon}</span>
-            <span className="font-black uppercase text-xs tracking-widest">{label}</span>
+            <span className="font-black uppercase text-[10px] tracking-widest">{label}</span>
         </button>
     );
 }
 
 // ============================================================================
-// 1. MODUL PRIJEM TRUPACA
+// 1. MODUL PRIJEM TRUPACA (NETAKNUT ZLATNI STANDARD)
 // ============================================================================
 
 function PrijemModule({ user, onExit }) {
@@ -483,7 +488,7 @@ function PrijemModule({ user, onExit }) {
 }
 
 // ============================================================================
-// 2. MODUL PROREZ 
+// 2. MODUL PROREZ (NETAKNUT ZLATNI STANDARD)
 // ============================================================================
 
 function ProrezModule({ user, header, setHeader, onExit }) {
@@ -562,21 +567,53 @@ function ProrezModule({ user, header, setHeader, onExit }) {
 }
 
 // ============================================================================
-// 3. MODUL PILANA (Samo Izlaz)
+// 3. MODUL PILANA (SA RADNIM NALOGOM)
 // ============================================================================
 
 function PilanaModule({ user, header, setHeader, onExit }) {
     const [izlazScan, setIzlazScan] = useState('');
+    const [radniNalog, setRadniNalog] = useState('');
+    const [rnStavke, setRnStavke] = useState([]);
+    
     const [activeIzlazIds, setActiveIzlazIds] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     const [activeEditItem, setActiveEditItem] = useState(null);
     const [updateMode, setUpdateMode] = useState('dodaj');
-    const [form, setForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina_ulaz: '', jm: 'm3' });
-    const [isScanning, setIsScanning] = useState(false);
     
+    const [form, setForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina_ulaz: '', jm: 'm3', rn_stavka_id: null, naruceno: 0, napravljeno: 0 });
+    
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanTarget, setScanTarget] = useState('');
+    
+    const rnTimer = useRef(null);
     const timerRef = useRef(null);
 
+    // KADA SE UNESE RADNI NALOG (2s Debounce)
+    const handleNalogInput = (val) => {
+        setRadniNalog(val);
+        if(rnTimer.current) clearTimeout(rnTimer.current);
+        if(val.length >= 3) {
+            rnTimer.current = setTimeout(async () => {
+                const {data} = await supabase.from('radni_nalozi_stavke').select('*').eq('nalog_id', val.toUpperCase());
+                if(data && data.length > 0) {
+                    setRnStavke(data);
+                } else {
+                    alert(`Nalog ${val} nema stavki ili ne postoji!`);
+                    setRnStavke([]);
+                }
+            }, 2000);
+        } else {
+            setRnStavke([]);
+        }
+    };
+
+    const handleStavkaSelect = async (stavka) => {
+        const {data: kat} = await supabase.from('katalog_proizvoda').select('*').eq('sifra', stavka.sifra_proizvoda).maybeSingle();
+        setForm({ ...form, naziv: stavka.naziv_proizvoda, debljina: kat?.visina||'', sirina: kat?.sirina||'', duzina: kat?.duzina||'', jm: stavka.jm||'m3', rn_stavka_id: stavka.id, naruceno: stavka.naruceno, napravljeno: stavka.napravljeno });
+    };
+
+    // KADA SE UNESE QR PAKETA
     const handleIzlazInput = (val) => {
         setIzlazScan(val);
         if (timerRef.current) clearTimeout(timerRef.current);
@@ -612,6 +649,14 @@ function PilanaModule({ user, header, setHeader, onExit }) {
             await supabase.from('paketi').update({ kolicina_final: newM3.toFixed(3), vrijeme_tekst: timeNow, snimio_korisnik: user.ime_prezime }).eq('id', activeEditItem.id);
         } else {
             await supabase.from('paketi').insert([{ paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qty.toFixed(3), mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user.ime_prezime, vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum }]);
+            
+            // AKO JE VEZANO ZA NALOG, AZURIRAJ NAPRAVLJENU KOLICINU
+            if(form.rn_stavka_id) {
+                const novoStanje = form.napravljeno + qty;
+                await supabase.from('radni_nalozi_stavke').update({ napravljeno: novoStanje }).eq('id', form.rn_stavka_id);
+                // Osvježi prikaz stavki naloga
+                handleNalogInput(radniNalog);
+            }
         }
         fetchIzlaz(selectedIzlazId); setForm({...form, kolicina_ulaz: ''}); setActiveEditItem(null);
     };
@@ -630,10 +675,30 @@ function PilanaModule({ user, header, setHeader, onExit }) {
             </div>
 
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl space-y-5">
+                
+                {/* RADNI NALOG POLJE */}
+                <div className="relative font-black bg-blue-900/20 p-4 rounded-2xl border border-blue-500/30">
+                    <label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1">RADNI NALOG (Skeniraj ili Upiši)</label>
+                    <input type="text" value={radniNalog} onChange={e => handleNalogInput(e.target.value)} placeholder="RN-..." className="w-full p-4 bg-slate-900 rounded-xl text-center text-white outline-none focus:border-blue-500 uppercase" />
+                    <button onClick={() => {setScanTarget('nalog'); setIsScanning(true);}} className="absolute right-6 top-9 px-3 bg-blue-600 rounded-lg text-white text-xs py-2 font-bold hover:opacity-80">📷</button>
+                    
+                    {rnStavke.length > 0 && (
+                        <div className="mt-3 space-y-2 border-t border-blue-500/30 pt-3">
+                            <span className="text-[9px] text-blue-300 uppercase">Stavke na nalogu:</span>
+                            {rnStavke.map(s => (
+                                <div key={s.id} onClick={() => handleStavkaSelect(s)} className="flex justify-between items-center p-3 bg-slate-800 rounded-xl cursor-pointer hover:bg-blue-600">
+                                    <span className="text-[10px] text-white font-bold">{s.naziv_proizvoda}</span>
+                                    <span className="text-[9px] text-slate-300">Nar: {s.naruceno} | Ur: {s.napravljeno}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 <div className="relative font-black">
                     <label className="text-[8px] text-emerald-500 uppercase ml-4 block mb-1">QR IZLAZNOG PAKETA</label>
                     <input type="text" value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} placeholder="..." className="w-full p-5 bg-[#0f172a] border-2 border-slate-700 rounded-2xl text-center text-xl text-white outline-none focus:border-emerald-500 uppercase font-black" />
-                    <button onClick={() => setIsScanning(true)} className="absolute right-3 top-7 bottom-3 px-4 bg-emerald-600 rounded-xl text-white font-bold hover:opacity-80">📷 SCAN</button>
+                    <button onClick={() => {setScanTarget('paket'); setIsScanning(true);}} className="absolute right-3 top-7 bottom-3 px-4 bg-emerald-600 rounded-xl text-white font-bold hover:opacity-80">📷 SCAN</button>
                 </div>
                 
                 {selectedIzlazId && (
@@ -644,7 +709,16 @@ function PilanaModule({ user, header, setHeader, onExit }) {
                                 <div className="flex bg-slate-900 p-1 rounded-xl mt-3"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black ${updateMode==='dodaj'?'bg-green-600 text-white shadow-lg':'text-slate-500'}`}>+ Dodaj</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black ${updateMode==='oduzmi'?'bg-red-600 text-white shadow-lg':'text-slate-500'}`}>- Oduzmi</button></div>
                             </div>
                         )}
+                        
                         <SearchableInput label="Proizvod" value={form.naziv} onChange={v => setForm({...form, naziv: v})} list={[]} />
+                        
+                        {form.rn_stavka_id && (
+                            <div className="flex justify-between bg-blue-900/30 p-3 rounded-xl border border-blue-500/30">
+                                <div className="text-[10px] text-blue-300 uppercase">Naručeno: <b className="text-white text-xs">{form.naruceno}</b></div>
+                                <div className="text-[10px] text-emerald-400 uppercase">Dosad urađeno: <b className="text-white text-xs">{form.napravljeno}</b></div>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-3 gap-2">
                             <DimBox label="Deb" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} />
                             <DimBox label="Šir" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
@@ -668,19 +742,19 @@ function PilanaModule({ user, header, setHeader, onExit }) {
                 )}
             </div>
             <DnevnikMasine modul="Pilana" header={header} user={user} />
-            {isScanning && <ScannerOverlay onScan={(text) => { setIzlazScan(text); handleIzlazInput(text); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
+            {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='nalog') handleNalogInput(text); else handleIzlazInput(text); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }
 
 // ============================================================================
-// 4. MODUL DORADA (Ulaz i Izlaz)
+// 4. MODUL DORADA (Ulaz i Izlaz sa RADNIM NALOGOM)
 // ============================================================================
 
 function DoradaModule({ user, header, setHeader, onExit }) {
     const [tab, setTab] = useState('ulaz');
     const [isScanning, setIsScanning] = useState(false);
-    const [scanTarget, setScanTarget] = useState('');
+    const [scanTarget, setScanTarget] = useState(''); // 'ulaz', 'izlaz', ili 'nalog'
 
     const [ulazScan, setUlazScan] = useState('');
     const [activeUlazIds, setActiveUlazIds] = useState([]);
@@ -691,16 +765,20 @@ function DoradaModule({ user, header, setHeader, onExit }) {
     const [inputQty, setInputQty] = useState('');
 
     const [izlazScan, setIzlazScan] = useState('');
+    const [radniNalog, setRadniNalog] = useState('');
+    const [rnStavke, setRnStavke] = useState([]);
     const [activeIzlazIds, setActiveIzlazIds] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     const [activeEditItem, setActiveEditItem] = useState(null);
     const [updateMode, setUpdateMode] = useState('dodaj');
-    const [form, setForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina_ulaz: '', jm: 'm3' });
+    const [form, setForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina_ulaz: '', jm: 'm3', rn_stavka_id: null, naruceno: 0, napravljeno: 0 });
 
     const ulazTimerRef = useRef(null);
     const izlazTimerRef = useRef(null);
+    const rnTimer = useRef(null);
 
+    // ULAZ LOGIKA
     const handleUlazInput = (val) => {
         setUlazScan(val);
         if (ulazTimerRef.current) clearTimeout(ulazTimerRef.current);
@@ -719,6 +797,30 @@ function DoradaModule({ user, header, setHeader, onExit }) {
         let novoStanje = calcMode === 'preostalo' ? unesenoM3 : parseFloat(activeUlazItem.kolicina_final) - unesenoM3;
         await supabase.from('paketi').update({ kolicina_final: novoStanje.toFixed(3) }).eq('id', activeUlazItem.id);
         alert("✅ AŽURIRANO!"); handleUlazInput(selectedUlazId);
+    };
+
+    // IZLAZ LOGIKA (RADNI NALOG)
+    const handleNalogInput = (val) => {
+        setRadniNalog(val);
+        if(rnTimer.current) clearTimeout(rnTimer.current);
+        if(val.length >= 3) {
+            rnTimer.current = setTimeout(async () => {
+                const {data} = await supabase.from('radni_nalozi_stavke').select('*').eq('nalog_id', val.toUpperCase());
+                if(data && data.length > 0) {
+                    setRnStavke(data);
+                } else {
+                    alert(`Nalog ${val} nema stavki ili ne postoji!`);
+                    setRnStavke([]);
+                }
+            }, 2000);
+        } else {
+            setRnStavke([]);
+        }
+    };
+
+    const handleStavkaSelect = async (stavka) => {
+        const {data: kat} = await supabase.from('katalog_proizvoda').select('*').eq('sifra', stavka.sifra_proizvoda).maybeSingle();
+        setForm({ ...form, naziv: stavka.naziv_proizvoda, debljina: kat?.visina||'', sirina: kat?.sirina||'', duzina: kat?.duzina||'', jm: stavka.jm||'m3', rn_stavka_id: stavka.id, naruceno: stavka.naruceno, napravljeno: stavka.napravljeno });
     };
 
     const handleIzlazInput = (val) => {
@@ -758,6 +860,12 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, kolicina_ulaz: form.kolicina_ulaz,
                 jm: form.jm, kolicina_final: qty.toFixed(3), mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user.ime_prezime, vrijeme_tekst: timeNow, ai_sirovina_ids: activeUlazIds
             }]);
+            
+            if(form.rn_stavka_id) {
+                const novoStanje = form.napravljeno + qty;
+                await supabase.from('radni_nalozi_stavke').update({ napravljeno: novoStanje }).eq('id', form.rn_stavka_id);
+                handleNalogInput(radniNalog);
+            }
         }
         fetchIzlaz(selectedIzlazId); setForm({...form, kolicina_ulaz: ''}); setActiveEditItem(null);
     };
@@ -820,11 +928,31 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                         ))}
                     </div>
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border-2 border-amber-500/30 shadow-2xl space-y-5">
+                        
+                        <div className="relative font-black bg-blue-900/20 p-4 rounded-2xl border border-blue-500/30">
+                            <label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1">RADNI NALOG (Skeniraj ili Upiši)</label>
+                            <input type="text" value={radniNalog} onChange={e => handleNalogInput(e.target.value)} placeholder="RN-..." className="w-full p-4 bg-slate-900 rounded-xl text-center text-white outline-none focus:border-blue-500 uppercase" />
+                            <button onClick={() => {setScanTarget('nalog'); setIsScanning(true);}} className="absolute right-6 top-9 px-3 bg-blue-600 rounded-lg text-white text-xs py-2 font-bold hover:opacity-80">📷</button>
+                            
+                            {rnStavke.length > 0 && (
+                                <div className="mt-3 space-y-2 border-t border-blue-500/30 pt-3">
+                                    <span className="text-[9px] text-blue-300 uppercase">Stavke na nalogu:</span>
+                                    {rnStavke.map(s => (
+                                        <div key={s.id} onClick={() => handleStavkaSelect(s)} className="flex justify-between items-center p-3 bg-slate-800 rounded-xl cursor-pointer hover:bg-blue-600">
+                                            <span className="text-[10px] text-white font-bold">{s.naziv_proizvoda}</span>
+                                            <span className="text-[9px] text-slate-300">Nar: {s.naruceno} | Ur: {s.napravljeno}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="relative font-black">
                             <label className="text-[8px] text-amber-500 uppercase ml-4 block mb-1">QR IZLAZNOG PAKETA</label>
                             <input type="text" value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} placeholder="..." className="w-full p-5 bg-[#0f172a] border-2 border-slate-700 rounded-2xl text-center text-xl text-white outline-none focus:border-amber-500 uppercase font-black" />
                             <button onClick={() => {setScanTarget('izlaz'); setIsScanning(true);}} className="absolute right-3 top-7 bottom-3 px-4 bg-amber-600 rounded-xl text-white font-bold hover:opacity-80">📷 SCAN</button>
                         </div>
+                        
                         {selectedIzlazId && (
                             <div className="animate-in zoom-in-50 space-y-4">
                                 {activeEditItem && (
@@ -833,7 +961,16 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                                         <div className="flex bg-slate-900 p-1 rounded-xl mt-3"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black ${updateMode==='dodaj'?'bg-green-600 text-white':'text-slate-500'}`}>+ Dodaj</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black ${updateMode==='oduzmi'?'bg-red-600 text-white':'text-slate-500'}`}>- Oduzmi</button></div>
                                     </div>
                                 )}
+                                
                                 <SearchableInput label="Proizvod" value={form.naziv} onChange={v => setForm({...form, naziv: v})} list={[]} />
+                                
+                                {form.rn_stavka_id && (
+                                    <div className="flex justify-between bg-blue-900/30 p-3 rounded-xl border border-blue-500/30">
+                                        <div className="text-[10px] text-blue-300 uppercase">Naručeno: <b className="text-white text-xs">{form.naruceno}</b></div>
+                                        <div className="text-[10px] text-amber-400 uppercase">Dosad urađeno: <b className="text-white text-xs">{form.napravljeno}</b></div>
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-3 gap-2">
                                     <DimBox label="Deb" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} />
                                     <DimBox label="Šir" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
@@ -859,34 +996,124 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
             <DnevnikMasine modul="Dorada" header={header} user={user} />
-            {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='ulaz') handleUlazInput(text); else handleIzlazInput(text); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
+            {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='nalog') handleNalogInput(text); else if(scanTarget==='ulaz') handleUlazInput(text); else handleIzlazInput(text); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }
 
 // ============================================================================
-// MODUL: PODEŠAVANJA (ADMIN)
+// MODUL: PODEŠAVANJA (Katalog Excel Uvoz + Kupci)
 // ============================================================================
 function SettingsModule({ onExit }) {
-    const [tab, setTab] = useState('radnici');
+    const [tab, setTab] = useState('katalog');
+    
+    // Kupci State
+    const [kupacForm, setKupacForm] = useState({ naziv: '', pdv: '', adresa: '', rabatKategorija: '', rabatProizvod: '' });
+    const dodajKupca = async () => {
+        if(!kupacForm.naziv) return alert("Naziv obavezan");
+        const rabati = { kategorije: {}, proizvodi: {} };
+        if(kupacForm.rabatKategorija) { const [k, v] = kupacForm.rabatKategorija.split(':'); if(k&&v) rabati.kategorije[k.trim()] = parseFloat(v); }
+        if(kupacForm.rabatProizvod) { const [k, v] = kupacForm.rabatProizvod.split(':'); if(k&&v) rabati.proizvi[k.trim()] = parseFloat(v); }
+        
+        await supabase.from('kupci').insert([{ naziv: kupacForm.naziv, pdv_broj: kupacForm.pdv, adresa: kupacForm.adresa, rabati_jsonb: rabati }]);
+        alert("Kupac dodan!"); setKupacForm({ naziv: '', pdv: '', adresa: '', rabatKategorija: '', rabatProizvod: '' });
+    };
+
+    // Katalog State
+    const handleCSVUpload = (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        Papa.parse(file, {
+            header: true, skipEmptyLines: true,
+            complete: async (results) => {
+                const podaci = results.data.map(r => ({
+                    sifra: r.sifra, naziv: r.naziv, dimenzije: r.dimenzije, kategorija: r.kategorija, default_jedinica: r.default_jedinicaMjere || r.default_jedinica,
+                    cijena: parseFloat(r.cijena)||0, m3: parseFloat(r.m3)||0, m2: parseFloat(r.m2)||0, m1: parseFloat(r.m1)||0, duzina: parseFloat(r.duzina)||0, sirina: parseFloat(r.sirina)||0, visina: parseFloat(r.visina)||0
+                })).filter(r => r.sifra && r.naziv);
+                
+                if(podaci.length > 0) {
+                    const { error } = await supabase.from('katalog_proizvoda').upsert(podaci);
+                    if(error) alert("Greška: " + error.message); else alert(`Uspješno uvezeno ${podaci.length} proizvoda!`);
+                }
+            }
+        });
+    };
 
     return (
-        <div className="p-4 max-w-xl mx-auto space-y-6 font-bold">
+        <div className="p-4 max-w-xl mx-auto space-y-6">
             <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-slate-700">
-                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
-                <h2 className="text-slate-400 font-black tracking-widest uppercase text-xs">⚙️ SISTEMSKA PODEŠAVANJA</h2>
+                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase">← Meni</button>
+                <h2 className="text-slate-400 font-black tracking-widest uppercase text-xs">⚙️ PODEŠAVANJA</h2>
             </div>
 
             <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
-                <button onClick={() => setTab('radnici')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'radnici' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>Radnici</button>
                 <button onClick={() => setTab('katalog')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'katalog' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>Katalog</button>
-                <button onClick={() => setTab('masine')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'masine' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>Mašine</button>
+                <button onClick={() => setTab('kupci')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'kupci' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>Kupci</button>
             </div>
 
-            <div className="bg-[#1e293b] p-10 rounded-[2.5rem] border border-slate-700 shadow-2xl text-center space-y-4">
-                <span className="text-6xl drop-shadow-xl block mb-6">🚧</span>
-                <h3 className="text-white text-xl uppercase font-black">Modul u izradi</h3>
-                <p className="text-slate-500 text-xs">Ovdje ćemo dodati forme za uređivanje {tab.toUpperCase()}, QR kartica i normativa nakon što istestiraš proizvodnju.</p>
+            {tab === 'katalog' && (
+                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
+                    <h3 className="text-blue-500 font-black uppercase text-xs">Uvoz iz CSV fajla (Excel)</h3>
+                    <p className="text-[10px] text-slate-400">Snimi Excel kao .csv. Kolone moraju biti: sifra, naziv, dimenzije, kategorija, default_jedinicaMjere, cijena, m3, m2, m1, duzina, sirina, visina.</p>
+                    <input type="file" accept=".csv" onChange={handleCSVUpload} className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-600 file:text-white hover:file:bg-blue-500" />
+                </div>
+            )}
+
+            {tab === 'kupci' && (
+                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
+                    <h3 className="text-blue-500 font-black uppercase text-xs">Novi Kupac</h3>
+                    <input placeholder="Naziv Kupca" value={kupacForm.naziv} onChange={e=>setKupacForm({...kupacForm, naziv:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <input placeholder="PDV Broj" value={kupacForm.pdv} onChange={e=>setKupacForm({...kupacForm, pdv:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none" />
+                        <input placeholder="Adresa" value={kupacForm.adresa} onChange={e=>setKupacForm({...kupacForm, adresa:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none" />
+                    </div>
+                    <div className="space-y-2 p-3 bg-slate-900 rounded-xl">
+                        <span className="text-[10px] text-slate-500 uppercase">Rabati (Format -> Ime:Procenat)</span>
+                        <input placeholder="Po Kat. (npr. Daska:10)" value={kupacForm.rabatKategorija} onChange={e=>setKupacForm({...kupacForm, rabatKategorija:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none" />
+                        <input placeholder="Po Proizvodu (npr. SIFRA123:15)" value={kupacForm.rabatProizvod} onChange={e=>setKupacForm({...kupacForm, rabatProizvod:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none" />
+                    </div>
+                    <button onClick={dodajKupca} className="w-full py-4 bg-blue-600 text-white font-black rounded-xl uppercase text-xs">Snimi Kupca</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================================
+// MODUL: PONUDE I RADNI NALOZI (Jednostavan prototip da ne ruši Dashboard)
+// ============================================================================
+function PonudeModule({ onExit }) {
+    return (
+        <div className="p-4 max-w-xl mx-auto space-y-6 text-center">
+            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-pink-500/30">
+                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase">← Meni</button>
+                <h2 className="text-pink-400 font-black tracking-widest uppercase text-xs">📝 PONUDE</h2>
+            </div>
+            <div className="bg-[#1e293b] p-10 rounded-[2.5rem] border border-pink-500/30">
+                <span className="text-5xl block mb-4">🚧</span>
+                <p className="text-slate-400 text-xs">Modul Ponuda se naslanja na Kupce. Pripremljena baza, spreman za finalno poliranje u narednoj fazi.</p>
+            </div>
+        </div>
+    );
+}
+
+function RadniNaloziModule({ onExit }) {
+    const [idNaloga, setIdNaloga] = useState('');
+    const kreirajNalog = async () => {
+        if(!idNaloga) return;
+        await supabase.from('radni_nalozi').insert([{ id: idNaloga.toUpperCase(), kupac_naziv: 'Gost', datum: new Date().toISOString().split('T')[0] }]);
+        alert("Nalog kreiran! (Ovo je brzi test. Pun modul RN se veže za Ponude).");
+    };
+    return (
+        <div className="p-4 max-w-xl mx-auto space-y-6 text-center">
+            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-purple-500/30">
+                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase">← Meni</button>
+                <h2 className="text-purple-400 font-black tracking-widest uppercase text-xs">📋 RADNI NALOZI</h2>
+            </div>
+            <div className="bg-[#1e293b] p-10 rounded-[2.5rem] border border-purple-500/30 space-y-4">
+                <p className="text-slate-400 text-xs">Brzo kreiranje naloga za test Pilane:</p>
+                <input placeholder="ID NALOGA (npr. RN-001)" value={idNaloga} onChange={e=>setIdNaloga(e.target.value)} className="w-full p-4 bg-slate-900 rounded-xl text-white text-center uppercase font-black" />
+                <button onClick={kreirajNalog} className="w-full py-4 bg-purple-600 text-white font-black rounded-xl">KREIRAJ NALOG</button>
             </div>
         </div>
     );
