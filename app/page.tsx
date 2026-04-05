@@ -78,6 +78,7 @@ export default function Page() {
                       <MenuBtn label="RAČUNI" icon="💰" color="red" onClick={() => setActiveModule('racuni')} />
                       <MenuBtn label="PRIJEM TRUPACA" icon="🪵" color="indigo" onClick={() => setActiveModule('prijem')} />
                       <MenuBtn label="PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />
+                      <MenuBtn label="QR KONTROLA" icon="🔍" color="blue" onClick={() => setActiveModule('qr_kontrola')} />
                   </div>
   
                   {/* DONJI BLOK DUGMADI (Proizvodnja i Podešavanja) */}
@@ -119,6 +120,8 @@ export default function Page() {
               <RacuniModule onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'analitika' ? (
               <DashboardModule user={loggedUser} onExit={() => setActiveModule('dashboard')} />
+          ) : activeModule === 'qr_kontrola' ? (
+              <QRControlModule onExit={() => setActiveModule('dashboard')} />
           ) : null}
       </div>
     );
@@ -510,6 +513,10 @@ function PD_SearchableProizvod({ katalog, value, onSelect }) {
 // 1. MODUL PRIJEM TRUPACA (POPRAVLJENI ZASTOJ, AUDIT I LISTA)
 // ============================================================================
 
+// ============================================================================
+// 1. MODUL PRIJEM TRUPACA (BULLETPROOF VERZIJA SA ALARMIMA ZA GREŠKE)
+// ============================================================================
+
 function PrijemModule({ user, header, setHeader, onExit }) {
     const [sumarijeList, setSumarijeList] = useState([]);
     const [podruzniceList, setPodruzniceList] = useState([]);
@@ -545,7 +552,15 @@ function PrijemModule({ user, header, setHeader, onExit }) {
 
     const loadPrijemList = async () => {
         if(!pHeader.otpremnica_broj) return;
-        const { data } = await supabase.from('trupci').select('*').eq('otpremnica_broj', pHeader.otpremnica_broj).eq('zakljucen_prijem', false).order('created_at', { ascending: false });
+        
+        // POKUŠAJ UČITAVANJA (Bez sortiranja, za slučaj da 'created_at' ne postoji u bazi)
+        const { data, error } = await supabase.from('trupci').select('*').eq('otpremnica_broj', pHeader.otpremnica_broj).eq('zakljucen_prijem', false);
+        
+        if (error) {
+            alert("⚠️ GREŠKA PRI UČITAVANJU LISTE: " + error.message);
+            console.error(error);
+        }
+        
         setListaPrijema(data || []);
     };
 
@@ -562,7 +577,6 @@ function PrijemModule({ user, header, setHeader, onExit }) {
         return (r * r * Math.PI * parseFloat(form.duzina)).toFixed(2);
     }, [form]);
 
-    // POPRAVLJENO: Pravi zastoj i provjera da li trupac vec postoji
     const handleScanInput = (val) => {
         setScan(val);
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
@@ -581,46 +595,41 @@ function PrijemModule({ user, header, setHeader, onExit }) {
     };
 
     const snimiTrupac = async () => {
-        // Gasi duh-tajmer da ne bi iskocio prozor nakon sto kliknemo dodaj
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-
-        if(!pHeader.otpremnica_broj || !pHeader.sumarija) return alert("Popunite zaglavlje otpremnice (Šumarija i Broj)!");
-        if(!scan || !form.duzina || !form.promjer) return alert("Popunite QR ID, dužinu i promjer.");
+        if(!pHeader.otpremnica_broj || !pHeader.sumarija) return alert("Popunite zaglavlje!");
+        if(!scan || !form.duzina || !form.promjer) return alert("Popunite QR, dužinu i promjer.");
         
         const trupacID = scan.toUpperCase();
-
-        // Provjera broja pločice
-        if (form.broj_plocice) {
-            const { data: plocicaPostoji } = await supabase.from('trupci').select('id').eq('broj_plocice', form.broj_plocice).maybeSingle();
-            if (plocicaPostoji && plocicaPostoji.id !== trupacID) {
-                if (!window.confirm(`⚠️ UPOZORENJE: Pločica broj ${form.broj_plocice} je već unesena za trupac ${plocicaPostoji.id}.\n\nNastaviti i prepisati?`)) return;
-            }
-        }
-
         const trupacData = {
-            id: trupacID, broj_plocice: form.broj_plocice, redni_broj: form.redni_broj, vrsta: form.vrsta, klasa: form.klasa,
-            duzina: form.duzina, promjer: form.promjer, zapremina: calculatedZapremina, sumarija: pHeader.sumarija,
-            podruznica: pHeader.podruznica, prevoznik: pHeader.prevoznik, odjel: pHeader.odjel, otpremnica_broj: pHeader.otpremnica_broj,
-            otpremnica_datum: pHeader.otpremnica_datum, snimio_korisnik: user.ime_prezime, datum_prijema: new Date().toISOString().split('T')[0], zakljucen_prijem: false,
+            id: trupacID, 
+            broj_plocice: form.broj_plocice || null, 
+            redni_broj: form.redni_broj || null, 
+            vrsta: form.vrsta, 
+            klasa: form.klasa,
+            duzina: parseFloat(form.duzina), 
+            promjer: parseFloat(form.promjer), 
+            zapremina: parseFloat(calculatedZapremina), 
+            sumarija: pHeader.sumarija,
+            podruznica: pHeader.podruznica || null, 
+            otpremnica_broj: pHeader.otpremnica_broj,
+            otpremnica_datum: pHeader.otpremnica_datum, 
+            snimio_korisnik: user?.ime_prezime || 'Nepoznat', 
+            datum_prijema: new Date().toISOString().split('T')[0], 
+            zakljucen_prijem: false,
             status: 'na_lageru'
         };
 
-        // UPSERT dozvoljava preljepljivanje podataka ako smo na prethodnom koraku rekli OK
         const { error } = await supabase.from('trupci').upsert([trupacData]);
-        if (error) return alert("Greška baze: " + error.message);
+        if (error) return alert("Baza javlja grešku: " + error.message);
 
-        // ZLATNI STANDARD: Pisanje u Audit Log
-        await supabase.from('paket_audit_log').insert([{
-            paket_id: trupacID,
-            korisnik_ime: user.ime_prezime,
-            akcija: 'PRIJEM_TRUPCA',
-            proizvod: `${form.vrsta} | Kl: ${form.klasa}`,
-            kolicina_promjena: calculatedZapremina + ' m3',
-            datum_tekst: new Date().toISOString().split('T')[0]
-        }]);
-        
-        setScan(''); setForm({ broj_plocice: '', redni_broj: '', vrsta: 'Jela', klasa: 'I', duzina: '', promjer: '' });
-        loadPrijemList();
+        // TIHA POTVRDA: Kratka vibracija (radi na Android/iPhone u pregledniku)
+        if (typeof window !== 'undefined' && window.navigator.vibrate) {
+            window.navigator.vibrate(100); 
+        }
+
+        setScan(''); 
+        setForm(f => ({ ...f, broj_plocice: '', redni_broj: '' }));
+        await loadPrijemList();
     };
 
     const zakljuciOtpremnicu = async () => {
@@ -703,7 +712,6 @@ function PrijemModule({ user, header, setHeader, onExit }) {
                 <button onClick={snimiTrupac} className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl uppercase shadow-xl hover:bg-indigo-500">➕ DODAJ NA OTPREMNICU</button>
             </div>
 
-            {/* POPRAVLJENO: Uvijek prikazuje kontejner sa listom ako imamo broj otpremnice, cak i kad je prazna */}
             {pHeader.otpremnica_broj && (
                 <div className="bg-[#1e293b] p-4 rounded-[2rem] border border-slate-700 animate-in fade-in">
                     <div className="flex justify-between items-center mb-3 px-2">
@@ -713,7 +721,7 @@ function PrijemModule({ user, header, setHeader, onExit }) {
                     <div className="space-y-2 max-h-60 overflow-y-auto mb-4 scrollbar-hide">
                         {listaPrijema.length === 0 && (
                             <div className="text-center p-6 text-slate-500 text-xs font-bold border-2 border-dashed border-slate-700 rounded-xl">
-                                Nema dodatih trupaca na ovoj otpremnici.
+                                Nema dodatih trupaca na listi.
                             </div>
                         )}
                         {listaPrijema.map(t => (
@@ -741,6 +749,14 @@ function PrijemModule({ user, header, setHeader, onExit }) {
 // 2. MODUL PROREZ 
 // ============================================================================
 
+// ============================================================================
+// 2. MODUL PROREZ (POPRAVLJENO DODAVANJE I PRAĆENJE BRENTISTE)
+// ============================================================================
+
+// ============================================================================
+// 2. MODUL PROREZ (BULLETPROOF LISTA SA DETALJIMA I VRAĆANJEM NA LAGER)
+// ============================================================================
+
 function ProrezModule({ user, header, setHeader, onExit }) {
     const [scan, setScan] = useState('');
     const [list, setList] = useState([]);
@@ -749,64 +765,163 @@ function ProrezModule({ user, header, setHeader, onExit }) {
 
     useEffect(() => { loadList(); }, [header.masina, header.datum]);
 
+    // BULLETPROOF UČITAVANJE (Aplikacija sama spaja podatke umjesto baze)
     const loadList = async () => {
         if(!header.masina) return;
-        const { data } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).eq('datum', header.datum).eq('zakljuceno', false).order('created_at', { ascending: false });
-        setList(data || []);
+        
+        // 1. Učitavamo prorez za današnji dan
+        const { data: logData, error: logError } = await supabase.from('prorez_log')
+            .select('*')
+            .eq('masina', header.masina)
+            .eq('datum', header.datum)
+            .eq('zakljuceno', false);
+        
+        if (logError) {
+            console.error("Greška pri učitavanju dnevnika:", logError.message);
+            return;
+        }
+
+        if (!logData || logData.length === 0) {
+            setList([]);
+            return;
+        }
+
+        // 2. Izvlačimo ID-jeve trupaca i ručno tražimo njihove detalje iz tabele 'trupci'
+        const trupacIds = logData.map(l => l.trupac_id);
+        const { data: trupciData, error: trupciError } = await supabase.from('trupci')
+            .select('*')
+            .in('id', trupacIds);
+
+        if (trupciError) console.error("Greška pri učitavanju detalja trupaca:", trupciError.message);
+
+        // 3. Spajamo ih u jednu listu spremnu za prikaz
+        const finalnaLista = logData.map(log => {
+            const detalji = (trupciData || []).find(t => t.id === log.trupac_id) || {};
+            return { ...log, detaljiTrupca: detalji };
+        });
+
+        // Sortiramo tako da zadnje skenirani bude na vrhu
+        finalnaLista.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        setList(finalnaLista);
     };
 
     const handleInput = (val) => {
         setScan(val);
         if (timerRef.current) clearTimeout(timerRef.current);
-        if (val.length >= 3) timerRef.current = setTimeout(() => obradiTrupac(val.toUpperCase()), 2000);
+        if (val.length >= 3) timerRef.current = setTimeout(() => obradiTrupac(val.toUpperCase()), 1500);
     };
 
     const obradiTrupac = async (trupacId) => {
-        if (!header.masina) return alert("Odaberi mašinu!");
+        if (!header.masina) return alert("Odaberi mašinu u zaglavlju!");
+        
         const { data: trupac } = await supabase.from('trupci').select('*').eq('id', trupacId).maybeSingle();
-        if (!trupac) { alert(`❌ TRUPAC ${trupacId} NE POSTOJI NA LAGERU!`); setScan(''); return; }
+        
+        if (!trupac) { 
+            alert(`❌ TRUPAC ${trupacId} NE POSTOJI NA LAGERU!`); 
+            setScan(''); return; 
+        }
 
         if (trupac.status === 'prorezan') {
-            const naListi = list.find(l => l.trupac_id === trupacId);
-            if (naListi) {
-                if (window.confirm(`Trupac ${trupacId} je na današnjoj listi.\nŽelite li PONIŠTITI PROREZ?`)) {
-                    await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', trupacId);
-                    await supabase.from('prorez_log').delete().eq('id', naListi.id);
-                    loadList();
-                }
-            } else alert(`⚠️ TRUPAC ${trupacId} JE VEĆ RANIJE PROREZAN!`);
+            alert(`⚠️ TRUPAC ${trupacId} JE VEĆ RANIJE PROREZAN!`);
             setScan(''); return;
         }
+
+        const logEntry = {
+            trupac_id: trupacId,
+            masina: header.masina,
+            korisnik: user?.ime_prezime || 'Nepoznat',
+            mjesto: header.mjesto,
+            datum: header.datum,
+            zakljuceno: false,
+            vrijeme_unosa: new Date().toLocaleTimeString('de-DE')
+        };
+
+        const { error: logError } = await supabase.from('prorez_log').insert([logEntry]);
+        
+        if (logError) {
+            alert("Greška pri upisu u bazu: " + logError.message);
+            return;
+        }
+
         await supabase.from('trupci').update({ status: 'prorezan' }).eq('id', trupacId);
-        await supabase.from('prorez_log').insert([{ trupac_id: trupacId, masina: header.masina, korisnik: user.ime_prezime, mjesto: header.mjesto, datum: header.datum, zakljuceno: false }]);
-        setScan(''); loadList();
+
+        if (typeof window !== 'undefined' && window.navigator.vibrate) {
+            window.navigator.vibrate([100, 50, 100]); 
+        }
+
+        setScan(''); 
+        await loadList(); 
+    };
+
+    // FUNKCIJA ZA BRISANJE I VRAĆANJE NA LAGER
+    const obrisiIzProreza = async (logId, trupacId) => {
+        if(window.confirm(`Da li ste sigurni da želite skinuti trupac ${trupacId} sa proreza i vratiti ga nazad na lager?`)) {
+            // 1. Vrati status u tabeli trupci na 'na_lageru'
+            await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', trupacId);
+            // 2. Obriši ga iz dnevnika proreza
+            await supabase.from('prorez_log').delete().eq('id', logId);
+            
+            if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(100); 
+            await loadList();
+        }
     };
 
     return (
-        <div className="p-4 max-w-xl mx-auto space-y-6">
+        <div className="p-4 max-w-xl mx-auto space-y-6 animate-in fade-in">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-cyan-500" user={user} />
+            
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-cyan-500/30 shadow-2xl space-y-6">
                 <div className="relative font-black">
                     <label className="text-[10px] uppercase text-cyan-500 block mb-2 tracking-widest ml-2">SKENIRAJ TRUPAC (Ulaz u brentu)</label>
-                    <input value={scan} onChange={e => handleInput(e.target.value)} className="w-full p-5 bg-[#0f172a] border-2 border-cyan-500/50 rounded-2xl text-xl text-center text-white outline-none focus:border-cyan-400 uppercase" placeholder="..." />
-                    <button onClick={() => setIsScanning(true)} className="absolute right-3 top-7 bottom-3 px-4 bg-cyan-600 rounded-xl text-white font-bold">📷 SCAN</button>
+                    <input value={scan} onChange={e => handleInput(e.target.value)} className="w-full p-5 bg-[#0f172a] border-2 border-cyan-500/50 rounded-2xl text-xl text-center text-white outline-none focus:border-cyan-400 uppercase font-black" placeholder="Čekam sken..." />
+                    <button onClick={() => setIsScanning(true)} className="absolute right-3 top-9 bottom-3 px-4 bg-cyan-600 rounded-xl text-white font-bold">📷</button>
                 </div>
+
                 <div className="pt-4 border-t border-slate-700">
                     <div className="flex justify-between items-center mb-4">
-                        <span className="text-[10px] text-slate-500 uppercase">Trenutna lista proreza:</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-black">Prorezano u ovoj smjeni:</span>
                         <span className="text-cyan-500 font-black">{list.length} kom</span>
                     </div>
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                    
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                        {list.length === 0 && <p className="text-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-700 p-6 rounded-2xl">Skenirajte prvi trupac za ovu smjenu.</p>}
                         {list.map(l => (
-                            <div key={l.id} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center cursor-pointer hover:border-red-500" onClick={() => { if(window.confirm(`Poništiti prorez za ${l.trupac_id}?`)) { supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', l.trupac_id).then(()=>supabase.from('prorez_log').delete().eq('id', l.id)).then(loadList); }}}>
-                                <span className="text-cyan-400 font-black tracking-widest">{l.trupac_id}</span>
-                                <span className="text-[10px] text-red-500">Poništi ✕</span>
+                            <div key={l.id} onClick={() => obrisiIzProreza(l.id, l.trupac_id)} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center group cursor-pointer hover:border-red-500 transition-all shadow-lg animate-in slide-in-from-right-2" title="Klikni za vraćanje na lager">
+                                <div>
+                                    <span className="text-cyan-400 font-black tracking-widest block text-sm">
+                                        {l.trupac_id} 
+                                        <span className="text-slate-400 text-xs ml-2">[{l.detaljiTrupca?.broj_plocice || 'Nema pločice'}]</span>
+                                    </span>
+                                    <span className="text-[10px] text-white uppercase mt-1 block font-bold">
+                                        {l.detaljiTrupca?.vrsta || 'Nepoznata vrsta'} | L: {l.detaljiTrupca?.duzina || 0}m | Ø: {l.detaljiTrupca?.promjer || 0}cm
+                                    </span>
+                                    <span className="text-[9px] text-slate-500 uppercase mt-1 block">Brentista: {l.korisnik}</span>
+                                </div>
+                                <div className="flex flex-col items-end gap-1">
+                                    <span className="text-base text-emerald-400 font-black">{l.detaljiTrupca?.zapremina || '0.00'} m³</span>
+                                    <span className="text-[9px] text-red-500 uppercase font-black group-hover:underline">Poništi ✕</span>
+                                </div>
                             </div>
                         ))}
                     </div>
-                    {list.length > 0 && <button onClick={()=>{if(window.confirm("ZAKLJUČITI DANAŠNJU LISTU?")){ Promise.all(list.map(l=>supabase.from('prorez_log').update({zakljuceno:true}).eq('id', l.id))).then(()=>{setList([]); alert("Zaključeno!")}) }}} className="w-full mt-4 py-4 bg-cyan-900/30 border border-cyan-500 text-cyan-400 font-black rounded-xl text-xs uppercase hover:bg-cyan-600 hover:text-white transition-all">🏁 ZAKLJUČI LISTU</button>}
+
+                    {list.length > 0 && (
+                        <button onClick={async () => {
+                            if(window.confirm("ZAKLJUČITI OVU LISTU? To znači da je smjena/tura gotova.")){
+                                for(let item of list) {
+                                    await supabase.from('prorez_log').update({ zakljuceno: true }).eq('id', item.id);
+                                }
+                                setList([]);
+                                alert("Lista uspješno zaključena i poslana u analitiku!");
+                            }
+                        }} className="w-full mt-5 py-4 bg-cyan-900/30 border border-cyan-500 text-cyan-400 font-black rounded-xl text-xs uppercase hover:bg-cyan-600 hover:text-white transition-all shadow-lg">
+                            🏁 ZAKLJUČI SMJENU PROREZA
+                        </button>
+                    )}
                 </div>
             </div>
+            
             <DnevnikMasine modul="Prorez" header={header} user={user} />
             {isScanning && <ScannerOverlay onScan={(text) => { obradiTrupac(text.toUpperCase()); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
@@ -1147,17 +1262,41 @@ function PilanaModule({ user, header, setHeader, onExit }) {
 // MODUL: ANALITIKA / DASHBOARD (SA INTERAKTIVNOM AI PRETRAGOM I DETALJIMA)
 // ============================================================================
 
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (PRAVI PAMETNI AI MOTOR ZA PRETRAGU)
+// ============================================================================
+
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (INTEGRISAN PRAVI GOOGLE GEMINI 1.5 PRO API)
+// ============================================================================
+
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (INTEGRISAN PRAVI GOOGLE GEMINI 1.5 PRO API)
+// ============================================================================
+
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (INTEGRISAN PRAVI GOOGLE GEMINI API - AŽURIRAN MODEL)
+// ============================================================================
+
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (INTEGRISAN PRAVI GOOGLE GEMINI 1.5 FLASH API)
+// ============================================================================
+
+// ============================================================================
+// MODUL: ANALITIKA / DASHBOARD (KONAČNA, PUNA VERZIJA SA AI I PRINT FIXOM)
+// ============================================================================
+
 function DashboardModule({ user, onExit }) {
     const danasnjiDatum = new Date().toISOString().split('T')[0];
     const [datumOd, setDatumOd] = useState(danasnjiDatum);
     const [datumDo, setDatumDo] = useState(danasnjiDatum);
-    const [tipDatuma, setTipDatuma] = useState('dan'); // 'dan' ili 'period'
+    const [tipDatuma, setTipDatuma] = useState('dan'); 
 
     const [aiUpit, setAiUpit] = useState('');
     const [aiOdgovor, setAiOdgovor] = useState(null);
-    const [aiData, setAiData] = useState(null); 
-    const [selectedAiItem, setSelectedAiItem] = useState(null); // NOVO: Za prikaz detalja iz AI pretrage
     const [isAILoading, setIsAILoading] = useState(false);
+    const [apiKey, setApiKey] = useState(typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '');
+    const [showApiInput, setShowApiInput] = useState(false);
     
     const [aktivanIzvjestaj, setAktivanIzvjestaj] = useState(null); 
     const [detaljiNaloga, setDetaljiNaloga] = useState(null); 
@@ -1165,7 +1304,7 @@ function DashboardModule({ user, onExit }) {
 
     const [dashData, setDashData] = useState({
         trupciUlaz: 0, gradaIzlaz: 0, iskoristenje: 0, zastoji: 0, aktivniNalozi: 0,
-        proizvodi: [], trupciLista: [], naloziLista: []
+        proizvodi: [], trupciLista: [], naloziLista: [], zastojiLista: [], paketiLista: []
     });
 
     useEffect(() => { ucitajPravePodatke(); }, [datumOd, datumDo]);
@@ -1173,13 +1312,11 @@ function DashboardModule({ user, onExit }) {
     const ucitajPravePodatke = async () => {
         setLoading(true);
         
-        const { data: trupci } = await supabase.from('trupci').select('zapremina, vrsta, klasa, otpremnica_broj, datum_prijema')
-            .gte('datum_prijema', datumOd).lte('datum_prijema', datumDo);
+        const { data: trupci } = await supabase.from('trupci').select('*').gte('datum_prijema', datumOd).lte('datum_prijema', datumDo);
         let sumaTrupaca = 0;
         if (trupci) trupci.forEach(t => sumaTrupaca += parseFloat(t.zapremina || 0));
 
-        const { data: paketi } = await supabase.from('paketi').select('kolicina_final, naziv_proizvoda, datum_yyyy_mm')
-            .gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo);
+        const { data: paketi } = await supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo);
         let sumaGrade = 0;
         let proizvodiGrupisano = {};
         if (paketi) {
@@ -1190,11 +1327,9 @@ function DashboardModule({ user, onExit }) {
                 else proizvodiGrupisano[p.naziv_proizvoda] = kol;
             });
         }
-
         const sortiraniProizvodi = Object.keys(proizvodiGrupisano).map(naziv => ({ naziv, m3: proizvodiGrupisano[naziv] })).sort((a, b) => b.m3 - a.m3);
 
-        const { data: zastoji } = await supabase.from('dnevnik_masine').select('zastoj_min, datum')
-            .gte('datum', datumOd).lte('datum', datumDo);
+        const { data: zastoji } = await supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo);
         let sumaZastoja = 0;
         if (zastoji) zastoji.forEach(z => sumaZastoja += parseInt(z.zastoj_min || 0));
 
@@ -1204,13 +1339,121 @@ function DashboardModule({ user, onExit }) {
         if (sumaTrupaca > 0) procenatIskoristenja = ((sumaGrade / sumaTrupaca) * 100).toFixed(2);
 
         setDashData({
-            trupciUlaz: sumaTrupaca.toFixed(2), gradaIzlaz: sumaGrade.toFixed(2),
-            iskoristenje: procenatIskoristenja, zastoji: sumaZastoja,
+            trupciUlaz: sumaTrupaca.toFixed(2), gradaIzlaz: sumaGrade.toFixed(2), iskoristenje: procenatIskoristenja, zastoji: sumaZastoja,
             aktivniNalozi: nalozi ? nalozi.length : 0,
-            proizvodi: sortiraniProizvodi, trupciLista: trupci || [], naloziLista: nalozi || []
+            proizvodi: sortiraniProizvodi, trupciLista: trupci || [], naloziLista: nalozi || [], zastojiLista: zastoji || [], paketiLista: paketi || []
         });
 
         setLoading(false);
+    };
+
+    const saveApiKey = (key) => { setApiKey(key); localStorage.setItem('gemini_api_key', key); setShowApiInput(false); };
+
+    // --- PRAVI AI MOTOR (GEMINI 1.5 FLASH API) ---
+    const pokreniPraviAI = async () => {
+        if(!apiKey) return alert("Morate unijeti Google Gemini API Ključ za pravu analitiku!");
+        if(!aiUpit) return;
+        setIsAILoading(true); setAiOdgovor(null);
+
+        const siroviPodaci = {
+            period: `${datumOd} do ${datumDo}`,
+            ukupno_prorez_ulaz_m3: dashData.trupciUlaz,
+            ukupno_grada_izlaz_m3: dashData.gradaIzlaz,
+            iskoristenje_procenat: dashData.iskoristenje,
+            trupci: dashData.trupciLista.map(t => ({ vrsta: t.vrsta, klasa: t.klasa, zapremina: t.zapremina, radnik: t.snimio_korisnik })),
+            paketi: dashData.paketiLista.map(p => ({ proizvod: p.naziv_proizvoda, zapremina: p.kolicina_final, masina: p.masina, radnik: p.snimio_korisnik })),
+            zastoji: dashData.zastojiLista.map(z => ({ masina: z.masina, minute: z.zastoj_min, razlog: z.napomena, radnik: z.snimio })),
+            nalozi: dashData.naloziLista.map(n => ({ kupac: n.kupac_naziv, status: n.status, rok: n.rok_isporuke }))
+        };
+
+        const sistemskiPrompt = `
+            Ti si glavni AI menadžer i finansijski/proizvodni analitičar u ERP sistemu drvne industrije (pilane).
+            Dobit ćeš sirove podatke u JSON formatu za odabrani period.
+            Tvoj zadatak je da odgovoriš na korisnikov upit dubinskom analizom ovih podataka.
+            Jezik odgovora: Bosanski (profesionalan menadžerski ton).
+            Format odgovora: Koristi Markdown, podebljana slova za bitne brojke, liste sa nabrajanjem za zaključke i uvijek na kraju daj jasan savjet menadžmentu šta da popravi ili na šta da obrati pažnju.
+            Nemoj nikada korisniku govoriti o tome kakav je JSON kod, već mu daj gotovu ljudsku menadžersku analizu!
+            
+            PODACI ZA ANALIZU:
+            ${JSON.stringify(siroviPodaci)}
+
+            KORISNIKOV UPIT (Zadatak za tebe):
+            "${aiUpit}"
+        `;
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: sistemskiPrompt }] }]
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                setAiOdgovor(`❌ Greška API-ja: ${data.error.message}`);
+            } else if (data.candidates && data.candidates[0]) {
+                const markdownOdgovor = data.candidates[0].content.parts[0].text;
+                setAiOdgovor(markdownOdgovor);
+            } else {
+                setAiOdgovor("AI nije vratio razumljiv odgovor. Pokušajte preformulisati upit.");
+            }
+        } catch (err) { 
+            setAiOdgovor(`❌ Mrežna greška pri spajanju na Google API: ${err.message}`); 
+        }
+        setIsAILoading(false);
+    };
+
+    const formatirajMarkdown = (tekst) => {
+        if(!tekst) return null;
+        return tekst.split('\n').map((red, i) => {
+            if(red.startsWith('##')) return <h3 key={i} className="text-emerald-400 font-black mt-4 mb-2 uppercase text-sm border-b border-slate-700 pb-1">{red.replace(/#/g, '')}</h3>;
+            if(red.startsWith('**')) return <p key={i} className="text-white font-bold mt-2"><span dangerouslySetInnerHTML={{__html: red.replace(/\*\*(.*?)\*\*/g, '<strong class="text-blue-400">$1</strong>')}} /></p>;
+            if(red.startsWith('* ') || red.startsWith('- ')) return <li key={i} className="text-slate-300 ml-4 list-disc text-sm my-1"><span dangerouslySetInnerHTML={{__html: red.substring(2).replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')}} /></li>;
+            return <p key={i} className="text-slate-300 text-sm mb-2"><span dangerouslySetInnerHTML={{__html: red.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')}} /></p>;
+        });
+    };
+
+    // --- GENERISANJE PDF-a ZA MENADŽERSKI IZVJEŠTAJ ---
+    const printMenadzerski = () => {
+        if(!aiOdgovor) return;
+        const printWin = window.open('', '_blank');
+        
+        // PROVJERA ZA POP-UP BLOCKER
+        if (!printWin) {
+            alert("⚠️ Vaš preglednik (browser) je blokirao iskačući prozor za printanje! Molimo dozvolite 'Pop-ups' (iskačuće prozore) za ovu stranicu u gornjem desnom uglu ekrana.");
+            return;
+        }
+
+        const logoUrl = window.location.origin + '/Logo TTM.png';
+        
+        const cistHTML = aiOdgovor
+            .replace(/## (.*)/g, '<h3>$1</h3>')
+            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+            .replace(/\* (.*)/g, '<li>$1</li>')
+            .replace(/\n/g, '<br/>');
+
+        const html = `
+            <html><head><title>AI Menadžerski Izvještaj</title>
+            <style>
+                body { font-family: Arial, sans-serif; color: #333; padding: 40px; line-height: 1.6; }
+                .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
+                h3 { color: #1e293b; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 30px; }
+                b { color: #0f172a; }
+                .upit { background: #f8fafc; padding: 15px; border-left: 4px solid #3b82f6; font-style: italic; margin-bottom: 30px; }
+            </style></head>
+            <body>
+                <div class="header">
+                    <div><h2 style="margin:0; color:#1e293b;">PAMETNI MENADŽERSKI IZVJEŠTAJ</h2><p style="margin:5px 0 0 0;">Generisao: Google Gemini AI</p><p style="margin:5px 0 0 0;"><b>Analizirani period:</b> ${datumOd} do ${datumDo}</p></div>
+                    <img src="${logoUrl}" style="height: 70px;" onload="window.print(); window.close();" onerror="this.style.display='none'; window.print(); window.close();" />
+                </div>
+                <div class="upit"><b>Vaš upit:</b> "${aiUpit}"</div>
+                <div>${cistHTML}</div>
+            </body></html>
+        `;
+        printWin.document.write(html); printWin.document.close();
     };
 
     const formatirajVrijeme = (minute) => {
@@ -1220,7 +1463,6 @@ function DashboardModule({ user, onExit }) {
         return `${sati.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
     };
 
-    // --- KOMPONENTA ZA FILTER DATUMA ---
     const FilterDatuma = () => (
         <div className="flex flex-col xl:flex-row items-center gap-3 bg-slate-900 p-2 rounded-2xl border border-slate-700 shadow-inner w-full xl:w-auto mt-4 md:mt-0">
             <div className="flex bg-slate-800 rounded-lg p-1 w-full xl:w-auto">
@@ -1242,84 +1484,16 @@ function DashboardModule({ user, onExit }) {
         </div>
     );
 
-    // --- PAMETNI PRETRAŽIVAČ BAZE (AI MOTOR) ---
-    const pokreniAI = async () => {
-        if(!aiUpit) return;
-        setIsAILoading(true); setAiOdgovor(null); setAiData(null); setSelectedAiItem(null);
-        
-        const upit = aiUpit.toLowerCase();
-        let odgovor = "Pretraga završena. Molimo unesite precizniji pojam (npr. 'paketi', 'zastoji', 'nalozi', 'trupci').";
-        let siroviPodaci = null;
-
-        try {
-            if (upit.includes('paket') || upit.includes('urad') || upit.includes('proizv') || upit.includes('gotov')) {
-                const { data } = await supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo);
-                const ukupnoM3 = data.reduce((sum, item) => sum + parseFloat(item.kolicina_final || 0), 0);
-                odgovor = `📊 PRONAĐENO: U odabranom periodu kreirano je tačno ${data.length} paketa sa gotovom robom u ukupnoj zapremini od ${ukupnoM3.toFixed(2)} m³.`;
-                siroviPodaci = { tip: 'paketi', podaci: data, naslov: `AI Izvještaj: Paketi (${new Date(datumOd).toLocaleDateString('bs-BA')} do ${new Date(datumDo).toLocaleDateString('bs-BA')})` };
-            } else if (upit.includes('trupac') || upit.includes('ulaz')) {
-                const { data } = await supabase.from('trupci').select('*').gte('datum_prijema', datumOd).lte('datum_prijema', datumDo);
-                const ukupnoM3 = data.reduce((sum, item) => sum + parseFloat(item.zapremina || 0), 0);
-                odgovor = `🪵 PRONAĐENO: Zaprimljeno je ${data.length} trupaca na lager, ukupne zapremine ${ukupnoM3.toFixed(2)} m³.`;
-                siroviPodaci = { tip: 'trupci', podaci: data, naslov: `AI Izvještaj: Prijem Trupaca (${new Date(datumOd).toLocaleDateString('bs-BA')} do ${new Date(datumDo).toLocaleDateString('bs-BA')})` };
-            } else if (upit.includes('nalo') || upit.includes('isporuk')) {
-                const { data } = await supabase.from('radni_nalozi').select('*').neq('status', 'ZAVRŠENO').neq('status', 'ISPORUČENO');
-                odgovor = `📄 PRONAĐENO: Trenutno imate ${data.length} aktivnih radnih naloga u proizvodnji.`;
-                siroviPodaci = { tip: 'nalozi', podaci: data, naslov: `AI Izvještaj: Aktivni Nalozi` };
-            } else if (upit.includes('zastoj') || upit.includes('kvar')) {
-                const { data } = await supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo);
-                const ukupnoMinuta = data.reduce((sum, item) => sum + parseInt(item.zastoj_min || 0), 0);
-                odgovor = `🛑 PRONAĐENO: U odabranom periodu zabilježeno je ${data.length} zastoja u trajanju od ${ukupnoMinuta} minuta.`;
-            }
-        } catch (err) { odgovor = "❌ Greška pri čitanju baze podataka."; }
-
-        setAiOdgovor(odgovor);
-        setAiData(siroviPodaci);
-        setIsAILoading(false);
-    };
-
-    // --- GENERISANJE PDF-a ZA AI IZVJEŠTAJ ---
-    const printAIReport = () => {
-        if(!aiData) return;
-        const printWin = window.open('', '_blank');
-        const logoUrl = window.location.origin + '/Logo TTM.png';
-        
-        let headerRow = ''; let bodyRows = '';
-
-        if(aiData.tip === 'paketi') {
-            headerRow = '<th>Paket ID</th><th>Proizvod</th><th>Dimenzije</th><th style="text-align:right;">M³</th><th>Mašina</th><th>Snimio</th>';
-            bodyRows = aiData.podaci.map(p => `<tr><td>${p.paket_id}</td><td>${p.naziv_proizvoda}</td><td>${p.debljina}x${p.sirina}x${p.duzina}</td><td style="text-align:right;"><b>${p.kolicina_final}</b></td><td>${p.masina || '-'}</td><td>${p.snimio_korisnik}</td></tr>`).join('');
-        } else if(aiData.tip === 'trupci') {
-            headerRow = '<th>Trupac ID</th><th>Pločica</th><th>Vrsta/Klasa</th><th>Dimenzije</th><th style="text-align:right;">M³</th>';
-            bodyRows = aiData.podaci.map(t => `<tr><td>${t.id}</td><td>${t.broj_plocice || '-'}</td><td>${t.vrsta} / ${t.klasa}</td><td>L:${t.duzina} Ø:${t.promjer}</td><td style="text-align:right;"><b>${t.zapremina}</b></td></tr>`).join('');
-        } else if(aiData.tip === 'nalozi') {
-            headerRow = '<th>Broj Naloga</th><th>Kupac</th><th>Rok Isporuke</th><th>Status</th>';
-            bodyRows = aiData.podaci.map(n => `<tr><td><b>${n.id}</b></td><td>${n.kupac_naziv}</td><td>${n.rok_isporuke}</td><td>${n.status}</td></tr>`).join('');
-        }
-
-        const html = `
-            <html><head><title>${aiData.naslov}</title>
-            <style>
-                body { font-family: Arial, sans-serif; color: #333; padding: 40px; }
-                .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
-                table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-                th { background-color: #f1f5f9; }
-            </style></head>
-            <body>
-                <div class="header">
-                    <div><h2>${aiData.naslov}</h2><p>Generisano na osnovu AI upita: <i>"${aiUpit}"</i></p></div>
-                    <img src="${logoUrl}" style="height: 60px;" onload="window.print(); window.close();" onerror="this.style.display='none'; window.print(); window.close();" />
-                </div>
-                <table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>
-            </body></html>
-        `;
-        printWin.document.write(html); printWin.document.close();
-    };
-
     // --- GENERISANJE PDF-a ZA DNEVNI/PERIODIČNI PROREZ ---
     const kreirajPDF = () => {
         const printWin = window.open('', '_blank');
+        
+        // PROVJERA ZA POP-UP BLOCKER
+        if (!printWin) {
+            alert("⚠️ Vaš preglednik (browser) je blokirao iskačući prozor za printanje! Molimo dozvolite 'Pop-ups' (iskačuće prozore) za ovu stranicu u gornjem desnom uglu ekrana.");
+            return;
+        }
+
         const logoUrl = window.location.origin + '/Logo TTM.png';
         
         let redovi = dashData.proizvodi.map(s => {
@@ -1357,67 +1531,10 @@ function DashboardModule({ user, onExit }) {
         printWin.document.write(html); printWin.document.close();
     };
 
-    // --- GLAVNI DASHBOARD EKRAN ---
     if (!aktivanIzvjestaj) {
         return (
             <div className="p-4 max-w-6xl mx-auto space-y-6 animate-in fade-in relative">
                 
-                {/* DETALJNI MODAL ZA AI STAVKE */}
-                {selectedAiItem && (
-                    <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-                        <div className="bg-slate-900 border border-indigo-500 p-6 rounded-[2.5rem] shadow-2xl max-w-md w-full relative">
-                            <button onClick={() => setSelectedAiItem(null)} className="absolute top-4 right-4 bg-slate-800 text-slate-400 hover:text-white hover:bg-red-500 w-8 h-8 rounded-full font-black flex items-center justify-center transition-all">✕</button>
-                            <h3 className="text-indigo-400 font-black uppercase text-sm mb-4 border-b border-slate-700 pb-3">Detalji zapisa</h3>
-                            
-                            <div className="space-y-3 text-xs text-slate-300">
-                                {selectedAiItem.tip === 'paketi' && (
-                                    <>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Paket ID:</span><span className="text-white font-bold bg-slate-800 px-3 py-1 rounded-lg">{selectedAiItem.item.paket_id}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Proizvod:</span><span className="text-indigo-300 font-bold">{selectedAiItem.item.naziv_proizvoda}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Dimenzije:</span><span className="text-white font-bold">{selectedAiItem.item.debljina}x{selectedAiItem.item.sirina}x{selectedAiItem.item.duzina}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Zapremina:</span><span className="text-emerald-400 font-black text-base">{selectedAiItem.item.kolicina_final} m³</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Mašina / Lokacija:</span><span className="text-white font-bold">{selectedAiItem.item.masina || '-'} / {selectedAiItem.item.mjesto || '-'}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Kreirao:</span><span className="text-white font-bold">{selectedAiItem.item.snimio_korisnik}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Datum i vrijeme:</span><span className="text-white font-bold">{new Date(selectedAiItem.item.datum_yyyy_mm).toLocaleDateString('bs-BA')} u {selectedAiItem.item.vrijeme_tekst}</span></div>
-                                        
-                                        {selectedAiItem.item.oznake && selectedAiItem.item.oznake.length > 0 && (
-                                            <div className="mt-4 pt-4 border-t border-slate-800">
-                                                <span className="text-slate-500 block mb-2 uppercase font-black text-[9px]">Dodatne Oznake na paketu:</span>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {selectedAiItem.item.oznake.map(o => <span key={o} className="bg-indigo-900/30 text-indigo-300 px-3 py-1 rounded-xl font-bold text-[10px] border border-indigo-500/30 shadow-inner uppercase">{o}</span>)}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                                {selectedAiItem.tip === 'trupci' && (
-                                    <>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Trupac ID:</span><span className="text-white font-bold bg-slate-800 px-3 py-1 rounded-lg">{selectedAiItem.item.id}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Broj Pločice:</span><span className="text-white font-bold">{selectedAiItem.item.broj_plocice || 'Nema pločice'}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Vrsta i Klasa:</span><span className="text-indigo-300 font-bold uppercase">{selectedAiItem.item.vrsta} / Klasa {selectedAiItem.item.klasa}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Dimenzije:</span><span className="text-white font-bold">Dužina: {selectedAiItem.item.duzina}m | Promjer: {selectedAiItem.item.promjer}cm</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Zapremina:</span><span className="text-emerald-400 font-black text-base">{selectedAiItem.item.zapremina} m³</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Otpremnica:</span><span className="text-white font-bold">{selectedAiItem.item.otpremnica_broj || '-'}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Lokacija (Šumarija):</span><span className="text-white font-bold">{selectedAiItem.item.sumarija} ({selectedAiItem.item.podruznica})</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Datum prijema:</span><span className="text-white font-bold">{new Date(selectedAiItem.item.datum_prijema).toLocaleDateString('bs-BA')}</span></div>
-                                    </>
-                                )}
-                                {selectedAiItem.tip === 'nalozi' && (
-                                    <>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Broj Naloga:</span><span className="text-white font-bold bg-slate-800 px-3 py-1 rounded-lg">{selectedAiItem.item.id}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Kupac:</span><span className="text-indigo-300 font-bold uppercase">{selectedAiItem.item.kupac_naziv}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Status:</span><span className="bg-amber-900/30 text-amber-400 px-2 py-1 rounded font-black text-[9px] uppercase border border-amber-500/30">{selectedAiItem.item.status}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Rok Isporuke:</span><span className="text-white font-bold">{new Date(selectedAiItem.item.rok_isporuke).toLocaleDateString('bs-BA')}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Vezana ponuda:</span><span className="text-white font-bold">{selectedAiItem.item.broj_ponude || '-'}</span></div>
-                                        <div className="flex justify-between items-center"><span className="text-slate-500 uppercase font-black text-[9px]">Kreirao:</span><span className="text-white font-bold">{selectedAiItem.item.snimio_korisnik}</span></div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* HEADER */}
                 <div className="flex flex-col md:flex-row justify-between items-center bg-[#0f172a] p-5 rounded-[2rem] border border-slate-800 shadow-2xl">
                     <div className="flex items-center gap-4 mb-4 md:mb-0">
                         <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700">← Meni</button>
@@ -1425,61 +1542,62 @@ function DashboardModule({ user, onExit }) {
                             <img src="/Logo TTM.png" alt="TTM Logo" className="h-full object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.innerText = 'TTM LOGO'; }} />
                         </div>
                     </div>
-                    
                     <h2 className="text-white font-black tracking-widest text-lg lg:text-xl uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.2)] hidden lg:block mx-4">Pametna Analitika</h2>
-                    
                     <FilterDatuma />
                 </div>
 
-                {/* AI GEMINI BAR */}
-                <div className="relative bg-gradient-to-r from-blue-900/40 to-purple-900/40 p-1 rounded-2xl border border-blue-500/30 shadow-[0_0_20px_rgba(59,130,246,0.15)]">
-                    <div className="absolute left-4 top-3 text-xl">✨</div>
-                    <input 
-                        type="text" value={aiUpit} onChange={e => setAiUpit(e.target.value)} onKeyDown={e => {if(e.key === 'Enter') pokreniAI()}}
-                        placeholder="Pitaj sistem o bazi (npr. 'Prikaži pakete za ovaj period')" 
-                        className="w-full bg-[#0f172a] p-4 pl-12 rounded-xl text-sm text-white outline-none border border-transparent focus:border-blue-400 transition-all font-medium placeholder-slate-500"
-                    />
-                    <button onClick={pokreniAI} disabled={isAILoading} className="absolute right-2 top-2 bottom-2 px-6 bg-blue-600 rounded-lg text-white font-black text-xs hover:bg-blue-500 shadow-lg uppercase disabled:opacity-50">
-                        {isAILoading ? 'Tražim...' : 'Pitaj AI'}
-                    </button>
+                {/* PRAVI AI GEMINI BAR */}
+                <div className="relative bg-gradient-to-r from-blue-900/60 to-purple-900/60 p-1.5 rounded-3xl border border-blue-400/50 shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+                    <div className="absolute left-5 top-5 text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">✨</div>
+                    <textarea 
+                        value={aiUpit} onChange={e => setAiUpit(e.target.value)}
+                        placeholder={apiKey ? "Naredi AI analitičaru (npr. 'Napravi mi detaljan izvještaj o učinku radnika i predloži rješenja za smanjenje zastoja...')" : "Prvo unesite API ključ dole da biste koristili ovu opciju!"} 
+                        className="w-full bg-[#0f172a] p-5 pl-14 rounded-2xl text-base text-white outline-none border border-transparent focus:border-blue-400 transition-all font-bold placeholder-slate-500 resize-none h-24"
+                        disabled={!apiKey}
+                    ></textarea>
+                    
+                    <div className="flex justify-between items-center px-2 mt-2 mb-1">
+                        <div className="flex items-center gap-2">
+                            {apiKey ? (
+                                <span className="text-[10px] text-emerald-400 font-black uppercase bg-emerald-900/30 px-2 py-1 rounded border border-emerald-500/30">🟢 AI Motor Spreman</span>
+                            ) : (
+                                <button onClick={() => setShowApiInput(true)} className="text-[10px] text-red-400 font-black uppercase bg-red-900/30 px-3 py-2 rounded-xl hover:bg-red-900/60 border border-red-500/30 transition-all animate-pulse">🔴 Klikni da uneseš Gemini API ključ</button>
+                            )}
+                            {apiKey && <button onClick={() => setShowApiInput(!showApiInput)} className="text-[10px] text-slate-500 hover:text-white underline">Promijeni ključ</button>}
+                        </div>
+                        <button onClick={pokreniPraviAI} disabled={isAILoading || !apiKey} className="px-8 py-3 bg-white text-blue-900 font-black text-xs hover:bg-blue-100 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.5)] uppercase disabled:opacity-50 transition-all">
+                            {isAILoading ? 'AI Razmišlja...' : '🚀 Generiši Izvještaj'}
+                        </button>
+                    </div>
+
+                    {/* Unos za API Ključ */}
+                    {showApiInput && (
+                        <div className="absolute top-full left-0 mt-4 bg-slate-900 p-5 rounded-2xl border border-blue-500 z-50 w-80 shadow-2xl animate-in slide-in-from-top-2">
+                            <h4 className="text-white text-xs font-black mb-2 uppercase">Google AI Studio API Ključ</h4>
+                            <input type="text" placeholder="AIzaSy..." defaultValue={apiKey} onKeyDown={(e) => {if(e.key === 'Enter') saveApiKey(e.target.value)}} onBlur={(e) => saveApiKey(e.target.value)} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-blue-400 border border-slate-700 outline-none font-mono" />
+                            <p className="text-[9px] text-slate-400 mt-2 leading-tight">Zalijepi ključ i pritisni Enter. Nabavi besplatan ključ na <a href="https://aistudio.google.com/" target="_blank" className="text-blue-400 underline">aistudio.google.com</a></p>
+                        </div>
+                    )}
                 </div>
 
-                {/* AI ODGOVOR SA LISTOM (NOVO) */}
+                {/* PRAVI AI ODGOVOR (MENADŽERSKI IZVJEŠTAJ) */}
                 {aiOdgovor && (
-                    <div className="bg-slate-900 border border-indigo-500/50 p-5 rounded-[2rem] animate-in slide-in-from-top-4 shadow-2xl space-y-4">
-                        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-                            <div className="text-4xl animate-bounce">🤖</div>
-                            <div className="flex-1">
-                                <h4 className="text-indigo-400 font-black text-[10px] uppercase mb-1 tracking-widest">Rezultat pretrage baze</h4>
-                                <p className="text-white text-sm font-medium leading-relaxed bg-indigo-900/20 p-3 rounded-xl border border-indigo-500/30">{aiOdgovor}</p>
+                    <div className="bg-[#1e293b] border-2 border-indigo-500 p-6 md:p-8 rounded-[2.5rem] animate-in slide-in-from-top-8 shadow-[0_0_40px_rgba(99,102,241,0.2)]">
+                        <div className="flex justify-between items-start border-b border-slate-700 pb-4 mb-6">
+                            <div>
+                                <h3 className="text-indigo-400 font-black uppercase text-sm tracking-widest flex items-center gap-2"><span>🤖</span> AI Menadžerska Analiza</h3>
+                                <p className="text-[10px] text-slate-500 uppercase mt-1">Generisano na osnovu baze za period: {datumOd} do {datumDo}</p>
                             </div>
-                            <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0">
-                                {aiData && <button onClick={printAIReport} className="bg-indigo-600 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 flex-1 md:flex-none transition-all">🖨️ Štampaj</button>}
-                                <button onClick={() => {setAiOdgovor(null); setAiData(null); setSelectedAiItem(null);}} className="bg-slate-800 text-slate-400 px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 hover:text-white transition-all">✕ Zatvori</button>
+                            <div className="flex gap-2">
+                                <button onClick={printMenadzerski} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 transition-all">🖨️ PDF / Print</button>
+                                <button onClick={() => setAiOdgovor(null)} className="bg-slate-800 text-red-400 hover:text-white hover:bg-red-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all">Zatvori ✕</button>
                             </div>
                         </div>
 
-                        {/* LISTA PRONAĐENIH STAVKI */}
-                        {aiData && aiData.podaci && aiData.podaci.length > 0 && (
-                            <div className="pt-4 border-t border-slate-700/50">
-                                <h5 className="text-[9px] text-slate-400 uppercase font-black mb-3">Pronađene stavke ({aiData.podaci.length}) - Klikni na karticu za detalje:</h5>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-2">
-                                    {aiData.podaci.map((item, idx) => (
-                                        <div key={idx} onClick={() => setSelectedAiItem({tip: aiData.tip, item})} className="bg-[#0f172a] p-4 rounded-2xl border border-slate-700 cursor-pointer hover:border-indigo-500 hover:bg-slate-800 transition-all flex justify-between items-center group shadow-lg">
-                                            {aiData.tip === 'paketi' && (
-                                                <><div className="overflow-hidden"><span className="text-white font-black text-xs block truncate">{item.paket_id}</span><span className="text-[10px] text-slate-400 uppercase block truncate mt-1">{item.naziv_proizvoda}</span></div><div className="text-indigo-400 font-black text-sm whitespace-nowrap bg-indigo-900/30 px-2 py-1 rounded-lg">{item.kolicina_final} m³</div></>
-                                            )}
-                                            {aiData.tip === 'trupci' && (
-                                                <><div className="overflow-hidden"><span className="text-white font-black text-xs block truncate">{item.id}</span><span className="text-[10px] text-slate-400 uppercase block mt-1">{item.vrsta} / Kl: {item.klasa}</span></div><div className="text-indigo-400 font-black text-sm whitespace-nowrap bg-indigo-900/30 px-2 py-1 rounded-lg">{item.zapremina} m³</div></>
-                                            )}
-                                            {aiData.tip === 'nalozi' && (
-                                                <><div className="overflow-hidden"><span className="text-white font-black text-xs block truncate">{item.id}</span><span className="text-[10px] text-slate-400 uppercase block mt-1 truncate">{item.kupac_naziv}</span></div><div className="text-amber-400 font-black text-[9px] uppercase whitespace-nowrap bg-amber-900/30 px-2 py-1 rounded-lg border border-amber-500/30">{item.status}</div></>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                        {/* Formatirani Markdown Sadržaj */}
+                        <div className="prose prose-invert max-w-none">
+                            {formatirajMarkdown(aiOdgovor)}
+                        </div>
                     </div>
                 )}
 
@@ -1487,8 +1605,7 @@ function DashboardModule({ user, onExit }) {
                     <div className="text-center p-10 text-slate-500 font-black animate-pulse">Učitavanje podataka iz baze za odabrani period...</div>
                 ) : (
                     <>
-                        {/* INTERAKTIVNI KPI THUMBNAILI */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                             <div onClick={() => setAktivanIzvjestaj('prorez')} className="bg-emerald-900/20 border border-emerald-500/30 p-5 rounded-3xl shadow-lg relative overflow-hidden cursor-pointer hover:scale-105 hover:bg-emerald-900/40 hover:border-emerald-500 transition-all group">
                                 <div className="flex justify-between items-start">
                                     <div className="text-[10px] text-emerald-400 font-black uppercase tracking-wider mb-1">Prorez (m³)</div>
@@ -1529,8 +1646,7 @@ function DashboardModule({ user, onExit }) {
                             </div>
                         </div>
 
-                        {/* BRZI PREGLED */}
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl opacity-70 hover:opacity-100 transition-all">
+                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl opacity-70 hover:opacity-100 transition-all mt-6">
                             <h3 className="text-slate-400 font-black uppercase text-xs mb-4 text-center">Brzi pregled iskorištenja ({tipDatuma === 'dan' ? 'Odabrani Dan' : 'Odabrani Period'})</h3>
                             <div className="h-16 w-full bg-slate-900 rounded-full overflow-hidden flex border border-slate-800 relative">
                                 <div className="h-full bg-emerald-500/80 flex items-center justify-center font-black text-xs text-white overflow-hidden whitespace-nowrap px-2 transition-all duration-1000" style={{width: `${Math.max(dashData.iskoristenje, 15)}%`}}>Gotova Građa ({dashData.iskoristenje}%)</div>
@@ -1543,9 +1659,6 @@ function DashboardModule({ user, onExit }) {
         );
     }
 
-    // --- DETALJNI IZVJEŠTAJI ---
-
-    // 1. IZVJEŠTAJ: DNEVNI PROREZ (SA PRINTOM)
     if (aktivanIzvjestaj === 'prorez') {
         return (
             <div className="p-4 max-w-6xl mx-auto space-y-6 animate-in slide-in-from-bottom">
@@ -1597,7 +1710,6 @@ function DashboardModule({ user, onExit }) {
         );
     }
 
-    // 2. IZVJEŠTAJ: DOVOZ TRUPACA 
     if (aktivanIzvjestaj === 'dovoz') {
         return (
             <div className="p-4 max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right">
@@ -1630,7 +1742,6 @@ function DashboardModule({ user, onExit }) {
         );
     }
 
-    // 3. IZVJEŠTAJ: RADNI NALOZI (DETALJNO SA PROCENTIMA ZAVRŠETKA)
     if (aktivanIzvjestaj === 'nalozi') {
         if (detaljiNaloga) {
             const stavkeNaloga = detaljiNaloga.stavke_jsonb || [];
@@ -1703,13 +1814,12 @@ function DashboardModule({ user, onExit }) {
             );
         }
 
-        // Prikaz liste naloga
         return (
             <div className="p-4 max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right">
                 <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-[2rem] border border-slate-700 shadow-lg">
                     <button onClick={() => setAktivanIzvjestaj(null)} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700">← Nazad</button>
                     <h2 className="text-amber-400 font-black tracking-widest uppercase text-sm mx-4">📄 Aktivni Nalozi</h2>
-                    <div className="w-20 hidden md:block"></div> {/* Spacer za centriranje */}
+                    <div className="w-20 hidden md:block"></div>
                 </div>
                 <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
                     <h3 className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 border-b border-slate-700 pb-3">Kliknite na nalog za pregled procenta završetka stavki</h3>
@@ -1744,6 +1854,21 @@ function DashboardModule({ user, onExit }) {
 // ============================================================================
 // MODUL: DORADA
 // ============================================================================
+// ============================================================================
+// MODUL: DORADA (SA DETALJIMA ULAZNOG PAKETA I RAZDUŽIVANJEM)
+// ============================================================================
+// ============================================================================
+// MODUL: DORADA (BULLETPROOF ULAZNI PAKETI - PROVJERA KOLIČINE)
+// ============================================================================
+// ============================================================================
+// MODUL: DORADA (BULLETPROOF ULAZNI PAKETI - PROVJERA KOLIČINE I NAPREDNO RAZDUŽIVANJE)
+// ============================================================================
+// ============================================================================
+// MODUL: DORADA (BULLETPROOF ULAZNI PAKETI - PROVJERA KOLIČINE I PRERAČUN JEDINICA)
+// ============================================================================
+// ============================================================================
+// MODUL: DORADA (BULLETPROOF ULAZNI PAKETI - PROVJERA KOLIČINE I PRERAČUN JEDINICA)
+// ============================================================================
 function DoradaModule({ user, header, setHeader, onExit }) {
     const [ulazScan, setUlazScan] = useState('');
     const [izlazScan, setIzlazScan] = useState('');
@@ -1754,6 +1879,14 @@ function DoradaModule({ user, header, setHeader, onExit }) {
     const [aktivniNalozi, setAktivniNalozi] = useState([]);
 
     const [activeUlazIds, setActiveUlazIds] = useState([]);
+    const [ulazneStavke, setUlazneStavke] = useState([]); 
+    
+    // STANJA ZA NAPREDNI MODAL ZA RAZDUŽIVANJE
+    const [razduziZapis, setRazduziZapis] = useState(null);
+    const [razduziMod, setRazduziMod] = useState('potroseno'); // 'potroseno' ili 'ostalo'
+    const [razduziKol, setRazduziKol] = useState('');
+    const [razduziJm, setRazduziJm] = useState('kom'); 
+
     const [activeIzlazIds, setActiveIzlazIds] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
@@ -1765,7 +1898,6 @@ function DoradaModule({ user, header, setHeader, onExit }) {
     const [isScanning, setIsScanning] = useState(false);
     const [scanTarget, setScanTarget] = useState('');
 
-    // NOVO: Dinamičke oznake
     const [dostupneOznake, setDostupneOznake] = useState([]); 
     const [odabraneOznake, setOdabraneOznake] = useState([]);
 
@@ -1816,12 +1948,21 @@ function DoradaModule({ user, header, setHeader, onExit }) {
     const processUlaz = async (val) => {
         const id = val.toUpperCase().trim();
         if (activeUlazIds.includes(id)) { setUlazScan(''); return; }
-        const { data } = await supabase.from('paketi').select('id').eq('paket_id', id).limit(1);
+        
+        const { data, error } = await supabase.from('paketi').select('*').eq('paket_id', id).gt('kolicina_final', 0);
+        
+        if (error) {
+            alert(`❌ GREŠKA BAZE PRI UČITAVANJU: ${error.message}`);
+            setUlazScan('');
+            return;
+        }
+
         if (data && data.length > 0) { 
             setActiveUlazIds(prev => [...prev, id]); 
+            setUlazneStavke(prev => [...prev, ...data]); 
             setUlazScan(''); 
         } else { 
-            alert(`⚠️ ULAZNI paket ${id} ne postoji u bazi! Provjerite QR kod.`); 
+            alert(`⚠️ ULAZNI paket ${id} ne postoji u bazi, ili je njegova količina nula (potrošen)!`); 
             setUlazScan(''); 
         }
     };
@@ -1832,6 +1973,55 @@ function DoradaModule({ user, header, setHeader, onExit }) {
         if(!val) return;
         if (isEnter) processUlaz(val);
         else ulazTimerRef.current = setTimeout(() => processUlaz(val), 2000);
+    };
+
+    // PAMETNO RAZDUŽIVANJE (SA PRERAČUNAVANJEM)
+    const potvrdiRazduzivanje = async () => {
+        if (!razduziKol || isNaN(razduziKol)) return alert("Unesite ispravnu količinu (broj)!");
+        
+        const unos = parseFloat(razduziKol.toString().replace(',', '.'));
+        if (unos < 0) return alert("Količina ne može biti negativna!");
+
+        // Preračunavanje unosa u m³
+        const v = parseFloat(razduziZapis.debljina) || 1;
+        const s = parseFloat(razduziZapis.sirina) || 1;
+        const d = parseFloat(razduziZapis.duzina) || 1;
+
+        let unosM3 = unos;
+        if (razduziJm === 'kom') unosM3 = unos * (v/100) * (s/100) * (d/100);
+        else if (razduziJm === 'm2') unosM3 = unos * (v/100);
+        else if (razduziJm === 'm1') unosM3 = unos * (v/100) * (s/100);
+
+        let preostalo = 0;
+        const trenutnoNaStanju = parseFloat(razduziZapis.kolicina_final);
+
+        if (razduziMod === 'potroseno') {
+            preostalo = trenutnoNaStanju - unosM3;
+        } else if (razduziMod === 'ostalo') {
+            preostalo = unosM3;
+        }
+
+        if (preostalo < 0) preostalo = 0;
+        const novaKol = preostalo <= 0.001 ? 0 : preostalo;
+
+        if (novaKol === 0) {
+            if(!window.confirm(`Stanje ove stavke će pasti na NULU i biće potpuno razdužena sa ulaza.\nDa li ste sigurni?`)) return;
+        }
+
+        const { error } = await supabase.from('paketi').update({ kolicina_final: novaKol.toFixed(3) }).eq('id', razduziZapis.id);
+        
+        if (error) return alert("Greška pri razduživanju baze: " + error.message);
+
+        const { data } = await supabase.from('paketi').select('*').in('paket_id', activeUlazIds).gt('kolicina_final', 0);
+        setUlazneStavke(data || []);
+        
+        setRazduziZapis(null);
+        setRazduziKol('');
+    };
+
+    const ukloniIzAktivnihUlaza = (paket_id) => {
+        setActiveUlazIds(prev => prev.filter(id => id !== paket_id));
+        setUlazneStavke(prev => prev.filter(s => s.paket_id !== paket_id));
     };
 
     const processIzlaz = async (val) => {
@@ -1889,7 +2079,7 @@ function DoradaModule({ user, header, setHeader, onExit }) {
             const { error } = await supabase.from('paketi').update({ 
                 kolicina_final: parseFloat(newM3.toFixed(3)), 
                 vrijeme_tekst: timeNow, 
-                snimio_korisnik: user.ime_prezime,
+                snimio_korisnik: user?.ime_prezime || 'Nepoznat',
                 oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake
             }).eq('id', activeEditItem.id);
             if (error) return alert("❌ GREŠKA PRI AŽURIRANJU PAKETA: " + error.message);
@@ -1897,9 +2087,9 @@ function DoradaModule({ user, header, setHeader, onExit }) {
             const { error } = await supabase.from('paketi').insert([{ 
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, 
                 kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, 
-                mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user.ime_prezime, vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum,
+                mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user?.ime_prezime || 'Nepoznat', vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum,
                 ai_sirovina_ids: activeUlazIds,
-                oznake: odabraneOznake // NOVO: Spasavanje oznaka
+                oznake: odabraneOznake 
             }]);
             
             if (error) return alert("❌ GREŠKA PRI SNIMANJU PAKETA U BAZU: " + error.message);
@@ -1941,9 +2131,9 @@ function DoradaModule({ user, header, setHeader, onExit }) {
             return;
         }
         if (window.confirm(`ZAKLJUČITI paket ${pid}?`)) {
-            await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
+            alert(`Paket ${pid} zaključen!`);
         }
     };
 
@@ -1954,8 +2144,75 @@ function DoradaModule({ user, header, setHeader, onExit }) {
         }
     };
 
+    // Live kalkulacija za ispis preračunatih kubika u modalu
+    const livePreracunM3 = useMemo(() => {
+        if(!razduziKol || isNaN(razduziKol) || !razduziZapis) return 0;
+        const unos = parseFloat(razduziKol);
+        const v = parseFloat(razduziZapis.debljina) || 1;
+        const s = parseFloat(razduziZapis.sirina) || 1;
+        const d = parseFloat(razduziZapis.duzina) || 1;
+        
+        if (razduziJm === 'kom') return unos * (v/100) * (s/100) * (d/100);
+        if (razduziJm === 'm2') return unos * (v/100);
+        if (razduziJm === 'm1') return unos * (v/100) * (s/100);
+        return unos;
+    }, [razduziKol, razduziJm, razduziZapis]);
+
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
+            
+            {/* NAPREDNI MODAL ZA RAZDUŽIVANJE SA JEDINICOM MJERE */}
+            {razduziZapis && (
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-slate-900 border border-red-500 p-6 rounded-[2.5rem] shadow-2xl max-w-sm w-full relative">
+                        <button onClick={() => setRazduziZapis(null)} className="absolute top-4 right-4 bg-slate-800 text-slate-400 hover:text-white hover:bg-red-500 w-8 h-8 rounded-full font-black flex items-center justify-center transition-all">✕</button>
+                        <h3 className="text-red-400 font-black uppercase text-sm mb-4 border-b border-slate-700 pb-3">Razduživanje Stavke</h3>
+                        
+                        <div className="mb-4 text-xs text-slate-300">
+                            <p className="mb-1">Paket: <b className="text-white bg-slate-800 px-2 py-0.5 rounded">{razduziZapis.paket_id}</b></p>
+                            <p className="mb-1">Proizvod: <b className="text-white">{razduziZapis.naziv_proizvoda}</b></p>
+                            <p className="mt-2 text-[10px] uppercase text-slate-500">Trenutno stanje na ulazu:</p>
+                            <p className="text-emerald-400 font-black text-2xl drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">{razduziZapis.kolicina_final} <span className="text-sm">m³</span></p>
+                        </div>
+
+                        <div className="flex bg-slate-800 p-1 rounded-xl mb-4 border border-slate-700">
+                            <button onClick={() => { setRazduziMod('potroseno'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'potroseno' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>🔴 Potrošeno</button>
+                            <button onClick={() => { setRazduziMod('ostalo'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'ostalo' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>🔵 Ostalo</button>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="text-[10px] text-slate-400 uppercase font-black mb-2 block text-center">
+                                {razduziMod === 'potroseno' ? 'Unesi količinu i odaberi mjeru' : 'Unesi količinu i odaberi mjeru'}
+                            </label>
+                            <div className="flex gap-2 w-full items-center">
+                                <input 
+                                    type="number" 
+                                    value={razduziKol} 
+                                    onChange={e => setRazduziKol(e.target.value)} 
+                                    placeholder="0" 
+                                    className={`flex-1 min-w-0 p-4 bg-[#0f172a] border-2 rounded-2xl text-center text-2xl text-white font-black outline-none transition-all shadow-inner ${razduziMod === 'potroseno' ? 'border-red-500/50 focus:border-red-400 text-red-400' : 'border-blue-500/50 focus:border-blue-400 text-blue-400'}`} 
+                                />
+                                <select value={razduziJm} onChange={e => setRazduziJm(e.target.value)} className="w-24 shrink-0 p-4 bg-slate-800 rounded-2xl text-lg text-white font-black outline-none border border-slate-700 focus:border-emerald-500">
+                                    <option value="kom">kom</option>
+                                    <option value="m3">m³</option>
+                                    <option value="m2">m²</option>
+                                    <option value="m1">m1</option>
+                                </select>
+                            </div>
+                            
+                            {/* Ispis preračuna uživo */}
+                            {razduziKol && razduziJm !== 'm3' && (
+                                <p className="text-center text-[10px] text-slate-400 mt-3 font-bold bg-slate-800 p-2 rounded-xl border border-slate-700">
+                                    Preračunato: <span className="text-white font-black text-xs">~{livePreracunM3.toFixed(3)} m³</span>
+                                </p>
+                            )}
+                        </div>
+
+                        <button onClick={potvrdiRazduzivanje} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-emerald-500 transition-all border border-emerald-400">✅ Potvrdi i Razduži</button>
+                    </div>
+                </div>
+            )}
+
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-amber-500" user={user} />
             <h2 className="text-amber-500 text-center font-black tracking-widest uppercase">🔄 DORADA - ULAZ / IZLAZ</h2>
             
@@ -1968,10 +2225,30 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 <div className="flex gap-2 flex-wrap">
                     {activeUlazIds.map(id => (
                         <div key={id} className="bg-red-900/30 border border-red-500 text-red-400 px-3 py-1 rounded-lg text-xs font-black uppercase flex items-center gap-2 shadow-lg">
-                            {id} <button onClick={() => setActiveUlazIds(a => a.filter(x => x !== id))} className="hover:text-white">✕</button>
+                            {id} <button onClick={() => ukloniIzAktivnihUlaza(id)} className="hover:text-white">✕</button>
                         </div>
                     ))}
                 </div>
+
+                {ulazneStavke.length > 0 && (
+                    <div className="bg-slate-900 border border-red-500/30 p-4 rounded-2xl animate-in zoom-in-95">
+                        <h4 className="text-[10px] text-slate-500 uppercase font-black mb-3">Sadržaj ulaznih paketa (Klikni za razduživanje):</h4>
+                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {ulazneStavke.map(s => (
+                                <div key={s.id} onClick={() => { setRazduziZapis(s); setRazduziMod('potroseno'); setRazduziKol(''); setRazduziJm('kom'); }} className="p-3 bg-slate-800 border border-slate-700 rounded-xl flex justify-between items-center cursor-pointer hover:border-red-500 transition-all shadow-lg">
+                                    <div>
+                                        <p className="text-white text-xs font-black">{s.naziv_proizvoda}</p>
+                                        <p className="text-[9px] text-slate-400 mt-1">Paket: {s.paket_id} | Dim: {s.debljina}x{s.sirina}x{s.duzina}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-red-400 font-black text-lg">{s.kolicina_final} m³</div>
+                                        <p className="text-[8px] text-slate-500 uppercase mt-1">Klikni za unos potrošnje 👆</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="relative font-black bg-blue-900/20 p-4 rounded-2xl border border-blue-500/30">
                     <label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1">RADNI NALOG</label>
@@ -2031,14 +2308,13 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                             <DimBox label="Šir" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
                             <DimBox label="Duž" val={form.duzina} set={v => setForm({...form, duzina: v})} disabled={!!activeEditItem} />
                         </div>
-                        <div className="flex gap-2">
-                            <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') saveIzlaz()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="flex-1 p-4 bg-[#0f172a] border-2 border-slate-700 rounded-2xl text-2xl text-center text-white font-black" placeholder="Količina..." />
-                            <select value={form.jm} onChange={e => setForm({...form, jm: e.target.value})} className="bg-slate-800 px-4 rounded-xl text-white font-black outline-none border border-slate-700 focus:border-emerald-500">
+                        <div className="flex gap-2 w-full items-center">
+                            <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') saveIzlaz()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="flex-1 min-w-0 p-4 bg-[#0f172a] border-2 border-slate-700 rounded-2xl text-xl text-center text-white font-black outline-none focus:border-emerald-500" placeholder="Količina..." />
+                            <select value={form.jm} onChange={e => setForm({...form, jm: e.target.value})} className="w-24 shrink-0 bg-slate-800 p-4 rounded-2xl text-white font-black outline-none border border-slate-700 focus:border-emerald-500">
                                 <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
                             </select>
                         </div>
 
-                        {/* NOVO: Dodatne operacije (Oznake) */}
                         {dostupneOznake.length > 0 && (
                             <div className="space-y-2 mt-4 bg-slate-950 p-3 rounded-xl border border-slate-800">
                                 <label className="text-[9px] text-slate-400 uppercase font-black ml-1">Dodatne operacije na paketu:</label>
@@ -4982,5 +5258,142 @@ function RacuniModule({ onExit }) {
     );
 }
 // ============================================================================
-// MODUL: ANALITIKA / DASHBOARD zadnji pokusaj
+// NOVI MODUL: QR KONTROLA (DETEKTIV ZA KODOVE)
 // ============================================================================
+// ============================================================================
+// NOVI MODUL: QR KONTROLA (PRAVI UNIVERZALNI DETEKTIV ZA SVE BAZE)
+// ============================================================================
+function QRControlModule({ onExit }) {
+    const [kod, setKod] = useState('');
+    const [info, setInfo] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const provjeriKod = async (val) => {
+        const q = val.toUpperCase().trim();
+        setKod(q);
+        if (q.length < 3) { setInfo(null); return; }
+
+        setLoading(true);
+        setInfo(null);
+
+        // PAMETNA PRETRAGA: Prvo gledamo prefikse za dokumente
+        if (q.startsWith('PON-')) {
+            const { data } = await supabase.from('ponude').select('*').eq('id', q).maybeSingle();
+            if (data) setInfo({ tip: 'PONUDA', data });
+        } else if (q.startsWith('RN-')) {
+            const { data } = await supabase.from('radni_nalozi').select('*').eq('id', q).maybeSingle();
+            if (data) setInfo({ tip: 'RADNI NALOG', data });
+        } else if (q.startsWith('OTP-')) {
+            const { data } = await supabase.from('otpremnice').select('*').eq('id', q).maybeSingle();
+            if (data) setInfo({ tip: 'OTPREMNICA', data });
+        } else if (q.startsWith('RAC-')) {
+            const { data } = await supabase.from('racuni').select('*').eq('id', q).maybeSingle();
+            if (data) setInfo({ tip: 'RAČUN', data });
+        } else {
+            // Ako nema prefiks, pretražujemo fizičke objekte (Trupci i Paketi)
+            const { data: t } = await supabase.from('trupci').select('*').eq('id', q).maybeSingle();
+            if (t) {
+                setInfo({ tip: 'TRUPAC', data: t });
+            } else {
+                const { data: p } = await supabase.from('paketi').select('*').eq('paket_id', q);
+                if (p && p.length > 0) setInfo({ tip: 'PAKET (GOTOVA ROBA)', data: p });
+            }
+        }
+        
+        setLoading(false);
+    };
+
+    return (
+        <div className="p-6 max-w-xl mx-auto space-y-6 animate-in zoom-in-95">
+            <div className="flex justify-between items-center bg-slate-800 p-4 rounded-3xl border border-slate-700">
+                <button onClick={onExit} className="bg-slate-700 text-[10px] px-4 py-2 rounded-xl uppercase text-white font-black hover:bg-slate-600">← Nazad</button>
+                <h2 className="text-blue-400 font-black text-xs tracking-widest">🔍 KONTROLA KODOVA</h2>
+            </div>
+
+            <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/50 shadow-2xl text-center">
+                <p className="text-[10px] text-blue-400 uppercase font-black mb-3">Skeniraj fizički paket, trupac ili papirni dokument</p>
+                <input 
+                    value={kod} 
+                    onChange={e => provjeriKod(e.target.value)} 
+                    className="w-full p-6 bg-slate-900 border border-blue-500 rounded-[2rem] text-center text-2xl text-white font-black uppercase outline-none focus:bg-[#0f172a] transition-all" 
+                    placeholder="ČEKAM SKEN..." 
+                />
+            </div>
+
+            {loading && <p className="text-center text-slate-500 font-bold animate-pulse">Pretražujem cijelu bazu...</p>}
+
+            {info ? (
+                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4 animate-in slide-in-from-bottom-4">
+                    <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                        <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">{info.tip}</span>
+                        <span className="text-white font-black">{kod}</span>
+                    </div>
+
+                    {/* DINAMIČKI PRIKAZ ZAVISNO OD TOGA ŠTA SMO NAŠLI */}
+                    {info.tip === 'TRUPAC' && (
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div><p className="text-slate-500 uppercase text-[9px]">Vrsta/Klasa</p><p className="text-white font-bold">{info.data.vrsta} / {info.data.klasa}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Zapremina</p><p className="text-emerald-400 font-black text-lg">{info.data.zapremina} m³</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Otpremnica (Ulaz)</p><p className="text-white font-bold">{info.data.otpremnica_broj || '-'}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Status</p><p className="text-blue-400 font-bold uppercase">{info.data.status}</p></div>
+                        </div>
+                    )}
+
+                    {info.tip === 'PAKET (GOTOVA ROBA)' && (
+                        <div className="space-y-2">
+                            <p className="text-slate-500 uppercase text-[9px] mb-2">Sadržaj paketa:</p>
+                            {info.data.map((item, idx) => (
+                                <div key={idx} className="p-3 bg-slate-900 rounded-xl border border-slate-700 flex justify-between items-center">
+                                    <div className="text-[10px]">
+                                        <p className="text-white font-bold text-xs">{item.naziv_proizvoda}</p>
+                                        <p className="text-slate-500 mt-1">Dim: {item.debljina}x{item.sirina}x{item.duzina}</p>
+                                        {item.closed_at && <span className="bg-red-900/30 text-red-500 px-2 py-0.5 rounded mt-1 inline-block uppercase">Zatvoreno / Potrošeno</span>}
+                                    </div>
+                                    <p className="text-emerald-400 font-black text-lg">{item.kolicina_final} m³</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {info.tip === 'PONUDA' && (
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Iznos za naplatu</p><p className="text-emerald-400 font-black text-lg">{info.data.ukupno_sa_pdv} {info.data.valuta}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Status</p><p className="text-pink-400 font-bold uppercase">{info.data.status}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Datum isteka</p><p className="text-white font-bold">{new Date(info.data.rok_vazenja).toLocaleDateString('bs-BA')}</p></div>
+                        </div>
+                    )}
+
+                    {info.tip === 'RADNI NALOG' && (
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Za kupca</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Status proizvodnje</p><p className="text-amber-400 font-black uppercase text-sm">{info.data.status}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Rok isporuke</p><p className="text-white font-bold">{new Date(info.data.rok_isporuke).toLocaleDateString('bs-BA')}</p></div>
+                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Stavki na nalogu</p><p className="text-white font-bold">{info.data.stavke_jsonb ? info.data.stavke_jsonb.length : 0} kom</p></div>
+                        </div>
+                    )}
+
+                    {info.tip === 'OTPREMNICA' && (
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Vozač i Vozilo</p><p className="text-white font-bold">{info.data.vozac || '-'} ({info.data.registracija || '-'})</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Status isporuke</p><p className="text-orange-400 font-bold uppercase">{info.data.status}</p></div>
+                        </div>
+                    )}
+
+                    {info.tip === 'RAČUN' && (
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Iznos</p><p className="text-emerald-400 font-black text-lg">{info.data.ukupno_sa_pdv} {info.data.valuta}</p></div>
+                            <div><p className="text-slate-500 uppercase text-[9px]">Status uplate</p><p className="text-red-400 font-bold uppercase">{info.data.status}</p></div>
+                        </div>
+                    )}
+                </div>
+            ) : kod.length > 2 && !loading && (
+                <div className="p-8 text-center bg-red-900/10 border border-red-500/20 rounded-[2.5rem]">
+                    <p className="text-red-500 font-black uppercase text-xs">❌ Ništa nije pronađeno u bazi za: {kod}</p>
+                </div>
+            )}
+        </div>
+    );
+}
