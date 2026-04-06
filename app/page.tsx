@@ -5,6 +5,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
+import { Card, Text, Metric, List, ListItem, Flex, Badge, Button, Grid, Divider } from '@tremor/react';
+import { Zap, Target, Clock, ArrowRight, FileText, ChevronLeft, ChevronRight, Activity, Search, Bot, UserCircle } from 'lucide-react';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -204,15 +207,36 @@ function SearchableInput({ label, value, onChange, list }) {
     );
 }
 
-function MasterHeader({ header, setHeader, onExit, color, user, hideMasina = false }) {
+function MasterHeader({ header, setHeader, onExit, color, user, hideMasina = false, modulIme = '' }) {
     const [showWorkers, setShowWorkers] = useState(false);
     const [masineList, setMasineList] = useState([]);
 
     useEffect(() => {
-        supabase.from('masine').select('naziv').then(({data}) => setMasineList(data ? data.map(m=>m.naziv) : []));
-    }, []);
+        // Tražimo i naziv i dozvoljene module iz baze
+        supabase.from('masine').select('naziv, dozvoljeni_moduli').then(({data}) => {
+            if (data) {
+                let filtriraneMasine = [];
+
+                data.forEach(m => {
+                    // Ako modulIme nije proslijeđen, ILI ako mašina nema ograničenja (null), 
+                    // ILI ako njena lista sadrži ime trenutnog modula -> dodaj je u listu
+                    if (!modulIme || !m.dozvoljeni_moduli || m.dozvoljeni_moduli.toLowerCase().includes(modulIme.toLowerCase())) {
+                        filtriraneMasine.push(m.naziv);
+                    }
+                });
+
+                setMasineList(filtriraneMasine);
+
+                // Ako trenutno odabrana mašina nije na dozvoljenoj listi za ovaj modul, očisti polje
+                if (header.masina && !filtriraneMasine.includes(header.masina) && filtriraneMasine.length > 0) {
+                    setHeader(prev => ({ ...prev, masina: '' }));
+                }
+            }
+        });
+    }, [modulIme, header.masina]); // Osvježi ako se promijeni modul
 
     const handleDate = (dir) => { const d = new Date(header.datum); d.setDate(d.getDate() + dir); setHeader({...header, datum: d.toISOString().split('T')[0]}); };
+    
     return (
         <div className="bg-[#1e293b] p-5 rounded-[2.5rem] border border-slate-700 shadow-xl space-y-4 font-bold relative">
             <div className="flex justify-between items-center">
@@ -761,48 +785,32 @@ function ProrezModule({ user, header, setHeader, onExit }) {
     const [scan, setScan] = useState('');
     const [list, setList] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
+    
+    // Polja za radnike
+    const [brentista, setBrentista] = useState('');
+    const [viljuskarista, setViljuskarista] = useState('');
+    const [radniciList, setRadniciList] = useState([]);
+
     const timerRef = useRef(null);
 
-    useEffect(() => { loadList(); }, [header.masina, header.datum]);
+    useEffect(() => { 
+        loadList(); 
+        supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>r.ime_prezime) : []));
+    }, [header.masina, header.datum]);
 
-    // BULLETPROOF UČITAVANJE (Aplikacija sama spaja podatke umjesto baze)
     const loadList = async () => {
         if(!header.masina) return;
-        
-        // 1. Učitavamo prorez za današnji dan
-        const { data: logData, error: logError } = await supabase.from('prorez_log')
-            .select('*')
-            .eq('masina', header.masina)
-            .eq('datum', header.datum)
-            .eq('zakljuceno', false);
-        
-        if (logError) {
-            console.error("Greška pri učitavanju dnevnika:", logError.message);
-            return;
-        }
+        const { data: logData, error: logError } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).eq('datum', header.datum).eq('zakljuceno', false);
+        if (!logData || logData.length === 0) { setList([]); return; }
 
-        if (!logData || logData.length === 0) {
-            setList([]);
-            return;
-        }
-
-        // 2. Izvlačimo ID-jeve trupaca i ručno tražimo njihove detalje iz tabele 'trupci'
         const trupacIds = logData.map(l => l.trupac_id);
-        const { data: trupciData, error: trupciError } = await supabase.from('trupci')
-            .select('*')
-            .in('id', trupacIds);
+        const { data: trupciData } = await supabase.from('trupci').select('*').in('id', trupacIds);
 
-        if (trupciError) console.error("Greška pri učitavanju detalja trupaca:", trupciError.message);
-
-        // 3. Spajamo ih u jednu listu spremnu za prikaz
         const finalnaLista = logData.map(log => {
             const detalji = (trupciData || []).find(t => t.id === log.trupac_id) || {};
             return { ...log, detaljiTrupca: detalji };
         });
-
-        // Sortiramo tako da zadnje skenirani bude na vrhu
         finalnaLista.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-        
         setList(finalnaLista);
     };
 
@@ -814,23 +822,18 @@ function ProrezModule({ user, header, setHeader, onExit }) {
 
     const obradiTrupac = async (trupacId) => {
         if (!header.masina) return alert("Odaberi mašinu u zaglavlju!");
+        if (!brentista) return alert("Molimo unesite ko je Brentista!");
         
         const { data: trupac } = await supabase.from('trupci').select('*').eq('id', trupacId).maybeSingle();
-        
-        if (!trupac) { 
-            alert(`❌ TRUPAC ${trupacId} NE POSTOJI NA LAGERU!`); 
-            setScan(''); return; 
-        }
-
-        if (trupac.status === 'prorezan') {
-            alert(`⚠️ TRUPAC ${trupacId} JE VEĆ RANIJE PROREZAN!`);
-            setScan(''); return;
-        }
+        if (!trupac) { alert(`❌ TRUPAC ${trupacId} NE POSTOJI NA LAGERU!`); setScan(''); return; }
+        if (trupac.status === 'prorezan') { alert(`⚠️ TRUPAC ${trupacId} JE VEĆ PROREZAN!`); setScan(''); return; }
 
         const logEntry = {
             trupac_id: trupacId,
             masina: header.masina,
             korisnik: user?.ime_prezime || 'Nepoznat',
+            brentista: brentista,
+            viljuskarista: viljuskarista,
             mjesto: header.mjesto,
             datum: header.datum,
             zakljuceno: false,
@@ -838,40 +841,32 @@ function ProrezModule({ user, header, setHeader, onExit }) {
         };
 
         const { error: logError } = await supabase.from('prorez_log').insert([logEntry]);
-        
-        if (logError) {
-            alert("Greška pri upisu u bazu: " + logError.message);
-            return;
-        }
+        if (logError) return alert("Greška pri upisu u bazu (Provjerite jesu li dodate kolone brentista i viljuskarista): " + logError.message);
 
         await supabase.from('trupci').update({ status: 'prorezan' }).eq('id', trupacId);
-
-        if (typeof window !== 'undefined' && window.navigator.vibrate) {
-            window.navigator.vibrate([100, 50, 100]); 
-        }
-
-        setScan(''); 
-        await loadList(); 
+        if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate([100, 50, 100]); 
+        setScan(''); await loadList(); 
     };
 
-    // FUNKCIJA ZA BRISANJE I VRAĆANJE NA LAGER
     const obrisiIzProreza = async (logId, trupacId) => {
-        if(window.confirm(`Da li ste sigurni da želite skinuti trupac ${trupacId} sa proreza i vratiti ga nazad na lager?`)) {
-            // 1. Vrati status u tabeli trupci na 'na_lageru'
+        if(window.confirm(`Vratiti trupac ${trupacId} nazad na lager?`)) {
             await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', trupacId);
-            // 2. Obriši ga iz dnevnika proreza
             await supabase.from('prorez_log').delete().eq('id', logId);
-            
-            if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(100); 
             await loadList();
         }
     };
 
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6 animate-in fade-in">
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-cyan-500" user={user} />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-cyan-500" user={user} modulIme="prorez" />
             
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-cyan-500/30 shadow-2xl space-y-6">
+                
+                <div className="grid grid-cols-2 gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-700 mb-4">
+                    <SearchableInput label="👨‍🔧 BRENTISTA" value={brentista} onChange={setBrentista} list={radniciList} />
+                    <SearchableInput label="🚜 VILJUŠKARISTA" value={viljuskarista} onChange={setViljuskarista} list={radniciList} />
+                </div>
+
                 <div className="relative font-black">
                     <label className="text-[10px] uppercase text-cyan-500 block mb-2 tracking-widest ml-2">SKENIRAJ TRUPAC (Ulaz u brentu)</label>
                     <input value={scan} onChange={e => handleInput(e.target.value)} className="w-full p-5 bg-[#0f172a] border-2 border-cyan-500/50 rounded-2xl text-xl text-center text-white outline-none focus:border-cyan-400 uppercase font-black" placeholder="Čekam sken..." />
@@ -887,16 +882,11 @@ function ProrezModule({ user, header, setHeader, onExit }) {
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
                         {list.length === 0 && <p className="text-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-700 p-6 rounded-2xl">Skenirajte prvi trupac za ovu smjenu.</p>}
                         {list.map(l => (
-                            <div key={l.id} onClick={() => obrisiIzProreza(l.id, l.trupac_id)} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center group cursor-pointer hover:border-red-500 transition-all shadow-lg animate-in slide-in-from-right-2" title="Klikni za vraćanje na lager">
+                            <div key={l.id} onClick={() => obrisiIzProreza(l.id, l.trupac_id)} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center group cursor-pointer hover:border-red-500 transition-all shadow-lg animate-in slide-in-from-right-2">
                                 <div>
-                                    <span className="text-cyan-400 font-black tracking-widest block text-sm">
-                                        {l.trupac_id} 
-                                        <span className="text-slate-400 text-xs ml-2">[{l.detaljiTrupca?.broj_plocice || 'Nema pločice'}]</span>
-                                    </span>
-                                    <span className="text-[10px] text-white uppercase mt-1 block font-bold">
-                                        {l.detaljiTrupca?.vrsta || 'Nepoznata vrsta'} | L: {l.detaljiTrupca?.duzina || 0}m | Ø: {l.detaljiTrupca?.promjer || 0}cm
-                                    </span>
-                                    <span className="text-[9px] text-slate-500 uppercase mt-1 block">Brentista: {l.korisnik}</span>
+                                    <span className="text-cyan-400 font-black tracking-widest block text-sm">{l.trupac_id}</span>
+                                    <span className="text-[10px] text-white uppercase mt-1 block font-bold">{l.detaljiTrupca?.vrsta || 'Nepoznato'} | L: {l.detaljiTrupca?.duzina || 0}m | Ø: {l.detaljiTrupca?.promjer || 0}cm</span>
+                                    <span className="text-[9px] text-slate-500 uppercase mt-1 block">Brentista: {l.brentista || l.korisnik}</span>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                     <span className="text-base text-emerald-400 font-black">{l.detaljiTrupca?.zapremina || '0.00'} m³</span>
@@ -909,19 +899,13 @@ function ProrezModule({ user, header, setHeader, onExit }) {
                     {list.length > 0 && (
                         <button onClick={async () => {
                             if(window.confirm("ZAKLJUČITI OVU LISTU? To znači da je smjena/tura gotova.")){
-                                for(let item of list) {
-                                    await supabase.from('prorez_log').update({ zakljuceno: true }).eq('id', item.id);
-                                }
-                                setList([]);
-                                alert("Lista uspješno zaključena i poslana u analitiku!");
+                                for(let item of list) await supabase.from('prorez_log').update({ zakljuceno: true }).eq('id', item.id);
+                                setList([]); alert("Lista uspješno zaključena i poslana u analitiku!");
                             }
-                        }} className="w-full mt-5 py-4 bg-cyan-900/30 border border-cyan-500 text-cyan-400 font-black rounded-xl text-xs uppercase hover:bg-cyan-600 hover:text-white transition-all shadow-lg">
-                            🏁 ZAKLJUČI SMJENU PROREZA
-                        </button>
+                        }} className="w-full mt-5 py-4 bg-cyan-900/30 border border-cyan-500 text-cyan-400 font-black rounded-xl text-xs uppercase hover:bg-cyan-600 hover:text-white transition-all shadow-lg">🏁 ZAKLJUČI SMJENU PROREZA</button>
                     )}
                 </div>
             </div>
-            
             <DnevnikMasine modul="Prorez" header={header} user={user} />
             {isScanning && <ScannerOverlay onScan={(text) => { obradiTrupac(text.toUpperCase()); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
@@ -1129,7 +1113,7 @@ function PilanaModule({ user, header, setHeader, onExit }) {
 
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} modulIme="pilana" />
             <h2 className="text-emerald-500 text-center font-black tracking-widest uppercase">🪵 PILANA - IZLAZ DASKE</h2>
             
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
@@ -1281,570 +1265,698 @@ function PilanaModule({ user, header, setHeader, onExit }) {
 // ============================================================================
 // MODUL: ANALITIKA / DASHBOARD (INTEGRISAN PRAVI GOOGLE GEMINI 1.5 FLASH API)
 // ============================================================================
+// ============================================================================
+// ENTERPRISE ERP DASHBOARD: PILANA (PROVJEREN KOD - BEZ REFERENCE ERRORA)
+// ============================================================================
 
 // ============================================================================
-// MODUL: ANALITIKA / DASHBOARD (KONAČNA, PUNA VERZIJA SA AI I PRINT FIXOM)
+// ENTERPRISE ERP DASHBOARD: PILANA, DORADA, AI CHAT & QR AUDIT (FULL VERSION)
 // ============================================================================
 
-function DashboardModule({ user, onExit }) {
+// ============================================================================
+// ENTERPRISE ERP DASHBOARD: FULL FIX (DORADA, AI CHAT & QR AUDIT)
+// ============================================================================
+
+// ============================================================================
+// ENTERPRISE ERP DASHBOARD: FULL FIX (PERFEKTAN FILTER ZA SIROVINU)
+// ============================================================================
+
+// Pomoćne funkcije (Neprobojne)
+const fmtBS = (iso) => {
+    if(!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}.`;
+  };
+  
+  const imaSirovinu = (val) => {
+      if (!val) return false;
+      if (Array.isArray(val) && val.length > 0) return true;
+      if (typeof val === 'string') {
+          const clean = val.replace(/[{}"[\]\s]/g, '');
+          return clean.length > 0;
+      }
+      return false;
+  };
+  
+  const getSirovineNiz = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') return val.replace(/[{}"[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+      return [];
+  };
+  
+  export function DashboardModule({ user, onExit }) {
     const danasnjiDatum = new Date().toISOString().split('T')[0];
+    const [activeTab, setActiveTab] = useState('pilana');
+    const [tipDatuma, setTipDatuma] = useState('dan'); 
     const [datumOd, setDatumOd] = useState(danasnjiDatum);
     const [datumDo, setDatumDo] = useState(danasnjiDatum);
-    const [tipDatuma, setTipDatuma] = useState('dan'); 
-
-    const [aiUpit, setAiUpit] = useState('');
-    const [aiOdgovor, setAiOdgovor] = useState(null);
-    const [isAILoading, setIsAILoading] = useState(false);
-    const [apiKey, setApiKey] = useState(typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '');
-    const [showApiInput, setShowApiInput] = useState(false);
+    const [isPeriodic, setIsPeriodic] = useState(false);
     
-    const [aktivanIzvjestaj, setAktivanIzvjestaj] = useState(null); 
-    const [detaljiNaloga, setDetaljiNaloga] = useState(null); 
+    const [filterMjesto, setFilterMjesto] = useState('SVE');
+    const [filterSmjena, setFilterSmjena] = useState('SVE');
+  
     const [loading, setLoading] = useState(true);
-
-    const [dashData, setDashData] = useState({
-        trupciUlaz: 0, gradaIzlaz: 0, iskoristenje: 0, zastoji: 0, aktivniNalozi: 0,
-        proizvodi: [], trupciLista: [], naloziLista: [], zastojiLista: [], paketiLista: []
+  
+    // DATA STATES
+    const [pilanaData, setPilanaData] = useState({
+      kpi: { ulaz_m3: 0, ulaz_kom: 0, avg_d: 0, izlaz_m3: 0, yield_proc: 0, trend_7d_proc: 0, trend_30d_proc: 0 },
+      trupci_duzine: [], izlaz_struktura: [], ucinak_brentista: [], trend_7d: [], trend_30d: [], glavna_tabela: [] 
     });
-
-    useEffect(() => { ucitajPravePodatke(); }, [datumOd, datumDo]);
-
-    const ucitajPravePodatke = async () => {
-        setLoading(true);
-        
-        const { data: trupci } = await supabase.from('trupci').select('*').gte('datum_prijema', datumOd).lte('datum_prijema', datumDo);
-        let sumaTrupaca = 0;
-        if (trupci) trupci.forEach(t => sumaTrupaca += parseFloat(t.zapremina || 0));
-
-        const { data: paketi } = await supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo);
-        let sumaGrade = 0;
-        let proizvodiGrupisano = {};
-        if (paketi) {
-            paketi.forEach(p => {
-                const kol = parseFloat(p.kolicina_final || 0);
-                sumaGrade += kol;
-                if(proizvodiGrupisano[p.naziv_proizvoda]) proizvodiGrupisano[p.naziv_proizvoda] += kol;
-                else proizvodiGrupisano[p.naziv_proizvoda] = kol;
-            });
-        }
-        const sortiraniProizvodi = Object.keys(proizvodiGrupisano).map(naziv => ({ naziv, m3: proizvodiGrupisano[naziv] })).sort((a, b) => b.m3 - a.m3);
-
-        const { data: zastoji } = await supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo);
-        let sumaZastoja = 0;
-        if (zastoji) zastoji.forEach(z => sumaZastoja += parseInt(z.zastoj_min || 0));
-
-        const { data: nalozi } = await supabase.from('radni_nalozi').select('*').neq('status', 'ZAVRŠENO').neq('status', 'ISPORUČENO');
-        
-        let procenatIskoristenja = 0;
-        if (sumaTrupaca > 0) procenatIskoristenja = ((sumaGrade / sumaTrupaca) * 100).toFixed(2);
-
-        setDashData({
-            trupciUlaz: sumaTrupaca.toFixed(2), gradaIzlaz: sumaGrade.toFixed(2), iskoristenje: procenatIskoristenja, zastoji: sumaZastoja,
-            aktivniNalozi: nalozi ? nalozi.length : 0,
-            proizvodi: sortiraniProizvodi, trupciLista: trupci || [], naloziLista: nalozi || [], zastojiLista: zastoji || [], paketiLista: paketi || []
-        });
-
-        setLoading(false);
+  
+    const [doradaData, setDoradaData] = useState({
+      kpi: { ulaz_m3: 0, izlaz_m3: 0, kalo_m3: 0, yield_proc: 0, trend_7d_proc: 0, operacije_count: 0 },
+      operacije: [], trend_7d: [], trace_blokovi: []
+    });
+  
+    const [aiUpit, setAiUpit] = useState('');
+    const [aiOdgovor, setAiOdgovor] = useState('');
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const apiKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '';
+  
+    const [searchId, setSearchId] = useState('');
+    const [auditLog, setAuditLog] = useState(null);
+  
+    const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#f43f5e', '#06b6d4'];
+  
+    useEffect(() => { ucitajAnalitiku(); }, [datumOd, datumDo, isPeriodic, filterMjesto, filterSmjena]);
+  
+    const setBrziDatum = (tip) => {
+      const danas = new Date();
+      setTipDatuma('period');
+      setIsPeriodic(true);
+      if (tip === '7d') {
+        const d7 = new Date(danas.getTime() - 6*24*60*60*1000).toISOString().split('T')[0];
+        setDatumOd(d7); setDatumDo(danasnjiDatum);
+      } else if (tip === 'mjesec') {
+        const prvi = new Date(danas.getFullYear(), danas.getMonth(), 1).toISOString().split('T')[0];
+        const zadnji = new Date(danas.getFullYear(), danas.getMonth() + 1, 0).toISOString().split('T')[0];
+        setDatumOd(prvi); setDatumDo(zadnji);
+      } else if (tip === 'prosli_mjesec') {
+        const prvi = new Date(danas.getFullYear(), danas.getMonth() - 1, 1).toISOString().split('T')[0];
+        const zadnji = new Date(danas.getFullYear(), danas.getMonth(), 0).toISOString().split('T')[0];
+        setDatumOd(prvi); setDatumDo(zadnji);
+      }
     };
-
-    const saveApiKey = (key) => { setApiKey(key); localStorage.setItem('gemini_api_key', key); setShowApiInput(false); };
-
-    // --- PRAVI AI MOTOR (GEMINI 1.5 FLASH API) ---
-    const pokreniPraviAI = async () => {
-        if(!apiKey) return alert("Morate unijeti Google Gemini API Ključ za pravu analitiku!");
-        if(!aiUpit) return;
-        setIsAILoading(true); setAiOdgovor(null);
-
-        const siroviPodaci = {
-            period: `${datumOd} do ${datumDo}`,
-            ukupno_prorez_ulaz_m3: dashData.trupciUlaz,
-            ukupno_grada_izlaz_m3: dashData.gradaIzlaz,
-            iskoristenje_procenat: dashData.iskoristenje,
-            trupci: dashData.trupciLista.map(t => ({ vrsta: t.vrsta, klasa: t.klasa, zapremina: t.zapremina, radnik: t.snimio_korisnik })),
-            paketi: dashData.paketiLista.map(p => ({ proizvod: p.naziv_proizvoda, zapremina: p.kolicina_final, masina: p.masina, radnik: p.snimio_korisnik })),
-            zastoji: dashData.zastojiLista.map(z => ({ masina: z.masina, minute: z.zastoj_min, razlog: z.napomena, radnik: z.snimio })),
-            nalozi: dashData.naloziLista.map(n => ({ kupac: n.kupac_naziv, status: n.status, rok: n.rok_isporuke }))
-        };
-
-        const sistemskiPrompt = `
-            Ti si glavni AI menadžer i finansijski/proizvodni analitičar u ERP sistemu drvne industrije (pilane).
-            Dobit ćeš sirove podatke u JSON formatu za odabrani period.
-            Tvoj zadatak je da odgovoriš na korisnikov upit dubinskom analizom ovih podataka.
-            Jezik odgovora: Bosanski (profesionalan menadžerski ton).
-            Format odgovora: Koristi Markdown, podebljana slova za bitne brojke, liste sa nabrajanjem za zaključke i uvijek na kraju daj jasan savjet menadžmentu šta da popravi ili na šta da obrati pažnju.
-            Nemoj nikada korisniku govoriti o tome kakav je JSON kod, već mu daj gotovu ljudsku menadžersku analizu!
-            
-            PODACI ZA ANALIZU:
-            ${JSON.stringify(siroviPodaci)}
-
-            KORISNIKOV UPIT (Zadatak za tebe):
-            "${aiUpit}"
-        `;
-
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: sistemskiPrompt }] }]
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.error) {
-                setAiOdgovor(`❌ Greška API-ja: ${data.error.message}`);
-            } else if (data.candidates && data.candidates[0]) {
-                const markdownOdgovor = data.candidates[0].content.parts[0].text;
-                setAiOdgovor(markdownOdgovor);
-            } else {
-                setAiOdgovor("AI nije vratio razumljiv odgovor. Pokušajte preformulisati upit.");
+  
+    const shiftDate = (n) => { 
+        const d = new Date(datumOd); d.setDate(d.getDate()+n); 
+        const iso = d.toISOString().split('T')[0]; 
+        setDatumOd(iso); setDatumDo(iso); 
+    };
+  
+    const provjeriSmjenu = (vrijemeStr) => {
+        if (filterSmjena === 'SVE' || !vrijemeStr) return true;
+        const hour = parseInt(vrijemeStr.substring(0, 2));
+        if (filterSmjena === '1' && hour >= 7 && hour < 15) return true;
+        if (filterSmjena === '2' && hour >= 15 && hour < 23) return true;
+        if (filterSmjena === '3' && (hour >= 23 || hour < 7)) return true;
+        return false;
+    };
+  
+    const ucitajAnalitiku = async () => {
+      setLoading(true);
+      try {
+        const d60 = new Date(new Date(datumOd).getTime() - 60*24*60*60*1000).toISOString().split('T')[0];
+        
+        const [tRes, pRes, plRes] = await Promise.all([
+          supabase.from('trupci').select('*').gte('datum_prijema', d60).lte('datum_prijema', datumDo),
+          supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60).lte('datum_yyyy_mm', datumDo),
+          supabase.from('prorez_log').select('*').gte('datum', d60).lte('datum', datumDo)
+        ]);
+  
+        // ==========================================
+        // PILANA (Paketi BEZ ulazne sirovine)
+        // ==========================================
+        const logTrenutno = plRes.data?.filter(pl => pl.datum >= datumOd && pl.datum <= datumDo && (filterMjesto==='SVE' || pl.mjesto===filterMjesto) && provjeriSmjenu(pl.vrijeme_unosa)) || [];
+        const paketiPilanaTrenutno = pRes.data?.filter(p => p.datum_yyyy_mm >= datumOd && p.datum_yyyy_mm <= datumDo && !imaSirovinu(p.ai_sirovina_ids) && (filterMjesto==='SVE' || p.mjesto===filterMjesto) && provjeriSmjenu(p.vrijeme_tekst)) || [];
+  
+        let p_ulaz_m3 = 0; let p_ulaz_kom = 0; let p_total_d = 0; const duzineMap = {}; const brentistaMap = {};
+        logTrenutno.forEach(log => {
+          const trupac = tRes.data?.find(t => t.id === log.trupac_id);
+          if (trupac) {
+              p_ulaz_kom++; const m3 = parseFloat(trupac.zapremina || 0); p_ulaz_m3 += m3; p_total_d += parseFloat(trupac.promjer || 0);
+              const duz = parseFloat(trupac.duzina || 0).toFixed(1);
+              if (!duzineMap[duz]) duzineMap[duz] = { kom: 0, m3: 0 };
+              duzineMap[duz].kom++; duzineMap[duz].m3 += m3;
+              const brentista = log.brentista || log.korisnik || 'Nepoznat';
+              brentistaMap[brentista] = (brentistaMap[brentista] || 0) + m3;
+          }
+        });
+  
+        let p_izlaz_m3 = 0; const strukturaMap = {}; 
+        paketiPilanaTrenutno.forEach(p => {
+            const m3 = parseFloat(p.kolicina_final || 0); p_izlaz_m3 += m3;
+            strukturaMap[p.naziv_proizvoda] = (strukturaMap[p.naziv_proizvoda] || 0) + m3;
+        });
+  
+        const d7_pocetak = new Date(new Date(datumOd).getTime() - 7*24*60*60*1000).toISOString().split('T')[0];
+        const d30_pocetak = new Date(new Date(datumOd).getTime() - 30*24*60*60*1000).toISOString().split('T')[0];
+        
+        const p_izlaz_7d = pRes.data?.filter(p => p.datum_yyyy_mm >= d7_pocetak && p.datum_yyyy_mm < datumOd && !imaSirovinu(p.ai_sirovina_ids)).reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0) || 0;
+        const p_trend7dProc = (p_izlaz_7d/7) > 0 ? (((p_izlaz_m3 - (p_izlaz_7d/7)) / (p_izlaz_7d/7)) * 100).toFixed(1) : 0;
+        const p_izlaz_30d = pRes.data?.filter(p => p.datum_yyyy_mm >= d30_pocetak && p.datum_yyyy_mm < datumOd && !imaSirovinu(p.ai_sirovina_ids)).reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0) || 0;
+        const p_trend30dProc = (p_izlaz_30d/30) > 0 ? (((p_izlaz_m3 - (p_izlaz_30d/30)) / (p_izlaz_30d/30)) * 100).toFixed(1) : 0;
+  
+        let p_chart_7d = []; let p_chart_30d = [];
+        for(let i=6; i>=0; i--) {
+          const d = new Date(new Date(datumOd).getTime() - i*24*60*60*1000).toISOString().split('T')[0];
+          const dayOut = pRes.data?.filter(p => p.datum_yyyy_mm === d && !imaSirovinu(p.ai_sirovina_ids)).reduce((s,p) => s + parseFloat(p.kolicina_final||0), 0) || 0;
+          p_chart_7d.push({ name: fmtBS(d).substring(0,5), Proizvodnja: parseFloat(dayOut.toFixed(2)) });
+        }
+        for(let i=9; i>=0; i--) {
+          const dEnd = new Date(new Date(datumOd).getTime() - (i*3)*24*60*60*1000).toISOString().split('T')[0];
+          const dStart = new Date(new Date(datumOd).getTime() - ((i*3)+2)*24*60*60*1000).toISOString().split('T')[0];
+          const periodOut = pRes.data?.filter(p => p.datum_yyyy_mm >= dStart && p.datum_yyyy_mm <= dEnd && !imaSirovinu(p.ai_sirovina_ids)).reduce((s,p) => s + parseFloat(p.kolicina_final||0), 0) || 0;
+          p_chart_30d.push({ name: fmtBS(dEnd).substring(0,5), Proizvodnja: parseFloat(periodOut.toFixed(2)) });
+        }
+  
+        setPilanaData({
+            kpi: { ulaz_m3: p_ulaz_m3.toFixed(2), ulaz_kom: p_ulaz_kom, avg_d: p_ulaz_kom > 0 ? (p_total_d / p_ulaz_kom).toFixed(1) : 0, izlaz_m3: p_izlaz_m3.toFixed(2), yield_proc: p_ulaz_m3 > 0 ? ((p_izlaz_m3 / p_ulaz_m3) * 100).toFixed(1) : 0, trend_7d_proc: p_trend7dProc, trend_30d_proc: p_trend30dProc },
+            trupci_duzine: Object.keys(duzineMap).map(d => ({ duzina: d, kom: duzineMap[d].kom, m3: duzineMap[d].m3.toFixed(2) })).sort((a,b)=>b.duzina-a.duzina),
+            izlaz_struktura: Object.keys(strukturaMap).map(k => ({ name: k, m3: parseFloat(strukturaMap[k].toFixed(2)) })).sort((a,b)=>b.m3-a.m3),
+            ucinak_brentista: Object.keys(brentistaMap).map(k => ({ name: k, m3: parseFloat(brentistaMap[k].toFixed(2)) })).sort((a,b)=>b.m3-a.m3),
+            trend_7d: p_chart_7d, trend_30d: p_chart_30d, glavna_tabela: paketiPilanaTrenutno.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+        });
+  
+        // ==========================================
+        // DORADA (Paketi SA ulaznom sirovinom)
+        // ==========================================
+        const paketiDoradaTrenutno = pRes.data?.filter(p => {
+          if (p.datum_yyyy_mm < datumOd || p.datum_yyyy_mm > datumDo) return false;
+          if (!imaSirovinu(p.ai_sirovina_ids)) return false; 
+          if (filterMjesto !== 'SVE' && p.mjesto !== filterMjesto) return false;
+          if (!provjeriSmjenu(p.vrijeme_tekst)) return false;
+          return true;
+        }) || [];
+  
+        let d_ulaz_m3 = 0; let d_izlaz_m3 = 0; const operacijeMap = {}; const traceBlokovi = [];
+        const globalProductYieldMap = {};
+        const svaDorada60d = pRes.data?.filter(p => imaSirovinu(p.ai_sirovina_ids)) || [];
+        
+        svaDorada60d.forEach(p => {
+            const u = parseFloat(p.kolicina_ulaz || p.kolicina_final || 0); const i = parseFloat(p.kolicina_final || 0);
+            if(!globalProductYieldMap[p.naziv_proizvoda]) globalProductYieldMap[p.naziv_proizvoda] = { u: 0, i: 0 };
+            globalProductYieldMap[p.naziv_proizvoda].u += u; globalProductYieldMap[p.naziv_proizvoda].i += i;
+        });
+  
+        paketiDoradaTrenutno.forEach(p => {
+            const izlaz = parseFloat(p.kolicina_final || 0);
+            const ulaz = parseFloat(p.kolicina_ulaz || izlaz); 
+            d_izlaz_m3 += izlaz; d_ulaz_m3 += ulaz;
+  
+            if(p.oznake && Array.isArray(p.oznake)) p.oznake.forEach(o => { operacijeMap[o] = (operacijeMap[o] || 0) + izlaz; });
+  
+            let sirovineTekst = [];
+            const idsSirovine = getSirovineNiz(p.ai_sirovina_ids);
+            if (idsSirovine.length > 0) {
+                idsSirovine.forEach(id => {
+                    const orig = pRes.data?.find(r => r.paket_id === id);
+                    if (orig) {
+                        const ostalo = parseFloat(orig.kolicina_final || 0);
+                        sirovineTekst.push(`Paket ${orig.paket_id} (${orig.naziv_proizvoda} ${orig.debljina}x${orig.sirina}x${orig.duzina}) ${ostalo > 0 ? `| Preostalo: ${ostalo}m³` : '| Utrošen'}`);
+                    } else sirovineTekst.push(`Paket ${id}`);
+                });
             }
-        } catch (err) { 
-            setAiOdgovor(`❌ Mrežna greška pri spajanju na Google API: ${err.message}`); 
-        }
-        setIsAILoading(false);
-    };
-
-    const formatirajMarkdown = (tekst) => {
-        if(!tekst) return null;
-        return tekst.split('\n').map((red, i) => {
-            if(red.startsWith('##')) return <h3 key={i} className="text-emerald-400 font-black mt-4 mb-2 uppercase text-sm border-b border-slate-700 pb-1">{red.replace(/#/g, '')}</h3>;
-            if(red.startsWith('**')) return <p key={i} className="text-white font-bold mt-2"><span dangerouslySetInnerHTML={{__html: red.replace(/\*\*(.*?)\*\*/g, '<strong class="text-blue-400">$1</strong>')}} /></p>;
-            if(red.startsWith('* ') || red.startsWith('- ')) return <li key={i} className="text-slate-300 ml-4 list-disc text-sm my-1"><span dangerouslySetInnerHTML={{__html: red.substring(2).replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')}} /></li>;
-            return <p key={i} className="text-slate-300 text-sm mb-2"><span dangerouslySetInnerHTML={{__html: red.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')}} /></p>;
-        });
-    };
-
-    // --- GENERISANJE PDF-a ZA MENADŽERSKI IZVJEŠTAJ ---
-    const printMenadzerski = () => {
-        if(!aiOdgovor) return;
-        const printWin = window.open('', '_blank');
-        
-        // PROVJERA ZA POP-UP BLOCKER
-        if (!printWin) {
-            alert("⚠️ Vaš preglednik (browser) je blokirao iskačući prozor za printanje! Molimo dozvolite 'Pop-ups' (iskačuće prozore) za ovu stranicu u gornjem desnom uglu ekrana.");
-            return;
-        }
-
-        const logoUrl = window.location.origin + '/Logo TTM.png';
-        
-        const cistHTML = aiOdgovor
-            .replace(/## (.*)/g, '<h3>$1</h3>')
-            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-            .replace(/\* (.*)/g, '<li>$1</li>')
-            .replace(/\n/g, '<br/>');
-
-        const html = `
-            <html><head><title>AI Menadžerski Izvještaj</title>
-            <style>
-                body { font-family: Arial, sans-serif; color: #333; padding: 40px; line-height: 1.6; }
-                .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
-                h3 { color: #1e293b; text-transform: uppercase; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 30px; }
-                b { color: #0f172a; }
-                .upit { background: #f8fafc; padding: 15px; border-left: 4px solid #3b82f6; font-style: italic; margin-bottom: 30px; }
-            </style></head>
-            <body>
-                <div class="header">
-                    <div><h2 style="margin:0; color:#1e293b;">PAMETNI MENADŽERSKI IZVJEŠTAJ</h2><p style="margin:5px 0 0 0;">Generisao: Google Gemini AI</p><p style="margin:5px 0 0 0;"><b>Analizirani period:</b> ${datumOd} do ${datumDo}</p></div>
-                    <img src="${logoUrl}" style="height: 70px;" onload="window.print(); window.close();" onerror="this.style.display='none'; window.print(); window.close();" />
-                </div>
-                <div class="upit"><b>Vaš upit:</b> "${aiUpit}"</div>
-                <div>${cistHTML}</div>
-            </body></html>
-        `;
-        printWin.document.write(html); printWin.document.close();
-    };
-
-    const formatirajVrijeme = (minute) => {
-        if (!minute || isNaN(minute)) return "00:00";
-        const sati = Math.floor(minute / 60);
-        const min = minute % 60;
-        return `${sati.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
-    };
-
-    const FilterDatuma = () => (
-        <div className="flex flex-col xl:flex-row items-center gap-3 bg-slate-900 p-2 rounded-2xl border border-slate-700 shadow-inner w-full xl:w-auto mt-4 md:mt-0">
-            <div className="flex bg-slate-800 rounded-lg p-1 w-full xl:w-auto">
-                <button onClick={() => { setTipDatuma('dan'); setDatumDo(datumOd); }} className={`flex-1 xl:flex-none px-4 py-2 rounded-md text-[10px] font-black uppercase transition-all ${tipDatuma === 'dan' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>Za Dan</button>
-                <button onClick={() => setTipDatuma('period')} className={`flex-1 xl:flex-none px-4 py-2 rounded-md text-[10px] font-black uppercase transition-all ${tipDatuma === 'period' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>Za Period</button>
-            </div>
-            <div className="flex items-center gap-2 px-2 w-full xl:w-auto justify-center">
-                <span className="text-[9px] text-slate-500 font-black uppercase hidden sm:inline">{tipDatuma === 'dan' ? 'Odaberi:' : 'Od:'}</span>
-                <input type="date" value={datumOd} onChange={e => { setDatumOd(e.target.value); if(tipDatuma === 'dan') setDatumDo(e.target.value); }} className="bg-[#0f172a] text-white text-xs font-bold p-2.5 rounded-xl outline-none focus:border-blue-500 border border-slate-800 hover:border-slate-600 transition-all cursor-pointer" />
-                
-                {tipDatuma === 'period' && (
-                    <>
-                        <span className="text-slate-600 font-black">-</span>
-                        <span className="text-[9px] text-slate-500 font-black uppercase hidden sm:inline">Do:</span>
-                        <input type="date" value={datumDo} onChange={e => setDatumDo(e.target.value)} className="bg-[#0f172a] text-white text-xs font-bold p-2.5 rounded-xl outline-none focus:border-blue-500 border border-slate-800 hover:border-slate-600 transition-all cursor-pointer" />
-                    </>
-                )}
-            </div>
-        </div>
-    );
-
-    // --- GENERISANJE PDF-a ZA DNEVNI/PERIODIČNI PROREZ ---
-    const kreirajPDF = () => {
-        const printWin = window.open('', '_blank');
-        
-        // PROVJERA ZA POP-UP BLOCKER
-        if (!printWin) {
-            alert("⚠️ Vaš preglednik (browser) je blokirao iskačući prozor za printanje! Molimo dozvolite 'Pop-ups' (iskačuće prozore) za ovu stranicu u gornjem desnom uglu ekrana.");
-            return;
-        }
-
-        const logoUrl = window.location.origin + '/Logo TTM.png';
-        
-        let redovi = dashData.proizvodi.map(s => {
-            const procenatGrada = dashData.gradaIzlaz > 0 ? ((s.m3 / dashData.gradaIzlaz) * 100).toFixed(1) : 0;
-            const procenatTrupci = dashData.trupciUlaz > 0 ? ((s.m3 / dashData.trupciUlaz) * 100).toFixed(1) : 0;
-            return `<tr><td style="border: 1px solid #ddd; padding: 10px;"><b>${s.naziv}</b></td><td style="border: 1px solid #ddd; padding: 10px; text-align: right;"><b>${s.m3.toFixed(2)}</b></td><td style="border: 1px solid #ddd; padding: 10px; text-align: right;">${procenatGrada}%</td><td style="border: 1px solid #ddd; padding: 10px; text-align: right;">${procenatTrupci}%</td></tr>`;
-        }).join('');
-
-        const ispisDatuma = tipDatuma === 'dan' ? new Date(datumOd).toLocaleDateString('bs-BA') : `${new Date(datumOd).toLocaleDateString('bs-BA')} - ${new Date(datumDo).toLocaleDateString('bs-BA')}`;
-
-        const html = `
-            <html><head><title>Izvještaj Proreza</title>
-            <style>
-                body { font-family: Arial, sans-serif; color: #333; padding: 40px; }
-                .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
-                .summary-grid { display: flex; justify-content: space-between; background: #f8fafc; padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; }
-                .summary-box { text-align: center; } .summary-box span { display: block; font-size: 12px; color: #666; text-transform: uppercase; } .summary-box b { font-size: 20px; color: #000; }
-                table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { border: 1px solid #ddd; padding: 10px; } th { background-color: #f1f5f9; text-align: left; }
-            </style></head>
-            <body>
-                <div class="header">
-                    <div><h2>IZVJEŠTAJ PROIZVODNJE</h2><p><b>${tipDatuma === 'dan' ? 'Datum:' : 'Period:'}</b> ${ispisDatuma}</p></div>
-                    <img src="${logoUrl}" style="height: 60px;" onload="window.print(); window.close();" onerror="this.style.display='none'; window.print(); window.close();" />
-                </div>
-                <div class="summary-grid">
-                    <div class="summary-box"><span>Ulaz Trupaca</span><b>${dashData.trupciUlaz} m³</b></div>
-                    <div class="summary-box"><span>Gotova Građa</span><b>${dashData.gradaIzlaz} m³</b></div>
-                    <div class="summary-box"><span>Iskorištenje</span><b>${dashData.iskoristenje}%</b></div>
-                    <div class="summary-box"><span>Zastoji</span><b>${dashData.zastoji} min</b></div>
-                </div>
-                <table><thead><tr><th>Proizvod</th><th style="text-align:right;">M³</th><th style="text-align:right;">% od građe</th><th style="text-align:right;">% od trupca</th></tr></thead>
-                <tbody>${redovi || '<tr><td colspan="4" style="text-align:center;">Nema podataka za ovaj period.</td></tr>'}</tbody></table>
-            </body></html>
-        `;
-        printWin.document.write(html); printWin.document.close();
-    };
-
-    if (!aktivanIzvjestaj) {
-        return (
-            <div className="p-4 max-w-6xl mx-auto space-y-6 animate-in fade-in relative">
-                
-                <div className="flex flex-col md:flex-row justify-between items-center bg-[#0f172a] p-5 rounded-[2rem] border border-slate-800 shadow-2xl">
-                    <div className="flex items-center gap-4 mb-4 md:mb-0">
-                        <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700">← Meni</button>
-                        <div className="h-10 w-32 bg-white rounded flex items-center justify-center font-black text-[#1e1b4b] italic overflow-hidden">
-                            <img src="/Logo TTM.png" alt="TTM Logo" className="h-full object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.innerText = 'TTM LOGO'; }} />
-                        </div>
-                    </div>
-                    <h2 className="text-white font-black tracking-widest text-lg lg:text-xl uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.2)] hidden lg:block mx-4">Pametna Analitika</h2>
-                    <FilterDatuma />
-                </div>
-
-                {/* PRAVI AI GEMINI BAR */}
-                <div className="relative bg-gradient-to-r from-blue-900/60 to-purple-900/60 p-1.5 rounded-3xl border border-blue-400/50 shadow-[0_0_30px_rgba(59,130,246,0.3)]">
-                    <div className="absolute left-5 top-5 text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">✨</div>
-                    <textarea 
-                        value={aiUpit} onChange={e => setAiUpit(e.target.value)}
-                        placeholder={apiKey ? "Naredi AI analitičaru (npr. 'Napravi mi detaljan izvještaj o učinku radnika i predloži rješenja za smanjenje zastoja...')" : "Prvo unesite API ključ dole da biste koristili ovu opciju!"} 
-                        className="w-full bg-[#0f172a] p-5 pl-14 rounded-2xl text-base text-white outline-none border border-transparent focus:border-blue-400 transition-all font-bold placeholder-slate-500 resize-none h-24"
-                        disabled={!apiKey}
-                    ></textarea>
-                    
-                    <div className="flex justify-between items-center px-2 mt-2 mb-1">
-                        <div className="flex items-center gap-2">
-                            {apiKey ? (
-                                <span className="text-[10px] text-emerald-400 font-black uppercase bg-emerald-900/30 px-2 py-1 rounded border border-emerald-500/30">🟢 AI Motor Spreman</span>
-                            ) : (
-                                <button onClick={() => setShowApiInput(true)} className="text-[10px] text-red-400 font-black uppercase bg-red-900/30 px-3 py-2 rounded-xl hover:bg-red-900/60 border border-red-500/30 transition-all animate-pulse">🔴 Klikni da uneseš Gemini API ključ</button>
-                            )}
-                            {apiKey && <button onClick={() => setShowApiInput(!showApiInput)} className="text-[10px] text-slate-500 hover:text-white underline">Promijeni ključ</button>}
-                        </div>
-                        <button onClick={pokreniPraviAI} disabled={isAILoading || !apiKey} className="px-8 py-3 bg-white text-blue-900 font-black text-xs hover:bg-blue-100 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.5)] uppercase disabled:opacity-50 transition-all">
-                            {isAILoading ? 'AI Razmišlja...' : '🚀 Generiši Izvještaj'}
-                        </button>
-                    </div>
-
-                    {/* Unos za API Ključ */}
-                    {showApiInput && (
-                        <div className="absolute top-full left-0 mt-4 bg-slate-900 p-5 rounded-2xl border border-blue-500 z-50 w-80 shadow-2xl animate-in slide-in-from-top-2">
-                            <h4 className="text-white text-xs font-black mb-2 uppercase">Google AI Studio API Ključ</h4>
-                            <input type="text" placeholder="AIzaSy..." defaultValue={apiKey} onKeyDown={(e) => {if(e.key === 'Enter') saveApiKey(e.target.value)}} onBlur={(e) => saveApiKey(e.target.value)} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-blue-400 border border-slate-700 outline-none font-mono" />
-                            <p className="text-[9px] text-slate-400 mt-2 leading-tight">Zalijepi ključ i pritisni Enter. Nabavi besplatan ključ na <a href="https://aistudio.google.com/" target="_blank" className="text-blue-400 underline">aistudio.google.com</a></p>
-                        </div>
-                    )}
-                </div>
-
-                {/* PRAVI AI ODGOVOR (MENADŽERSKI IZVJEŠTAJ) */}
-                {aiOdgovor && (
-                    <div className="bg-[#1e293b] border-2 border-indigo-500 p-6 md:p-8 rounded-[2.5rem] animate-in slide-in-from-top-8 shadow-[0_0_40px_rgba(99,102,241,0.2)]">
-                        <div className="flex justify-between items-start border-b border-slate-700 pb-4 mb-6">
-                            <div>
-                                <h3 className="text-indigo-400 font-black uppercase text-sm tracking-widest flex items-center gap-2"><span>🤖</span> AI Menadžerska Analiza</h3>
-                                <p className="text-[10px] text-slate-500 uppercase mt-1">Generisano na osnovu baze za period: {datumOd} do {datumDo}</p>
-                            </div>
-                            <div className="flex gap-2">
-                                <button onClick={printMenadzerski} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg hover:bg-indigo-500 transition-all">🖨️ PDF / Print</button>
-                                <button onClick={() => setAiOdgovor(null)} className="bg-slate-800 text-red-400 hover:text-white hover:bg-red-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all">Zatvori ✕</button>
-                            </div>
-                        </div>
-
-                        {/* Formatirani Markdown Sadržaj */}
-                        <div className="prose prose-invert max-w-none">
-                            {formatirajMarkdown(aiOdgovor)}
-                        </div>
-                    </div>
-                )}
-
-                {loading ? (
-                    <div className="text-center p-10 text-slate-500 font-black animate-pulse">Učitavanje podataka iz baze za odabrani period...</div>
-                ) : (
-                    <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                            <div onClick={() => setAktivanIzvjestaj('prorez')} className="bg-emerald-900/20 border border-emerald-500/30 p-5 rounded-3xl shadow-lg relative overflow-hidden cursor-pointer hover:scale-105 hover:bg-emerald-900/40 hover:border-emerald-500 transition-all group">
-                                <div className="flex justify-between items-start">
-                                    <div className="text-[10px] text-emerald-400 font-black uppercase tracking-wider mb-1">Prorez (m³)</div>
-                                    <span className="text-[9px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full border border-emerald-500/30">{tipDatuma === 'dan' ? 'Dan' : 'Period'}</span>
-                                </div>
-                                <div className="text-4xl text-white font-black drop-shadow-[0_0_10px_rgba(16,185,129,0.8)] mt-2">{dashData.gradaIzlaz}</div>
-                                <div className="text-[9px] text-slate-400 mt-2 flex justify-between"><span>Iskorištenje: {dashData.iskoristenje}%</span> <span className="group-hover:text-emerald-300">Detalji →</span></div>
-                                <div className="absolute -right-4 -bottom-4 text-emerald-500/10 text-8xl transition-all group-hover:scale-110">🪚</div>
-                            </div>
-                            
-                            <div onClick={() => setAktivanIzvjestaj('dovoz')} className="bg-blue-900/20 border border-blue-500/30 p-5 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm cursor-pointer hover:scale-105 hover:bg-blue-900/40 hover:border-blue-500 transition-all group">
-                                <div className="flex justify-between items-start">
-                                    <div className="text-[10px] text-blue-400 font-black uppercase tracking-wider mb-1">Dovoz Trupaca</div>
-                                    <span className="text-[9px] font-black bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full border border-blue-500/30">{tipDatuma === 'dan' ? 'Dan' : 'Period'}</span>
-                                </div>
-                                <div className="text-4xl text-white font-black drop-shadow-[0_0_10px_rgba(59,130,246,0.8)] mt-2">{dashData.trupciUlaz} <span className="text-sm">m³</span></div>
-                                <div className="text-[9px] text-slate-400 mt-2 flex justify-between"><span>Zapr. trupaca: {dashData.trupciLista.length} kom</span> <span className="group-hover:text-blue-300">Detalji →</span></div>
-                                <div className="absolute -right-4 -bottom-4 text-blue-500/10 text-8xl transition-all group-hover:scale-110">🪵</div>
-                            </div>
-                            
-                            <div onClick={() => setAktivanIzvjestaj('nalozi')} className="bg-amber-900/20 border border-amber-500/30 p-5 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm cursor-pointer hover:scale-105 hover:bg-amber-900/40 hover:border-amber-500 transition-all group">
-                                <div className="flex justify-between items-start">
-                                    <div className="text-[10px] text-amber-400 font-black uppercase tracking-wider mb-1">Aktivni Nalozi</div>
-                                    <span className="text-[9px] font-black bg-amber-500/20 text-amber-400 px-2 py-1 rounded-full border border-amber-500/30">U radu</span>
-                                </div>
-                                <div className="text-4xl text-white font-black drop-shadow-[0_0_10px_rgba(245,158,11,0.8)] mt-2">{dashData.aktivniNalozi}</div>
-                                <div className="text-[9px] text-slate-400 mt-2 flex justify-between"><span>Dinamika isporuka</span> <span className="group-hover:text-amber-300">Detalji →</span></div>
-                                <div className="absolute -right-4 -bottom-4 text-amber-500/10 text-8xl transition-all group-hover:scale-110">📄</div>
-                            </div>
-                            
-                            <div className="bg-red-900/20 border border-red-500/30 p-5 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm">
-                                <div className="flex justify-between items-start">
-                                    <div className="text-[10px] text-red-400 font-black uppercase tracking-wider mb-1">Zastoji</div>
-                                </div>
-                                <div className="text-4xl text-white font-black drop-shadow-[0_0_10px_rgba(239,68,68,0.8)] mt-2">{formatirajVrijeme(dashData.zastoji)}</div>
-                                <div className="text-[9px] text-slate-400 mt-2">Ukupno: {dashData.zastoji} min</div>
-                                <div className="absolute -right-4 -bottom-4 text-red-500/10 text-8xl">🛑</div>
-                            </div>
-                        </div>
-
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl opacity-70 hover:opacity-100 transition-all mt-6">
-                            <h3 className="text-slate-400 font-black uppercase text-xs mb-4 text-center">Brzi pregled iskorištenja ({tipDatuma === 'dan' ? 'Odabrani Dan' : 'Odabrani Period'})</h3>
-                            <div className="h-16 w-full bg-slate-900 rounded-full overflow-hidden flex border border-slate-800 relative">
-                                <div className="h-full bg-emerald-500/80 flex items-center justify-center font-black text-xs text-white overflow-hidden whitespace-nowrap px-2 transition-all duration-1000" style={{width: `${Math.max(dashData.iskoristenje, 15)}%`}}>Gotova Građa ({dashData.iskoristenje}%)</div>
-                                <div className="h-full bg-red-500/80 flex items-center justify-center font-black text-[10px] text-white flex-1 overflow-hidden transition-all duration-1000">Okorci / Rastur / Piljevina</div>
-                            </div>
-                        </div>
-                    </>
-                )}
-            </div>
-        );
-    }
-
-    if (aktivanIzvjestaj === 'prorez') {
-        return (
-            <div className="p-4 max-w-6xl mx-auto space-y-6 animate-in slide-in-from-bottom">
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#1e293b] p-4 rounded-[2.5rem] border border-slate-700 shadow-lg">
-                    <button onClick={() => setAktivanIzvjestaj(null)} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700 self-start md:self-auto">← Nazad na Dashboard</button>
-                    <FilterDatuma />
-                    <button onClick={kreirajPDF} className="bg-red-900/30 text-red-400 px-6 py-3 rounded-xl text-[10px] font-black uppercase border border-red-500/50 hover:bg-red-600 hover:text-white transition-all shadow-lg flex items-center gap-2 self-end md:self-auto">
-                        <span>🖨️ Štampaj PDF</span>
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-6">
-                        <div className="bg-[#1e293b] p-6 rounded-3xl border border-slate-700 shadow-xl">
-                            <h3 className="text-blue-400 font-black text-xs uppercase mb-4 border-b border-slate-700 pb-3">🪵 ULAZ: Trupci ({tipDatuma === 'dan' ? 'Dan' : 'Period'})</h3>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm items-center"><span className="text-slate-400 text-[10px] uppercase font-bold">Zabilježeno komada:</span><span className="text-white font-black bg-slate-800 px-3 py-1 rounded-lg">{dashData.trupciLista.length}</span></div>
-                                <div className="flex justify-between text-lg mt-2 pt-4 border-t border-slate-700 items-center"><span className="text-slate-300 font-black text-[10px] uppercase">Ukupna zapremina:</span><span className="text-blue-400 font-black text-2xl">{dashData.trupciUlaz} m³</span></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="col-span-2 bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl">
-                        <h3 className="text-slate-300 font-black uppercase text-sm tracking-widest mb-6">Specifikacija proizvedene građe</h3>
-                        <table className="w-full text-left border-collapse mb-6">
-                            <thead>
-                                <tr className="text-[10px] text-slate-400 uppercase border-b border-slate-700 bg-slate-900/50">
-                                    <th className="p-4 font-black rounded-tl-xl">Proizvod</th><th className="p-4 font-black text-right">M³</th><th className="p-4 font-black text-right">% (od građe)</th><th className="p-4 font-black text-right rounded-tr-xl">% (od trupca)</th>
-                                </tr>
-                            </thead>
-                            <tbody className="text-sm font-medium">
-                                {dashData.proizvodi.length === 0 && <tr><td colSpan="4" className="text-center p-6 text-slate-500 font-bold">Nema zabilježene građe za ovaj period.</td></tr>}
-                                {dashData.proizvodi.map((s, idx) => {
-                                    const procGrada = dashData.gradaIzlaz > 0 ? ((s.m3 / dashData.gradaIzlaz) * 100).toFixed(1) : 0;
-                                    const procTrupci = dashData.trupciUlaz > 0 ? ((s.m3 / dashData.trupciUlaz) * 100).toFixed(1) : 0;
-                                    return (
-                                        <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                                            <td className="p-4 text-white">{s.naziv}</td><td className="p-4 text-emerald-400 font-black text-right bg-emerald-900/10">{s.m3.toFixed(2)}</td><td className="p-4 text-blue-300 text-right">{procGrada}%</td><td className="p-4 text-slate-400 text-right">{procTrupci}%</td>
-                                        </tr>
-                                    )
-                                })}
-                                <tr className="bg-emerald-900/30 border-y-2 border-emerald-500/50">
-                                    <td className="p-5 text-emerald-400 font-black uppercase text-xs rounded-bl-xl">R. Građa (Ukupno)</td><td className="p-5 text-emerald-400 font-black text-right text-xl">{dashData.gradaIzlaz}</td><td className="p-5 text-emerald-400 font-black text-right">100%</td><td className="p-5 text-emerald-400 font-black text-right text-2xl rounded-br-xl">{dashData.iskoristenje}%</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (aktivanIzvjestaj === 'dovoz') {
-        return (
-            <div className="p-4 max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right">
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#1e293b] p-4 rounded-[2.5rem] border border-slate-700 shadow-lg">
-                    <button onClick={() => setAktivanIzvjestaj(null)} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700 self-start md:self-auto">← Nazad</button>
-                    <FilterDatuma />
-                </div>
-                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
-                    <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-                        <h3 className="text-white font-black text-sm uppercase tracking-widest text-blue-400">🚚 Evidentirani trupci</h3>
-                        <span className="text-blue-400 font-black bg-blue-900/30 px-4 py-2 rounded-xl border border-blue-500/30 shadow-inner">Ukupno: {dashData.trupciUlaz} m³</span>
-                    </div>
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                        {dashData.trupciLista.length === 0 && <p className="text-slate-500 text-sm text-center py-10 font-bold border-2 border-dashed border-slate-700 rounded-2xl">Nema prijavljenih trupaca u odabranom periodu.</p>}
-                        {dashData.trupciLista.map((t, idx) => (
-                            <div key={idx} className="flex justify-between p-4 bg-slate-900 rounded-2xl border border-slate-800 hover:border-blue-500 transition-all shadow-lg">
-                                <div>
-                                    <span className="text-sm text-white font-black block mb-1">Otpremnica: <span className="text-blue-400">{t.otpremnica_broj || 'N/A'}</span></span>
-                                    <span className="text-[10px] text-slate-400 uppercase font-black bg-slate-800 px-2 py-1 rounded-md">{t.vrsta} | Klasa {t.klasa}</span>
-                                </div>
-                                <div className="text-right flex flex-col justify-between items-end">
-                                    <div className="text-emerald-400 font-black text-xl">{parseFloat(t.zapremina || 0).toFixed(2)} <span className="text-xs text-emerald-600">m³</span></div>
-                                    <div className="text-[9px] text-slate-500 uppercase font-bold mt-1">{new Date(t.datum_prijema).toLocaleDateString('bs-BA')}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (aktivanIzvjestaj === 'nalozi') {
-        if (detaljiNaloga) {
-            const stavkeNaloga = detaljiNaloga.stavke_jsonb || [];
-            let sumNaruceno = 0; let sumNapravljeno = 0;
-            stavkeNaloga.forEach(s => {
-                sumNaruceno += parseFloat(s.kolicina_obracun || 0);
-                sumNapravljeno += parseFloat(s.napravljeno || 0);
+  
+            const currYield = ulaz > 0 ? ((izlaz / ulaz) * 100).toFixed(1) : 100;
+            const avg60d = globalProductYieldMap[p.naziv_proizvoda]?.u > 0 ? ((globalProductYieldMap[p.naziv_proizvoda].i / globalProductYieldMap[p.naziv_proizvoda].u) * 100).toFixed(1) : '-';
+            const brzinaM3h = (paketiDoradaTrenutno.reduce((s, dPkg) => s + parseFloat(dPkg.kolicina_final||0), 0) / 8).toFixed(2);
+  
+            traceBlokovi.push({
+                out_id: p.paket_id, out_naziv: p.naziv_proizvoda, out_dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
+                out_m3: izlaz.toFixed(2), in_m3: ulaz.toFixed(2), in_ids: sirovineTekst.join(' \n '),
+                operacije: p.oznake ? p.oznake.join(', ') : 'Prerada / Reklasiranje', yield: currYield,
+                avg_60d: avg60d, brzina: brzinaM3h, radnik: p.snimio_korisnik, vrijeme: p.vrijeme_tekst, masina: p.masina || '-'
             });
-            const procenatNaloga = sumNaruceno > 0 ? Math.min(((sumNapravljeno / sumNaruceno) * 100), 100).toFixed(0) : 0;
-
-            return (
-                <div className="p-4 max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right">
-                    <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-[2rem] border border-amber-500/50 shadow-lg">
-                        <button onClick={() => setDetaljiNaloga(null)} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700">← Nazad na listu</button>
-                        <h2 className="text-amber-400 font-black tracking-widest uppercase text-xs md:text-sm">Detalji Naloga: {detaljiNaloga.id}</h2>
-                    </div>
-
-                    <div className="bg-[#1e293b] p-6 md:p-8 rounded-[2.5rem] border border-slate-700 shadow-2xl">
-                        <div className="flex flex-col md:flex-row justify-between md:items-end border-b border-slate-700 pb-6 mb-6 gap-4">
-                            <div>
-                                <p className="text-white font-black text-2xl mb-1">{detaljiNaloga.kupac_naziv}</p>
-                                <p className="text-xs text-slate-400 uppercase font-bold">Rok isporuke: <span className="text-white bg-slate-800 px-2 py-0.5 rounded ml-1">{new Date(detaljiNaloga.rok_isporuke).toLocaleDateString('bs-BA')}</span></p>
-                            </div>
-                            <div className="md:text-right">
-                                <span className="bg-amber-900/40 text-amber-400 px-4 py-2 rounded-xl text-[10px] font-black uppercase border border-amber-500/30 shadow-inner">{detaljiNaloga.status}</span>
-                            </div>
-                        </div>
-
-                        <div className="mb-8 bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-inner">
-                            <div className="flex justify-between text-xs font-black uppercase text-slate-400 mb-3"><span>Ukupni Napredak Proizvodnje</span><span className="text-emerald-400 text-lg">{procenatNaloga}%</span></div>
-                            <div className="w-full bg-slate-950 rounded-full h-4 overflow-hidden border border-slate-800 relative">
-                                <div className="bg-emerald-500 h-full transition-all duration-1000 relative overflow-hidden" style={{width: `${procenatNaloga}%`}}>
-                                    <div className="absolute inset-0 bg-white/20 w-full h-full animate-[pulse_2s_ease-in-out_infinite]"></div>
-                                </div>
-                            </div>
-                            <div className="flex justify-between text-[9px] text-slate-500 font-black uppercase mt-2">
-                                <span>Ukupno naručeno: {sumNaruceno.toFixed(2)}</span>
-                                <span>Ukupno proizvedeno: {sumNapravljeno.toFixed(2)}</span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <h4 className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-4">Specifikacija i status stavki:</h4>
-                            {stavkeNaloga.map((st, i) => {
-                                const nar = parseFloat(st.kolicina_obracun || 0);
-                                const nap = parseFloat(st.napravljeno || 0);
-                                const fali = Math.max(nar - nap, 0);
-                                const p = nar > 0 ? Math.min(((nap / nar) * 100), 100).toFixed(0) : 0;
-                                
-                                return (
-                                    <div key={i} className="bg-slate-900 p-5 rounded-2xl border border-slate-800 hover:border-amber-500/30 transition-all shadow-lg">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <span className="text-white text-sm font-black">{st.sifra} <span className="text-slate-400 font-normal ml-1">{st.naziv}</span></span>
-                                            <span className={`text-xs font-black px-3 py-1 rounded-lg shadow-inner ${p == 100 ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-500/30' : 'bg-blue-900/40 text-blue-400 border border-blue-500/30'}`}>{p}%</span>
-                                        </div>
-                                        <div className="w-full bg-slate-950 rounded-full h-2 mb-4 overflow-hidden border border-slate-800">
-                                            <div className={`${p == 100 ? 'bg-emerald-500' : 'bg-blue-500'} h-full transition-all duration-1000`} style={{width: `${p}%`}}></div>
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-2 text-[10px] uppercase font-black bg-[#0f172a] p-3 rounded-xl border border-slate-700/50 text-center">
-                                            <div className="flex flex-col"><span className="text-slate-500 mb-1">Naručeno</span><span className="text-white text-sm">{nar} <span className="text-[9px] text-slate-500">{st.jm_obracun}</span></span></div>
-                                            <div className="flex flex-col border-x border-slate-800"><span className="text-slate-500 mb-1">Urađeno</span><span className="text-emerald-400 text-sm">{nap} <span className="text-[9px] text-emerald-700">{st.jm_obracun}</span></span></div>
-                                            <div className="flex flex-col"><span className="text-slate-500 mb-1">Preostalo</span><span className="text-amber-400 text-sm">{fali.toFixed(2)} <span className="text-[9px] text-amber-700">{st.jm_obracun}</span></span></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-            );
+        });
+  
+        const dorada_proslih_7d = svaDorada60d.filter(p => p.datum_yyyy_mm >= d7_pocetak && p.datum_yyyy_mm < datumOd).reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0) || 0;
+        const d_avg_7d = dorada_proslih_7d / 7;
+        const d_trend7dProc = d_avg_7d > 0 ? (((d_izlaz_m3 - d_avg_7d) / d_avg_7d) * 100).toFixed(1) : 0;
+  
+        let d_chart_7d = [];
+        for(let i=6; i>=0; i--) {
+          const d = new Date(new Date(datumOd).getTime() - i*24*60*60*1000).toISOString().split('T')[0];
+          const dayOut = svaDorada60d.filter(p => p.datum_yyyy_mm === d).reduce((s,p) => s + parseFloat(p.kolicina_final||0), 0) || 0;
+          d_chart_7d.push({ name: fmtBS(d).substring(0,5), Dorada: parseFloat(dayOut.toFixed(2)) });
         }
-
-        return (
-            <div className="p-4 max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right">
-                <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-[2rem] border border-slate-700 shadow-lg">
-                    <button onClick={() => setAktivanIzvjestaj(null)} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black text-white hover:bg-slate-700">← Nazad</button>
-                    <h2 className="text-amber-400 font-black tracking-widest uppercase text-sm mx-4">📄 Aktivni Nalozi</h2>
-                    <div className="w-20 hidden md:block"></div>
-                </div>
-                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
-                    <h3 className="text-slate-400 font-black text-[10px] uppercase tracking-widest mb-4 border-b border-slate-700 pb-3">Kliknite na nalog za pregled procenta završetka stavki</h3>
-                    <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                        {dashData.naloziLista.length === 0 && <p className="text-center p-10 text-slate-500 text-sm font-bold border-2 border-dashed border-slate-700 rounded-2xl">Svi nalozi su završeni.</p>}
-                        {dashData.naloziLista.map(n => (
-                            <div key={n.id} onClick={() => setDetaljiNaloga(n)} className="flex flex-col md:flex-row justify-between md:items-center gap-4 p-5 bg-slate-900 rounded-2xl border border-slate-800 cursor-pointer hover:border-amber-500 hover:bg-slate-800 transition-all shadow-lg group">
-                                <div>
-                                    <span className="text-sm text-amber-400 font-black block mb-1 group-hover:scale-105 transition-all origin-left">{n.id}</span>
-                                    <span className="text-xs text-white uppercase font-bold">{n.kupac_naziv}</span>
-                                </div>
-                                <div className="md:text-right flex flex-col md:items-end justify-between">
-                                    <span className="text-[10px] text-slate-500 font-black uppercase mb-2 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">Rok: {new Date(n.rok_isporuke).toLocaleDateString('bs-BA') || 'N/A'}</span>
-                                    <span className="text-[9px] font-black bg-amber-900/40 text-amber-400 px-3 py-1 rounded-lg uppercase border border-amber-500/30 shadow-inner">{n.status}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+  
+        setDoradaData({
+            kpi: { ulaz_m3: d_ulaz_m3.toFixed(2), izlaz_m3: d_izlaz_m3.toFixed(2), kalo_m3: (d_ulaz_m3 - d_izlaz_m3).toFixed(2), yield_proc: d_ulaz_m3 > 0 ? ((d_izlaz_m3 / d_ulaz_m3) * 100).toFixed(1) : 0, trend_7d_proc: d_trend7dProc, operacije_count: paketiDoradaTrenutno.length },
+            operacije: Object.keys(operacijeMap).map(k => ({ name: k, m3: parseFloat(operacijeMap[k].toFixed(2)) })).sort((a,b)=>b.m3-a.m3),
+            trend_7d: d_chart_7d, trace_blokovi: traceBlokovi.sort((a,b) => b.out_m3 - a.out_m3)
+        });
+  
+      } catch (e) { console.error("Greška u analitici:", e); }
+      setLoading(false);
+    };
+  
+    const parseAuditDiff = (oldD, newD) => {
+        if (!oldD && newD) return `Kreirano u bazi. Zapremina: ${newD.kolicina_final || newD.zapremina || 0}m³`;
+        if (oldD && newD) {
+            let diffs = [];
+            if (oldD.kolicina_final !== newD.kolicina_final) diffs.push(`Količina: ${oldD.kolicina_final}m³ ➡️ ${newD.kolicina_final}m³`);
+            if (oldD.masina !== newD.masina) diffs.push(`Mašina: ${oldD.masina || '-'} ➡️ ${newD.masina}`);
+            if (oldD.status !== newD.status) diffs.push(`Status: ${oldD.status} ➡️ ${newD.status}`);
+            return diffs.length > 0 ? diffs.join(' | ') : 'Ažurirano (Bez ključnih promjena volumena)';
+        }
+        if (oldD && !newD) return 'Zapis obrisan iz baze.';
+        return '-';
+    };
+  
+    const checkQR = async (id) => {
+        if(!id) return; setAuditLog('load'); const sid = id.toUpperCase().trim();
+        
+        const { data: auditData } = await supabase.from('audit_log').select('*').eq('zapis_id', sid).order('vrijeme', { ascending: true });
+        
+        const [t, pAll, djeca] = await Promise.all([
+            supabase.from('trupci').select('*').eq('id', sid).maybeSingle(),
+            supabase.from('paketi').select('*').eq('paket_id', sid),
+            supabase.from('paketi').select('*').ilike('ai_sirovina_ids', `%${sid}%`) 
+        ]);
+  
+        let ev = [];
+        if (auditData && auditData.length > 0) {
+            ev = auditData.map(a => ({
+                time: a.vrijeme, tip: a.akcija === 'DODAVANJE' ? 'KREIRANO' : a.akcija,
+                msg: a.akcija === 'DODAVANJE' ? 'Kreiran Zapis' : a.akcija === 'IZMJENA' ? 'Ažurirani Podaci' : 'Obrisan Zapis',
+                details: parseAuditDiff(a.stari_podaci, a.novi_podaci), user: a.korisnik || 'Sistem'
+            }));
+        } 
+        
+        if (t.data && (!auditData || auditData.filter(a => a.akcija === 'DODAVANJE').length === 0)) {
+            ev.push({ time: t.data.datum_prijema, tip: 'ULAZ TRUPCA', msg: `Trupac primljen na lager.`, details: `V: ${t.data.zapremina}m³ | Ø${t.data.promjer}cm`, user: t.data.snimio_korisnik });
+        }
+        
+        if (pAll.data) {
+            pAll.data.forEach(p => {
+                if (p.paket_id === sid && (!auditData || auditData.filter(a => a.akcija === 'DODAVANJE').length === 0)) {
+                    ev.push({ time: `${p.datum_yyyy_mm}T${p.vrijeme_tekst||'00:00:00'}`, tip: 'KREIRAN PAKET', msg: `Kreirano na mašini ${p.masina || '-'}`, details: `${p.naziv_proizvoda} | Izlaz: ${p.kolicina_final}m³`, user: p.snimio_korisnik });
+                }
+            });
+        }
+  
+        if (djeca.data && djeca.data.length > 0) {
+            djeca.data.forEach(d => {
+                ev.push({ time: `${d.datum_yyyy_mm}T${d.vrijeme_tekst||'00:00:00'}`, tip: 'UTROŠAK (DORADA)', msg: `Prerađeno u novi paket: ${d.paket_id}`, details: `Novi proizvod: ${d.naziv_proizvoda}`, user: d.snimio_korisnik });
+            });
+        }
+  
+        if (ev.length === 0) setAuditLog('none');
+        else { ev.sort((a,b) => new Date(a.time) - new Date(b.time)); setAuditLog(ev); }
+    };
+  
+    const generisiAI = async () => {
+        if(!apiKey) return alert("Unesite Google Gemini API ključ u modulu Podešavanja!");
+        setIsLoadingAI(true); setAiOdgovor("Gemini analizira kompleksne podatke...");
+        
+        const ctx = {
+            pilana_kpi: pilanaData.kpi,
+            pilana_struktura: pilanaData.izlaz_struktura,
+            pilana_radnici: pilanaData.ucinak_brentista,
+            dorada_kpi: doradaData.kpi,
+            dorada_operacije: doradaData.operacije
+        };
+        
+        const pitanje = aiUpit ? `Korisnik ima specifično pitanje: "${aiUpit}"` : `Napiši generalni menadžerski Executive Summary i daj preporuke.`;
+        const prompt = `Ti si glavni Data Scientist u drvnoj industriji (ERP sistem). Analiziraj sirove podatke o prorezu i doradi za period ${fmtBS(datumOd)} do ${fmtBS(datumDo)}. 
+        Evo podataka u JSON formatu: ${JSON.stringify(ctx)}.
+        ${pitanje}
+        Koristi Markdown, budi direktan, izdvoji uska grla i daj brojke (KPI) za usporedbu. Piši isključivo na bosanskom jeziku.`;
+        
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
+            });
+            const d = await res.json(); 
+            if (d.error) setAiOdgovor(`❌ Google API Greška: ${d.error.message}\n\nOvo znači da API ključ nije ispravan ili je prekoračen limit.`);
+            else if(d.candidates) setAiOdgovor(d.candidates[0].content.parts[0].text);
+            else setAiOdgovor(`❌ Neočekivan odgovor od servera: ${JSON.stringify(d)}`);
+        } catch(e) { setAiOdgovor("Greška pri komunikaciji sa Google Gemini serverom (Mreža)."); }
+        setIsLoadingAI(false);
+    };
+  
+    // =========================================================================
+    // PDF GENERATORI
+    // =========================================================================
+    const printPilanaPDF = () => {
+      const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
+      let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
+      if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
+  
+      let svgDonut = ''; let legendeHtml = ''; let trenutniOffset = 0;
+      pilanaData.izlaz_struktura.forEach((p, idx) => {
+          const procenat = pilanaData.kpi.izlaz_m3 > 0 ? (p.m3 / pilanaData.kpi.izlaz_m3) * 100 : 0;
+          const dashArray = `${procenat} ${100 - procenat}`;
+          svgDonut += `<circle cx="21" cy="21" r="15.915" fill="transparent" stroke="${COLORS[idx % COLORS.length]}" stroke-width="6" stroke-dasharray="${dashArray}" stroke-dashoffset="${100 - trenutniOffset}"></circle>`;
+          trenutniOffset += procenat;
+          legendeHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;"><div style="display:flex; align-items:center;"><div style="width:12px; height:12px; background-color:${COLORS[idx % COLORS.length]}; border-radius:50%; margin-right:8px;"></div><span style="font-weight:bold; color:#334155;">${p.name}</span></div><div><b style="color:#0f172a;">${p.m3.toFixed(2)} m³</b> <span style="color:#64748b; margin-left:5px;">(${procenat.toFixed(1)}%)</span></div></div>`;
+      });
+  
+      let trendSvg = '<svg width="100%" height="80" viewBox="0 0 350 80" style="margin-top:10px;">';
+      const maxVal = Math.max(...pilanaData.trend_7d.map(d => d.Proizvodnja), 1);
+      pilanaData.trend_7d.forEach((d, i) => {
+          const h = (d.Proizvodnja / maxVal) * 50; const x = i * 50 + 10; const y = 60 - h;
+          trendSvg += `<rect x="${x}" y="${y}" width="30" height="${h}" fill="#10b981" rx="2" /><text x="${x+15}" y="75" font-size="10" fill="#64748b" text-anchor="middle" font-family="sans-serif">${d.name}</text>`;
+          if(d.Proizvodnja > 0) trendSvg += `<text x="${x+15}" y="${y-5}" font-size="10" fill="#0f172a" text-anchor="middle" font-weight="bold" font-family="sans-serif">${d.Proizvodnja}</text>`;
+      });
+      trendSvg += '</svg>';
+  
+      const tabelaDuzine = pilanaData.trupci_duzine.map(d => `<tr><td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:bold;">${d.duzina} m</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${d.kom}</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:right; font-weight:bold; color:#0f172a;">${d.m3} m³</td></tr>`).join('');
+  
+      let glavnaTabelaHtml = ''; const poMasini = {};
+      pilanaData.glavna_tabela.forEach(p => { const m = p.masina || 'Neraspoređeno'; if(!poMasini[m]) poMasini[m] = {}; if(!poMasini[m][p.naziv_proizvoda]) poMasini[m][p.naziv_proizvoda] = []; poMasini[m][p.naziv_proizvoda].push(p); });
+      Object.keys(poMasini).forEach(masina => {
+          glavnaTabelaHtml += `<tr><td colspan="6" style="background:#1e3a8a; color:white; font-weight:bold; padding:8px; text-transform:uppercase;">MAŠINA / LINIJA: ${masina}</td></tr>`;
+          Object.keys(poMasini[masina]).forEach(proizvod => {
+              glavnaTabelaHtml += `<tr><td colspan="6" style="background:#f1f5f9; color:#1e293b; font-weight:bold; padding:6px 8px; text-transform:uppercase;">${proizvod}</td></tr>`;
+              poMasini[masina][proizvod].forEach(p => { glavnaTabelaHtml += `<tr><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; color:#475569;">${p.paket_id}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.debljina}x${p.sirina}x${p.duzina}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#10b981;">${p.kolicina_final} m³</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0;">${p.snimio_korisnik}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.vrijeme_tekst||'-'}</td></tr>`; });
+          });
+      });
+  
+      const html = `<html><head><title>IZVJESTAJ_PILANE</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px; } .title { font-size: 28px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: -0.5px;} .trends-banner { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; font-size: 13px;} .trend-badge { padding: 4px 10px; border-radius: 20px; font-weight: bold; color: white; font-size: 11px;} .trend-up { background: #10b981; } .trend-down { background: #ef4444; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } .section-title { font-size: 14px; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin: 0 0 15px 0; text-transform: uppercase; } .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} .stat-footer { background: #f1f5f9; padding: 12px; border-radius: 0 0 8px 8px; font-size: 12px; font-weight: bold; text-align: center; border-top: 2px solid #cbd5e1; color: #334155;} @media print { @page { size: A4 portrait; margin: 0; } }</style></head><body><div class="header"><div><h1 class="title">IZVJEŠTAJ: PILANA I PROREZ</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="trends-banner"><div><b style="color:#1e3a8a; font-size:14px;">VREMENSKA ANALIZA I TRENDOVI (PROREZ)</b><br/><span style="color:#64748b;">Usporedba trenutne proizvodnje sa prethodnim periodima</span></div><div style="display:flex; gap:15px; align-items:center;"><div>Trend 7 Dana: <span class="trend-badge ${pilanaData.kpi.trend_7d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_7d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_7d_proc)}%</span></div><div>Trend 30 Dana: <span class="trend-badge ${pilanaData.kpi.trend_30d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_30d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_30d_proc)}%</span></div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#3b82f6;"><span>ULAZ TRUPACA (m³)</span><b>${pilanaData.kpi.ulaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>GOTOVA GRAĐA (m³)</span><b>${pilanaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#0f172a;"><span>ISKORIŠTENJE (YIELD)</span><b>${pilanaData.kpi.yield_proc} %</b></div></div><div class="grid-2"><div><h3 class="section-title">Struktura Proizvodnje</h3><div style="display:flex; align-items:center; gap:20px;"><div style="width: 140px; height: 140px; position: relative;"><svg width="100%" height="100%" viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.915" fill="#f8fafc"></circle>${svgDonut}</svg><div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;"><b style="font-size:16px;">${pilanaData.kpi.yield_proc}%</b><br/><span style="font-size:8px; color:#64748b;">YIELD</span></div></div><div style="flex:1;">${legendeHtml}</div></div></div><div><h3 class="section-title">Statistika Ulaza po Dužinama</h3><table style="margin-bottom:0;"><thead><tr><th>Dužina</th><th style="text-align:center;">Kom</th><th style="text-align:right;">Ukupno m³</th></tr></thead><tbody>${tabelaDuzine || '<tr><td colspan="3" style="text-align:center; padding:10px;">Nema podataka</td></tr>'}</tbody></table><div class="stat-footer">UKUPNO KOMADA: <b style="color:#1e3a8a;">${pilanaData.kpi.ulaz_kom} kom</b> &nbsp;|&nbsp; PROSJEČAN PREČNIK: <b style="color:#1e3a8a;">Ø ${pilanaData.kpi.avg_d} cm</b></div>${trendSvg}</div></div><h3 class="section-title">Detaljna Specifikacija Proreza</h3><table><thead><tr><th>QR Paket</th><th style="text-align:center;">Dimenzije</th><th style="text-align:right;">Količina</th><th>Operater</th><th style="text-align:center;">Vrijeme</th></tr></thead><tbody>${glavnaTabelaHtml || '<tr><td colspan="5" style="text-align:center; padding:20px;">Nema podataka za odabrani period.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
+      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+    };
+  
+    const printDoradaPDF = () => {
+      const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
+      let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
+      if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
+  
+      let tabHtml = '';
+      doradaData.trace_blokovi.forEach(b => {
+          tabHtml += `<tr><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#1e293b;">${b.out_id}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#6b7280; font-size:10px; white-space:pre-wrap;">${b.in_ids}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#8b5cf6;">${b.out_naziv.toUpperCase()}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#f59e0b; font-size:10px;">${b.operacije}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace;">${b.in_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace; font-weight:bold; font-size:12px;">${b.out_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${b.yield}%</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#64748b;">${b.avg_60d}%</td></tr>`;
+      });
+  
+      const html = `<html><head><title>IZVJESTAJ_DORADE</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #8b5cf6; padding-bottom: 15px; margin-bottom: 25px; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} @media print { @page { size: A4 landscape; margin: 1cm; } }</style></head><body><div class="header"><div><h1 style="font-size:28px; font-weight:900; margin:0;">IZVJEŠTAJ: DORADA I PRERADA</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#64748b;"><span>UTROŠENA SIROVINA (m³)</span><b>${(parseFloat(doradaData.kpi.ulaz_m3)).toFixed(2)}</b></div><div class="kpi-card" style="background:#8b5cf6;"><span>FINALNA ROBA (m³)</span><b>${doradaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>ISKORIŠTIVOST (YIELD)</span><b>${doradaData.kpi.yield_proc} %</b></div><div class="kpi-card" style="background:#ef4444;"><span>Kalo / Ostatak (m³)</span><b>${doradaData.kpi.kalo_m3}</b></div></div><h3 style="font-size:14px; font-weight:800; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin:0 0 15px 0;">Traceability Specifikacija (Ulaz vs Izlaz)</h3><table><thead><tr><th>Novi Paket ID</th><th>Sirovina (Ulaz)</th><th>Proizvod</th><th>Operacije</th><th style="text-align:right;">Ulaz m³</th><th style="text-align:right;">Izlaz m³</th><th style="text-align:right;">Yield %</th><th style="text-align:right;">Prosjek 60D</th></tr></thead><tbody>${tabHtml || '<tr><td colspan="8" style="text-align:center; padding:20px;">Nema podataka o doradi.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
+      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+    };
+  
+  
+    return (
+      <div className="min-h-screen bg-[#090e17] text-slate-300 font-sans p-4 md:p-8 pb-24">
+        <div className="max-w-[1500px] mx-auto flex flex-col md:flex-row justify-between items-center bg-[#111827] p-4 rounded-2xl border border-slate-800 shadow-xl mb-6 gap-4">
+          <div className="flex items-center gap-6">
+            <h1 className="text-white font-black text-2xl tracking-tighter hidden md:block">TTM<span className="text-[#10b981]">.ERP</span></h1>
+            <nav className="flex gap-2 bg-[#090e17] p-1 rounded-xl border border-slate-800 overflow-x-auto">
+              {['pilana', 'dorada', 'ai chat', 'qr audit'].map(t => (
+                <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase transition-all whitespace-nowrap ${activeTab === t ? 'bg-[#10b981] text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-800/50'}`}>{t}</button>
+              ))}
+            </nav>
+          </div>
+  
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <Flex className="bg-[#090e17] p-1.5 rounded-xl border border-slate-800 gap-1 w-full md:w-auto justify-center">
+              <button onClick={() => { setTipDatuma('dan'); setIsPeriodic(false); setDatumDo(datumOd); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!isPeriodic?'bg-blue-600 text-white':'text-slate-500 hover:text-white'}`}>Dnevni</button>
+              <button onClick={() => { setTipDatuma('period'); setIsPeriodic(true); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${isPeriodic?'bg-blue-600 text-white':'text-slate-500 hover:text-white'}`}>Period</button>
+            </Flex>
+  
+            <Flex className="bg-[#090e17] p-1.5 rounded-xl border border-slate-800 gap-2 w-full md:w-auto justify-center flex-wrap">
+              {!isPeriodic ? (
+                <>
+                  <button onClick={()=>shiftDate(-1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-blue-600 font-black text-white flex items-center justify-center"><ChevronLeft size={16}/></button>
+                  <div className="relative flex items-center justify-center bg-slate-900 px-4 py-1.5 rounded border border-slate-700 w-32 h-8 hover:border-blue-500 cursor-pointer">
+                    <span className="text-blue-400 font-bold text-sm tracking-widest">{fmtBS(datumOd)}</span>
+                    <input type="date" value={datumOd} onChange={e=>{setDatumOd(e.target.value); setDatumDo(e.target.value);}} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                  </div>
+                  <button onClick={()=>shiftDate(1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-blue-600 font-black text-white flex items-center justify-center"><ChevronRight size={16}/></button>
+                </>
+              ) : (
+                <>
+                  <div className="relative flex items-center justify-center bg-slate-900 px-3 py-1.5 rounded border border-slate-700 w-28 h-8 hover:border-blue-500 cursor-pointer"><span className="text-blue-400 font-bold text-xs tracking-widest">{fmtBS(datumOd)}</span><input type="date" value={datumOd} onChange={e=>setDatumOd(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" /></div>
+                  <span className="text-slate-600 font-black">-</span>
+                  <div className="relative flex items-center justify-center bg-slate-900 px-3 py-1.5 rounded border border-slate-700 w-28 h-8 hover:border-blue-500 cursor-pointer"><span className="text-blue-400 font-bold text-xs tracking-widest">{fmtBS(datumDo)}</span><input type="date" value={datumDo} onChange={e=>setDatumDo(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" /></div>
+                  <div className="flex gap-1 ml-2 border-l border-slate-800 pl-2">
+                    <button onClick={()=>setBrziDatum('7d')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[9px] font-bold uppercase text-slate-300">7D</button>
+                    <button onClick={()=>setBrziDatum('mjesec')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[9px] font-bold uppercase text-slate-300">Ovaj Mj</button>
+                  </div>
+                </>
+              )}
+            </Flex>
+            <button onClick={onExit} className="bg-slate-800 text-red-400 hover:bg-red-500 hover:text-white px-5 h-10 rounded-xl text-[10px] font-black uppercase border border-slate-800 transition-all shadow-md">Izlaz</button>
+          </div>
+        </div>
+  
+        {(activeTab === 'pilana' || activeTab === 'dorada') && (
+            <div className="max-w-[1500px] mx-auto flex gap-4 mb-6">
+               <div className="flex flex-col">
+                   <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Lokacija / Mjesto</span>
+                   <select value={filterMjesto} onChange={e => setFilterMjesto(e.target.value)} className="bg-[#111827] text-white p-3 rounded-xl text-xs font-bold border border-slate-800 outline-none focus:border-blue-500">
+                       <option value="SVE">Sva Mjesta</option><option value="SREBRENIK">Srebrenik</option><option value="MAGACIN A">Magacin A</option>
+                   </select>
+               </div>
+               <div className="flex flex-col">
+                   <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Smjena (Vrijeme)</span>
+                   <select value={filterSmjena} onChange={e => setFilterSmjena(e.target.value)} className="bg-[#111827] text-white p-3 rounded-xl text-xs font-bold border border-slate-800 outline-none focus:border-blue-500">
+                       <option value="SVE">Sve Smjene (00-24h)</option>
+                       <option value="1">I Smjena (07:00 - 15:00)</option>
+                       <option value="2">II Smjena (15:00 - 23:00)</option>
+                       <option value="3">III Smjena (23:00 - 07:00)</option>
+                   </select>
+               </div>
             </div>
-        );
-    }
-
-    return null;
-}
+        )}
+  
+        {loading ? ( <div className="text-center p-20 animate-pulse text-[#10b981] font-bold tracking-widest uppercase">Analiziram Bazu Podataka...</div> ) : (
+          <div className="max-w-[1500px] mx-auto space-y-6">
+            
+            {/* 🪚 TAB 1: PILANA */}
+            {activeTab === 'pilana' && (
+              <div className="animate-in fade-in space-y-6">
+                
+                <Flex className="justify-between items-end mb-2">
+                  <div><h2 className="text-2xl font-black text-white uppercase tracking-tight">Pilana & Prorez</h2><p className="text-xs text-slate-500 uppercase mt-1">Svi paketi bez ulazne sirovine (Nastali iz trupaca)</p></div>
+                  <Button icon={FileText} className="bg-[#3b82f6] hover:bg-blue-500 border-none shadow-[0_0_15px_rgba(59,130,246,0.3)]" onClick={printPilanaPDF}>Štampaj Dnevni Izvještaj</Button>
+                </Flex>
+  
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-[#3b82f6]"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Ulaz Trupaca (m³)</Text><Metric className="text-white font-black">{pilanaData.kpi.ulaz_m3}</Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Komada Trupaca</Text><Metric className="text-white font-black">{pilanaData.kpi.ulaz_kom}</Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-[#10b981]"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Gotova Građa (m³)</Text><Metric className="text-white font-black">{pilanaData.kpi.izlaz_m3}</Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-slate-500"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Iskorištenje (Yield)</Text><Metric className="text-white font-black">{pilanaData.kpi.yield_proc} %</Metric></Card>
+                </div>
+  
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl h-[340px] flex flex-col">
+                    <Flex className="mb-4"><div><Text className="text-white font-bold uppercase tracking-tight">Distribucija</Text><Text className="text-[10px] text-slate-500">% učešća proizvoda</Text></div><Badge color="emerald" size="xl" className="font-black">{pilanaData.kpi.izlaz_m3} m³</Badge></Flex>
+                    <div className="flex-1 relative">
+                      {pilanaData.izlaz_struktura.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pilanaData.izlaz_struktura} innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="m3" stroke="none">{pilanaData.izlaz_struktura.map((entry, index) => ( <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} /> ))}</Pie><RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff'}} itemStyle={{color:'#fff', fontWeight:'bold'}} formatter={(val) => `${val} m³`} /></PieChart></ResponsiveContainer>
+                      ) : (<div className="flex h-full items-center justify-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-800 rounded-xl p-4 text-center">Nema proreza.</div>)}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"><span className="text-2xl font-black text-white">{pilanaData.kpi.yield_proc}%</span><span className="text-[9px] text-slate-500 font-bold uppercase">Yield</span></div>
+                    </div>
+                  </Card>
+  
+                  <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl h-[340px] flex flex-col">
+                    <Text className="text-white font-bold uppercase tracking-tight mb-1">Učinak po Brentisti</Text><Text className="text-[10px] text-slate-500 mb-4">Ukupno m³ utrošenih trupaca po radniku</Text>
+                    <div className="flex-1">
+                        {pilanaData.ucinak_brentista.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%"><BarChart data={pilanaData.ucinak_brentista} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#334155" /><XAxis type="number" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} width={80} /><RechartsTooltip cursor={{fill: '#1e293b'}} contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff'}} formatter={(val) => `${val} m³`}/><Bar dataKey="m3" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={20} /></BarChart></ResponsiveContainer>
+                        ) : (<div className="flex h-full items-center justify-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-800 rounded-xl p-4 text-center">Nema evidentiranih operatera.</div>)}
+                    </div>
+                  </Card>
+  
+                  <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl h-[340px] flex flex-col">
+                    <Flex className="mb-4">
+                        <div><Text className="text-white font-bold uppercase tracking-tight">Trend Proreza</Text><Text className="text-[10px] text-slate-500">Poređenje učinka zadnjih 30 dana</Text></div>
+                        <div className="flex flex-col items-end gap-1"><Badge color={pilanaData.kpi.trend_7d_proc >= 0 ? 'emerald' : 'red'}>{pilanaData.kpi.trend_7d_proc >= 0 ? '▲' : '▼'} {Math.abs(pilanaData.kpi.trend_7d_proc)}% vs 7D</Badge><Badge color={pilanaData.kpi.trend_30d_proc >= 0 ? 'emerald' : 'red'}>{pilanaData.kpi.trend_30d_proc >= 0 ? '▲' : '▼'} {Math.abs(pilanaData.kpi.trend_30d_proc)}% vs 30D</Badge></div>
+                    </Flex>
+                    <div className="flex-1">
+                        <ResponsiveContainer width="100%" height="100%"><AreaChart data={pilanaData.trend_30d} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff'}} formatter={(val) => `${val} m³`}/><Area type="monotone" dataKey="Proizvodnja" stroke="#10b981" fill="#10b981" fillOpacity={0.2} strokeWidth={3} /></AreaChart></ResponsiveContainer>
+                    </div>
+                  </Card>
+                </div>
+  
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl">
+                    <Text className="text-white font-bold uppercase tracking-tight mb-4 border-b border-slate-800 pb-3">Ulaz po dužinama</Text>
+                    <table className="w-full text-left text-[11px]"><thead className="text-slate-500 border-b border-slate-800"><tr><th className="pb-2">Dužina</th><th className="pb-2 text-center">Kom</th><th className="pb-2 text-right">m³</th></tr></thead><tbody className="text-slate-300">
+                        {pilanaData.trupci_duzine.length === 0 && <tr><td colSpan="3" className="py-6 text-center text-slate-600 font-bold">Nema evidentiranih trupaca.</td></tr>}
+                        {pilanaData.trupci_duzine.map((d,i) => (<tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30"><td className="py-3 font-bold text-white">{d.duzina}m</td><td className="py-3 text-center">{d.kom}</td><td className="py-3 text-right font-mono text-blue-400 font-bold">{d.m3}</td></tr>))}
+                    </tbody></table>
+                    <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center bg-slate-900 p-3 rounded-xl"><div><Text className="text-[9px] text-slate-500 uppercase font-black">Ukupno Trupaca</Text><Text className="text-white font-bold">{pilanaData.kpi.ulaz_kom} kom</Text></div><div className="text-right"><Text className="text-[9px] text-slate-500 uppercase font-black">Prosječan Prečnik</Text><Text className="text-white font-bold">Ø {pilanaData.kpi.avg_d} cm</Text></div></div>
+                  </Card>
+                  <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl lg:col-span-2 overflow-x-auto">
+                    <Text className="text-white font-bold uppercase tracking-tight mb-4 border-b border-slate-800 pb-3">Glavna Tabela Proreza</Text>
+                    <table className="w-full text-left text-[11px]"><thead className="text-slate-500 border-b border-slate-800"><tr><th className="pb-2">QR Paket</th><th>Proizvod</th><th>Dimenzije</th><th>Mašina</th><th>Operater</th><th className="text-right pb-2">Količina (m³)</th></tr></thead><tbody className="text-slate-300">
+                        {pilanaData.glavna_tabela.length === 0 && <tr><td colSpan="6" className="py-10 text-center text-slate-600 font-bold border-2 border-dashed border-slate-800 rounded-xl">Nema kreiranih paketa iz proreza.</td></tr>}
+                        {pilanaData.glavna_tabela.map((p,i) => (<tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-all"><td className="py-3 font-black text-white tracking-widest">{p.paket_id}</td><td className="py-3 uppercase text-[10px] font-bold">{p.naziv_proizvoda}</td><td className="py-3 text-slate-400">{p.debljina}x{p.sirina}x{p.duzina}</td><td className="py-3 text-[9px] uppercase text-emerald-500 bg-emerald-500/10 px-2 rounded font-bold">{p.masina||'-'}</td><td className="py-3 text-slate-400 flex items-center gap-1"><UserCircle size={12}/>{p.snimio_korisnik}</td><td className="py-3 text-right font-mono text-emerald-400 font-black text-sm">{p.kolicina_final}</td></tr>))}
+                    </tbody></table>
+                  </Card>
+                </div>
+              </div>
+            )}
+  
+            {/* 🔄 TAB 2: DORADA */}
+            {activeTab === 'dorada' && (
+              <div className="animate-in fade-in space-y-6">
+                <Flex className="justify-between items-end mb-2">
+                  <div><h2 className="text-2xl font-black text-white uppercase tracking-tight">Dorada (Traceability)</h2><p className="text-xs text-slate-500 uppercase mt-1">Svi paketi u koje je dodata ulazna sirovina</p></div>
+                  <Button icon={FileText} className="bg-[#8b5cf6] hover:bg-purple-500 border-none shadow-[0_0_15px_rgba(139,92,246,0.3)]" onClick={printDoradaPDF}>Štampaj Analizu Dorade</Button>
+                </Flex>
+  
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-slate-500"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Utrošena Sirovina</Text><Metric className="text-white font-black">{doradaData.kpi.ulaz_m3} <span className="text-sm">m³</span></Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-[#8b5cf6]"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Finalna Roba</Text><Metric className="text-purple-400 font-black">{doradaData.kpi.izlaz_m3} <span className="text-sm">m³</span></Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-[#10b981]"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Iskoristivost (Yield)</Text><Metric className="text-emerald-400 font-black">{doradaData.kpi.yield_proc}%</Metric></Card>
+                  <Card className="bg-[#111827] border-slate-800 p-5 rounded-2xl border-l-4 border-l-red-500"><Text className="text-[10px] uppercase text-slate-400 font-bold tracking-widest mb-1">Gubitak / Kalo</Text><Metric className="text-red-400 font-black">{doradaData.kpi.kalo_m3} <span className="text-sm">m³</span></Metric></Card>
+                </div>
+  
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[340px]">
+                   <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl h-full flex flex-col">
+                      <Text className="text-white font-bold uppercase tracking-tight mb-1">Analiza Operacija</Text>
+                      <Text className="text-[10px] text-slate-500 mb-4">m³ po dodanoj operaciji (Sušenje, Blanjanje...)</Text>
+                      <div className="flex-1">
+                        {doradaData.operacije.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%"><BarChart data={doradaData.operacije} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#334155" /><XAxis type="number" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} width={80} /><RechartsTooltip cursor={{fill: '#1e293b'}} contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff'}} formatter={(val) => `${val} m³`}/><Bar dataKey="m3" fill="#8b5cf6" radius={[0, 4, 4, 0]} maxBarSize={20} /></BarChart></ResponsiveContainer>
+                        ) : (<div className="flex h-full items-center justify-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-800 rounded-xl p-4 text-center">Nema označenih operacija.</div>)}
+                      </div>
+                   </Card>
+                   
+                   <Card className="bg-[#111827] border-slate-800 p-6 rounded-2xl h-full flex flex-col lg:col-span-2">
+                      <Flex className="mb-4">
+                          <div><Text className="text-white font-bold uppercase tracking-tight">Trend Učinka Dorade</Text><Text className="text-[10px] text-slate-500">Zadnjih 7 dana</Text></div>
+                          <Badge color={doradaData.kpi.trend_7d_proc >= 0 ? 'emerald' : 'red'}>{doradaData.kpi.trend_7d_proc >= 0 ? '▲' : '▼'} {Math.abs(doradaData.kpi.trend_7d_proc)}% vs 7D</Badge>
+                      </Flex>
+                      <div className="flex-1">
+                          <ResponsiveContainer width="100%" height="100%"><AreaChart data={doradaData.trend_7d} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" /><XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff'}} formatter={(val) => `${val} m³`}/><Area type="monotone" dataKey="Dorada" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} strokeWidth={3} /></AreaChart></ResponsiveContainer>
+                      </div>
+                   </Card>
+                </div>
+  
+                <div className="space-y-4">
+                  <Text className="text-white font-bold uppercase tracking-tight mb-2 mt-4">Traceability Kartice (Procesi prerade)</Text>
+                  {doradaData.trace_blokovi.length === 0 && <Card className="bg-[#111827] border-slate-800 text-center p-10 text-slate-500 font-bold border-dashed border-2">Nema operacija dorade za odabrani period.</Card>}
+                  {doradaData.trace_blokovi.map((b, i) => (
+                    <div key={i} className="bg-[#1e293b] rounded-2xl border border-slate-700 overflow-hidden shadow-lg">
+                      <div className="flex flex-col md:flex-row">
+                        <div className="flex-1 p-5 border-b md:border-b-0 md:border-r border-slate-700 bg-[#0f172a]/50 border-l-4 border-l-slate-500">
+                          <Badge color="slate" className="mb-2 bg-slate-800 text-slate-400">ULAZNA SIROVINA</Badge>
+                          <Text className="text-xs text-slate-300 font-bold leading-relaxed mt-2 whitespace-pre-wrap">{b.in_ids}</Text>
+                          <div className="mt-4"><span className="text-[10px] text-slate-500 uppercase font-black">Utrošeno u ovom poslu: </span><span className="text-xl font-black text-slate-300 font-mono block">{b.in_m3} <span className="text-xs font-normal text-slate-500">m³</span></span></div>
+                        </div>
+                        
+                        <div className="flex flex-col items-center justify-center p-4 bg-slate-900 text-slate-400 min-w-[120px] relative">
+                           <div className="absolute inset-0 flex items-center justify-center opacity-10"><Zap size={64}/></div>
+                           <Text className="text-[10px] text-amber-500 font-bold uppercase mb-2 text-center z-10">{b.operacije}</Text>
+                           <ArrowRight size={24} className="rotate-90 md:rotate-0 text-slate-500 z-10" />
+                           <Text className="text-[8px] text-slate-500 mt-2 uppercase font-black z-10 bg-slate-800 px-2 py-1 rounded">{b.masina}</Text>
+                        </div>
+                        
+                        <div className="flex-1 p-5 bg-[#111827] relative border-l-4 border-l-purple-500 flex flex-col justify-between">
+                          <div>
+                              <Flex className="justify-start gap-2 mb-2"><Badge color="purple" className="font-bold">IZLAZ: {b.out_id}</Badge><Badge color={b.yield > 80 ? 'emerald' : b.yield > 50 ? 'amber' : 'red'} className="font-black">Yield: {b.yield}%</Badge></Flex>
+                              <Text className="text-sm font-bold text-white uppercase mt-3">{b.out_naziv}</Text>
+                              <Text className="text-xs text-slate-400 mb-3">{b.out_dim}</Text>
+                          </div>
+                          <div className="flex justify-between items-end border-t border-slate-800 pt-3 mt-2">
+                            <div>
+                                <Text className="text-[10px] text-slate-500 uppercase font-black mb-1">Dobijena zapremina</Text>
+                                <div className="text-3xl font-black text-purple-400 font-mono">{b.out_m3} <span className="text-xs font-normal text-slate-500">m³</span></div>
+                            </div>
+                            <div className="text-right">
+                               <Text className="text-[9px] uppercase font-bold text-slate-500 mb-1">Brzina (Aproks.)</Text>
+                               <Text className="text-blue-400 font-bold text-xs">{b.brzina} m³/h</Text>
+                               <Text className="text-[9px] uppercase font-bold text-slate-500 mt-2 mb-1">Prosjek Yield (60D)</Text>
+                               <Text className="text-emerald-500 font-bold text-xs">{b.avg_60d}%</Text>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+  
+            {/* 🤖 TAB 3: AI DATA SCIENTIST */}
+            {activeTab === 'ai chat' && (
+              <div className="animate-in zoom-in-95 max-w-4xl mx-auto space-y-6">
+                <Card className="bg-[#111827] p-8 rounded-3xl border border-slate-800 shadow-2xl text-center">
+                  <Bot size={48} className="mx-auto text-blue-500 mb-4" />
+                  <Text className="text-2xl font-black text-white uppercase tracking-tighter mb-2">AI Data Scientist</Text>
+                  <Text className="text-xs text-slate-500 uppercase mb-8">Prirodni jezik za složene izvještaje (Powered by Gemini Pro)</Text>
+                  
+                  <textarea 
+                      value={aiUpit} 
+                      onChange={e => setAiUpit(e.target.value)} 
+                      placeholder="Pitaj AI šta god želiš (npr. 'Analiziraj mi iskoristivost dorade i reci gdje najviše gubimo?')"
+                      className="w-full bg-[#0f172a] border border-slate-700 p-4 rounded-2xl text-white outline-none focus:border-blue-500 mb-4 text-sm resize-none h-24"
+                  />
+                  
+                  <Button size="xl" className="bg-blue-600 hover:bg-blue-500 border-none w-full md:w-auto" onClick={generisiAI} loading={isLoadingAI}>
+                    ⚡ {aiUpit ? 'Odgovori na pitanje iznad' : 'Generiši generalni Executive Summary'}
+                  </Button>
+                </Card>
+  
+                {aiOdgovor && (
+                  <Card id="ai-report-print" className="bg-[#0f172a] border border-blue-900/50 rounded-3xl p-8 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
+                    <Flex className="justify-between items-start mb-6">
+                        <div>
+                            <Text className="text-blue-400 font-bold uppercase tracking-widest text-xs">AI Izvještaj Spreman</Text>
+                            <Text className="text-slate-500 text-[10px] mt-1">{aiUpit || 'Generalna analiza'}</Text>
+                        </div>
+                        <Button size="xs" icon={FileText} variant="secondary" onClick={() => {
+                            const w = window.open('','_blank');
+                            w.document.write('<html><head><title>AI Izveštaj</title><style>body{font-family:sans-serif; padding:40px; color:#1e293b; line-height:1.6;} h1{color:#1e3a8a;} pre{background:#f1f5f9; padding:10px; border-radius:5px;}</style></head><body><h1>AI Executive Summary</h1><div style="white-space:pre-wrap;">' + aiOdgovor + '</div><script>window.onload=function(){window.print();}</script></body></html>');
+                            w.document.close();
+                        }}>Print u PDF</Button>
+                    </Flex>
+                    <div className="prose prose-invert prose-sm max-w-none text-slate-300 font-mono leading-loose whitespace-pre-wrap">
+                       {aiOdgovor}
+                    </div>
+                  </Card>
+                )}
+              </div>
+            )}
+  
+            {/* 🔍 TAB 4: DEEP QR AUDIT */}
+            {activeTab === 'qr audit' && (
+              <div className="animate-in zoom-in-95 max-w-3xl mx-auto space-y-6">
+                <Card className="bg-[#111827] p-8 rounded-3xl border border-slate-800 shadow-2xl text-center">
+                  <Search size={48} className="mx-auto text-emerald-500 mb-4" />
+                  <Text className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Deep QR Audit</Text>
+                  <Text className="text-xs text-slate-500 uppercase mb-8">Skeniraj barkod za apsolutnu vremensku historiju paketa</Text>
+                  
+                  <Flex className="gap-2 bg-[#090e17] p-2 rounded-2xl border border-slate-800 shadow-inner">
+                    <input value={searchId} onChange={e => setSearchId(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && checkQR(searchId)} placeholder="Skeniraj barkod (npr. 12345)..." className="flex-1 bg-transparent p-4 text-center text-xl font-black text-emerald-400 outline-none" />
+                    <Button size="lg" color="emerald" onClick={() => checkQR(searchId)}>Istraži</Button>
+                  </Flex>
+                </Card>
+  
+                {auditLog === 'load' && <div className="text-center p-10 animate-pulse text-emerald-500 font-black tracking-widest uppercase">Kopam po bazi podataka...</div>}
+                {auditLog === 'none' && <div className="text-center p-10 bg-red-900/20 border border-red-900/30 rounded-xl text-red-500 font-black">NIŠTA NIJE PRONAĐENO U BAZI ZA OVAJ BARKOD.</div>}
+                
+                {Array.isArray(auditLog) && (
+                  <div className="space-y-0 mt-8 relative before:absolute before:inset-0 before:ml-[19px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-1 before:bg-gradient-to-b before:from-emerald-500 before:to-slate-800 pl-2 md:pl-0">
+                    {auditLog.map((ev, i) => (
+                      <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active pb-8">
+                        <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-[#090e17] bg-slate-800 text-white font-black text-xs shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-xl z-10 ${ev.tip.includes('ULAZ') || ev.tip.includes('KREIRANO') ? 'text-emerald-400 border-emerald-500/30' : ev.tip.includes('BRISANJE') ? 'text-red-400 border-red-500/30' : 'text-blue-400 border-blue-500/30'}`}>
+                            {i+1}
+                        </div>
+                        <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-[#111827] p-5 rounded-2xl border border-slate-700 shadow-xl hover:border-emerald-500/50 transition-all">
+                          <Flex className="mb-3">
+                              <Badge color={ev.tip.includes('ULAZ') || ev.tip.includes('KREIRANO') ? 'emerald' : ev.tip.includes('BRISANJE') ? 'red' : 'blue'}>{ev.tip}</Badge>
+                              <span className="text-[10px] font-mono text-slate-500 bg-[#090e17] px-2 py-1 rounded border border-slate-800">{new Date(ev.time).toLocaleString('bs-BA')}</span>
+                          </Flex>
+                          <h4 className="text-white font-bold text-sm uppercase">{ev.msg}</h4>
+                          {ev.details && <div className="text-[10px] text-slate-400 mt-2 p-2 bg-[#090e17] rounded-lg border border-slate-800 font-mono whitespace-pre-wrap">{ev.details}</div>}
+                          <div className="mt-3 text-[9px] uppercase font-black text-slate-600 border-t border-slate-800 pt-2">Snimio radnik: <span className="text-slate-300">{ev.user || 'Sistem'}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+  
+          </div>
+        )}
+      </div>
+    );
+  }
 // ============================================================================
 // MODUL: DORADA
 // ============================================================================
@@ -2213,7 +2325,7 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-amber-500" user={user} />
+<MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-amber-500" user={user} modulIme="dorada" />
             <h2 className="text-amber-500 text-center font-black tracking-widest uppercase">🔄 DORADA - ULAZ / IZLAZ</h2>
             
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-amber-500/30 shadow-2xl space-y-5">
@@ -2634,7 +2746,8 @@ function TabMasine() {
     const [masterOznake, setMasterOznake] = useState([]); // SVI mogući atributi iz baze
     const [novaMasterOznaka, setNovaMasterOznaka] = useState(''); // Za dodavanje u šifrarnik
     
-    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [] });
+    // Dodano dozvoljeni_moduli u initial state
+    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [] });
     const [isEditing, setIsEditing] = useState(false);
 
     useEffect(() => { load(); }, []);
@@ -2690,14 +2803,15 @@ function TabMasine() {
             naziv: m.naziv, 
             cijena_sat: m.cijena_sat || '', 
             cijena_m3: m.cijena_m3 || '',
-            atributi_paketa: m.atributi_paketa || [] 
+            atributi_paketa: m.atributi_paketa || [],
+            dozvoljeni_moduli: m.dozvoljeni_moduli ? m.dozvoljeni_moduli.split(',').map(s => s.trim().toLowerCase()) : []
         });
         setIsEditing(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const ponistiIzmjenu = () => {
-        setForm({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [] });
+        setForm({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [] });
         setIsEditing(false);
     };
 
@@ -2708,7 +2822,8 @@ function TabMasine() {
             naziv: form.naziv.toUpperCase(), 
             cijena_sat: parseFloat(form.cijena_sat)||0, 
             cijena_m3: parseFloat(form.cijena_m3)||0,
-            atributi_paketa: form.atributi_paketa 
+            atributi_paketa: form.atributi_paketa,
+            dozvoljeni_moduli: form.dozvoljeni_moduli && form.dozvoljeni_moduli.length > 0 ? form.dozvoljeni_moduli.join(', ') : ''
         };
 
         if (isEditing) {
@@ -2758,6 +2873,32 @@ function TabMasine() {
                         <input type="number" placeholder="0.00" value={form.cijena_m3} onChange={e=>setForm({...form, cijena_m3:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-blue-500" />
                     </div>
                     
+                    {/* NOVO: DOZVOLJENI MODULI */}
+                    <div className="col-span-1 md:col-span-3 mt-2 bg-[#0f172a] p-4 rounded-xl border border-slate-700">
+                        <label className="text-[10px] text-slate-500 uppercase font-black mb-3 block">Dozvoljeni Moduli (gdje se mašina prikazuje)</label>
+                        <div className="flex gap-6">
+                            {['prorez', 'pilana', 'dorada'].map(modul => (
+                                <label key={modul} className="flex items-center gap-2 text-white text-xs font-bold cursor-pointer uppercase hover:text-blue-400 transition-colors">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={form.dozvoljeni_moduli?.includes(modul) || false}
+                                        onChange={(e) => {
+                                            const trenutni = form.dozvoljeni_moduli || [];
+                                            setForm({
+                                                ...form,
+                                                dozvoljeni_moduli: e.target.checked 
+                                                    ? [...trenutni, modul] 
+                                                    : trenutni.filter(m => m !== modul) 
+                                            });
+                                        }}
+                                        className="w-5 h-5 accent-blue-600 bg-slate-800 border-slate-700 rounded"
+                                    />
+                                    {modul}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* ODABIR OZNAKA (NA KLIK KAO KOD RADNIKA) */}
                     <div className="col-span-1 md:col-span-3 pt-4 border-t border-slate-700 mt-2">
                         <label className="text-[10px] text-slate-400 uppercase font-black mb-3 block">🏷️ Odobreni atributi / operacije za ovu mašinu:</label>
@@ -2806,7 +2947,7 @@ function TabMasine() {
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="font-black text-white text-sm">{m.naziv}</p>
-                                    <p className="text-[10px] text-slate-400 mt-1">Radni sat: <b className="text-emerald-400">{m.cijena_sat} KM</b> | Po kubiku: <b className="text-emerald-400">{m.cijena_m3} KM</b></p>
+                                    <p className="text-[10px] text-slate-400 mt-1">Radni sat: <b className="text-emerald-400">{m.cijena_sat} KM</b> | Po kubiku: <b className="text-emerald-400">{m.cijena_m3} KM</b> | Moduli: <b className="text-blue-400">{m.dozvoljeni_moduli ? m.dozvoljeni_moduli.toUpperCase() : 'SVI'}</b></p>
                                 </div>
                                 <button onClick={(e)=>{e.stopPropagation(); obrisi(m.id, m.naziv);}} className="text-red-500 font-black px-4 py-2 bg-red-900/20 rounded-xl hover:bg-red-500 hover:text-white transition-all">✕</button>
                             </div>
@@ -3347,6 +3488,7 @@ function TabKupci() {
         </div>
     );
 }
+
 function TabRadnici() {
     const [radnici, setRadnici] = useState([]);
     const [editId, setEditId] = useState(null); // NOVO: Pamti kojeg radnika uređujemo
