@@ -75,19 +75,23 @@ export default function Page() {
   
                   {/* GORNJI BLOK DUGMADI (Prodaja i Finansije) */}
                   <div className="grid grid-cols-2 gap-4 w-full">
-                      <MenuBtn label="PONUDE" icon="📝" color="pink" onClick={() => setActiveModule('ponude')} />
-                      <MenuBtn label="R. NALOZI" icon="📄" color="purple" onClick={() => setActiveModule('nalozi')} />
-                      <MenuBtn label="OTPREMNICE" icon="🚚" color="orange" onClick={() => setActiveModule('otpremnice')} />
-                      <MenuBtn label="RAČUNI" icon="💰" color="red" onClick={() => setActiveModule('racuni')} />
+
                       <MenuBtn label="PRIJEM TRUPACA" icon="🪵" color="indigo" onClick={() => setActiveModule('prijem')} />
                       <MenuBtn label="PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />
+                      <MenuBtn label="PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />
+                      <MenuBtn label="DORADA (Ulaz/Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />
                       <MenuBtn label="QR KONTROLA" icon="🔍" color="blue" onClick={() => setActiveModule('qr_kontrola')} />
                   </div>
   
                   {/* DONJI BLOK DUGMADI (Proizvodnja i Podešavanja) */}
                   <div className="grid grid-cols-1 gap-4 w-full">
-                      <MenuBtn label="PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />
-                      <MenuBtn label="DORADA (Ulaz/Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />
+                     
+                      <MenuBtn label="PONUDE" icon="📝" color="pink" onClick={() => setActiveModule('ponude')} />
+                      <MenuBtn label="R. NALOZI" icon="📄" color="purple" onClick={() => setActiveModule('nalozi')} />
+                      <MenuBtn label="OTPREMNICE" icon="🚚" color="orange" onClick={() => setActiveModule('otpremnice')} />
+                      <MenuBtn label="RAČUNI" icon="💰" color="red" onClick={() => setActiveModule('racuni')} />
+                      <MenuBtn label="BLAGAJNA (KEŠ)" icon="💵" color="emerald" onClick={() => setActiveModule('blagajna')} />
+                      <MenuBtn label="KONTROLNI TORANJ" icon="📡" color="blue" onClick={() => setActiveModule('toranj')} />
                       
                       {loggedUser?.uloga === 'admin' && (
                           <>
@@ -109,12 +113,16 @@ export default function Page() {
               <ProrezModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'pilana' ? (
               <PilanaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
+              ) : activeModule === 'blagajna' ? (
+                <BlagajnaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'dorada' ? (
               <DoradaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'settings' ? (
               <SettingsModule onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'ponude' ? (
               <PonudeModule onExit={() => setActiveModule('dashboard')} />
+              ) : activeModule === 'toranj' ? (
+                <KontrolniToranjModule onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'nalozi' ? (
               <RadniNaloziModule onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'otpremnice' ? (
@@ -1110,6 +1118,39 @@ function PilanaModule({ user, header, setHeader, onExit }) {
             if(selectedIzlazId === pid) setSelectedIzlazId('');
         }
     };
+    const printNaljepnica = (paket) => {
+        const originalTitle = document.title;
+        document.title = `Naljepnica ${paket.paket_id}`;
+        
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paket.paket_id}`;
+        
+        const html = `
+            <html><head><title>Naljepnica ${paket.paket_id}</title><style>
+                body { font-family: sans-serif; width: 100mm; height: 100mm; margin: 0; padding: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 1px solid black; box-sizing: border-box;}
+                h1 { font-size: 24px; margin: 0 0 10px 0; }
+                img { width: 150px; height: 150px; margin-bottom: 10px; }
+                p { font-size: 14px; margin: 5px 0; font-weight: bold; }
+                .dim { font-size: 18px; margin-top: 10px; }
+                @media print { @page { size: 100mm 100mm; margin: 0; } body { border: none; } }
+            </style></head>
+            <body>
+                <h1>${paket.paket_id}</h1>
+                <img src="${qrCodeUrl}" alt="QR KOD" />
+                <p>${paket.naziv_proizvoda}</p>
+                <p class="dim">${paket.debljina} x ${paket.sirina} x ${paket.duzina}</p>
+                <p>Vol: ${paket.kolicina_final} m³</p>
+                ${"<sc"+"ript>"}window.onload = function(){ setTimeout(function(){ window.print(); }, 800); };${"</sc"+"ript>"}
+            </body></html>
+        `;
+        
+        iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
+        setTimeout(() => { document.title = originalTitle; }, 3000);
+        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
+    };
 
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
@@ -1204,20 +1245,33 @@ function PilanaModule({ user, header, setHeader, onExit }) {
                         <button onClick={save} className="w-full py-6 mt-4 bg-emerald-600 text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90">{activeEditItem ? `✅ AŽURIRAJ STAVKU` : `✅ SNIMI STAVKU`}</button>
                         
                         <div className="pt-4 space-y-2 max-h-52 overflow-y-auto border-t border-slate-700">
-                            {izlazPackageItems.map(item => (
-                                <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-emerald-500">
-                                    <div>
-                                        <div className="text-[10px] uppercase text-white font-bold">{item.naziv_proizvoda}</div>
-                                        <div className="text-emerald-500 text-lg font-black tracking-tighter">{item.debljina}x{item.sirina}x{item.duzina}</div>
-                                        {item.oznake && item.oznake.length > 0 && (
-                                            <div className="flex gap-1 mt-1">
-                                                {item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/30 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-500/30">{o}</span>)}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="text-right font-black"><div className="text-xl text-white">{item.kolicina_final} m³</div><div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div></div>
-                                </div>
-                            ))}
+                        {izlazPackageItems.map(item => (
+    <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-emerald-500">
+        <div>
+            <div className="text-[10px] uppercase text-white font-bold">{item.naziv_proizvoda}</div>
+            <div className="text-emerald-500 text-lg font-black tracking-tighter">{item.debljina}x{item.sirina}x{item.duzina}</div>
+            {item.oznake && item.oznake.length > 0 && (
+                <div className="flex gap-1 mt-1">
+                    {item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/30 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-500/30">{o}</span>)}
+                </div>
+            )}
+        </div>
+        
+        {/* OVDJE JE DODANO DUGME ZA PRINT */}
+        <div className="flex flex-col items-end gap-2">
+            <div className="text-right font-black">
+                <div className="text-xl text-white">{item.kolicina_final} m³</div>
+                <div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div>
+            </div>
+            <button 
+                onClick={(e) => { e.stopPropagation(); printNaljepnica(item); }} 
+                className="bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-blue-500/30 transition-all shadow-md z-10"
+            >
+                🖨️ Print QR
+            </button>
+        </div>
+    </div>
+))}
                         </div>
                     </div>
                 )}
@@ -1304,7 +1358,78 @@ const fmtBS = (iso) => {
       if (typeof val === 'string') return val.replace(/[{}"[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean);
       return [];
   };
-  
+
+  // GLOBALNA FUNKCIJA ZA DOKUMENTE (Ponude, Fakture, Nalozi) - Dostupna svuda!
+// GLOBALNA FUNKCIJA ZA DOKUMENTE (Ultra Moderni Dizajn)
+// GLOBALNA FUNKCIJA ZA DOKUMENTE (Ultra Moderni Dizajn - FIXED BUG)
+// GLOBALNA FUNKCIJA ZA DOKUMENTE (Ultra Moderni Dizajn - FIXED BUG)
+const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6') => {
+    const originalTitle = document.title;
+    const nazivFajla = `${datum} ${tipDokumenta} ${brojDokumenta}`;
+    document.title = nazivFajla; 
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${brojDokumenta}`;
+
+    const html = `
+        <html>
+        <head>
+            <title>${nazivFajla}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+                body { font-family: 'Inter', sans-serif; padding: 0; margin: 0; color: #1e293b; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .page-container { padding: 40px; }
+                .top-bar { height: 14px; background-color: ${themeColor}; width: 100%; }
+                .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0; margin-bottom: 30px; }
+                .logo-area { display: flex; flex-direction: column; }
+                .company-name { font-size: 20px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px; opacity: 0.8;}
+                .doc-title { font-size: 42px; font-weight: 900; color: ${themeColor}; text-transform: uppercase; margin: 5px 0 0px 0; letter-spacing: -1.5px; line-height: 1; }
+                .qr-wrapper { text-align: center; background: #f8fafc; padding: 12px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+                .qr-wrapper img { width: 90px; height: 90px; }
+                .qr-text { font-family: monospace; font-size: 11px; font-weight: 800; margin-top: 8px; color: #475569; letter-spacing: 1px;}
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+                th { background-color: ${themeColor}; color: white; padding: 14px 12px; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; text-align: left; }
+                td { padding: 14px 12px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+                tr:nth-child(even) td { background-color: #f8fafc; }
+                .summary-box { width: 320px; float: right; background: #f8fafc; border-radius: 16px; padding: 25px; margin-top: 30px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+                .summary-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px; color: #64748b; }
+                .summary-row b { color: #0f172a; }
+                .summary-total { display: flex; justify-content: space-between; margin-top: 15px; padding-top: 15px; border-top: 2px dashed #cbd5e1; font-size: 22px; font-weight: 900; color: ${themeColor}; align-items: center; }
+                .info-grid { display: flex; justify-content: space-between; background: #f1f5f9; padding: 25px; border-radius: 16px; border-left: 6px solid ${themeColor}; margin-bottom: 30px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+                .info-col h4 { margin: 0 0 10px 0; font-size: 10px; text-transform: uppercase; color: #64748b; letter-spacing: 1px; font-weight: 800; }
+                .info-col p { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.5; }
+                .footer { clear: both; padding-top: 30px; margin-top: 50px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
+            </style>
+        </head>
+        <body>
+            <div class="top-bar"></div>
+            <div class="page-container">
+                <div class="header">
+                    <div class="logo-area">
+                        <div class="company-name">SmartTimber ERP</div>
+                        <div class="doc-title">${tipDokumenta}</div>
+                        <div style="color: #64748b; font-size: 14px; font-weight: 600; margin-top: 8px; letter-spacing: 0.5px;">Broj: <span style="color: #0f172a;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datum}</div>
+                    </div>
+                    <div class="qr-wrapper">
+                        <img src="${qrCodeUrl}" alt="QR" />
+                        <div class="qr-text">${brojDokumenta}</div>
+                    </div>
+                </div>
+                ${htmlSadrzajTabela}
+            </div>
+            ${"<sc"+"ript>"}window.onload = function() { setTimeout(function() { window.print(); }, 800); };${"</sc"+"ript>"}
+        </body>
+        </html>
+    `;
+    
+    iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
+    setTimeout(() => { document.title = originalTitle; }, 3000);
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+};
+
   export function DashboardModule({ user, onExit }) {
     const danasnjiDatum = new Date().toISOString().split('T')[0];
     const [activeTab, setActiveTab] = useState('pilana');
@@ -1600,58 +1725,77 @@ const fmtBS = (iso) => {
     // =========================================================================
     // PDF GENERATORI
     // =========================================================================
-    const printPilanaPDF = () => {
-      const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
-      let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
-      if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
-  
-      let svgDonut = ''; let legendeHtml = ''; let trenutniOffset = 0;
-      pilanaData.izlaz_struktura.forEach((p, idx) => {
-          const procenat = pilanaData.kpi.izlaz_m3 > 0 ? (p.m3 / pilanaData.kpi.izlaz_m3) * 100 : 0;
-          const dashArray = `${procenat} ${100 - procenat}`;
-          svgDonut += `<circle cx="21" cy="21" r="15.915" fill="transparent" stroke="${COLORS[idx % COLORS.length]}" stroke-width="6" stroke-dasharray="${dashArray}" stroke-dashoffset="${100 - trenutniOffset}"></circle>`;
-          trenutniOffset += procenat;
-          legendeHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;"><div style="display:flex; align-items:center;"><div style="width:12px; height:12px; background-color:${COLORS[idx % COLORS.length]}; border-radius:50%; margin-right:8px;"></div><span style="font-weight:bold; color:#334155;">${p.name}</span></div><div><b style="color:#0f172a;">${p.m3.toFixed(2)} m³</b> <span style="color:#64748b; margin-left:5px;">(${procenat.toFixed(1)}%)</span></div></div>`;
-      });
-  
-      let trendSvg = '<svg width="100%" height="80" viewBox="0 0 350 80" style="margin-top:10px;">';
-      const maxVal = Math.max(...pilanaData.trend_7d.map(d => d.Proizvodnja), 1);
-      pilanaData.trend_7d.forEach((d, i) => {
-          const h = (d.Proizvodnja / maxVal) * 50; const x = i * 50 + 10; const y = 60 - h;
-          trendSvg += `<rect x="${x}" y="${y}" width="30" height="${h}" fill="#10b981" rx="2" /><text x="${x+15}" y="75" font-size="10" fill="#64748b" text-anchor="middle" font-family="sans-serif">${d.name}</text>`;
-          if(d.Proizvodnja > 0) trendSvg += `<text x="${x+15}" y="${y-5}" font-size="10" fill="#0f172a" text-anchor="middle" font-weight="bold" font-family="sans-serif">${d.Proizvodnja}</text>`;
-      });
-      trendSvg += '</svg>';
-  
-      const tabelaDuzine = pilanaData.trupci_duzine.map(d => `<tr><td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:bold;">${d.duzina} m</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${d.kom}</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:right; font-weight:bold; color:#0f172a;">${d.m3} m³</td></tr>`).join('');
-  
-      let glavnaTabelaHtml = ''; const poMasini = {};
-      pilanaData.glavna_tabela.forEach(p => { const m = p.masina || 'Neraspoređeno'; if(!poMasini[m]) poMasini[m] = {}; if(!poMasini[m][p.naziv_proizvoda]) poMasini[m][p.naziv_proizvoda] = []; poMasini[m][p.naziv_proizvoda].push(p); });
-      Object.keys(poMasini).forEach(masina => {
-          glavnaTabelaHtml += `<tr><td colspan="6" style="background:#1e3a8a; color:white; font-weight:bold; padding:8px; text-transform:uppercase;">MAŠINA / LINIJA: ${masina}</td></tr>`;
-          Object.keys(poMasini[masina]).forEach(proizvod => {
-              glavnaTabelaHtml += `<tr><td colspan="6" style="background:#f1f5f9; color:#1e293b; font-weight:bold; padding:6px 8px; text-transform:uppercase;">${proizvod}</td></tr>`;
-              poMasini[masina][proizvod].forEach(p => { glavnaTabelaHtml += `<tr><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; color:#475569;">${p.paket_id}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.debljina}x${p.sirina}x${p.duzina}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#10b981;">${p.kolicina_final} m³</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0;">${p.snimio_korisnik}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.vrijeme_tekst||'-'}</td></tr>`; });
-          });
-      });
-  
-      const html = `<html><head><title>IZVJESTAJ_PILANE</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px; } .title { font-size: 28px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: -0.5px;} .trends-banner { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; font-size: 13px;} .trend-badge { padding: 4px 10px; border-radius: 20px; font-weight: bold; color: white; font-size: 11px;} .trend-up { background: #10b981; } .trend-down { background: #ef4444; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } .section-title { font-size: 14px; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin: 0 0 15px 0; text-transform: uppercase; } .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} .stat-footer { background: #f1f5f9; padding: 12px; border-radius: 0 0 8px 8px; font-size: 12px; font-weight: bold; text-align: center; border-top: 2px solid #cbd5e1; color: #334155;} @media print { @page { size: A4 portrait; margin: 0; } }</style></head><body><div class="header"><div><h1 class="title">IZVJEŠTAJ: PILANA I PROREZ</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="trends-banner"><div><b style="color:#1e3a8a; font-size:14px;">VREMENSKA ANALIZA I TRENDOVI (PROREZ)</b><br/><span style="color:#64748b;">Usporedba trenutne proizvodnje sa prethodnim periodima</span></div><div style="display:flex; gap:15px; align-items:center;"><div>Trend 7 Dana: <span class="trend-badge ${pilanaData.kpi.trend_7d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_7d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_7d_proc)}%</span></div><div>Trend 30 Dana: <span class="trend-badge ${pilanaData.kpi.trend_30d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_30d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_30d_proc)}%</span></div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#3b82f6;"><span>ULAZ TRUPACA (m³)</span><b>${pilanaData.kpi.ulaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>GOTOVA GRAĐA (m³)</span><b>${pilanaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#0f172a;"><span>ISKORIŠTENJE (YIELD)</span><b>${pilanaData.kpi.yield_proc} %</b></div></div><div class="grid-2"><div><h3 class="section-title">Struktura Proizvodnje</h3><div style="display:flex; align-items:center; gap:20px;"><div style="width: 140px; height: 140px; position: relative;"><svg width="100%" height="100%" viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.915" fill="#f8fafc"></circle>${svgDonut}</svg><div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;"><b style="font-size:16px;">${pilanaData.kpi.yield_proc}%</b><br/><span style="font-size:8px; color:#64748b;">YIELD</span></div></div><div style="flex:1;">${legendeHtml}</div></div></div><div><h3 class="section-title">Statistika Ulaza po Dužinama</h3><table style="margin-bottom:0;"><thead><tr><th>Dužina</th><th style="text-align:center;">Kom</th><th style="text-align:right;">Ukupno m³</th></tr></thead><tbody>${tabelaDuzine || '<tr><td colspan="3" style="text-align:center; padding:10px;">Nema podataka</td></tr>'}</tbody></table><div class="stat-footer">UKUPNO KOMADA: <b style="color:#1e3a8a;">${pilanaData.kpi.ulaz_kom} kom</b> &nbsp;|&nbsp; PROSJEČAN PREČNIK: <b style="color:#1e3a8a;">Ø ${pilanaData.kpi.avg_d} cm</b></div>${trendSvg}</div></div><h3 class="section-title">Detaljna Specifikacija Proreza</h3><table><thead><tr><th>QR Paket</th><th style="text-align:center;">Dimenzije</th><th style="text-align:right;">Količina</th><th>Operater</th><th style="text-align:center;">Vrijeme</th></tr></thead><tbody>${glavnaTabelaHtml || '<tr><td colspan="5" style="text-align:center; padding:20px;">Nema podataka za odabrani period.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
-      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
-    };
-  
-    const printDoradaPDF = () => {
-      const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
-      let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
-      if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
-  
-      let tabHtml = '';
-      doradaData.trace_blokovi.forEach(b => {
-          tabHtml += `<tr><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#1e293b;">${b.out_id}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#6b7280; font-size:10px; white-space:pre-wrap;">${b.in_ids}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#8b5cf6;">${b.out_naziv.toUpperCase()}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#f59e0b; font-size:10px;">${b.operacije}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace;">${b.in_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace; font-weight:bold; font-size:12px;">${b.out_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${b.yield}%</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#64748b;">${b.avg_60d}%</td></tr>`;
-      });
-  
-      const html = `<html><head><title>IZVJESTAJ_DORADE</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #8b5cf6; padding-bottom: 15px; margin-bottom: 25px; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} @media print { @page { size: A4 landscape; margin: 1cm; } }</style></head><body><div class="header"><div><h1 style="font-size:28px; font-weight:900; margin:0;">IZVJEŠTAJ: DORADA I PRERADA</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#64748b;"><span>UTROŠENA SIROVINA (m³)</span><b>${(parseFloat(doradaData.kpi.ulaz_m3)).toFixed(2)}</b></div><div class="kpi-card" style="background:#8b5cf6;"><span>FINALNA ROBA (m³)</span><b>${doradaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>ISKORIŠTIVOST (YIELD)</span><b>${doradaData.kpi.yield_proc} %</b></div><div class="kpi-card" style="background:#ef4444;"><span>Kalo / Ostatak (m³)</span><b>${doradaData.kpi.kalo_m3}</b></div></div><h3 style="font-size:14px; font-weight:800; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin:0 0 15px 0;">Traceability Specifikacija (Ulaz vs Izlaz)</h3><table><thead><tr><th>Novi Paket ID</th><th>Sirovina (Ulaz)</th><th>Proizvod</th><th>Operacije</th><th style="text-align:right;">Ulaz m³</th><th style="text-align:right;">Izlaz m³</th><th style="text-align:right;">Yield %</th><th style="text-align:right;">Prosjek 60D</th></tr></thead><tbody>${tabHtml || '<tr><td colspan="8" style="text-align:center; padding:20px;">Nema podataka o doradi.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
-      iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
-    };
+    // =========================================================================
+  // PDF GENERATORI (PAMETNA IMENA FAJLOVA)
+  // =========================================================================
+  const printPilanaPDF = () => {
+    const originalTitle = document.title;
+    const nazivFajla = `${fmtBS(datumOd)} Pregled Proreza`;
+    document.title = nazivFajla;
+
+    const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
+    let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
+    if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
+
+    let svgDonut = ''; let legendeHtml = ''; let trenutniOffset = 0;
+    pilanaData.izlaz_struktura.forEach((p, idx) => {
+        const procenat = pilanaData.kpi.izlaz_m3 > 0 ? (p.m3 / pilanaData.kpi.izlaz_m3) * 100 : 0;
+        const dashArray = `${procenat} ${100 - procenat}`;
+        svgDonut += `<circle cx="21" cy="21" r="15.915" fill="transparent" stroke="${COLORS[idx % COLORS.length]}" stroke-width="6" stroke-dasharray="${dashArray}" stroke-dashoffset="${100 - trenutniOffset}"></circle>`;
+        trenutniOffset += procenat;
+        legendeHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px; border-bottom:1px dashed #e2e8f0; padding-bottom:4px;"><div style="display:flex; align-items:center;"><div style="width:12px; height:12px; background-color:${COLORS[idx % COLORS.length]}; border-radius:50%; margin-right:8px;"></div><span style="font-weight:bold; color:#334155;">${p.name}</span></div><div><b style="color:#0f172a;">${p.m3.toFixed(2)} m³</b> <span style="color:#64748b; margin-left:5px;">(${procenat.toFixed(1)}%)</span></div></div>`;
+    });
+
+    let trendSvg = '<svg width="100%" height="80" viewBox="0 0 350 80" style="margin-top:10px;">';
+    const maxVal = Math.max(...pilanaData.trend_7d.map(d => d.Proizvodnja), 1);
+    pilanaData.trend_7d.forEach((d, i) => {
+        const h = (d.Proizvodnja / maxVal) * 50; const x = i * 50 + 10; const y = 60 - h;
+        trendSvg += `<rect x="${x}" y="${y}" width="30" height="${h}" fill="#10b981" rx="2" /><text x="${x+15}" y="75" font-size="10" fill="#64748b" text-anchor="middle" font-family="sans-serif">${d.name}</text>`;
+        if(d.Proizvodnja > 0) trendSvg += `<text x="${x+15}" y="${y-5}" font-size="10" fill="#0f172a" text-anchor="middle" font-weight="bold" font-family="sans-serif">${d.Proizvodnja}</text>`;
+    });
+    trendSvg += '</svg>';
+
+    const tabelaDuzine = pilanaData.trupci_duzine.map(d => `<tr><td style="padding:8px; border-bottom:1px solid #f1f5f9; font-weight:bold;">${d.duzina} m</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:center;">${d.kom}</td><td style="padding:8px; border-bottom:1px solid #f1f5f9; text-align:right; font-weight:bold; color:#0f172a;">${d.m3} m³</td></tr>`).join('');
+
+    let glavnaTabelaHtml = ''; const poMasini = {};
+    pilanaData.glavna_tabela.forEach(p => { const m = p.masina || 'Neraspoređeno'; if(!poMasini[m]) poMasini[m] = {}; if(!poMasini[m][p.naziv_proizvoda]) poMasini[m][p.naziv_proizvoda] = []; poMasini[m][p.naziv_proizvoda].push(p); });
+    Object.keys(poMasini).forEach(masina => {
+        glavnaTabelaHtml += `<tr><td colspan="6" style="background:#1e3a8a; color:white; font-weight:bold; padding:8px; text-transform:uppercase;">MAŠINA / LINIJA: ${masina}</td></tr>`;
+        Object.keys(poMasini[masina]).forEach(proizvod => {
+            glavnaTabelaHtml += `<tr><td colspan="6" style="background:#f1f5f9; color:#1e293b; font-weight:bold; padding:6px 8px; text-transform:uppercase;">${proizvod}</td></tr>`;
+            poMasini[masina][proizvod].forEach(p => { glavnaTabelaHtml += `<tr><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; color:#475569;">${p.paket_id}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.debljina}x${p.sirina}x${p.duzina}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#10b981;">${p.kolicina_final} m³</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0;">${p.snimio_korisnik}</td><td style="padding:6px 8px; border-bottom:1px solid #e2e8f0; text-align:center;">${p.vrijeme_tekst||'-'}</td></tr>`; });
+        });
+    });
+
+    const html = `<html><head><title>${nazivFajla}</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-bottom: 25px; } .title { font-size: 28px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: -0.5px;} .trends-banner { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; font-size: 13px;} .trend-badge { padding: 4px 10px; border-radius: 20px; font-weight: bold; color: white; font-size: 11px;} .trend-up { background: #10b981; } .trend-down { background: #ef4444; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } .section-title { font-size: 14px; font-weight: 800; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin: 0 0 15px 0; text-transform: uppercase; } .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} .stat-footer { background: #f1f5f9; padding: 12px; border-radius: 0 0 8px 8px; font-size: 12px; font-weight: bold; text-align: center; border-top: 2px solid #cbd5e1; color: #334155;} @media print { @page { size: A4 portrait; margin: 0; } }</style></head><body><div class="header"><div><h1 class="title">IZVJEŠTAJ: PILANA I PROREZ</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="trends-banner"><div><b style="color:#1e3a8a; font-size:14px;">VREMENSKA ANALIZA I TRENDOVI (PROREZ)</b><br/><span style="color:#64748b;">Usporedba trenutne proizvodnje sa prethodnim periodima</span></div><div style="display:flex; gap:15px; align-items:center;"><div>Trend 7 Dana: <span class="trend-badge ${pilanaData.kpi.trend_7d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_7d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_7d_proc)}%</span></div><div>Trend 30 Dana: <span class="trend-badge ${pilanaData.kpi.trend_30d_proc >= 0 ? 'trend-up' : 'trend-down'}">${pilanaData.kpi.trend_30d_proc >= 0 ? '▲' : '▼'} ${Math.abs(pilanaData.kpi.trend_30d_proc)}%</span></div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#3b82f6;"><span>ULAZ TRUPACA (m³)</span><b>${pilanaData.kpi.ulaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>GOTOVA GRAĐA (m³)</span><b>${pilanaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#0f172a;"><span>ISKORIŠTENJE (YIELD)</span><b>${pilanaData.kpi.yield_proc} %</b></div></div><div class="grid-2"><div><h3 class="section-title">Struktura Proizvodnje</h3><div style="display:flex; align-items:center; gap:20px;"><div style="width: 140px; height: 140px; position: relative;"><svg width="100%" height="100%" viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.915" fill="#f8fafc"></circle>${svgDonut}</svg><div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;"><b style="font-size:16px;">${pilanaData.kpi.yield_proc}%</b><br/><span style="font-size:8px; color:#64748b;">YIELD</span></div></div><div style="flex:1;">${legendeHtml}</div></div></div><div><h3 class="section-title">Statistika Ulaza po Dužinama</h3><table style="margin-bottom:0;"><thead><tr><th>Dužina</th><th style="text-align:center;">Kom</th><th style="text-align:right;">Ukupno m³</th></tr></thead><tbody>${tabelaDuzine || '<tr><td colspan="3" style="text-align:center; padding:10px;">Nema podataka</td></tr>'}</tbody></table><div class="stat-footer">UKUPNO KOMADA: <b style="color:#1e3a8a;">${pilanaData.kpi.ulaz_kom} kom</b> &nbsp;|&nbsp; PROSJEČAN PREČNIK: <b style="color:#1e3a8a;">Ø ${pilanaData.kpi.avg_d} cm</b></div>${trendSvg}</div></div><h3 class="section-title">Detaljna Specifikacija Proreza</h3><table><thead><tr><th>QR Paket</th><th style="text-align:center;">Dimenzije</th><th style="text-align:right;">Količina</th><th>Operater</th><th style="text-align:center;">Vrijeme</th></tr></thead><tbody>${glavnaTabelaHtml || '<tr><td colspan="5" style="text-align:center; padding:20px;">Nema podataka za odabrani period.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
+    iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); 
+    
+    // Pametno vraćanje naslova
+    setTimeout(() => { document.title = originalTitle; }, 3000);
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+  };
+
+  const printDoradaPDF = () => {
+    const originalTitle = document.title;
+    const nazivFajla = `${fmtBS(datumOd)} Analiza Dorade`;
+    document.title = nazivFajla;
+
+    const iframe = document.createElement('iframe'); iframe.style.display = 'none'; document.body.appendChild(iframe);
+    let infoTekst = isPeriodic ? `Period: ${fmtBS(datumOd)} - ${fmtBS(datumDo)}` : `Datum: ${fmtBS(datumOd)}`;
+    if(filterSmjena !== 'SVE') infoTekst += ` | Smjena: ${filterSmjena}`; if(filterMjesto !== 'SVE') infoTekst += ` | Mjesto: ${filterMjesto}`;
+
+    let tabHtml = '';
+    doradaData.trace_blokovi.forEach(b => {
+        tabHtml += `<tr><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#1e293b;">${b.out_id}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#6b7280; font-size:10px; white-space:pre-wrap;">${b.in_ids}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; font-weight:bold; color:#8b5cf6;">${b.out_naziv.toUpperCase()}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; color:#f59e0b; font-size:10px;">${b.operacije}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace;">${b.in_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; font-family:monospace; font-weight:bold; font-size:12px;">${b.out_m3}</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#10b981; font-weight:bold;">${b.yield}%</td><td style="padding:10px; border-bottom:1px solid #e2e8f0; text-align:right; color:#64748b;">${b.avg_60d}%</td></tr>`;
+    });
+
+    const html = `<html><head><title>${nazivFajla}</title><style>body { font-family: 'Segoe UI', Tahoma, Verdana, sans-serif; padding: 40px; margin: 0; background: white; -webkit-print-color-adjust: exact; color: #0f172a;} .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #8b5cf6; padding-bottom: 15px; margin-bottom: 25px; } .kpi-grid { display: flex; gap: 15px; margin-bottom: 30px; } .kpi-card { flex: 1; padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; overflow: hidden;} .kpi-card span { font-size: 11px; text-transform: uppercase; font-weight: bold; opacity: 0.9;} .kpi-card b { font-size: 32px; display: block; margin-top: 5px; line-height: 1; } table { width: 100%; border-collapse: collapse; font-size: 11px; } th { text-align: left; padding: 10px; background: #f8fafc; color: #64748b; border-bottom: 2px solid #cbd5e1; text-transform: uppercase; font-size:10px;} @media print { @page { size: A4 landscape; margin: 1cm; } }</style></head><body><div class="header"><div><h1 style="font-size:28px; font-weight:900; margin:0;">IZVJEŠTAJ: DORADA I PRERADA</h1><div style="color:#64748b; font-size:14px; margin-top:5px;"><b>${infoTekst}</b></div></div><div style="text-align:right;"><h2 style="margin:0; color:#1e3a8a; font-size:24px; font-weight:900;">TTM<span style="color:#10b981;">.ERP</span></h2><div style="font-size:10px; color:#94a3b8; margin-top:5px;">Generisano: ${new Date().toLocaleString('bs-BA')}</div></div></div><div class="kpi-grid"><div class="kpi-card" style="background:#64748b;"><span>UTROŠENA SIROVINA (m³)</span><b>${(parseFloat(doradaData.kpi.ulaz_m3)).toFixed(2)}</b></div><div class="kpi-card" style="background:#8b5cf6;"><span>FINALNA ROBA (m³)</span><b>${doradaData.kpi.izlaz_m3}</b></div><div class="kpi-card" style="background:#10b981;"><span>ISKORIŠTIVOST (YIELD)</span><b>${doradaData.kpi.yield_proc} %</b></div><div class="kpi-card" style="background:#ef4444;"><span>Kalo / Ostatak (m³)</span><b>${doradaData.kpi.kalo_m3}</b></div></div><h3 style="font-size:14px; font-weight:800; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin:0 0 15px 0;">Traceability Specifikacija (Ulaz vs Izlaz)</h3><table><thead><tr><th>Novi Paket ID</th><th>Sirovina (Ulaz)</th><th>Proizvod</th><th>Operacije</th><th style="text-align:right;">Ulaz m³</th><th style="text-align:right;">Izlaz m³</th><th style="text-align:right;">Yield %</th><th style="text-align:right;">Prosjek 60D</th></tr></thead><tbody>${tabHtml || '<tr><td colspan="8" style="text-align:center; padding:20px;">Nema podataka o doradi.</td></tr>'}</tbody></table><script>window.onload = function() { setTimeout(function() { window.print(); }, 800); };</script></body></html>`;
+    iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close(); 
+    
+    // Pametno vraćanje naslova
+    setTimeout(() => { document.title = originalTitle; }, 3000);
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+  };
   
   
     return (
@@ -2269,7 +2413,40 @@ function DoradaModule({ user, header, setHeader, onExit }) {
         if (razduziJm === 'm1') return unos * (v/100) * (s/100);
         return unos;
     }, [razduziKol, razduziJm, razduziZapis]);
-
+    const printNaljepnica = (paket) => {
+        const originalTitle = document.title;
+        document.title = `Naljepnica ${paket.paket_id}`;
+        
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+        
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paket.paket_id}`;
+        
+        const html = `
+            <html><head><title>Naljepnica ${paket.paket_id}</title><style>
+                body { font-family: sans-serif; width: 100mm; height: 100mm; margin: 0; padding: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 1px solid black; box-sizing: border-box;}
+                h1 { font-size: 24px; margin: 0 0 10px 0; }
+                img { width: 150px; height: 150px; margin-bottom: 10px; }
+                p { font-size: 14px; margin: 5px 0; font-weight: bold; }
+                .dim { font-size: 18px; margin-top: 10px; }
+                @media print { @page { size: 100mm 100mm; margin: 0; } body { border: none; } }
+            </style></head>
+            <body>
+                <h1>${paket.paket_id}</h1>
+                <img src="${qrCodeUrl}" alt="QR KOD" />
+                <p>${paket.naziv_proizvoda}</p>
+                <p class="dim">${paket.debljina} x ${paket.sirina} x ${paket.duzina}</p>
+                <p>Vol: ${paket.kolicina_final} m³</p>
+                ${"<sc"+"ript>"}window.onload = function(){ setTimeout(function(){ window.print(); }, 800); };${"</sc"+"ript>"}
+            </body></html>
+        `;
+        
+        iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
+        setTimeout(() => { document.title = originalTitle; }, 3000);
+        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
+    };
+    
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
             
@@ -2447,20 +2624,33 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                         <button onClick={saveIzlaz} className="w-full py-6 mt-4 bg-emerald-600 text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90">{activeEditItem ? `✅ AŽURIRAJ STAVKU` : `✅ SNIMI STAVKU`}</button>
                         
                         <div className="pt-4 space-y-2 max-h-52 overflow-y-auto border-t border-slate-700">
-                            {izlazPackageItems.map(item => (
-                                <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-emerald-500">
-                                    <div>
-                                        <div className="text-[10px] uppercase text-white font-bold">{item.naziv_proizvoda}</div>
-                                        <div className="text-emerald-500 text-lg font-black tracking-tighter">{item.debljina}x{item.sirina}x{item.duzina}</div>
-                                        {item.oznake && item.oznake.length > 0 && (
-                                            <div className="flex gap-1 mt-1">
-                                                {item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/30 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-500/30">{o}</span>)}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="text-right font-black"><div className="text-xl text-white">{item.kolicina_final} m³</div><div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div></div>
-                                </div>
-                            ))}
+                        {izlazPackageItems.map(item => (
+    <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-emerald-500">
+        <div>
+            <div className="text-[10px] uppercase text-white font-bold">{item.naziv_proizvoda}</div>
+            <div className="text-emerald-500 text-lg font-black tracking-tighter">{item.debljina}x{item.sirina}x{item.duzina}</div>
+            {item.oznake && item.oznake.length > 0 && (
+                <div className="flex gap-1 mt-1">
+                    {item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/30 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-500/30">{o}</span>)}
+                </div>
+            )}
+        </div>
+        
+        {/* OVDJE JE DODANO DUGME ZA PRINT */}
+        <div className="flex flex-col items-end gap-2">
+            <div className="text-right font-black">
+                <div className="text-xl text-white">{item.kolicina_final} m³</div>
+                <div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div>
+            </div>
+            <button 
+                onClick={(e) => { e.stopPropagation(); printNaljepnica(item); }} 
+                className="bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-blue-500/30 transition-all shadow-md z-10"
+            >
+                🖨️ Print QR
+            </button>
+        </div>
+    </div>
+))}
                         </div>
                     </div>
                 )}
@@ -3497,7 +3687,8 @@ function TabRadnici() {
 
     const sviModuli = [
         'Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 
-        'Ponude', 'Radni Nalozi', 'Otpremnice', 'Računi', 'Podešavanja'
+        'Ponude', 'Radni Nalozi', 'Otpremnice', 'Računi', 'Blagajna (Keš)', 'Kontrolni Toranj',
+        'QR Kontrola', 'Analitika', 'Podešavanja'
     ];
 
     useEffect(() => { load(); }, []);
@@ -3654,8 +3845,8 @@ function TabRadnici() {
 }
 function SettingsModule({ onExit }) {
     const [tab, setTab] = useState('sumarije');
-    const tabs = ['sumarije', 'masine', 'katalog', 'kupci', 'radnici'];
-    const labels = { sumarije: 'Šumarije', masine: 'Mašine', katalog: 'Katalog', kupci: 'Kupci', radnici: 'Radnici' };
+    const tabs = ['sumarije', 'masine', 'katalog', 'kupci', 'radnici', 'blagajna'];
+    const labels = { sumarije: 'Šumarije', masine: 'Mašine', katalog: 'Katalog', kupci: 'Kupci', radnici: 'Radnici', blagajna: 'Kase/Kategorije' };
 
     return (
         <div className="p-4 max-w-2xl mx-auto space-y-6">
@@ -3675,6 +3866,50 @@ function SettingsModule({ onExit }) {
             {tab === 'katalog' && <TabKatalog />}
             {tab === 'kupci' && <TabKupci />}
             {tab === 'radnici' && <TabRadnici />}
+            {tab === 'blagajna' && <TabKategorijeBlagajne />}
+        </div>
+    );
+}
+function TabKategorijeBlagajne() {
+    const [kategorije, setKategorije] = useState([]);
+    const [form, setForm] = useState({ tip: 'IZLAZ', naziv: '' });
+
+    useEffect(() => { load(); }, []);
+    const load = async () => { const {data} = await supabase.from('blagajna_kategorije').select('*').order('tip'); setKategorije(data||[]); };
+
+    const dodajKategoriju = async () => {
+        if(!form.naziv) return alert("Unesi naziv kategorije!");
+        await supabase.from('blagajna_kategorije').insert([form]);
+        setForm({...form, naziv: ''}); load();
+    };
+
+    const obrisiKategoriju = async (id, naziv) => {
+        if(window.confirm(`Obrisati kategoriju ${naziv}?`)){
+            await supabase.from('blagajna_kategorije').delete().eq('id', id); load();
+        }
+    };
+
+    return (
+        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-6 animate-in fade-in">
+            <h3 className="text-emerald-400 font-black uppercase text-xs">🗂️ Kategorije Transakcija (Blagajna)</h3>
+            <div className="flex gap-2">
+                <select value={form.tip} onChange={e=>setForm({...form, tip:e.target.value})} className="p-4 bg-slate-900 rounded-xl text-white font-bold outline-none border border-slate-700"><option value="ULAZ">ULAZ</option><option value="IZLAZ">IZLAZ</option></select>
+                <input value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} placeholder="Npr. Kupovina alata..." className="flex-1 p-4 bg-slate-900 rounded-xl text-white outline-none border border-slate-700" />
+                <button onClick={dodajKategoriju} className="bg-emerald-600 px-6 rounded-xl text-white font-black hover:bg-emerald-500 shadow-lg">Dodaj</button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+                {['ULAZ', 'IZLAZ'].map(tip => (
+                    <div key={tip} className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                        <h4 className={`text-[10px] uppercase font-black mb-3 ${tip==='ULAZ'?'text-emerald-500':'text-red-500'}`}>Kategorije za ${tip}</h4>
+                        {kategorije.filter(k=>k.tip===tip).map(k => (
+                            <div key={k.id} className="flex justify-between items-center p-2 border-b border-slate-800">
+                                <span className="text-xs text-slate-300 font-bold">{k.naziv}</span>
+                                <button onClick={()=>obrisiKategoriju(k.id, k.naziv)} className="text-red-500 font-black hover:text-red-400">✕</button>
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -3912,7 +4147,22 @@ function PonudeModule({ onExit }) {
             await zapisiU_Log('KREIRANA_PONUDA', `Ponuda ${form.id} za ${form.kupac_naziv}`);
             alert("✅ Ponuda uspješno kreirana!");
         }
-        
+
+        // 🤖 AUTOMATIKA: KNJIŽENJE AVANSA U BLAGAJNU (Sada je na sigurnom mjestu!)
+        if ((form.status === 'POTVRĐENA' || form.status === 'REALIZOVANA ✅') && parseFloat(form.depozit) > 0) {
+            const { data: postojiAvans } = await supabase.from('blagajna').select('id').eq('racun_id', form.id).maybeSingle();
+            if (!postojiAvans) {
+                await supabase.from('blagajna').insert([{
+                    id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`,
+                    tip: 'ULAZ', kategorija: 'Avans po Ponudi',
+                    iznos: parseFloat(form.depozit), opis: `Automatski depozit po ponudi: ${form.id} (${form.kupac_naziv})`,
+                    racun_id: form.id, datum: new Date().toISOString().split('T')[0],
+                    vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
+                    snimio_korisnik: loggedUser.ime_prezime || 'Sistem'
+                }]);
+            }
+        }
+
         resetFormu(); load(); setTab('lista');
     };
 
@@ -3948,77 +4198,72 @@ function PonudeModule({ onExit }) {
     };
 
     const kreirajPDF = () => {
-        const printWin = window.open('', '_blank');
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${form.id}`;
-        
+        // PRAVILNA MATEMATIKA: Oduzimanje avansa od ukupnog iznosa
+        const ukupnoSaPDV = parseFloat(totals.za_naplatu);
+        const depozit = parseFloat(form.depozit) || 0;
+        const preostaloZaNaplatu = (ukupnoSaPDV - depozit).toFixed(2);
+
         let redovi = stavke.map((s, i) => `
             <tr>
-                <td style="border: 1px solid #ddd; padding: 8px;">${i+1}</td>
-                <td style="border: 1px solid #ddd; padding: 8px;"><b>${s.sifra}</b><br/><small>${s.naziv}</small></td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${s.kolicina_obracun} ${s.jm_obracun}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${s.cijena_baza.toFixed(2)}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${s.rabat_procenat}%</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: right;"><b>${s.ukupno.toFixed(2)}</b></td>
+                <td style="font-weight: bold; color: #64748b;">${i+1}.</td>
+                <td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td>
+                <td style="text-align: center; font-weight: 800; color: #0f172a;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun}</span></td>
+                <td style="text-align: right; font-weight: 600;">${s.cijena_baza.toFixed(2)}</td>
+                <td style="text-align: right; color: #ec4899; font-weight: 800;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td>
+                <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 13px;">${s.ukupno.toFixed(2)}</td>
             </tr>
         `).join('');
 
-        const html = `
-            <html>
-            <head>
-                <title>Ponuda ${form.id}</title>
-                <style>
-                    body { font-family: Arial, sans-serif; color: #333; line-height: 1.5; padding: 40px; }
-                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
-                    .title { font-size: 24px; font-weight: bold; color: #1e293b; }
-                    .info-grid { display: flex; justify-content: space-between; margin-bottom: 30px; }
-                    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
-                    th { background-color: #f1f5f9; border: 1px solid #ddd; padding: 10px; text-align: left; }
-                    .totals { width: 300px; float: right; border: 1px solid #ddd; padding: 15px; background: #f8fafc; }
-                    .totals div { display: flex; justify-content: space-between; margin-bottom: 5px; }
-                    .totals .big { font-size: 18px; font-weight: bold; border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; }
-                    .footer { clear: both; margin-top: 50px; font-size: 12px; color: #666; border-top: 1px solid #eee; padding-top: 20px; }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <div>
-                        <div class="title">PONUDA / PREDRAČUN</div>
-                        <p><b>Broj ponude:</b> ${form.id}<br/><b>Datum:</b> ${formatirajDatum(form.datum)}<br/><b>Važi do:</b> ${formatirajDatum(form.rok_vazenja)}</p>
-                    </div>
-                    <div><img src="${qrUrl}" alt="QR Kod" style="width: 100px; height: 100px;" /></div>
+        const htmlSadrzajTabela = `
+            <div class="info-grid">
+                <div class="info-col">
+                    <h4>Kupac / Klijent</h4>
+                    <p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${form.kupac_naziv}</p>
+                    <p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || 'Adresa nije unesena'}</p>
+                    <p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
                 </div>
-                <div class="info-grid">
-                    <div><b>Kupac:</b><br/>${form.kupac_naziv}<br/>${odabraniKupac?.adresa || ''}<br/>PDV: ${odabraniKupac?.pdv_broj || ''}</div>
-                    <div>
-                        <b>Detalji:</b><br/>
-                        Paritet: ${form.paritet}<br/>
-                        Plaćanje: ${form.nacin_placanja}<br/>
-                        Valuta: ${form.valuta}<br/>
-                        Status: ${form.status}
-                    </div>
+                <div class="info-col" style="text-align: right;">
+                    <h4>Detalji Ponude</h4>
+                    <p>Paritet: <span style="font-weight: 400; color: #475569;">${form.paritet}</span></p>
+                    <p>Plaćanje: <span style="font-weight: 400; color: #475569;">${form.nacin_placanja}</span></p>
+                    <p>Valuta: <span style="font-weight: 400; color: #475569;">${form.valuta}</span></p>
+                    <p style="color: #ec4899; margin-top: 8px; font-weight: 800;">Važi do: ${formatirajDatum(form.rok_vazenja)}</p>
                 </div>
-                <table>
-                    <thead><tr><th>R.B.</th><th>Šifra i Naziv</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${form.valuta})</th></tr></thead>
-                    <tbody>${redovi}</tbody>
-                </table>
-                <div class="totals">
-                    <div><span>Iznos bez rabata:</span><span>${totals.bez_rabata}</span></div>
-                    <div><span>Rabat:</span><span>- ${totals.rabat}</span></div>
-                    <div><span>Osnovica:</span><span>${totals.osnovica}</span></div>
-                    <div><span>PDV (17%):</span><span>${totals.pdv}</span></div>
-                    <div class="big"><span>ZA NAPLATU:</span><span>${totals.za_naplatu} ${form.valuta}</span></div>
+            </div>
+            
+            <table>
+                <thead><tr><th style="width: 5%;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${form.valuta})</th></tr></thead>
+                <tbody>${redovi}</tbody>
+            </table>
+            
+            <div class="summary-box">
+                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${totals.bez_rabata}</b></div>
+                <div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${totals.rabat}</b></div>
+                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${totals.osnovica}</b></div>
+                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${totals.pdv}</b></div>
+                <div class="summary-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #cbd5e1;"><span>UKUPNO SA PDV:</span> <b>${ukupnoSaPDV.toFixed(2)}</b></div>
+                
+                ${depozit > 0 ? `<div class="summary-row" style="color: #10b981;"><span>Uplaćen depozit / Avans:</span> <b style="font-size:14px;">- ${depozit.toFixed(2)}</b></div>` : ''}
+                
+                <div class="summary-total">
+                    <span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">PREOSTALO ZA NAPLATU:</span>
+                    <span>${preostaloZaNaplatu} ${form.valuta}</span>
                 </div>
-                <div class="footer">
-                    <p><b>Napomena:</b> ${form.napomena || 'Nema napomene.'}</p>
-                    <p>Uplaćen depozit: ${form.depozit || 0} ${form.valuta}</p>
+            </div>
+            
+            <div class="footer">
+                <div style="width: 60%;">
+                    <b style="color: #0f172a;">Napomena uz ponudu:</b><br/>
+                    ${form.napomena || 'Nema dodatnih napomena.'}
                 </div>
-                <script>setTimeout(() => { window.print(); window.close(); }, 800);</script>
-            </body>
-            </html>
+                <div style="text-align: right; width: 30%;">
+                    <div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+                    Potpis ovlaštenog lica
+                </div>
+            </div>
         `;
-        printWin.document.write(html);
-        printWin.document.close();
-        printWin.focus();
+
+        printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899');
     };
 
     const ponudePotvrdjene = ponude.filter(p => p.status === 'POTVRĐENA');
@@ -4166,13 +4411,19 @@ function PonudeModule({ onExit }) {
                             </div>
 
                             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-700 space-y-2">
-                                <div className="flex justify-between text-xs text-slate-400"><span>Iznos bez rabata:</span><span>{totals.bez_rabata} {form.valuta}</span></div>
-                                <div className="flex justify-between text-xs text-pink-500 font-bold"><span>Uračunat rabat:</span><span>- {totals.rabat} {form.valuta}</span></div>
-                                <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>Osnovica za PDV:</span><span>{totals.osnovica} {form.valuta}</span></div>
-                                <div className="flex justify-between text-xs text-slate-400"><span>PDV (17%):</span><span>{totals.pdv} {form.valuta}</span></div>
-                                {parseFloat(form.depozit) > 0 && <div className="flex justify-between text-xs text-amber-500 mt-1"><span>Uplaćen depozit:</span><span>- {parseFloat(form.depozit).toFixed(2)} {form.valuta}</span></div>}
-                                <div className="flex justify-between text-lg text-white font-black pt-2 mt-2 border-t border-slate-700"><span>ZA NAPLATU:</span><span className="text-emerald-400">{(totals.za_naplatu - (parseFloat(form.depozit)||0)).toFixed(2)} {form.valuta}</span></div>
-                            </div>
+    <div className="flex justify-between text-xs text-slate-400"><span>Iznos bez rabata:</span><span>{totals.bez_rabata} {form.valuta}</span></div>
+    <div className="flex justify-between text-xs text-pink-500 font-bold"><span>Uračunat rabat:</span><span>- {totals.rabat} {form.valuta}</span></div>
+    <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>Osnovica za PDV:</span><span>{totals.osnovica} {form.valuta}</span></div>
+    <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>PDV (17%):</span><span>{totals.pdv} {form.valuta}</span></div>
+    <div className="flex justify-between text-sm text-white font-bold"><span>UKUPNO SA PDV:</span><span>{totals.za_naplatu} {form.valuta}</span></div>
+    
+    {parseFloat(form.depozit) > 0 && <div className="flex justify-between text-sm text-emerald-400 font-bold mt-1"><span>Uplaćen depozit / Avans:</span><span>- {parseFloat(form.depozit).toFixed(2)} {form.valuta}</span></div>}
+    
+    <div className="flex justify-between text-xl text-white font-black pt-2 mt-2 border-t border-slate-700">
+        <span>PREOSTALO ZA NAPLATU:</span>
+        <span className="text-pink-400">{(totals.za_naplatu - (parseFloat(form.depozit)||0)).toFixed(2)} {form.valuta}</span>
+    </div>
+</div>
 
                             <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Dodatna napomena na ponudi (opciono)..." className="w-full mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-emerald-500" rows="2"></textarea>
                             
@@ -4429,6 +4680,59 @@ function RadniNaloziModule({ onExit }) {
         setStavke([]); setOriginalneStavke(null); setSkenerInput(''); setIsEditingNalog(false);
     };
 
+    // KREIRANJE PDF-A ZA RADNI NALOG
+    const formatirajDatum = (isoString) => {
+        if(!isoString) return '';
+        const [y, m, d] = isoString.split('-');
+        return `${d}.${m}.${y}.`;
+    };
+
+    const kreirajPDF = () => {
+        // OVO JE LINIJA KOJA PRONALAZI KUPCA:
+        const odabraniKupac = kupci.find(k => k.naziv === form.kupac_naziv) || null;
+
+        let redovi = stavke.map((s, i) => `
+            <tr>
+                <td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td>
+                <td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td>
+                <td style="text-align: center; font-size: 16px; font-weight: 900; color: #a855f7;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 11px; font-weight: 600;">${s.jm_obracun}</span></td>
+                <td style="text-align: center; font-weight: 600; color: #475569;">${s.kolicina_unos} <span style="font-size: 10px;">${s.jm_unos}</span></td>
+            </tr>
+        `).join('');
+
+        const htmlSadrzajTabela = `
+            <div class="info-grid">
+                <div class="info-col">
+                    <h4>Naručilac / Kupac</h4>
+                    <p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${form.kupac_naziv}</p>
+                    <p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || 'Adresa nije unesena u bazu'}</p>
+                </div>
+                <div class="info-col" style="text-align: right;">
+                    <h4>Detalji Proizvodnje</h4>
+                    <p>Vezana Ponuda: <span style="font-weight: 600; color: #0f172a;">${form.broj_ponude || '-'}</span></p>
+                    <p>Status: <span style="font-weight: 900; color: #a855f7;">${form.status}</span></p>
+                    <p style="color: #0f172a; margin-top: 8px; font-weight: 800;">Rok Isporuke: ${formatirajDatum(form.rok_isporuke)}</p>
+                </div>
+            </div>
+            
+            <table>
+                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Proizvesti (Cilj)</th><th style="text-align:center;">Norma / Ulaz</th></tr></thead>
+                <tbody>${redovi}</tbody>
+            </table>
+            
+            <div class="footer">
+                <div style="width: 60%;">
+                    <b style="color: #0f172a;">Uputstva za proizvodnju:</b><br/>
+                    ${form.napomena || 'Nema posebnih uputstava. Proizvesti prema standardu.'}
+                </div>
+                <div style="text-align: right; width: 30%;">
+                    <div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
+                    Rukovodilac proizvodnje
+                </div>
+            </div>
+        `;
+        printDokument('RADNI NALOG', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#a855f7');
+    };
     const pokreniIzmjenuNaloga = (n) => {
         setForm({ id: n.id, broj_ponude: n.broj_ponude || '', kupac_naziv: n.kupac_naziv, datum: n.datum, rok_isporuke: n.rok_isporuke || '', napomena: n.napomena || '', status: n.status || 'U PROIZVODNJI', modifikovan: n.modifikovan || false });
         setStavke(n.stavke_jsonb || []);
@@ -4554,7 +4858,10 @@ function RadniNaloziModule({ onExit }) {
                     {/* PREGLED NALOGA */}
                     {stavke.length > 0 && (
                         <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-purple-500/30 shadow-2xl animate-in slide-in-from-bottom">
-                            <h3 className="text-purple-400 font-black uppercase text-xs mb-4">3. Pregled Radnog Naloga</h3>
+                            <div className="flex justify-between items-center mb-4">
+    <h3 className="text-purple-400 font-black uppercase text-xs">3. Pregled Radnog Naloga</h3>
+    <button onClick={kreirajPDF} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button>
+</div>
                             <div className="space-y-2 mb-6">
                                 {stavke.map((s, i) => (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer hover:border-purple-500 transition-all">
@@ -4637,6 +4944,9 @@ function OTP_SearchableProizvod({ katalog, value, onChange }) {
     );
 }
 
+// ============================================================================
+// MODUL: OTPREMNICE (ISPORUKA)
+// ============================================================================
 function OtpremniceModule({ onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
 
@@ -4651,6 +4961,11 @@ function OtpremniceModule({ onExit }) {
     const [stavke, setStavke] = useState([]);
     const [isEditing, setIsEditing] = useState(false);
     
+    // SMART SEARCH STATE
+    const [dostupniDokumenti, setDostupniDokumenti] = useState([]);
+    const [prikaziDrop, setPrikaziDrop] = useState(false);
+    const [kucanjeTimer, setKucanjeTimer] = useState(null);
+    
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_obracun: '', jm_obracun: 'm3' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
@@ -4662,6 +4977,14 @@ function OtpremniceModule({ onExit }) {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: otp} = await supabase.from('otpremnice').select('*').order('datum', { ascending: false }); setOtpremnice(otp||[]);
+        
+        // Učitavanje svih mogućih veza za pametni dropdown
+        const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
+        const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
+        setDostupniDokumenti([
+            ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
+            ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' }))
+        ]);
     };
 
     const zapisiU_Log = async (akcija, detalji) => {
@@ -4669,35 +4992,55 @@ function OtpremniceModule({ onExit }) {
     };
 
     // MAGIJA: Prepoznavanje da li je skenirana Ponuda ili Radni Nalog
-    const skenirajVezu = async (e) => {
-        if (e.key === 'Enter' || e.type === 'click') {
-            const broj = skenerInput.toUpperCase().trim();
+    const skenirajVezu = async (e, forcedVal = null) => {
+        if (e?.key === 'Enter' || e?.type === 'click' || forcedVal) {
+            const broj = (forcedVal || skenerInput).toUpperCase().trim();
             if(!broj) return;
             
+            let dokument = null;
             if (broj.startsWith('PON-')) {
                 const { data: ponuda } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle();
                 if(!ponuda) return alert(`❌ Ponuda ${broj} nije pronađena!`);
-                primijeniVezu(ponuda, broj);
+                dokument = ponuda;
             } else if (broj.startsWith('RN-')) {
                 const { data: nalog } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle();
                 if(!nalog) return alert(`❌ Radni nalog ${broj} nije pronađen!`);
-                primijeniVezu(nalog, broj);
+                dokument = nalog;
             } else {
-                alert("❌ Nepoznat format! Mora početi sa PON- ili RN-");
+                return alert("❌ Nepoznat format! Mora početi sa PON- ili RN-");
             }
+
+            const prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({
+                id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, 
+                kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun
+            }));
+            setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: dokument.napomena || '' });
+            setStavke(prepravljeneStavke);
+            setSkenerInput('');
+            alert(`✅ Uspješno preuzeti podaci iz dokumenta: ${broj}`);
         }
     };
 
-    const primijeniVezu = (dokument, broj) => {
-        // Mapiramo stavke bez cijena i rabata (čista količina za vozača/otpremnicu)
-        const prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({
-            id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, 
-            kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun
-        }));
-        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: dokument.napomena || '' });
-        setStavke(prepravljeneStavke);
-        setSkenerInput('');
-        alert(`✅ Uspješno preuzeti podaci iz dokumenta: ${broj}`);
+    // PAMETNI SKENER SA 2 SEKUNDE ZADRŠKE
+    const handleSkenUnos = (e) => {
+        const val = e.target.value.toUpperCase();
+        setSkenerInput(val);
+        setPrikaziDrop(true); 
+
+        if (kucanjeTimer) clearTimeout(kucanjeTimer);
+        if (val) {
+            setKucanjeTimer(setTimeout(() => {
+                setPrikaziDrop(false); 
+                skenirajVezu(null, val); 
+            }, 2000));
+        }
+    };
+
+    const odaberiIzDropdowna = (id) => {
+        setSkenerInput(id);
+        setPrikaziDrop(false);
+        if (kucanjeTimer) clearTimeout(kucanjeTimer);
+        skenirajVezu(null, id);
     };
 
     const handleProizvodSelect = (sifraVal, tekstZaPolje) => {
@@ -4708,13 +5051,11 @@ function OtpremniceModule({ onExit }) {
 
     const dodajStavku = () => {
         if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return alert("Odaberite proizvod i unesite količinu!");
-
         const novaStavka = {
             id: stavkaForm.id || Math.random().toString(), 
             sifra: trenutniProizvod.sifra, naziv: trenutniProizvod.naziv,
             kolicina_obracun: parseFloat(stavkaForm.kolicina_obracun), jm_obracun: stavkaForm.jm_obracun
         };
-
         if (stavkaForm.id) setStavke(stavke.map(s => s.id === stavkaForm.id ? novaStavka : s));
         else setStavke([...stavke, novaStavka]);
         
@@ -4752,13 +5093,57 @@ function OtpremniceModule({ onExit }) {
             await zapisiU_Log('KREIRANA_OTPREMNICA', `Otpremnica ${form.id} za ${form.kupac_naziv}`);
             alert("✅ Otpremnica uspješno kreirana!");
         }
-        
         resetFormu(); load(); setTab('lista');
     };
 
     const resetFormu = () => {
         setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], vozac: '', registracija: '', napomena: '', status: 'KREIRANA' });
         setStavke([]); setSkenerInput(''); setIsEditing(false);
+    };
+
+    const formatirajDatum = (isoString) => {
+        if(!isoString) return '';
+        const [y, m, d] = isoString.split('-');
+        return `${d}.${m}.${y}.`;
+    };
+
+    const kreirajPDF = () => {
+        const odabraniKupac = kupci.find(k => k.naziv === form.kupac_naziv) || null;
+        let redovi = stavke.map((s, i) => `
+            <tr>
+                <td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td>
+                <td><b style="color: #0f172a; font-size: 14px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td>
+                <td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td>
+            </tr>
+        `).join('');
+
+        const htmlSadrzajTabela = `
+            <div class="info-grid">
+                <div class="info-col">
+                    <h4>Kupac / Primalac robe</h4>
+                    <p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${form.kupac_naziv}</p>
+                    <p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p>
+                    <p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
+                </div>
+                <div class="info-col" style="text-align: right;">
+                    <h4>Detalji Transporta</h4>
+                    <p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${form.broj_veze || '-'}</span></p>
+                    <p>Ime Vozača: <span style="font-weight: 600; color: #0f172a;">${form.vozac || '-'}</span></p>
+                    <p>Vozilo (Reg): <span style="font-weight: 900; color: #f97316;">${form.registracija || '-'}</span></p>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Isporučena Količina</th></tr></thead>
+                <tbody>${redovi}</tbody>
+            </table>
+            <div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;">
+                <div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Isporučio (Vozač)</div>
+                <div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Izdao (Magacin)</div>
+                <div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Primio (Kupac)</div>
+            </div>
+            <div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz isporuku:</b><br/>${form.napomena || 'Roba isporučena bez oštećenja.'}</div></div>
+        `;
+        printDokument('OTPREMNICA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#f97316');
     };
 
     const pokreniIzmjenu = (o) => {
@@ -4784,13 +5169,26 @@ function OtpremniceModule({ onExit }) {
                     
                     {/* SKENER QR KODA (Povući sa Ponude ili RN) */}
                     {!isEditing && (
-                        <div className="bg-slate-900 border border-orange-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl">
+                        <div className="bg-slate-900 border border-orange-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative">
                             <div className="text-2xl">📷</div>
-                            <div className="flex-1">
-                                <label className="text-[10px] text-orange-400 uppercase font-black block mb-1">Skener QR Koda (Skeniraj Ponudu ili Radni Nalog)</label>
-                                <input value={skenerInput} onChange={e=>setSkenerInput(e.target.value)} onKeyDown={skenirajVezu} placeholder="npr. PON-2026-1234 ili RN-2026-9876 (pritisni Enter)" className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-orange-500 focus:border-orange-400 uppercase font-black tracking-widest shadow-inner" />
+                            <div className="flex-1 relative">
+                                <label className="text-[10px] text-orange-400 uppercase font-black block mb-1">Skener (Skeniraj Ponudu ili Radni Nalog)</label>
+                                <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-orange-500 focus:border-orange-400 uppercase font-black shadow-inner" />
+                                
+                                {/* PAMETNI DROPDOWN */}
+                                {prikaziDrop && skenerInput && (
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto">
+                                        {dostupniDokumenti
+                                            .filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput)))
+                                            .map(p => (
+                                            <div key={p.id} onClick={() => odaberiIzDropdowna(p.id)} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center">
+                                                <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-orange-400 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                                <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <button onClick={skenirajVezu} className="bg-orange-600 text-white px-6 py-4 rounded-xl text-xs uppercase font-black hover:bg-orange-500 self-end mb-1">Učitaj</button>
                         </div>
                     )}
 
@@ -4803,14 +5201,14 @@ function OtpremniceModule({ onExit }) {
 
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4">
                             <div className="col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Vezni Dokument (Ponuda/RN)</label>
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Vezni Dokument (Istorija)</label>
                                 <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 uppercase" placeholder="Nema veznog dokumenta" />
                             </div>
                             <div className="col-span-2">
                                 <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">BROJ OTPREMNICE</label>
                                 <input value={form.id} disabled={isEditing} onChange={e=>setForm({...form, id:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 font-black uppercase disabled:opacity-50" />
                             </div>
-                            <div className="relative z-50 col-span-2">
+                            <div className="relative z-40 col-span-2">
                                 <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* KUPAC (Za koga isporučujemo)</label>
                                 <SearchableInput value={form.kupac_naziv} onChange={v=>setForm({...form, kupac_naziv:v})} list={kupci.map(k=>k.naziv)} />
                             </div>
@@ -4835,11 +5233,10 @@ function OtpremniceModule({ onExit }) {
                         </div>
                     </div>
 
-                    {/* DODAVANJE STAVKI */}
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Stavke otpremnice (Samo Količina, bez cijena)</h3>
                         
-                        <div className="relative z-40 mb-3">
+                        <div className="relative z-30 mb-3">
                             <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod</label>
                             <OTP_SearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} />
                         </div>
@@ -4850,7 +5247,6 @@ function OtpremniceModule({ onExit }) {
                                     <p className="text-white text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p>
                                     <p className="text-[10px] text-slate-400 mt-1">Dim: <span className="text-white">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</span></p>
                                 </div>
-
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina za isporuku</label>
@@ -4868,18 +5264,18 @@ function OtpremniceModule({ onExit }) {
                         )}
                     </div>
 
-                    {/* PREGLED OTPREMNICE */}
                     {stavke.length > 0 && (
                         <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-orange-500/30 shadow-2xl animate-in slide-in-from-bottom">
-                            <h3 className="text-orange-400 font-black uppercase text-xs mb-4">3. Pregled Otpremnice</h3>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-orange-400 font-black uppercase text-xs">3. Pregled Otpremnice</h3>
+                                <button onClick={kreirajPDF} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button>
+                            </div>
                             <div className="space-y-2 mb-6">
                                 {stavke.map((s, i) => (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer hover:border-orange-500 transition-all">
                                         <div className="flex items-center gap-3">
                                             <div className="w-6 h-6 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] font-black">{i+1}</div>
-                                            <div>
-                                                <p className="text-white text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p>
-                                            </div>
+                                            <div><p className="text-white text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p></div>
                                         </div>
                                         <div className="flex items-center gap-6">
                                             <div className="text-right">
@@ -4953,6 +5349,9 @@ function RAC_SearchableProizvod({ katalog, value, onChange }) {
     );
 }
 
+// ============================================================================
+// MODUL: RAČUNI (FINANSIJE)
+// ============================================================================
 function RacuniModule({ onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
 
@@ -4972,9 +5371,13 @@ function RacuniModule({ onExit }) {
     const [isEditing, setIsEditing] = useState(false);
     const [odabraniKupac, setOdabraniKupac] = useState(null);
     const [stavke, setStavke] = useState([]);
+    
+    // SMART SEARCH ZA RAČUNE
+    const [dostupniDokumenti, setDostupniDokumenti] = useState([]);
+    const [prikaziDrop, setPrikaziDrop] = useState(false);
+    const [kucanjeTimer, setKucanjeTimer] = useState(null);
     const [skenerInput, setSkenerInput] = useState('');
 
-    // Moćna forma za uređivanje/dodavanje novih stavki na račun
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
@@ -4984,6 +5387,16 @@ function RacuniModule({ onExit }) {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: r} = await supabase.from('racuni').select('*').order('datum', { ascending: false }); setRacuni(r||[]);
+        
+        // Povući sve dokumente za pametni skener
+        const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
+        const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
+        const { data: otp } = await supabase.from('otpremnice').select('id, kupac_naziv, status');
+        setDostupniDokumenti([
+            ...(otp || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Otpremnica' })),
+            ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
+            ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' }))
+        ]);
     };
 
     const zapisiU_Log = async (akcija, detalji) => {
@@ -4999,89 +5412,105 @@ function RacuniModule({ onExit }) {
         return 0;
     };
 
-    // MAGIJA DETEKTIVA: Traženje duboke veze (OTP -> RN -> PON)
-    const skenirajVezu = async (e) => {
-        if (e.key === 'Enter' || e.type === 'click') {
-            const broj = skenerInput.toUpperCase().trim();
-            if(!broj) return;
-            
-            let dokument = null;
-            let baznaPonuda = null;
-            let napomenaTekst = `Povezano sa: ${broj}`;
+    // NEPROBOJNI DETEKTIV ZA RAČUNE (Ne zavisi od PON- ili RN- prefiksa)
+    const skenirajVezu = async (trazeniBroj) => {
+        const broj = trazeniBroj.toUpperCase().trim();
+        if(!broj) return;
+        
+        let dokument = null;
+        let baznaPonuda = null;
+        let napomenaTekst = `Povezano sa: ${broj}`;
 
-            // Korak 1: Identifikacija osnovnog skeniranog dokumenta
-            if (broj.startsWith('OTP-')) {
-                const { data: otp } = await supabase.from('otpremnice').select('*').eq('id', broj).maybeSingle();
-                dokument = otp;
-                if (otp && otp.broj_veze) {
-                    if (otp.broj_veze.startsWith('PON-')) {
-                        const { data: pon } = await supabase.from('ponude').select('*').eq('id', otp.broj_veze).maybeSingle();
-                        baznaPonuda = pon; napomenaTekst += ` -> ${otp.broj_veze}`;
-                    } else if (otp.broj_veze.startsWith('RN-')) {
-                        const { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', otp.broj_veze).maybeSingle();
-                        napomenaTekst += ` -> ${otp.broj_veze}`;
-                        if (rn && rn.broj_ponude) {
-                            const { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle();
-                            baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`;
-                        }
+        // 1. Probaj OTPREMNICE
+        let { data: otp } = await supabase.from('otpremnice').select('*').eq('id', broj).maybeSingle();
+        if (otp) {
+            dokument = otp;
+            if (otp.broj_veze) {
+                let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', otp.broj_veze).maybeSingle();
+                if (rn) {
+                    napomenaTekst += ` -> ${otp.broj_veze}`;
+                    if (rn.broj_ponude) {
+                        let { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle();
+                        baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`;
                     }
+                } else {
+                    let { data: pon } = await supabase.from('ponude').select('*').eq('id', otp.broj_veze).maybeSingle();
+                    if(pon) { baznaPonuda = pon; napomenaTekst += ` -> ${otp.broj_veze}`; }
                 }
-            } else if (broj.startsWith('RN-')) {
-                const { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle();
+            }
+        }
+        
+        // 2. Probaj RADNE NALOGE
+        if (!dokument) {
+            let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle();
+            if (rn) {
                 dokument = rn;
-                if (rn && rn.broj_ponude) {
-                    const { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle();
+                if (rn.broj_ponude) {
+                    let { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle();
                     baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`;
                 }
-            } else if (broj.startsWith('PON-')) {
-                const { data: pon } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle();
-                dokument = pon; baznaPonuda = pon;
-            } else {
-                return alert("❌ Nepoznat format! Mora početi sa OTP-, RN- ili PON-");
+            }
+        }
+
+        // 3. Probaj PONUDE
+        if (!dokument) {
+            let { data: pon } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle();
+            if (pon) { dokument = pon; baznaPonuda = pon; }
+        }
+
+        if(!dokument) return alert(`❌ Dokument ${broj} nije pronađen nigdje u bazi!`);
+
+        const kupacIzBaze = kupci.find(k => k.naziv === dokument.kupac_naziv);
+        setOdabraniKupac(kupacIzBaze || null);
+
+        const stavkeKolicine = dokument.stavke_jsonb || [];
+        const stavkeFinansije = baznaPonuda ? (baznaPonuda.stavke_jsonb || []) : [];
+
+        const konacneStavke = stavkeKolicine.map(sk => {
+            const proizvod = katalog.find(k => k.sifra === sk.sifra);
+            let cijena_baza = proizvod ? parseFloat(proizvod.cijena) : (sk.cijena_baza || 0);
+            let rabat_procenat = proizvod && kupacIzBaze ? izracunajRabat(proizvod, kupacIzBaze) : 0;
+
+            const nadjenoUPonudi = stavkeFinansije.find(sf => sf.sifra === sk.sifra);
+            if (nadjenoUPonudi) {
+                cijena_baza = nadjenoUPonudi.cijena_baza;
+                rabat_procenat = nadjenoUPonudi.rabat_procenat;
             }
 
-            if(!dokument) return alert(`❌ Dokument ${broj} nije pronađen!`);
+            const kolicina = sk.kolicina_obracun || sk.kolicina || 0;
+            const ukupno_bez_rabata = kolicina * cijena_baza;
+            const iznos_rabata = ukupno_bez_rabata * (rabat_procenat / 100);
+            const ukupno = ukupno_bez_rabata - iznos_rabata;
 
-            const kupacIzBaze = kupci.find(k => k.naziv === dokument.kupac_naziv);
-            setOdabraniKupac(kupacIzBaze || null);
+            return {
+                id: Math.random().toString(), sifra: sk.sifra, naziv: sk.naziv,
+                kolicina_unos: sk.kolicina_unos || kolicina, jm_unos: sk.jm_unos || sk.jm_obracun || 'kom',
+                kolicina_obracun: kolicina, jm_obracun: sk.jm_obracun || sk.jm || 'kom',
+                cijena_baza, rabat_procenat, iznos_rabata, ukupno
+            };
+        });
 
-            // Korak 2: Spajanje količina sa finansijama iz PONUDE
-            const stavkeKolicine = dokument.stavke_jsonb || [];
-            const stavkeFinansije = baznaPonuda ? (baznaPonuda.stavke_jsonb || []) : [];
+        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null });
+        setStavke(konacneStavke);
+        setSkenerInput('');
+        alert(`✅ Učitane količine sa: ${broj}\n${baznaPonuda ? '✅ Primijenjene cijene iz originalne ponude: ' + baznaPonuda.id : '⚠️ Nema bazne ponude, primijenjene standardne cijene.'}`);
+    };
 
-            const konacneStavke = stavkeKolicine.map(sk => {
-                const proizvod = katalog.find(k => k.sifra === sk.sifra);
-                let cijena_baza = proizvod ? parseFloat(proizvod.cijena) : (sk.cijena_baza || 0);
-                let rabat_procenat = proizvod && kupacIzBaze ? izracunajRabat(proizvod, kupacIzBaze) : 0;
+    // ZADRŠKA ZA SKENER U RAČUNIMA
+    const handleSkenUnos = (e) => {
+        const val = e.target.value.toUpperCase();
+        setSkenerInput(val);
+        setPrikaziDrop(true); 
 
-                // Ako imamo baznu ponudu, tražimo isti proizvod na njoj da zadržimo fiksirane cijene i rabate
-                const nadjenoUPonudi = stavkeFinansije.find(sf => sf.sifra === sk.sifra);
-                if (nadjenoUPonudi) {
-                    cijena_baza = nadjenoUPonudi.cijena_baza;
-                    rabat_procenat = nadjenoUPonudi.rabat_procenat;
-                }
-
-                const kolicina = sk.kolicina_obracun || sk.kolicina || 0;
-                const ukupno_bez_rabata = kolicina * cijena_baza;
-                const iznos_rabata = ukupno_bez_rabata * (rabat_procenat / 100);
-                const ukupno = ukupno_bez_rabata - iznos_rabata;
-
-                return {
-                    id: Math.random().toString(), sifra: sk.sifra, naziv: sk.naziv,
-                    kolicina_unos: sk.kolicina_unos || kolicina, jm_unos: sk.jm_unos || sk.jm_obracun || 'kom',
-                    kolicina_obracun: kolicina, jm_obracun: sk.jm_obracun || sk.jm || 'kom',
-                    cijena_baza, rabat_procenat, iznos_rabata, ukupno
-                };
-            });
-
-            setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null });
-            setStavke(konacneStavke);
-            setSkenerInput('');
-            alert(`✅ Učitane količine sa: ${broj}\n${baznaPonuda ? '✅ Primijenjene cijene iz originalne ponude: ' + baznaPonuda.id : '⚠️ Nema bazne ponude, primijenjene standardne cijene.'}`);
+        if (kucanjeTimer) clearTimeout(kucanjeTimer);
+        if (val) {
+            setKucanjeTimer(setTimeout(() => {
+                setPrikaziDrop(false); 
+                skenirajVezu(val); 
+            }, 2000));
         }
     };
 
-    // Ručno dodavanje i uređivanje na samom računu
     const handleProizvodSelect = (sifraVal, tekstZaPolje) => {
         const nadjeni = katalog.find(k => k.sifra === sifraVal);
         setTrenutniProizvod(nadjeni || null);
@@ -5117,10 +5546,6 @@ function RacuniModule({ onExit }) {
         const ukupno_bez_rabata = kolicina * cijena_baza;
         const iznos_rabata = ukupno_bez_rabata * (rabat_konacni / 100);
         const ukupno_sa_rabatom = ukupno_bez_rabata - iznos_rabata;
-
-        if (rabat_konacni !== stavkaForm.sistemski_rabat) {
-            await zapisiU_Log('RUČNA_IZMJENA_RABATA_RACUN', `Za ${trenutniProizvod.sifra} na računu ručno postavljen rabat ${rabat_konacni}%.`);
-        }
 
         const novaStavka = {
             id: stavkaForm.id || Math.random().toString(),
@@ -5178,7 +5603,6 @@ function RacuniModule({ onExit }) {
             const { error } = await supabase.from('racuni').insert([payload]);
             if(error) return alert("Greška pri snimanju: " + error.message);
             
-            // ZATVARANJE ORIGINALNE PONUDE AKO POSTOJI!
             if (form.originalna_ponuda) {
                 await supabase.from('ponude').update({ status: 'REALIZOVANA ✅' }).eq('id', form.originalna_ponuda);
                 await zapisiU_Log('ZATVARANJE_PONUDE', `Ponuda ${form.originalna_ponuda} zatvorena kreiranjem računa ${form.id}`);
@@ -5187,7 +5611,6 @@ function RacuniModule({ onExit }) {
             await zapisiU_Log('KREIRAN_RACUN', `Račun ${form.id} za ${form.kupac_naziv}`);
             alert("✅ Račun uspješno kreiran!");
         }
-        
         resetFormu(); load(); setTab('lista');
     };
 
@@ -5233,13 +5656,29 @@ function RacuniModule({ onExit }) {
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
                     
                     {!isEditing && (
-                        <div className="bg-slate-900 border border-red-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl">
+                        <div className="bg-slate-900 border border-red-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative">
                             <div className="text-2xl">📷</div>
-                            <div className="flex-1">
-                                <label className="text-[10px] text-red-400 uppercase font-black block mb-1">Skener QR Koda (Skeniraj OTP, RN ili PON)</label>
-                                <input value={skenerInput} onChange={e=>setSkenerInput(e.target.value)} onKeyDown={skenirajVezu} placeholder="npr. OTP-123, RN-123 ili PON-123 (pritisni Enter)" className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-red-500 focus:border-red-400 uppercase font-black tracking-widest shadow-inner" />
+                            <div className="flex-1 relative">
+                                <label className="text-[10px] text-red-400 uppercase font-black block mb-1">Skener (Skeniraj OTP, RN ili PON)</label>
+                                <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-red-500 focus:border-red-400 uppercase font-black tracking-widest shadow-inner" />
+                                
+                                {prikaziDrop && skenerInput && (
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
+                                        {dostupniDokumenti
+                                            .filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput)))
+                                            .map(p => (
+                                            <div key={p.id} onClick={() => {
+                                                setSkenerInput(p.id); setPrikaziDrop(false);
+                                                if (kucanjeTimer) clearTimeout(kucanjeTimer);
+                                                skenirajVezu(p.id);
+                                            }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
+                                                <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-red-400 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                                <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <button onClick={skenirajVezu} className="bg-red-600 text-white px-6 py-4 rounded-xl text-xs uppercase font-black hover:bg-red-500 self-end mb-1">Povući podatke</button>
                         </div>
                     )}
 
@@ -5273,7 +5712,6 @@ function RacuniModule({ onExit }) {
                         </div>
                     </div>
 
-                    {/* MOĆAN UNOS NOVIH ILI DODATNIH STAVKI */}
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički dodaj / uredi stavke</h3>
                         
@@ -5316,7 +5754,6 @@ function RacuniModule({ onExit }) {
                         )}
                     </div>
 
-                    {/* PREGLED STAVKI I TOTALI */}
                     {stavke.length > 0 && (
                         <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-red-500/30 shadow-2xl animate-in slide-in-from-bottom">
                             <h3 className="text-red-400 font-black uppercase text-xs mb-4">3. Konačni obračun</h3>
@@ -5399,6 +5836,770 @@ function RacuniModule({ onExit }) {
         </div>
     );
 }
+// ============================================================================
+// MODUL: BLAGAJNA I FINANSIJSKA ANALITIKA
+// ============================================================================
+// ============================================================================
+// MODUL: BLAGAJNA I FINANSIJSKA ANALITIKA (PAMETNI SKENER, PDF, MASTER HEADER)
+// ============================================================================
+// ============================================================================
+// MODUL: BLAGAJNA I FINANSIJSKA ANALITIKA (PAMETNI SKENER, PDF, MASTER HEADER)
+// ============================================================================
+// ============================================================================
+// MODUL: BLAGAJNA I FINANSIJSKA ANALITIKA (PAMETNI SKENER, PDF, MASTER HEADER)
+// ============================================================================
+// ============================================================================
+// MODUL: BLAGAJNA I FINANSIJSKA ANALITIKA
+// ============================================================================
+function BlagajnaModule({ user, header, setHeader, onExit }) {
+    const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
+
+    const [tab, setTab] = useState('unos');
+    const [transakcije, setTransakcije] = useState([]);
+    const [sveTransakcije, setSveTransakcije] = useState([]); 
+    const [kategorije, setKategorije] = useState([]);
+    const [masine, setMasine] = useState([]);
+    const [radnici, setRadnici] = useState([]);
+
+    const generisiID = () => `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`;
+
+    const [kucanjeTimer, setKucanjeTimer] = useState(null);
+    const [showSkenerDrop, setShowSkenerDrop] = useState(false);
+    const [sviDokumenti, setSviDokumenti] = useState([]);
+    
+    const [skenDetalji, setSkenDetalji] = useState(null); // NOVO: Za vizuelnu karticu
+
+    const [form, setForm] = useState({
+        id: generisiID(), tip: 'ULAZ', kategorija: '', iznos: '', opis: '',
+        racun_id: '', masina_naziv: '', radnik_ime: '', datum: new Date().toISOString().split('T')[0]
+    });
+
+    const [skener, setSkener] = useState('');
+
+    useEffect(() => { load(); }, [header?.datumOd, header?.datumDo]); 
+
+    const load = async () => {
+        const { data: kat } = await supabase.from('blagajna_kategorije').select('*');
+        setKategorije(kat || []);
+        if (kat && kat.length > 0 && !form.kategorija) {
+            setForm(f => ({ ...f, kategorija: kat.find(k => k.tip === f.tip)?.naziv || '' }));
+        }
+
+        // Povući baš sve dokumente za pametni skener (UKLJUČENI RADNI NALOZI I OTPREMNICE)
+        const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
+        const { data: otp } = await supabase.from('otpremnice').select('id, kupac_naziv, status').neq('status', 'ISPORUČENO');
+        const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
+        const { data: rac } = await supabase.from('racuni').select('id, kupac_naziv, status').neq('status', 'NAPLAĆENO');
+        
+        setSviDokumenti([
+            ...(rac || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Račun' })),
+            ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' })),
+            ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
+            ...(otp || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Otpremnica' }))
+        ]);
+
+        const { data: b } = await supabase.from('blagajna').select('*').order('created_at', { ascending: false });
+        setSveTransakcije(b || []);
+
+        const { data: m } = await supabase.from('masine').select('naziv'); setMasine(m || []);
+        const { data: rad } = await supabase.from('radnici').select('ime_prezime'); setRadnici(rad || []);
+    };
+
+    const zapisiU_Log = async (akcija, detalji) => {
+        await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]);
+    };
+
+    const handleTipChange = (noviTip) => {
+        const defKat = kategorije.find(k => k.tip === noviTip)?.naziv || '';
+        setForm({ ...form, tip: noviTip, kategorija: defKat, racun_id: '', masina_naziv: '', radnik_ime: '', iznos: '', opis: '' });
+        setSkenDetalji(null);
+    };
+
+    const handleSkenUnos = (e) => {
+        const val = e.target.value.toUpperCase();
+        setSkener(val);
+        setShowSkenerDrop(true);
+
+        if (kucanjeTimer) clearTimeout(kucanjeTimer);
+        if (val) {
+            const timer = setTimeout(() => {
+                izvrsiSkeniranje(val);
+                setShowSkenerDrop(false); 
+            }, 2000);
+            setKucanjeTimer(timer);
+        }
+    };
+
+    // NEPROBOJNI DETEKTIV (Pretražuje sve baze bez obzira na ime fajla)
+    const izvrsiSkeniranje = async (trazeniBroj) => {
+        const val = trazeniBroj.trim();
+        if (!val) return;
+        setSkenDetalji(null); // Očisti staru karticu
+
+        let glavnaVeza = null;
+        let ukupnoZaPlatiti = 0;
+        let kupac = '';
+        let tipSkenera = '';
+
+        // 1. Probaj direktno u RAČUNIMA
+        let { data: rac } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', val).maybeSingle();
+        if (rac) { glavnaVeza = rac.id; ukupnoZaPlatiti = rac.ukupno_sa_pdv; kupac = rac.kupac_naziv; tipSkenera = 'RAČUN'; }
+
+        // 2. Probaj u PONUDAMA
+        if (!glavnaVeza) {
+            let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', val).maybeSingle();
+            if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'PONUDA'; }
+        }
+
+        // 3. Probaj u RADNIM NALOZIMA
+        if (!glavnaVeza) {
+            let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', val).maybeSingle();
+            if (rn && rn.broj_ponude) {
+                let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', rn.broj_ponude).maybeSingle();
+                if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'RADNI NALOG'; }
+            }
+        }
+
+        // 4. Probaj u OTPREMNICAMA
+        if (!glavnaVeza) {
+            let { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', val).maybeSingle();
+            if (otp && otp.broj_veze) {
+                let veza = otp.broj_veze;
+                let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', veza).maybeSingle();
+                if (rn && rn.broj_ponude) veza = rn.broj_ponude;
+                let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', veza).maybeSingle();
+                if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'OTPREMNICA'; }
+            }
+        }
+
+        if (ukupnoZaPlatiti > 0) {
+            const vecUplaceno = sveTransakcije.filter(t => t.racun_id === glavnaVeza && t.tip === 'ULAZ').reduce((a, b) => a + parseFloat(b.iznos), 0);
+            let preostalo = (ukupnoZaPlatiti - vecUplaceno).toFixed(2);
+            
+            // Prikaz vizuelne kartice sa obračunom!
+            setSkenDetalji({ tip: tipSkenera, skenirano: val, glavna_veza: glavnaVeza, kupac, ukupno: ukupnoZaPlatiti, placeno: vecUplaceno, preostalo });
+
+            if (preostalo <= 0) {
+                setSkener(''); 
+                return alert(`✅ Dugovanje nula! Ovaj dokument je već u potpunosti isplaćen.`);
+            }
+
+            setForm({
+                ...form, tip: 'ULAZ', 
+                kategorija: kategorije.find(k=>k.naziv.includes('Račun') || k.naziv.includes('Avans'))?.naziv || kategorije[0]?.naziv,
+                iznos: preostalo, racun_id: glavnaVeza, 
+                opis: `Naplata po skeniranom: ${tipSkenera} (${val})`
+            });
+            setSkener(''); 
+        } else {
+            alert(`❌ Sistem nije uspio pronaći finansijski trag za dokument: ${val}.`);
+        }
+    };
+
+    const snimiTransakciju = async () => {
+        if (!form.iznos || parseFloat(form.iznos) <= 0) return alert("Unesite ispravan iznos!");
+        if (!form.kategorija) return alert("Odaberite kategoriju!");
+
+        const payload = {
+            id: form.id, tip: form.tip, kategorija: form.kategorija,
+            iznos: parseFloat(form.iznos), opis: form.opis || null,
+            racun_id: form.racun_id || null, masina_naziv: form.masina_naziv || null,
+            radnik_ime: form.radnik_ime || null, datum: form.datum,
+            vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
+            snimio_korisnik: loggedUser.ime_prezime || 'Nepoznat'
+        };
+
+        const { error } = await supabase.from('blagajna').insert([payload]);
+        if (error) return alert("Greška pri upisu u kasu: " + error.message);
+
+        if (payload.tip === 'ULAZ' && payload.racun_id && payload.racun_id.startsWith('RAC-')) {
+            const {data: r} = await supabase.from('racuni').select('ukupno_sa_pdv').eq('id', payload.racun_id).maybeSingle();
+            if (r) {
+                const sveUplate = sveTransakcije.filter(t => t.racun_id === payload.racun_id).reduce((a,b)=>a+parseFloat(b.iznos), 0) + payload.iznos;
+                if (sveUplate >= r.ukupno_sa_pdv) {
+                    await supabase.from('racuni').update({ status: 'NAPLAĆENO' }).eq('id', payload.racun_id);
+                } else {
+                    await supabase.from('racuni').update({ status: 'DJELOMIČNO PLAĆENO' }).eq('id', payload.racun_id);
+                }
+            }
+        }
+
+        await zapisiU_Log('KASA_UNOS', `Upisan ${payload.tip} od ${payload.iznos} KM u blagajnu (${payload.kategorija}).`);
+        alert("✅ Transakcija uspješno snimljena u blagajnu!");
+        
+        if (window.confirm("Da li želite isprintati Potvrdu o Uplati/Isplati?")) {
+            printPotvrda(payload);
+        }
+        
+        setForm({ ...form, id: generisiID(), iznos: '', opis: '', racun_id: '', masina_naziv: '', radnik_ime: '' });
+        setSkenDetalji(null);
+        load(); setTab('pregled');
+    };
+
+    const obrisiTransakciju = async (t) => {
+        if(window.confirm(`Da li ste sigurni da želite OBRISATI ovu transakciju od ${t.iznos} KM?\nSvako brisanje se trajno bilježi u sistemski log!`)) {
+            await supabase.from('blagajna').delete().eq('id', t.id);
+            await zapisiU_Log('KASA_BRISANJE', `Obrisana transakcija ${t.id} od ${t.iznos} KM (${t.kategorija}).`);
+            load();
+        }
+    };
+
+    const printPotvrda = (t) => {
+        const title = t.tip === 'ULAZ' ? 'POTVRDA O UPLATI' : 'POTVRDA O ISPLATI';
+        const color = t.tip === 'ULAZ' ? '#10b981' : '#ef4444';
+        
+        const html = `
+            <div style="font-family: Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 600px; margin: 0 auto; border: 2px solid ${color}; border-radius: 12px; margin-top: 50px;">
+                <div style="text-align: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 20px; margin-bottom: 30px;">
+                    <h1 style="color: ${color}; margin: 0; font-size: 28px;">${title}</h1>
+                    <p style="color: #64748b; font-weight: bold; margin-top: 5px;">Broj: ${t.id}</p>
+                </div>
+                <table style="width: 100%; font-size: 16px; margin-bottom: 40px; line-height: 2;">
+                    <tr><td style="color:#64748b; width:40%;">Datum i Vrijeme:</td><td style="font-weight:bold;">${new Date(t.datum).toLocaleDateString('bs-BA')} u ${t.vrijeme_tekst}</td></tr>
+                    <tr><td style="color:#64748b;">Kategorija:</td><td style="font-weight:bold;">${t.kategorija}</td></tr>
+                    ${t.racun_id ? `<tr><td style="color:#64748b;">Vezni Dokument:</td><td style="font-weight:bold;">${t.racun_id}</td></tr>` : ''}
+                    ${t.radnik_ime ? `<tr><td style="color:#64748b;">Zaposlenik:</td><td style="font-weight:bold;">${t.radnik_ime}</td></tr>` : ''}
+                    <tr><td style="color:#64748b; vertical-align: top;">Opis / Svrha:</td><td style="font-weight:bold; border: 1px solid #e2e8f0; padding: 10px; background: #f8fafc; border-radius: 8px;">${t.opis || '-'}</td></tr>
+                </table>
+                <div style="background: ${color}20; padding: 20px; text-align: center; border-radius: 12px; border: 1px solid ${color}; margin-bottom: 50px;">
+                    <span style="font-size: 14px; color: #475569; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 5px;">Iznos transakcije</span>
+                    <span style="font-size: 36px; font-weight: 900; color: ${color};">${parseFloat(t.iznos).toFixed(2)} KM</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; text-align: center; margin-top: 60px;">
+                    <div style="width: 40%;"><div style="border-bottom: 1px solid #94a3b8; height: 30px; margin-bottom: 10px;"></div><span style="font-size: 12px; font-weight: bold;">Blagajnik ( ${t.snimio_korisnik} )</span></div>
+                    <div style="width: 40%;"><div style="border-bottom: 1px solid #94a3b8; height: 30px; margin-bottom: 10px;"></div><span style="font-size: 12px; font-weight: bold;">Uplatilac / Primalac</span></div>
+                </div>
+            </div>
+        `;
+        printDokument(title, t.id, new Date(t.datum).toLocaleDateString('bs-BA'), html, color);
+    };
+
+    const datumOd = header?.datumOd || new Date().toISOString().split('T')[0];
+    const datumDo = header?.datumDo || new Date().toISOString().split('T')[0];
+
+    const prikazaneTransakcije = sveTransakcije.filter(t => t.datum >= datumOd && t.datum <= datumDo);
+    const periodUlaz = prikazaneTransakcije.filter(t => t.tip === 'ULAZ').reduce((acc, t) => acc + parseFloat(t.iznos), 0);
+    const periodIzlaz = prikazaneTransakcije.filter(t => t.tip === 'IZLAZ').reduce((acc, t) => acc + parseFloat(t.iznos), 0);
+    const apsolutnoStanjeKase = sveTransakcije.filter(t => t.tip === 'ULAZ').reduce((a,b)=>a+parseFloat(b.iznos),0) - sveTransakcije.filter(t => t.tip === 'IZLAZ').reduce((a,b)=>a+parseFloat(b.iznos),0);
+
+    return (
+        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold">
+            {tab === 'analitika' || tab === 'pregled' ? (
+                <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" />
+            ) : (
+                <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-emerald-500/30 shadow-lg">
+                    <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
+                    <h2 className="text-emerald-400 font-black tracking-widest uppercase text-xs">💵 BLAGAJNA I FINANSIJE</h2>
+                </div>
+            )}
+
+            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
+                <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'unos' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>➕ Unos u Kasu</button>
+                <button onClick={() => setTab('pregled')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'pregled' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>📋 Dnevnik Kase</button>
+                <button onClick={() => setTab('analitika')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'analitika' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>📊 Analiza Troškova</button>
+            </div>
+
+            {tab === 'unos' && (
+                <div className="space-y-6 max-w-4xl mx-auto animate-in slide-in-from-left">
+                    
+                    <div className="bg-slate-900 border border-blue-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative">
+                        <div className="text-2xl">📷</div>
+                        <div className="flex-1 relative">
+                            <label className="text-[10px] text-blue-400 uppercase font-black block mb-1">Brzi sken (Skeniraj bilo koji dokument: PON, RN, OTP, RAC)</label>
+                            <input value={skener} onChange={handleSkenUnos} onFocus={() => setShowSkenerDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-blue-500 focus:border-blue-400 uppercase font-black tracking-widest shadow-inner" />
+                            
+                            {showSkenerDrop && skener && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
+                                    {sviDokumenti
+                                        .filter(d => d.id.includes(skener) || (d.kupac && d.kupac.toUpperCase().includes(skener)))
+                                        .map(p => (
+                                        <div key={p.id} onClick={() => {
+                                            setSkener(p.id);
+                                            setShowSkenerDrop(false);
+                                            if (kucanjeTimer) clearTimeout(kucanjeTimer);
+                                            izvrsiSkeniranje(p.id);
+                                        }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
+                                            <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                            <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* VIZUELNA KARTICA DETALJA */}
+                    {skenDetalji && (
+                        <div className="bg-slate-900 border-2 border-emerald-500/50 p-6 rounded-3xl shadow-2xl animate-in zoom-in-95">
+                            <div className="flex justify-between items-start border-b border-slate-700 pb-3 mb-4">
+                                <div>
+                                    <h3 className="text-emerald-400 font-black text-sm uppercase">Pronađen finansijski trag</h3>
+                                    <p className="text-white text-lg font-black mt-1">{skenDetalji.kupac}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-slate-400 text-[10px] uppercase">Glavna Veza</p>
+                                    <p className="text-blue-400 font-bold">{skenDetalji.glavna_veza}</p>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-4 text-center">
+                                <div className="bg-slate-800 p-3 rounded-xl">
+                                    <p className="text-[9px] text-slate-400 uppercase">Ukupno</p>
+                                    <p className="text-white font-black">{skenDetalji.ukupno} KM</p>
+                                </div>
+                                <div className="bg-emerald-900/30 border border-emerald-500/30 p-3 rounded-xl">
+                                    <p className="text-[9px] text-emerald-400 uppercase">Već Uplaćeno</p>
+                                    <p className="text-emerald-400 font-black">{skenDetalji.placeno} KM</p>
+                                </div>
+                                <div className="bg-red-900/30 border border-red-500/30 p-3 rounded-xl shadow-inner">
+                                    <p className="text-[9px] text-red-400 uppercase">Preostali Dug</p>
+                                    <p className="text-red-400 font-black text-xl">{skenDetalji.preostalo} KM</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex gap-4">
+                        <button onClick={() => handleTipChange('ULAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'ULAZ' ? 'bg-emerald-900/30 border-emerald-500 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-emerald-900'}`}>+ ULAZ NOVCA</button>
+                        <button onClick={() => handleTipChange('IZLAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'IZLAZ' ? 'bg-red-900/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-red-900'}`}>- IZLAZ NOVCA</button>
+                    </div>
+
+                    <div className={`bg-[#1e293b] p-8 rounded-[2.5rem] border-2 shadow-2xl space-y-6 ${form.tip === 'ULAZ' ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Kategorija Transakcije</label>
+                                <select value={form.kategorija} onChange={e=>setForm({...form, kategorija:e.target.value})} className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 font-bold">
+                                    {kategorije.filter(k=>k.tip===form.tip).map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Iznos (KM)</label>
+                                <input type="number" value={form.iznos} onChange={e=>setForm({...form, iznos:e.target.value})} placeholder="0.00" className={`w-full p-4 bg-[#0f172a] rounded-xl text-2xl font-black text-center outline-none border-2 shadow-inner ${form.tip === 'ULAZ' ? 'border-emerald-500/50 text-emerald-400 focus:border-emerald-400' : 'border-red-500/50 text-red-400 focus:border-red-400'}`} />
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
+                            {(form.kategorija.toLowerCase().includes('račun') || form.kategorija.toLowerCase().includes('ponud') || form.kategorija.toLowerCase().includes('avans')) && (
+                                <div className="relative">
+                                    <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera na vrhu)</label>
+                                    <input 
+                                        value={form.racun_id} 
+                                        onChange={(e) => {
+                                            const val = e.target.value.toUpperCase();
+                                            setForm({...form, racun_id: val});
+                                            setShowSkenerDrop(true);
+                                            if (kucanjeTimer) clearTimeout(kucanjeTimer);
+                                            if (val) {
+                                                setKucanjeTimer(setTimeout(() => {
+                                                    setShowSkenerDrop(false);
+                                                    izvrsiSkeniranje(val);
+                                                }, 2000));
+                                            }
+                                        }} 
+                                        onFocus={() => setShowSkenerDrop(true)}
+                                        placeholder="npr. RAC-123" 
+                                        className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-emerald-500 focus:border-emerald-400 uppercase font-black shadow-inner" 
+                                    />
+                                    
+                                    {showSkenerDrop && form.racun_id && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
+                                            {sviDokumenti
+                                                .filter(d => (d.tip === 'Račun' || d.tip === 'Ponuda') && (d.id.includes(form.racun_id) || (d.kupac && d.kupac.toUpperCase().includes(form.racun_id))))
+                                                .map(p => (
+                                                <div key={p.id} onClick={() => {
+                                                    setForm({...form, racun_id: p.id});
+                                                    setShowSkenerDrop(false);
+                                                    if (kucanjeTimer) clearTimeout(kucanjeTimer);
+                                                    izvrsiSkeniranje(p.id);
+                                                }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
+                                                    <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                                    <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {form.kategorija.toLowerCase().includes('mašin') && (
+                                <div>
+                                    <label className="text-[10px] text-amber-500 uppercase font-black ml-2 block mb-1">Za koju mašinu se plaća?</label>
+                                    <select value={form.masina_naziv} onChange={e=>setForm({...form, masina_naziv:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700">
+                                        <option value="">-- Odaberi mašinu --</option>
+                                        {masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {form.kategorija.toLowerCase().includes('radnic') && (
+                                <div>
+                                    <label className="text-[10px] text-blue-400 uppercase font-black ml-2 block mb-1">Za kojeg radnika je isplata?</label>
+                                    <select value={form.radnik_ime} onChange={e=>setForm({...form, radnik_ime:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700">
+                                        <option value="">-- Odaberi radnika --</option>
+                                        {radnici.map(r => <option key={r.ime_prezime} value={r.ime_prezime}>{r.ime_prezime}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Svrha / Detaljan opis</label>
+                                <textarea value={form.opis} onChange={e=>setForm({...form, opis:e.target.value})} placeholder="Upiši detalje..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" rows="2"></textarea>
+                            </div>
+                        </div>
+
+                        <button onClick={snimiTransakciju} className={`w-full py-5 text-white font-black rounded-2xl uppercase text-sm shadow-xl transition-all ${form.tip === 'ULAZ' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>
+                            ✅ Proknjiži i Štampaj
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {tab === 'pregled' && (
+                <div className="space-y-6 animate-in slide-in-from-right">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center"><p className="text-[10px] text-slate-500 uppercase font-black mb-1">Ulaz za ovaj period</p><p className="text-3xl text-emerald-400 font-black">{periodUlaz.toFixed(2)} <span className="text-sm">KM</span></p></div>
+                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center"><p className="text-[10px] text-slate-500 uppercase font-black mb-1">Izlaz za ovaj period</p><p className="text-3xl text-red-400 font-black">{periodIzlaz.toFixed(2)} <span className="text-sm">KM</span></p></div>
+                        <div className="bg-blue-900/20 p-6 rounded-3xl border border-blue-500/30 text-center"><p className="text-[10px] text-blue-400 uppercase font-black mb-1">UKUPAN TRENUTNI SALDO (KASA)</p><p className="text-4xl text-white font-black">{apsolutnoStanjeKase.toFixed(2)} <span className="text-sm">KM</span></p></div>
+                    </div>
+
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl">
+                        <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
+                            <h3 className="text-slate-400 font-black uppercase text-[10px]">Knjiga Blagajne za odabrani period</h3>
+                            <div className="flex gap-2">
+                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-slate-900 text-xs text-white p-3 rounded-xl border border-slate-700 outline-none">
+                                    <option value="SVE">Sve Kategorije</option>
+                                    {kategorije.map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
+                                </select>
+                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis..." className="bg-slate-900 text-xs text-white p-3 rounded-xl border border-slate-700 outline-none w-48" />
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
+                            {prikazaneTransakcije
+                                .filter(t => (header?.blagajnaFilterKat && header.blagajnaFilterKat !== 'SVE') ? t.kategorija === header.blagajnaFilterKat : true)
+                                .filter(t => (header?.blagajnaPretraga) ? (t.opis || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) || (t.racun_id || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) : true)
+                                .map(t => (
+                                <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center hover:border-slate-600 transition-all group">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xl border-4 shadow-lg ${t.tip === 'ULAZ' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30' : 'bg-red-900/40 text-red-400 border-red-500/30'}`}>
+                                            {t.tip === 'ULAZ' ? '+' : '-'}
+                                        </div>
+                                        <div>
+                                            <p className="text-white text-xs font-black uppercase">{t.kategorija}</p>
+                                            <p className="text-[10px] text-slate-400 mt-1">{t.opis || 'Nema opisa'}</p>
+                                            <div className="flex gap-2 mt-2">
+                                                <span className="text-[8px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">{new Date(t.datum).toLocaleDateString('bs-BA')} {t.vrijeme_tekst}</span>
+                                                <span className="text-[8px] bg-blue-900/30 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-bold">👤 {t.snimio_korisnik}</span>
+                                                {t.racun_id && <span className="text-[8px] bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">📄 {t.racun_id}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="text-right">
+                                            <p className={`text-xl font-black font-mono ${t.tip === 'ULAZ' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {t.tip === 'ULAZ' ? '+' : '-'}{t.iznos.toFixed(2)}
+                                            </p>
+                                            <button onClick={() => printPotvrda(t)} className="text-[8px] uppercase font-black text-slate-500 hover:text-white mt-1">🖨️ Print Potvrdu</button>
+                                        </div>
+                                        <button onClick={() => obrisiTransakciju(t)} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-xl transition-all">✕</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {tab === 'analitika' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-right">
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl">
+                        <h3 className="text-emerald-500 font-black uppercase text-xs mb-4">📥 Struktura Ulaza (Prihodi)</h3>
+                        <div className="space-y-3">
+                            {kategorije.filter(k=>k.tip==='ULAZ').map(kat => {
+                                const suma = prikazaneTransakcije.filter(t => t.kategorija === kat.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
+                                if (suma === 0) return null;
+                                return (
+                                    <div key={kat.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                        <span className="text-white text-sm font-bold">{kat.naziv}</span>
+                                        <span className="text-emerald-400 font-black font-mono">+ {suma.toFixed(2)} KM</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-red-500/30 shadow-2xl">
+                        <h3 className="text-red-500 font-black uppercase text-xs mb-4">📤 Struktura Izlaza (Troškovi)</h3>
+                        <div className="space-y-3">
+                            {kategorije.filter(k=>k.tip==='IZLAZ').map(kat => {
+                                const suma = prikazaneTransakcije.filter(t => t.kategorija === kat.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
+                                if (suma === 0) return null;
+                                return (
+                                    <div key={kat.id} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                        <span className="text-white text-sm font-bold">{kat.naziv}</span>
+                                        <span className="text-red-400 font-black font-mono">- {suma.toFixed(2)} KM</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-amber-500/30 shadow-2xl">
+                        <h3 className="text-amber-500 font-black uppercase text-xs mb-4">⚙️ Troškovi Održavanja po Mašini</h3>
+                        <div className="space-y-3">
+                            {masine.map(m => {
+                                const trosakMasine = prikazaneTransakcije.filter(t => t.masina_naziv === m.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
+                                if (trosakMasine === 0) return null;
+                                return (
+                                    <div key={m.naziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                        <span className="text-white text-sm font-bold">{m.naziv}</span>
+                                        <span className="text-red-400 font-black font-mono">- {trosakMasine.toFixed(2)} KM</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/30 shadow-2xl">
+                        <h3 className="text-blue-400 font-black uppercase text-xs mb-4">👷 Isplate po Radnicima</h3>
+                        <div className="space-y-3">
+                            {radnici.map(r => {
+                                const radnikIsplate = prikazaneTransakcije.filter(t => t.radnik_ime === r.ime_prezime).reduce((a, t) => a + parseFloat(t.iznos), 0);
+                                if (radnikIsplate === 0) return null;
+                                return (
+                                    <div key={r.ime_prezime} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                        <span className="text-white text-sm font-bold">{r.ime_prezime}</span>
+                                        <span className="text-blue-400 font-black font-mono">{radnikIsplate.toFixed(2)} KM</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+// Kraj modula Blagajna
+// ============================================================================
+// MODUL: KONTROLNI TORANJ (TIMELINE SLJEDIVOST DOKUMENATA)
+// ============================================================================
+// ============================================================================
+// MODUL: KONTROLNI TORANJ (TIMELINE SLJEDIVOST DOKUMENATA)
+// ============================================================================
+function KontrolniToranjModule({ onExit }) {
+    const [sken, setSken] = useState('');
+    const [timeline, setTimeline] = useState(null);
+    const [loading, setLoading] = useState(false);
+    
+    // Za pametni dropdown
+    const [sviDokumenti, setSviDokumenti] = useState([]);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [kucanjeTimer, setKucanjeTimer] = useState(null);
+
+    useEffect(() => {
+        // Učitavamo brojeve svih dokumenata za pametnu pretragu
+        const ucitajSve = async () => {
+            const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv');
+            const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv');
+            const { data: otp } = await supabase.from('otpremnice').select('id, kupac_naziv');
+            const { data: rac } = await supabase.from('racuni').select('id, kupac_naziv');
+            
+            const svi = [
+                ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' })),
+                ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
+                ...(otp || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Otpremnica' })),
+                ...(rac || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Račun' }))
+            ];
+            setSviDokumenti(svi);
+        };
+        ucitajSve();
+    }, []);
+
+    const analizirajDokument = async (trazeniBroj) => {
+        const val = (trazeniBroj || sken).toUpperCase().trim();
+        if (!val) return;
+        setLoading(true); setShowDropdown(false); setTimeline(null);
+
+        let pronadjenaPonuda = null;
+
+        if (val.startsWith('PON-')) {
+            const {data} = await supabase.from('ponude').select('*').eq('id', val).maybeSingle();
+            pronadjenaPonuda = data;
+        } else if (val.startsWith('RN-')) {
+            const {data: rn} = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', val).maybeSingle();
+            if (rn && rn.broj_ponude) { const {data} = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); pronadjenaPonuda = data; }
+        } else if (val.startsWith('OTP-')) {
+            const {data: otp} = await supabase.from('otpremnice').select('broj_veze').eq('id', val).maybeSingle();
+            if (otp && otp.broj_veze && otp.broj_veze.startsWith('RN-')) {
+                const {data: rn} = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', otp.broj_veze).maybeSingle();
+                if (rn && rn.broj_ponude) { const {data} = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); pronadjenaPonuda = data; }
+            } else if (otp && otp.broj_veze && otp.broj_veze.startsWith('PON-')) {
+                const {data} = await supabase.from('ponude').select('*').eq('id', otp.broj_veze).maybeSingle(); pronadjenaPonuda = data;
+            }
+        } else if (val.startsWith('RAC-')) {
+            const {data: rac} = await supabase.from('racuni').select('broj_veze').eq('id', val).maybeSingle();
+            if (rac && rac.broj_veze && rac.broj_veze.startsWith('OTP-')) {
+                 const {data: otp} = await supabase.from('otpremnice').select('broj_veze').eq('id', rac.broj_veze).maybeSingle();
+                 if(otp && otp.broj_veze && otp.broj_veze.startsWith('RN-')) {
+                     const {data: rn} = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', otp.broj_veze).maybeSingle();
+                     if(rn) { const {data} = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); pronadjenaPonuda = data; }
+                 }
+            }
+        }
+
+        if (!pronadjenaPonuda) {
+            setLoading(false);
+            return alert("Sistem ne može uspostaviti lanac sljedivosti za ovaj dokument.");
+        }
+
+        const podaci = { ponuda: pronadjenaPonuda, nalozi: [], otpremnice: [], uplate: [] };
+        const {data: nalozi} = await supabase.from('radni_nalozi').select('*').eq('broj_ponude', pronadjenaPonuda.id);
+        if (nalozi) podaci.nalozi = nalozi;
+
+        const naloziIds = nalozi?.map(n => n.id) || [];
+        const sviVezniBrojevi = [pronadjenaPonuda.id, ...naloziIds];
+        if (sviVezniBrojevi.length > 0) {
+            const {data: otpremnice} = await supabase.from('otpremnice').select('*').in('broj_veze', sviVezniBrojevi);
+            if (otpremnice) podaci.otpremnice = otpremnice;
+        }
+
+        const {data: uplate} = await supabase.from('blagajna').select('*').eq('racun_id', pronadjenaPonuda.id).eq('tip', 'ULAZ');
+        if (uplate) podaci.uplate = uplate;
+
+        setTimeline(podaci); setLoading(false); setSken(val);
+    };
+
+    // LOGIKA ZADRŠKE (2 sekunde)
+    const handleSkenUnos = (e) => {
+        const val = e.target.value.toUpperCase();
+        setSken(val);
+        setShowDropdown(true);
+
+        if (kucanjeTimer) clearTimeout(kucanjeTimer);
+        
+        if (val) {
+            const noviTimer = setTimeout(() => {
+                analizirajDokument(val);
+            }, 2000);
+            setKucanjeTimer(noviTimer);
+        }
+    };
+
+    // Filtriranje dropdowna
+    const preporuke = sviDokumenti.filter(d => d.id.includes(sken) || (d.kupac && d.kupac.toUpperCase().includes(sken))).slice(0, 5);
+
+    return (
+        <div className="p-4 max-w-5xl mx-auto space-y-6 font-bold">
+            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-blue-500/30 shadow-lg">
+                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
+                <h2 className="text-blue-400 font-black tracking-widest uppercase text-xs">📡 KONTROLNI TORANJ (SLJEDIVOST)</h2>
+            </div>
+
+            <div className="bg-[#1e293b] p-8 rounded-[2.5rem] border border-slate-700 shadow-2xl text-center relative z-50">
+                <h3 className="text-slate-400 font-black uppercase text-xs mb-4">Skeniraj ili pretraži dokument (Ime kupca ili Broj)</h3>
+                <div className="flex gap-2 max-w-2xl mx-auto relative">
+                    <div className="flex-1 relative">
+                        <input type="text" value={sken} onChange={handleSkenUnos} onFocus={()=>setShowDropdown(true)} placeholder="Npr. OTP-2026-123 ili MARIĆ BAU" className="w-full p-5 bg-[#0f172a] rounded-2xl text-center font-black text-xl text-white border border-blue-500/50 uppercase outline-none focus:border-blue-400" />
+                        
+                        {/* PAMETNI DROPDOWN */}
+                        {showDropdown && sken && preporuke.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-50 text-left">
+                                {preporuke.map(p => (
+                                    <div key={p.id} onClick={() => { setSken(p.id); analizirajDokument(p.id); }} className="p-4 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center">
+                                        <div><span className="text-white font-black">{p.id}</span> <span className="text-xs text-slate-400 ml-2">({p.tip})</span></div>
+                                        <div className="text-blue-400 text-xs">{p.kupac}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <button onClick={() => analizirajDokument(sken)} className="bg-blue-600 px-8 rounded-2xl text-white font-black hover:bg-blue-500 shadow-xl flex items-center gap-2">📷 SKEN</button>
+                </div>
+            </div>
+
+            {loading && <p className="text-center text-blue-400 animate-pulse mt-10">Pretraga i građenje sljedivosti u toku...</p>}
+
+            {/* Ostatak timeline prikaza ostaje isti... */}
+            {timeline && (
+                <div className="bg-[#0f172a] p-8 rounded-[2.5rem] border-2 border-slate-700 shadow-2xl space-y-8 animate-in slide-in-from-bottom">
+                    <div className="flex justify-between items-start border-b border-slate-800 pb-6">
+                        <div>
+                            <h2 className="text-3xl text-white font-black">{timeline.ponuda.kupac_naziv}</h2>
+                            <p className="text-slate-400 mt-1">Status posla: <span className="text-pink-400 font-black">{timeline.ponuda.status}</span></p>
+                        </div>
+                        <div className="text-right bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                            <p className="text-[10px] uppercase text-slate-500">Ukupna vrijednost posla</p>
+                            <p className="text-3xl text-emerald-400 font-black">{timeline.ponuda.ukupno_sa_pdv.toFixed(2)} KM</p>
+                        </div>
+                    </div>
+                    <div className="relative border-l-4 border-slate-700 ml-6 pl-8 space-y-10 py-4">
+                        <div className="relative">
+                            <div className="absolute -left-[42px] top-0 w-6 h-6 bg-pink-500 rounded-full border-4 border-[#0f172a]"></div>
+                            <h4 className="text-pink-500 font-black text-xs uppercase mb-1">Početak: Kreirana Ponuda</h4>
+                            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                                <p className="text-white font-bold text-lg">{timeline.ponuda.id}</p>
+                                <p className="text-xs text-slate-400 mt-2">Zabilježio: <span className="text-slate-300">{timeline.ponuda.snimio_korisnik}</span> (Datum: {new Date(timeline.ponuda.datum).toLocaleDateString('bs-BA')})</p>
+                            </div>
+                        </div>
+                        {timeline.nalozi.length > 0 && (
+                            <div className="relative">
+                                <div className="absolute -left-[42px] top-0 w-6 h-6 bg-purple-500 rounded-full border-4 border-[#0f172a]"></div>
+                                <h4 className="text-purple-500 font-black text-xs uppercase mb-1">Faza proizvodnje: Radni Nalozi</h4>
+                                <div className="space-y-2">
+                                    {timeline.nalozi.map(n => (
+                                        <div key={n.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
+                                            <div><p className="text-white font-bold">{n.id}</p><p className="text-xs text-slate-400">Izdao: {n.snimio_korisnik} | Status: <span className="text-purple-400">{n.status}</span></p></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {timeline.otpremnice.length > 0 && (
+                            <div className="relative">
+                                <div className="absolute -left-[42px] top-0 w-6 h-6 bg-orange-500 rounded-full border-4 border-[#0f172a]"></div>
+                                <h4 className="text-orange-500 font-black text-xs uppercase mb-1">Faza Isporuke: Otpremnice</h4>
+                                <div className="space-y-2">
+                                    {timeline.otpremnice.map(o => (
+                                        <div key={o.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                                            <p className="text-white font-bold">{o.id}</p><p className="text-xs text-slate-400">Vozač: {o.vozac || '-'} | Vozilo: {o.registracija || '-'}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <div className="relative">
+                            <div className="absolute -left-[42px] top-0 w-6 h-6 bg-emerald-500 rounded-full border-4 border-[#0f172a] shadow-[0_0_15px_rgba(16,185,129,0.5)]"></div>
+                            <h4 className="text-emerald-500 font-black text-xs uppercase mb-1">Status Naplate (Blagajna)</h4>
+                            {timeline.uplate.length > 0 ? (
+                                <div className="space-y-2">
+                                    {timeline.uplate.map((u, i) => (
+                                        <div key={u.id} className="bg-emerald-900/20 p-4 rounded-2xl border border-emerald-500/30 flex justify-between items-center">
+                                            <div><p className="text-emerald-400 font-bold">{i===0?'Avansna Uplata':'Uplata'} ({u.id})</p><p className="text-[10px] text-slate-400">Blagajnik: {u.snimio_korisnik}</p></div>
+                                            <p className="text-xl text-emerald-400 font-black">+{parseFloat(u.iznos).toFixed(2)} KM</p>
+                                        </div>
+                                    ))}
+                                    {(() => {
+                                        const dug = timeline.ponuda.ukupno_sa_pdv - timeline.uplate.reduce((a, b) => a + parseFloat(b.iznos), 0);
+                                        if (dug <= 0) return <div className="mt-4 p-3 bg-emerald-600 text-white text-center rounded-xl font-black shadow-lg">✅ ISPLAĆENO U POTPUNOSTI</div>;
+                                        return <div className="mt-4 p-3 bg-red-900/50 border border-red-500 text-red-400 text-center rounded-xl font-black shadow-lg">⚠️ KUPAC DUGUJE JOŠ: {dug.toFixed(2)} KM</div>;
+                                    })()}
+                                </div>
+                            ) : (
+                                <div className="bg-slate-900 p-6 rounded-2xl border border-red-500/50 text-center"><p className="text-red-400 font-black">Nema evidentiranih uplata!</p></div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+// Kraj modula Kontrolni Toranj
+// Kraj modula Blagajna
+// ============================================================================
+// Kraj modula Blagajna
+// ============================================================================
 // ============================================================================
 // NOVI MODUL: QR KONTROLA (DETEKTIV ZA KODOVE)
 // ============================================================================
