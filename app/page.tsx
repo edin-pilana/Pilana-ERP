@@ -39,25 +39,55 @@ export default function Page() {
             const user = localStorage.getItem('smart_timber_user');
             if (user) { try { setLoggedUser(JSON.parse(user)); } catch (e) { localStorage.removeItem('smart_timber_user'); } }
             
-            // 🎨 UČITAVANJE BRENDINGA SA SERVERA
+            // 🎨 UČITAVANJE BRENDINGA SA SERVERA I PWA GENERATOR
             try {
                 const { data: brendingData } = await supabase.from('brending').select('*');
                 if (brendingData) {
                     localStorage.setItem('erp_brending', JSON.stringify(brendingData));
                     
-                    // Postavljanje Favicon ikone u Tab browsera!
+                    // 1. Postavljanje logotipa na vrh menija i login
+                    const gl = brendingData.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
+                    if (gl) setGlavniLogo(gl.url_slike);
+
+                    // 2. Postavljanje ikonica i "PWA Standalone" moda za mobitele
                     const fav = brendingData.find(b => (b.lokacije_jsonb || []).includes('Ikona u pregledniku (Favicon)'));
                     if (fav && fav.url_slike) {
+                        // A) Favicon za obični kompjuterski browser
                         let link = document.querySelector("link[rel~='icon']");
                         if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
                         link.href = fav.url_slike;
+
+                        // B) Apple Touch Icon (Za iPhone)
+                        let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
+                        if (!appleIcon) { appleIcon = document.createElement('link'); appleIcon.rel = 'apple-touch-icon'; document.head.appendChild(appleIcon); }
+                        appleIcon.href = fav.url_slike;
+
+                        // C) Naredba mobitelu da sakrije URL traku (Standalone app)
+                        let metaStandalone = document.querySelector("meta[name='apple-mobile-web-app-capable']");
+                        if (!metaStandalone) {
+                            metaStandalone = document.createElement('meta'); metaStandalone.name = 'apple-mobile-web-app-capable'; metaStandalone.content = 'yes'; document.head.appendChild(metaStandalone);
+                            let metaAndroid = document.createElement('meta'); metaAndroid.name = 'mobile-web-app-capable'; metaAndroid.content = 'yes'; document.head.appendChild(metaAndroid);
+                        }
+
+                        // D) Dinamički Manifest fajl za Android (Instalacija aplikacije)
+                        const manifest = {
+                            name: POSTAVKE.imeAplikacije,
+                            short_name: "ERP",
+                            start_url: "/",
+                            display: "standalone",
+                            background_color: "#0f172a",
+                            theme_color: POSTAVKE.bojaFirme,
+                            icons: [{ src: fav.url_slike, sizes: "512x512", type: "image/png", purpose: "any maskable" }]
+                        };
+                        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+                        const manifestUrl = URL.createObjectURL(manifestBlob);
+                        
+                        let manifestLink = document.querySelector("link[rel='manifest']");
+                        if (!manifestLink) { manifestLink = document.createElement('link'); manifestLink.rel = 'manifest'; document.head.appendChild(manifestLink); }
+                        manifestLink.href = manifestUrl;
                     }
-                    
-                    // Postavljanje logotipa na vrh menija i login
-                    const gl = brendingData.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-                    if (gl) setGlavniLogo(gl.url_slike);
                 }
-            } catch(e) {}
+            } catch(e) { console.log("Greška PWA init", e) }
 
             setAuthLoading(false);
         };
