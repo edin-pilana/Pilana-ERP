@@ -157,7 +157,7 @@ export default function Page() {
                                   {hasDozvola('Prorez (Trupci)') && <MenuBtn label="PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />}
                                   {hasDozvola('Pilana (Izlaz)') && <MenuBtn label="PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />}
                                   {hasDozvola('Dorada (Ulaz/Izlaz)') && <MenuBtn label="DORADA (Ulaz/Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />}
-                                  {hasDozvola('QR Kontrola') && <MenuBtn label="QR KONTROLA" icon="🔍" color="blue" onClick={() => setActiveModule('qr_kontrola')} />}
+                                  {hasDozvola('LAGER PAKETA') && <MenuBtn label="LAGER PAKETA" icon="🔍" color="blue" onClick={() => setActiveModule('qr_kontrola')} />}
                               </div>
 
                               {/* DONJI BLOK DUGMADI */}
@@ -210,7 +210,7 @@ export default function Page() {
           ) : activeModule === 'analitika' ? (
               <DashboardModule user={loggedUser} onExit={() => setActiveModule('dashboard')} />
           ) : activeModule === 'qr_kontrola' ? (
-              <QRControlModule onExit={() => setActiveModule('dashboard')} />
+              <LagerPaketaModule user={loggedUser} onExit={() => setActiveModule('dashboard')} />
           ) : null}
       </div>
     );
@@ -1114,7 +1114,35 @@ function PilanaModule({ user, header, setHeader, onExit }) {
         if (!selectedIzlazId) return alert("Prvo skenirajte IZLAZNI PAKET!");
         if (!form.kolicina_ulaz) return alert("⚠️ Unesite količinu prije snimanja!");
 
-        const timeNow = new Date().toLocaleTimeString('de-DE');
+        const timeNowFull = new Date().toISOString();
+        const timeNow = new Date().toLocaleTimeString('de-DE'); // Za staro polje vrijeme_tekst
+
+        // --- AUTOMATIKA: INTERVALNA SLJEDIVOST PO SMJENAMA ---
+        
+        // 1. Tražimo zadnju stavku koja je ikada upisana u ovaj paket_id
+        const { data: lastPackageItem } = await supabase
+            .from('paketi')
+            .select('created_at')
+            .eq('paket_id', selectedIzlazId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        // Ako nema prethodne stavke, uzimamo buffer od 12 sati unazad (početak rada na paketu)
+        const startTime = lastPackageItem ? lastPackageItem.created_at : new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
+        // 2. Povlačimo trupce prorezane na ovoj mašini SAMO u tom intervalu
+        const { data: logsInInterval } = await supabase
+            .from('prorez_log')
+            .select('trupac_id')
+            .eq('masina', header.masina)
+            .gte('created_at', startTime)
+            .lte('created_at', timeNowFull);
+
+        // Izvlačimo unikatne ID-jeve trupaca iz tog perioda
+        const currentTrupciIds = logsInInterval ? [...new Set(logsInInterval.map(l => l.trupac_id))] : [];
+
+        // --- Standardne kalkulacije dimenzija ---
         const unosKol = parseFloat(form.kolicina_ulaz);
         const v = parseFloat(form.debljina) || 1;
         const s = parseFloat(form.sirina) || 1;
@@ -1127,22 +1155,32 @@ function PilanaModule({ user, header, setHeader, onExit }) {
 
         const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
 
+        // 3. Upis stavke sa prikačenim trupcima iz te "ure" (tog intervala)
         if (activeEditItem) {
             const newM3 = updateMode === 'dodaj' ? parseFloat(activeEditItem.kolicina_final) + qtyZaPaket : parseFloat(activeEditItem.kolicina_final) - qtyZaPaket;
             const { error } = await supabase.from('paketi').update({ 
                 kolicina_final: parseFloat(newM3.toFixed(3)), 
                 vrijeme_tekst: timeNow, 
                 snimio_korisnik: user.ime_prezime,
-                oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake // Ažuriraj oznake ako su nove
+                oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
+                broj_veze: radniNalog || activeEditItem.broj_veze,
+                ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids 
             }).eq('id', activeEditItem.id);
             
             if (error) return alert("❌ GREŠKA PRI AŽURIRANJU PAKETA: " + error.message);
         } else {
             const { error } = await supabase.from('paketi').insert([{ 
-                paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, 
+                paket_id: selectedIzlazId, 
+                naziv_proizvoda: form.naziv, 
+                debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, 
                 kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, 
-                mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user.ime_prezime, vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum,
-                oznake: odabraneOznake // NOVO: Spasavanje oznaka
+                mjesto: header.mjesto, masina: header.masina, 
+                snimio_korisnik: user.ime_prezime, 
+                vrijeme_tekst: timeNow, 
+                datum_yyyy_mm: header.datum,
+                oznake: odabraneOznake,
+                broj_veze: radniNalog,
+                ulaz_trupci_ids: currentTrupciIds // KLJUČ: Ovdje vežemo trupce samo za ovaj klik!
             }]);
             
             if (error) return alert("❌ GREŠKA PRI SNIMANJU PAKETA U BAZU: " + error.message);
@@ -1170,9 +1208,10 @@ function PilanaModule({ user, header, setHeader, onExit }) {
                 setForm(f => ({ ...f, napravljeno: (parseFloat(f.napravljeno) + napravljenoZaRN).toFixed(4) }));
             }
         }
+        
         fetchIzlaz(selectedIzlazId); 
         setForm(f => ({...f, kolicina_ulaz: ''})); 
-        setOdabraneOznake([]); // Očisti odabir
+        setOdabraneOznake([]);
         setActiveEditItem(null);
     };
 
@@ -1185,6 +1224,12 @@ function PilanaModule({ user, header, setHeader, onExit }) {
         }
         if (window.confirm(`ZAKLJUČITI paket ${pid}?`)) {
             await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
+            
+            // Pitanje za automatski print
+            if (window.confirm(`📦 Paket uspješno zaključen!\n\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`)) {
+                printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog);
+            }
+
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
         }
@@ -1195,39 +1240,6 @@ function PilanaModule({ user, header, setHeader, onExit }) {
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if(selectedIzlazId === pid) setSelectedIzlazId('');
         }
-    };
-    const printNaljepnica = (paket) => {
-        const originalTitle = document.title;
-        document.title = `Naljepnica ${paket.paket_id}`;
-        
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        
-        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paket.paket_id}`;
-        
-        const html = `
-            <html><head><title>Naljepnica ${paket.paket_id}</title><style>
-                body { font-family: sans-serif; width: 100mm; height: 100mm; margin: 0; padding: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 1px solid black; box-sizing: border-box;}
-                h1 { font-size: 24px; margin: 0 0 10px 0; }
-                img { width: 150px; height: 150px; margin-bottom: 10px; }
-                p { font-size: 14px; margin: 5px 0; font-weight: bold; }
-                .dim { font-size: 18px; margin-top: 10px; }
-                @media print { @page { size: 100mm 100mm; margin: 0; } body { border: none; } }
-            </style></head>
-            <body>
-                <h1>${paket.paket_id}</h1>
-                <img src="${qrCodeUrl}" alt="QR KOD" />
-                <p>${paket.naziv_proizvoda}</p>
-                <p class="dim">${paket.debljina} x ${paket.sirina} x ${paket.duzina}</p>
-                <p>Vol: ${paket.kolicina_final} m³</p>
-                ${"<sc"+"ript>"}window.onload = function(){ setTimeout(function(){ window.print(); }, 800); };${"</sc"+"ript>"}
-            </body></html>
-        `;
-        
-        iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
-        setTimeout(() => { document.title = originalTitle; }, 3000);
-        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
     };
 
     return (
@@ -1342,7 +1354,7 @@ function PilanaModule({ user, header, setHeader, onExit }) {
                 <div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div>
             </div>
             <button 
-                onClick={(e) => { e.stopPropagation(); printNaljepnica(item); }} 
+                onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} 
                 className="bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-blue-500/30 transition-all shadow-md z-10"
             >
                 🖨️ Print QR
@@ -1545,6 +1557,194 @@ const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, th
     iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
     setTimeout(() => { document.title = originalTitle; }, 3000);
     setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
+};
+// ============================================================================
+// GLOBALNA FUNKCIJA ZA PRINTANJE GOTOVIH PAKETA (A5 LANDSCAPE - TTM DIZAJN)
+// ============================================================================
+// GLOBALNA FUNKCIJA ZA PRINTANJE GOTOVIH PAKETA (A5 LANDSCAPE - PRAVI TTM DIZAJN)
+// ============================================================================
+// ============================================================================
+// AŽURIRANA GLOBALNA FUNKCIJA ZA DINAMIČKO PRINTANJE NA A5 (TTM DIZAJN)
+// ============================================================================
+// ============================================================================
+// STROGA A5 PRINT FUNKCIJA (TTM DIZAJN - 1 STRANICA GARANTOVANO)
+// ============================================================================
+const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
+    if (!items || items.length === 0) return;
+
+    const originalTitle = document.title;
+    document.title = `Deklaracija_${paketId}`;
+
+    let logoUrl = '';
+    try {
+        const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
+        const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
+        if (logoObj && logoObj.url_slike) logoUrl = logoObj.url_slike;
+    } catch(e) {}
+
+    const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paketId}`;
+    const qrVeza = vezniDokument ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${vezniDokument}` : '';
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    // Kalkulacije
+    const totalVol = items.reduce((sum, i) => sum + parseFloat(i.kolicina_final || 0), 0).toFixed(3);
+    const formatDatumTacke = (iso) => {
+        if(!iso) return '';
+        const [y, m, d] = iso.split('-');
+        return `${d}.${m}.${y}.`;
+    };
+    const datum = items[0].datum_yyyy_mm ? formatDatumTacke(items[0].datum_yyyy_mm) : formatDatumTacke(new Date().toISOString().split('T')[0]);
+    const woodType = items[0].naziv_proizvoda.split(' ')[0] || 'Rezana'; 
+    let totalLengthM = 0;
+
+    const redoviStavki = items.map(item => {
+        let pcs = parseFloat(item.kolicina_ulaz || 0);
+        const v = parseFloat(item.debljina)||1; const s = parseFloat(item.sirina)||1; const d = parseFloat(item.duzina)||1;
+        if (item.jm === 'm3') pcs = Math.round(pcs / ((v/100)*(s/100)*(d/100)));
+        
+        totalLengthM += (pcs * (d/100)); // Ukupna dužina u metrima
+
+        return `
+        <div class="row">
+            <div class="col"><div class="lbl-wrap"><span class="lbl">Tickness mm</span></div><div class="box">${item.debljina}</div></div>
+            <div class="col"><div class="lbl-wrap"><span class="lbl">Width mm</span></div><div class="box">${item.sirina}</div></div>
+            <div class="col"><div class="lbl-wrap"><span class="lbl">Length mm</span></div><div class="box">${item.duzina * 10}</div></div>
+            <div class="col"><div class="lbl-wrap"><span class="lbl">PCS</span></div><div class="box">${pcs}</div></div>
+            <div class="col"><div class="lbl-wrap"><span class="lbl">Volume (m³)</span></div><div class="box">${item.kolicina_final}</div></div>
+        </div>
+        `;
+    }).join('');
+
+    const html = `
+        <html>
+        <head>
+            <title>Deklaracija ${paketId}</title>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+                
+                /* STRIKTNI A5 FORMAT - SPREČAVA PRAZNE STRANICE */
+                @page { size: 210mm 148mm landscape; margin: 0; }
+                
+                html, body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    background: #fff;
+                    width: 210mm;
+                    height: 148mm;
+                    overflow: hidden; /* Zaključava sadržaj na tačno 1 stranicu */
+                }
+
+                .page-container { 
+                    font-family: 'Inter', sans-serif; 
+                    width: 210mm; 
+                    height: 148mm; 
+                    padding: 8mm 10mm; 
+                    box-sizing: border-box; 
+                    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+                    display: flex; 
+                    flex-direction: column; 
+                    justify-content: space-between;
+                }
+
+                .header { display: flex; justify-content: space-between; align-items: flex-start; }
+                .logo img { max-width: 280px; max-height: 55px; object-fit: contain; }
+                .logo h1 { margin: 0; font-size: 26px; font-weight: 900; color: #1e3a8a; }
+                
+                .header-info { text-align: right; font-size: 13px; font-weight: bold; }
+                .info-row { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 4px; gap: 8px;}
+                .info-lbl { border: 1px dotted #666; padding: 2px 6px; font-weight: normal;}
+                .info-val { border: 1px dotted #666; padding: 2px 10px; min-width: 110px; text-align: center; }
+
+                .pkg-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; margin-bottom: 5px;}
+                .pkg-lbl { border: 1px dotted #666; padding: 2px 6px; font-size: 13px;}
+                .pkg-val { font-size: 38px; font-weight: 900; letter-spacing: 0.5px; line-height: 1;}
+
+                /* DIZAJN REDOVA I KOCKI */
+                .content-area { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; margin-top: 5px;}
+                .row { display: flex; justify-content: space-between; gap: 10px; width: 100%; margin-top: 6px;}
+                .col { flex: 1; text-align: center; display: flex; flex-direction: column;}
+                .lbl-wrap { text-align: center; margin-bottom: 2px; }
+                .lbl { font-size: 11px; border-bottom: 1px dotted #000; padding-bottom: 2px; display: inline-block; }
+                .box { border: 3px solid #000; font-size: 22px; font-weight: 900; flex: 1; display: flex; align-items: center; justify-content: center; min-height: 34px; padding: 2px;}
+                
+                /* QR KODOVI */
+                .qr-area { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; padding-top: 10px;}
+                .qr-left { display: flex; gap: 6px; align-items: center; }
+                .qr-left-text { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; letter-spacing: 1px; font-weight: bold; margin-bottom: 2px;}
+                .qr-img-small { width: 85px; height: 85px; }
+                
+                .qr-right { display: flex; flex-direction: column; align-items: center;}
+                .qr-img-large { width: 95px; height: 95px; }
+                .qr-number { font-family: monospace; font-size: 11px; font-weight: bold; letter-spacing: 2px; margin-top: 2px; }
+
+                /* FOOTER */
+                .footer { border-top: 4px solid #000; padding-top: 4px; margin-top: 8px; display: flex; justify-content: space-between; font-size: 11px; line-height: 1.4; }
+                .footer b { font-size: 13px; }
+                .footer-links { text-align: right; color: blue; text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <div class="page-container">
+                <div class="header">
+                    <div class="logo">
+                        ${logoUrl ? `<img src="${logoUrl}" />` : `<h1>${POSTAVKE.imeFirme}</h1><p style="margin:0; font-size:11px;">TIMBER TRADING & MANUFACTURING</p>`}
+                    </div>
+                    <div class="header-info">
+                        <div class="info-row"><span class="info-lbl">PLACE:</span><span class="info-val">Brčko, BiH</span></div>
+                        <div class="info-row"><span class="info-lbl">DATE:</span><span class="info-val">${datum}</span></div>
+                        <div class="pkg-row"><span class="pkg-lbl">Package number:</span><span class="pkg-val">${paketId}</span></div>
+                    </div>
+                </div>
+
+                <div class="content-area">
+                    <div class="row">
+                        <div class="col"><div class="lbl-wrap"><span class="lbl">Wood Type</span></div><div class="box">${woodType}</div></div>
+                        <div class="col"><div class="lbl-wrap"><span class="lbl">Treatment</span></div><div class="box">0</div></div>
+                        <div class="col"><div class="lbl-wrap"><span class="lbl">MC</span></div><div class="box">8-11%</div></div>
+                        <div class="col"><div class="lbl-wrap"><span class="lbl">Quality</span></div><div class="box">A/B</div></div>
+                        <div class="col"><div class="lbl-wrap"><span class="lbl">Total Length (m)</span></div><div class="box">${Math.round(totalLengthM)}</div></div>
+                    </div>
+                    
+                    ${redoviStavki}
+                </div>
+
+                <div class="qr-area">
+                    <div class="qr-left">
+                        ${vezniDokument ? `
+                            <img src="${qrVeza}" class="qr-img-small" />
+                            <span class="qr-left-text">${vezniDokument}</span>
+                        ` : ''} 
+                    </div>
+                    <div class="qr-right">
+                        <img src="${qrPaket}" class="qr-img-large" />
+                        <div class="qr-number">${paketId}</div>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <div>
+                        <b>${POSTAVKE.imeFirme}</b><br>
+                        Rijeka bb, 75328 Doborovci,<br>
+                        Bosnia and Herzegovina<br>
+                        Tel: +387 49 591 900
+                    </div>
+                    <div class="footer-links">
+                        www.ttmdoo.com<br>
+                        E-mail: info@ttmdoo.com
+                    </div>
+                </div>
+            </div>
+            ${"<sc"+"ript>"}window.onload = function(){ setTimeout(function(){ window.print(); }, 800); };${"</sc"+"ript>"}
+        </body>
+        </html>
+    `;
+
+    iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
+    setTimeout(() => { document.title = originalTitle; }, 3000);
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
 };
 //===========================================================
 // MODUL: ANALITIKA / DASHBOARD (SPOJENI SVI IZVJEŠTAJI, FINANSIJE I AI)
@@ -2398,7 +2598,8 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 kolicina_final: parseFloat(newM3.toFixed(3)), 
                 vrijeme_tekst: timeNow, 
                 snimio_korisnik: user?.ime_prezime || 'Nepoznat',
-                oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake
+                oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
+                broj_veze: radniNalog || activeEditItem.broj_veze // Fiksirano!
             }).eq('id', activeEditItem.id);
             if (error) return alert("❌ GREŠKA PRI AŽURIRANJU PAKETA: " + error.message);
         } else {
@@ -2407,7 +2608,8 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, 
                 mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user?.ime_prezime || 'Nepoznat', vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum,
                 ai_sirovina_ids: activeUlazIds,
-                oznake: odabraneOznake 
+                oznake: odabraneOznake,
+                broj_veze: radniNalog // Fiksirano!
             }]);
             
             if (error) return alert("❌ GREŠKA PRI SNIMANJU PAKETA U BAZU: " + error.message);
@@ -2449,9 +2651,15 @@ function DoradaModule({ user, header, setHeader, onExit }) {
             return;
         }
         if (window.confirm(`ZAKLJUČITI paket ${pid}?`)) {
+            await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
+            
+            // Pitanje za automatski print
+            if (window.confirm(`📦 Paket uspješno zaključen!\n\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`)) {
+                printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog);
+            }
+
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
-            alert(`Paket ${pid} zaključen!`);
         }
     };
 
@@ -2475,39 +2683,6 @@ function DoradaModule({ user, header, setHeader, onExit }) {
         if (razduziJm === 'm1') return unos * (v/100) * (s/100);
         return unos;
     }, [razduziKol, razduziJm, razduziZapis]);
-    const printNaljepnica = (paket) => {
-        const originalTitle = document.title;
-        document.title = `Naljepnica ${paket.paket_id}`;
-        
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        document.body.appendChild(iframe);
-        
-        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paket.paket_id}`;
-        
-        const html = `
-            <html><head><title>Naljepnica ${paket.paket_id}</title><style>
-                body { font-family: sans-serif; width: 100mm; height: 100mm; margin: 0; padding: 10mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; border: 1px solid black; box-sizing: border-box;}
-                h1 { font-size: 24px; margin: 0 0 10px 0; }
-                img { width: 150px; height: 150px; margin-bottom: 10px; }
-                p { font-size: 14px; margin: 5px 0; font-weight: bold; }
-                .dim { font-size: 18px; margin-top: 10px; }
-                @media print { @page { size: 100mm 100mm; margin: 0; } body { border: none; } }
-            </style></head>
-            <body>
-                <h1>${paket.paket_id}</h1>
-                <img src="${qrCodeUrl}" alt="QR KOD" />
-                <p>${paket.naziv_proizvoda}</p>
-                <p class="dim">${paket.debljina} x ${paket.sirina} x ${paket.duzina}</p>
-                <p>Vol: ${paket.kolicina_final} m³</p>
-                ${"<sc"+"ript>"}window.onload = function(){ setTimeout(function(){ window.print(); }, 800); };${"</sc"+"ript>"}
-            </body></html>
-        `;
-        
-        iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
-        setTimeout(() => { document.title = originalTitle; }, 3000);
-        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
-    };
     
     return (
         <div className="p-4 max-w-xl mx-auto space-y-6">
@@ -2705,7 +2880,7 @@ function DoradaModule({ user, header, setHeader, onExit }) {
                 <div className="text-[9px] text-slate-500">{item.kolicina_ulaz} {item.jm}</div>
             </div>
             <button 
-                onClick={(e) => { e.stopPropagation(); printNaljepnica(item); }} 
+                onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} 
                 className="bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-blue-500/30 transition-all shadow-md z-10"
             >
                 🖨️ Print QR
@@ -3750,7 +3925,7 @@ function TabRadnici() {
     const sviModuli = [
         'Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 
         'Ponude', 'Radni Nalozi', 'Otpremnice', 'Računi', 'Blagajna (Keš)', 'Kontrolni Toranj',
-        'QR Kontrola', 'Analitika', 'Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)'
+        'LAGER PAKETA', 'Analitika', 'Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)'
     ];
 
     useEffect(() => { load(); }, []);
@@ -6929,141 +7104,297 @@ function KontrolniToranjModule({ onExit }) {
 // ============================================================================
 // Kraj modula Blagajna
 // ============================================================================
+// NOVI MODUL: LAGER PAKETA (ZAMJENJUJE QR KONTROLU)
 // ============================================================================
-// NOVI MODUL: QR KONTROLA (DETEKTIV ZA KODOVE)
+// ============================================================================
+// NOVI MODUL: LAGER PAKETA (POPRAVLJENI DATUMI I QR KOD VEZE)
 // ============================================================================
 // ============================================================================
-// NOVI MODUL: QR KONTROLA (PRAVI UNIVERZALNI DETEKTIV ZA SVE BAZE)
+// NOVI MODUL: LAGER PAKETA (POPRAVLJENI DATUMI + AUTOMATSKI QR KOD)
 // ============================================================================
-function QRControlModule({ onExit }) {
-    const [kod, setKod] = useState('');
-    const [info, setInfo] = useState(null);
+// ============================================================================
+// NOVI MODUL: LAGER PAKETA (AUTOMATIKA QR KODOVA I POUZDAN KALENDAR)
+// ============================================================================
+// ============================================================================
+// NOVI MODUL: LAGER PAKETA (100% AUTOMATIKA ZA QR KOD VEZE)
+// ============================================================================
+function LagerPaketaModule({ onExit, user }) {
+    const danasnjiDatum = new Date().toISOString().split('T')[0];
+    const [datumOd, setDatumOd] = useState(danasnjiDatum);
+    const [datumDo, setDatumDo] = useState(danasnjiDatum);
+    const [isPeriod, setIsPeriod] = useState(false); 
+    const [filterStatus, setFilterStatus] = useState('SVI');
+    const [pretraga, setPretraga] = useState('');
+    
+    const [paketi, setPaketi] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [selektovaniPaket, setSelektovaniPaket] = useState(null);
+    const [historija, setHistorija] = useState([]);
+    const [isPrinting, setIsPrinting] = useState(false);
 
-    const provjeriKod = async (val) => {
-        const q = val.toUpperCase().trim();
-        setKod(q);
-        if (q.length < 3) { setInfo(null); return; }
+    const formatirajDatum = (isoString) => {
+        if(!isoString) return '';
+        const [y, m, d] = isoString.split('T')[0].split('-');
+        return `${d}.${m}.${y}.`;
+    };
 
+    useEffect(() => { ucitajLager(); }, [datumOd, datumDo, isPeriod, filterStatus]);
+
+    const ucitajLager = async () => {
         setLoading(true);
-        setInfo(null);
+        let query = supabase.from('paketi').select('*');
 
-        // PAMETNA PRETRAGA: Prvo gledamo prefikse za dokumente
-        if (q.startsWith('PON-')) {
-            const { data } = await supabase.from('ponude').select('*').eq('id', q).maybeSingle();
-            if (data) setInfo({ tip: 'PONUDA', data });
-        } else if (q.startsWith('RN-')) {
-            const { data } = await supabase.from('radni_nalozi').select('*').eq('id', q).maybeSingle();
-            if (data) setInfo({ tip: 'RADNI NALOG', data });
-        } else if (q.startsWith('OTP-')) {
-            const { data } = await supabase.from('otpremnice').select('*').eq('id', q).maybeSingle();
-            if (data) setInfo({ tip: 'OTPREMNICA', data });
-        } else if (q.startsWith('RAC-')) {
-            const { data } = await supabase.from('racuni').select('*').eq('id', q).maybeSingle();
-            if (data) setInfo({ tip: 'RAČUN', data });
+        if (isPeriod) {
+            query = query.gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo);
         } else {
-            // Ako nema prefiks, pretražujemo fizičke objekte (Trupci i Paketi)
-            const { data: t } = await supabase.from('trupci').select('*').eq('id', q).maybeSingle();
-            if (t) {
-                setInfo({ tip: 'TRUPAC', data: t });
-            } else {
-                const { data: p } = await supabase.from('paketi').select('*').eq('paket_id', q);
-                if (p && p.length > 0) setInfo({ tip: 'PAKET (GOTOVA ROBA)', data: p });
-            }
+            query = query.eq('datum_yyyy_mm', datumOd);
         }
+
+        if (filterStatus === 'AKTIVNI') query = query.is('closed_at', null);
+        else if (filterStatus === 'ZAVRŠENI') query = query.not('closed_at', 'is', null);
+
+        const { data, error } = await query.order('created_at', { ascending: false });
         
+        if (data) {
+            const grupisaniPaketi = [];
+            const iskoristeniIDovi = new Set();
+            for (let p of data) {
+                if (!iskoristeniIDovi.has(p.paket_id)) {
+                    iskoristeniIDovi.add(p.paket_id);
+                    grupisaniPaketi.push(p);
+                }
+            }
+            setPaketi(grupisaniPaketi);
+        }
         setLoading(false);
     };
 
+    const ucitajHistoriju = async (paket) => {
+        setSelektovaniPaket(paket);
+        setHistorija('load');
+        const sid = paket.paket_id;
+
+        const { data: auditData } = await supabase.from('audit_log').select('*').eq('zapis_id', sid).order('vrijeme', { ascending: true });
+        
+        let dogadjaji = [];
+        if (auditData) {
+            dogadjaji = auditData.map(a => ({
+                vrijeme: a.vrijeme,
+                naslov: a.akcija,
+                opis: a.akcija === 'DODAVANJE' ? 'Kreiran u proizvodnji' : 'Izmjena podataka',
+                korisnik: a.korisnik
+            }));
+        }
+
+        // --- PRIKAZ ULAZNE SIROVINE (ZA DORADU GOTOVE ROBE) ---
+        if (paket.ai_sirovina_ids && paket.ai_sirovina_ids.length > 0) {
+            dogadjaji.push({
+                vrijeme: paket.created_at,
+                naslov: 'ULAZNA SIROVINA (DORADA)',
+                opis: `Napravljeno preradom paketa: ${Array.isArray(paket.ai_sirovina_ids) ? paket.ai_sirovina_ids.join(', ') : paket.ai_sirovina_ids}`,
+                korisnik: 'Sistem'
+            });
+        }
+
+        // --- PRIKAZ ULAZNIH TRUPACA (ZBIRNO IZ SVIH STAVKI PAKETA U PILANI) ---
+        const { data: sveStavkePaketa } = await supabase.from('paketi').select('ulaz_trupci_ids').eq('paket_id', sid);
+        
+        if (sveStavkePaketa && sveStavkePaketa.length > 0) {
+            let sviTrupciId = [];
+            
+            // Skupljamo nizove trupaca iz svih mogućih smjena/redova za ovaj paket
+            sveStavkePaketa.forEach(red => {
+                if (red.ulaz_trupci_ids && Array.isArray(red.ulaz_trupci_ids)) {
+                    sviTrupciId = [...sviTrupciId, ...red.ulaz_trupci_ids];
+                }
+            });
+            
+            const unikatniTrupci = [...new Set(sviTrupciId)]; // Uklanjamo duplikate
+
+            if (unikatniTrupci.length > 0) {
+                // Tražimo detalje o tim trupcima iz baze
+                const { data: trupciPodaci } = await supabase.from('trupci').select('*').in('id', unikatniTrupci);
+                
+                if (trupciPodaci && trupciPodaci.length > 0) {
+                    const totalV = trupciPodaci.reduce((s, t) => s + parseFloat(t.zapremina || 0), 0);
+                    const sumarijeMap = {};
+                    
+                    trupciPodaci.forEach(t => {
+                        const s = t.sumarija || 'Nepoznato';
+                        sumarijeMap[s] = (sumarijeMap[s] || 0) + parseFloat(t.zapremina || 0);
+                    });
+
+                    // Formatiranje tekstualnog izvještaja
+                    const infoText = Object.keys(sumarijeMap)
+                        .map(k => `${k}: ${((sumarijeMap[k]/totalV)*100).toFixed(1)}%`)
+                        .join(' | ');
+
+                    dogadjaji.push({
+                        vrijeme: paket.created_at,
+                        naslov: 'SASTAV SIROVINE (SVE SMJENE)',
+                        opis: `Paket je kroz sve faze izrade utrošio ${unikatniTrupci.length} trupaca.\n\nUdio šumarija:\n${infoText}`,
+                        korisnik: 'Sistem'
+                    });
+                }
+            }
+        }
+
+        // Sortiramo događaje po vremenu da ima logičan slijed
+        setHistorija(dogadjaji.length > 0 ? dogadjaji.sort((a,b) => new Date(a.vrijeme) - new Date(b.vrijeme)) : 'none');
+    };
+    const shiftDate = (n) => {
+        const d = new Date(datumOd + 'T12:00:00'); 
+        d.setDate(d.getDate() + n);
+        const iso = d.toISOString().split('T')[0];
+        setDatumOd(iso); setDatumDo(iso);
+    };
+
+    // 🤖 PRAVA AUTOMATIKA: Bulletproof algoritam za nalazak Radnog Naloga ili Ponude
+    // 🤖 PRAVA AUTOMATIKA: Direktno čita trag iz baze! Nema pogađanja!
+    const isprintajAutomatski = async (paket) => {
+        setIsPrinting(true);
+        
+        let vezniDokument = paket.broj_veze; // Sistem sada odmah zna tačan Nalog!
+        
+        // Ako postoji RN, provjeri ima li on svoju Ponudu
+        if (vezniDokument && vezniDokument.startsWith('RN-')) {
+            const { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', vezniDokument).maybeSingle();
+            
+            // Ako RN ima upisanu ponudu, prepisujemo vezni dokument da bude ponuda
+            if (rn && rn.broj_ponude && rn.broj_ponude.trim() !== '') {
+                vezniDokument = rn.broj_ponude;
+            }
+        }
+        
+        if (!vezniDokument) {
+            alert(`Sistem napominje: Paket ${paket.paket_id} nema zabilježen Radni Nalog prilikom kreiranja u Pilani/Doradi.\nQR kod će ostati prazan.`);
+        }
+        
+        // Šaljemo u print!
+        printDeklaracijaPaketa(paket.paket_id, [paket], vezniDokument || '');
+        setIsPrinting(false);
+    };
+
+
     return (
-        <div className="p-6 max-w-xl mx-auto space-y-6 animate-in zoom-in-95">
-            <div className="flex justify-between items-center bg-slate-800 p-4 rounded-3xl border border-slate-700">
-                <button onClick={onExit} className="bg-slate-700 text-[10px] px-4 py-2 rounded-xl uppercase text-white font-black hover:bg-slate-600">← Nazad</button>
-                <h2 className="text-blue-400 font-black text-xs tracking-widest">🔍 KONTROLA KODOVA</h2>
+        <div className="p-4 max-w-5xl mx-auto space-y-6 animate-in fade-in font-bold">
+            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-blue-500/30 shadow-lg">
+                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase text-white font-black hover:bg-slate-700 transition-all">← Meni</button>
+                <h2 className="text-blue-400 font-black tracking-widest uppercase text-xs">📦 LAGER I SLJEDIVOST PAKETA</h2>
+                <div className="w-20"></div>
             </div>
 
-            <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/50 shadow-2xl text-center">
-                <p className="text-[10px] text-blue-400 uppercase font-black mb-3">Skeniraj fizički paket, trupac ili papirni dokument</p>
+            <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+                        <button onClick={() => setIsPeriod(false)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${!isPeriod ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Dan</button>
+                        <button onClick={() => setIsPeriod(true)} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${isPeriod ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Period</button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        {!isPeriod ? (
+                            <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-700">
+                                <button onClick={() => shiftDate(-1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-blue-600 text-white flex items-center justify-center font-black transition-all">-</button>
+                                
+                                <input 
+                                    type="date" 
+                                    value={datumOd} 
+                                    onChange={e => { setDatumOd(e.target.value); setDatumDo(e.target.value); }} 
+                                    className="bg-slate-800 text-blue-400 font-black text-sm p-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500 cursor-pointer tracking-widest text-center"
+                                />
+
+                                <button onClick={() => shiftDate(1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-blue-600 text-white flex items-center justify-center font-black transition-all">+</button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-700">
+                                <input type="date" value={datumOd} onChange={e => setDatumOd(e.target.value)} className="bg-slate-800 text-blue-400 font-black text-xs p-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500 cursor-pointer" />
+                                <span className="text-slate-500 font-black">-</span>
+                                <input type="date" value={datumDo} onChange={e => setDatumDo(e.target.value)} className="bg-slate-800 text-blue-400 font-black text-xs p-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500 cursor-pointer" />
+                            </div>
+                        )}
+                    </div>
+
+                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-slate-900 text-white p-3 rounded-xl text-xs font-black border border-slate-700 outline-none focus:border-blue-500">
+                        <option value="SVI">SVI PAKETI</option>
+                        <option value="AKTIVNI">U PROIZVODNJI (Otvoreni)</option>
+                        <option value="ZAVRŠENI">NA STANJU (Zaključeni)</option>
+                    </select>
+                </div>
+
                 <input 
-                    value={kod} 
-                    onChange={e => provjeriKod(e.target.value)} 
-                    className="w-full p-6 bg-slate-900 border border-blue-500 rounded-[2rem] text-center text-2xl text-white font-black uppercase outline-none focus:bg-[#0f172a] transition-all" 
-                    placeholder="ČEKAM SKEN..." 
+                    value={pretraga} 
+                    onChange={e => setPretraga(e.target.value.toUpperCase())}
+                    placeholder="Pretraži po broju paketa ili nazivu robe..." 
+                    className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl text-white text-sm outline-none focus:border-blue-500 uppercase font-black"
                 />
             </div>
 
-            {loading && <p className="text-center text-slate-500 font-bold animate-pulse">Pretražujem cijelu bazu...</p>}
-
-            {info ? (
-                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4 animate-in slide-in-from-bottom-4">
-                    <div className="flex justify-between items-center border-b border-slate-700 pb-3">
-                        <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">{info.tip}</span>
-                        <span className="text-white font-black">{kod}</span>
-                    </div>
-
-                    {/* DINAMIČKI PRIKAZ ZAVISNO OD TOGA ŠTA SMO NAŠLI */}
-                    {info.tip === 'TRUPAC' && (
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div><p className="text-slate-500 uppercase text-[9px]">Vrsta/Klasa</p><p className="text-white font-bold">{info.data.vrsta} / {info.data.klasa}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Zapremina</p><p className="text-emerald-400 font-black text-lg">{info.data.zapremina} m³</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Otpremnica (Ulaz)</p><p className="text-white font-bold">{info.data.otpremnica_broj || '-'}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Status</p><p className="text-blue-400 font-bold uppercase">{info.data.status}</p></div>
-                        </div>
-                    )}
-
-                    {info.tip === 'PAKET (GOTOVA ROBA)' && (
-                        <div className="space-y-2">
-                            <p className="text-slate-500 uppercase text-[9px] mb-2">Sadržaj paketa:</p>
-                            {info.data.map((item, idx) => (
-                                <div key={idx} className="p-3 bg-slate-900 rounded-xl border border-slate-700 flex justify-between items-center">
-                                    <div className="text-[10px]">
-                                        <p className="text-white font-bold text-xs">{item.naziv_proizvoda}</p>
-                                        <p className="text-slate-500 mt-1">Dim: {item.debljina}x{item.sirina}x{item.duzina}</p>
-                                        {item.closed_at && <span className="bg-red-900/30 text-red-500 px-2 py-0.5 rounded mt-1 inline-block uppercase">Zatvoreno / Potrošeno</span>}
-                                    </div>
-                                    <p className="text-emerald-400 font-black text-lg">{item.kolicina_final} m³</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {loading ? (
+                    <div className="col-span-full text-center py-20 animate-pulse text-blue-400 font-black tracking-widest uppercase">Učitavam Lager...</div>
+                ) : paketi.length === 0 ? (
+                    <div className="col-span-full text-center py-20 text-slate-600 font-bold border-2 border-dashed border-slate-800 rounded-[2.5rem]">Nema paketa za odabrani datum/kriterij.</div>
+                ) : (
+                    paketi.filter(p => p.paket_id.includes(pretraga) || p.naziv_proizvoda.toUpperCase().includes(pretraga)).map(p => (
+                        <div key={p.id} onClick={() => ucitajHistoriju(p)} className="bg-[#111827] border border-slate-800 p-5 rounded-[2rem] hover:border-blue-500 transition-all cursor-pointer group relative overflow-hidden shadow-xl">
+                            {p.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md">ZAVRŠEN</div>}
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <p className="text-blue-400 font-black text-lg">{p.paket_id}</p>
+                                    <p className="text-white text-xs font-bold mt-1 uppercase">{p.naziv_proizvoda}</p>
                                 </div>
-                            ))}
+                                <div className="text-right">
+                                    <p className="text-emerald-400 font-black text-xl">{p.kolicina_final} <span className="text-[10px]">m³</span></p>
+                                    <p className="text-slate-500 text-[9px] uppercase mt-1">{formatirajDatum(p.datum_yyyy_mm)}</p>
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-800/50">
+                                <span className="text-[9px] text-slate-400 uppercase font-bold">{p.debljina}x{p.sirina}x{p.duzina}</span>
+                                <span className="text-[9px] text-slate-500 uppercase font-black">{p.vrijeme_tekst} | {p.masina}</span>
+                            </div>
                         </div>
-                    )}
+                    ))
+                )}
+            </div>
 
-                    {info.tip === 'PONUDA' && (
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Iznos za naplatu</p><p className="text-emerald-400 font-black text-lg">{info.data.ukupno_sa_pdv} {info.data.valuta}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Status</p><p className="text-pink-400 font-bold uppercase">{info.data.status}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Datum isteka</p><p className="text-white font-bold">{new Date(info.data.rok_vazenja).toLocaleDateString('bs-BA')}</p></div>
+            {selektovaniPaket && (
+                <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
+                    <div className="bg-[#1e293b] border-2 border-blue-500 p-8 rounded-[3rem] shadow-2xl max-w-lg w-full relative max-h-[90vh] overflow-y-auto">
+                        <button onClick={() => setSelektovaniPaket(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white text-2xl font-black transition-all hover:scale-110">✕</button>
+                        
+                        <div className="mb-8">
+                            <h3 className="text-blue-400 font-black uppercase text-xs mb-2 tracking-widest">Detalji Paketa</h3>
+                            <p className="text-white text-4xl font-black">{selektovaniPaket.paket_id}</p>
+                            <p className="text-slate-400 text-sm mt-2">{selektovaniPaket.naziv_proizvoda} ({selektovaniPaket.debljina}x{selektovaniPaket.sirina}x{selektovaniPaket.duzina})</p>
                         </div>
-                    )}
 
-                    {info.tip === 'RADNI NALOG' && (
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Za kupca</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Status proizvodnje</p><p className="text-amber-400 font-black uppercase text-sm">{info.data.status}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Rok isporuke</p><p className="text-white font-bold">{new Date(info.data.rok_isporuke).toLocaleDateString('bs-BA')}</p></div>
-                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Stavki na nalogu</p><p className="text-white font-bold">{info.data.stavke_jsonb ? info.data.stavke_jsonb.length : 0} kom</p></div>
+                        <div className="space-y-4 mb-8">
+                            <h4 className="text-slate-500 font-black uppercase text-[10px] border-b border-slate-700 pb-2">Vremenska Sljedivost (Historija):</h4>
+                            {historija === 'load' ? <p className="animate-pulse text-xs text-blue-400">Generiram timeline...</p> : 
+                             historija === 'none' ? <p className="text-xs text-slate-600">Nema dodatnih zapisa o promjenama.</p> : (
+                                <div className="space-y-4">
+                                    {historija.map((h, i) => (
+                                        <div key={i} className="flex gap-4 items-start relative before:absolute before:left-[7px] before:top-5 before:bottom-[-20px] before:w-[2px] before:bg-slate-800 last:before:hidden">
+                                            <div className="w-4 h-4 rounded-full bg-blue-600 border-4 border-[#1e293b] z-10 shrink-0 mt-1"></div>
+                                            <div>
+                                                <p className="text-white text-xs font-black uppercase">{h.naslov}</p>
+                                                <p className="text-[10px] text-slate-400 mt-1">{h.opis}</p>
+                                                <p className="text-[8px] text-slate-500 mt-1 uppercase font-bold">{new Date(h.vrijeme).toLocaleString('bs-BA')} | Snimio: {h.korisnik}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                             )}
                         </div>
-                    )}
 
-                    {info.tip === 'OTPREMNICA' && (
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Vozač i Vozilo</p><p className="text-white font-bold">{info.data.vozac || '-'} ({info.data.registracija || '-'})</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Status isporuke</p><p className="text-orange-400 font-bold uppercase">{info.data.status}</p></div>
-                        </div>
-                    )}
-
-                    {info.tip === 'RAČUN' && (
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                            <div className="col-span-2"><p className="text-slate-500 uppercase text-[9px]">Kupac</p><p className="text-white font-bold text-sm">{info.data.kupac_naziv}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Iznos</p><p className="text-emerald-400 font-black text-lg">{info.data.ukupno_sa_pdv} {info.data.valuta}</p></div>
-                            <div><p className="text-slate-500 uppercase text-[9px]">Status uplate</p><p className="text-red-400 font-bold uppercase">{info.data.status}</p></div>
-                        </div>
-                    )}
-                </div>
-            ) : kod.length > 2 && !loading && (
-                <div className="p-8 text-center bg-red-900/10 border border-red-500/20 rounded-[2.5rem]">
-                    <p className="text-red-500 font-black uppercase text-xs">❌ Ništa nije pronađeno u bazi za: {kod}</p>
+                        <button 
+                            onClick={() => isprintajAutomatski(selektovaniPaket)}
+                            disabled={isPrinting}
+                            className={`w-full py-4 text-white font-black rounded-2xl uppercase shadow-lg transition-all flex items-center justify-center gap-2 ${isPrinting ? 'bg-slate-600' : 'bg-blue-600 hover:bg-blue-500'}`}
+                        >
+                            {isPrinting ? '⏳ Tražim vezu i generišem...' : '🖨️ Isprintaj deklaraciju (Auto QR)'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
