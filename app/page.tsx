@@ -108,13 +108,28 @@ export default function Page() {
     }, []);
   
     const handleLogin = async (e) => {
-      e.preventDefault();
-      const userInp = e.target.user.value.trim();
-      const passInp = e.target.pass.value.trim();
-  
-      const { data } = await supabase.from('radnici').select('*').ilike('username', userInp).eq('password', passInp).maybeSingle();
-      if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data)); setLoggedUser(data); } 
-      else alert("Pogrešan Username ili Password!");
+        e.preventDefault();
+        const userInp = e.target.user.value.trim();
+        const passInp = e.target.pass.value.trim();
+
+        // NOVI SIGURNOSNI NAČIN: Zovemo funkciju u bazi umjesto direktnog čitanja tabele
+        const { data, error } = await supabase.rpc('provjeri_login', {
+            uneseni_user: userInp,
+            unesena_sifra: passInp
+        });
+
+        if (error) {
+            console.error("Greška pri loginu:", error);
+            alert("Sistemska greška pri prijavi.");
+            return;
+        }
+
+        if (data) { 
+            localStorage.setItem('smart_timber_user', JSON.stringify(data)); 
+            setLoggedUser(data); 
+        } else { 
+            alert("Pogrešan Username ili Password!"); 
+        }
     };
   
     if (authLoading) return <div className="min-h-screen bg-[#0f172a]" />;
