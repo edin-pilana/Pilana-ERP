@@ -19,7 +19,20 @@ const POSTAVKE = {
     imeFirme: "TTM d.o.o.",
     bojaFirme: "#3b82f6" 
 };
-
+// 🎨 NOVA KOMPONENTA ZA GLAVNI MENI (SaaS Dizajn)
+const MenuCard = ({ naziv, ikona, bgGradient, onClick }) => (
+    <div 
+        onClick={onClick}
+        className={`relative cursor-pointer overflow-hidden rounded-3xl ${bgGradient} p-6 flex flex-col items-center justify-center gap-4 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-black/50 border border-white/5 group`}
+    >
+        <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 shadow-inner flex items-center justify-center text-4xl group-hover:bg-white/20 transition-all">
+            {ikona}
+        </div>
+        <span className="text-white font-black tracking-widest text-[10px] uppercase text-center drop-shadow-md">
+            {naziv}
+        </span>
+    </div>
+);
 export default function Page() {
     const [loggedUser, setLoggedUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
@@ -132,58 +145,71 @@ export default function Page() {
     return (
       <div className="min-h-screen bg-[#0f172a] text-slate-200 font-sans font-bold">
           {activeModule === 'dashboard' ? (
-              <div className="p-6 md:p-10 flex flex-col items-center justify-center space-y-6 animate-in fade-in max-w-xl mx-auto">
-                  
-                  {/* ZAGLAVLJE: Pozdrav i odjava */}
-                  <div className="w-full flex justify-between items-center bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-xl mb-6">
-                      <div>
-                          <h2 className="text-xl text-emerald-400 font-black">Dobrodošli,</h2>
-                          <p className="text-white text-3xl">{loggedUser?.ime_prezime || 'Korisnik'}</p>
+              <div className="min-h-screen bg-[#0a0f1c] p-4 md:p-8 font-sans selection:bg-emerald-500/30 w-full animate-in fade-in">
+                  <div className="max-w-5xl mx-auto space-y-8">
+                      
+                      {/* HEADER (ZAKRIVLJENI GORNJI DIO) */}
+                      <div className="bg-[#12192b] border border-slate-800 p-8 rounded-[2rem] flex justify-between items-center shadow-2xl">
+                          <div>
+                              <p className="text-blue-500 text-[10px] uppercase font-black tracking-widest mb-1">Operativni Centar</p>
+                              <h1 className="text-4xl text-white font-black">Zdravo, {loggedUser?.ime_prezime || 'Korisnik'}</h1>
+                              <p className="text-slate-400 text-sm mt-2">Odaberi modul — isti tok rada, novi izgled.</p>
+                          </div>
+                          <button onClick={() => { localStorage.removeItem('smart_timber_user'); window.location.reload(); }} className="px-6 py-3 rounded-2xl bg-slate-800/50 text-slate-300 font-bold text-xs uppercase border border-slate-700 hover:bg-red-500 hover:text-white transition-all">
+                              Odjava
+                          </button>
                       </div>
-                      <button onClick={() => { localStorage.removeItem('smart_timber_user'); window.location.reload(); }} className="bg-red-500/10 text-red-500 px-4 py-2 rounded-xl text-xs hover:bg-red-500 hover:text-white transition-all font-black">
-                          Odjava
-                      </button>
-                  </div>
   
-                  {/* GORNJI BLOK DUGMADI (Prodaja i Finansije) */}
-                  {/* KONTROLA DOZVOLA FUNKCIJA */}
-                  {(() => {
-                      const hasDozvola = (modul) => loggedUser?.uloga === 'admin' || (loggedUser?.dozvole && loggedUser.dozvole.includes(modul));
-                      return (
-                          <>
-                              {/* GORNJI BLOK DUGMADI */}
-                              <div className="grid grid-cols-2 gap-4 w-full">
-                                  {hasDozvola('Prijem trupaca') && <MenuBtn label="PRIJEM TRUPACA" icon="🪵" color="indigo" onClick={() => setActiveModule('prijem')} />}
-                                  {hasDozvola('Prorez (Trupci)') && <MenuBtn label="PROREZ (Trupci)" icon="🪚" color="cyan" onClick={() => setActiveModule('prorez')} />}
-                                  {hasDozvola('Pilana (Izlaz)') && <MenuBtn label="PILANA (Izlaz)" icon="🪵" color="emerald" onClick={() => setActiveModule('pilana')} />}
-                                  {hasDozvola('Dorada (Ulaz/Izlaz)') && <MenuBtn label="DORADA (Ulaz/Izlaz)" icon="🔄" color="amber" onClick={() => setActiveModule('dorada')} />}
-                                  {hasDozvola('LAGER PAKETA') && <MenuBtn label="LAGER PAKETA" icon="🔍" color="blue" onClick={() => setActiveModule('qr_kontrola')} />}
-                              </div>
-
-                              {/* DONJI BLOK DUGMADI */}
-                              <div className="grid grid-cols-1 gap-4 w-full mt-4">
-                                  {hasDozvola('Ponude') && <MenuBtn label="PONUDE" icon="📝" color="pink" onClick={() => setActiveModule('ponude')} />}
-                                  {hasDozvola('Radni Nalozi') && <MenuBtn label="R. NALOZI" icon="📄" color="purple" onClick={() => setActiveModule('nalozi')} />}
-                                  {hasDozvola('Otpremnice') && <MenuBtn label="OTPREMNICE" icon="🚚" color="orange" onClick={() => setActiveModule('otpremnice')} />}
-                                  {hasDozvola('Računi') && <MenuBtn label="RAČUNI" icon="💰" color="red" onClick={() => setActiveModule('racuni')} />}
-                                  {hasDozvola('Blagajna (Keš)') && <MenuBtn label="BLAGAJNA (KEŠ)" icon="💵" color="emerald" onClick={() => setActiveModule('blagajna')} />}
-                                  {hasDozvola('Kontrolni Toranj') && <MenuBtn label="KONTROLNI TORANJ" icon="📡" color="blue" onClick={() => setActiveModule('toranj')} />}
-                                  
+                      {/* KONTROLA DOZVOLA FUNKCIJA */}
+                      {(() => {
+                          const hasDozvola = (modul) => loggedUser?.uloga === 'admin' || (loggedUser?.dozvole && loggedUser.dozvole.includes(modul));
+                          return (
+                              <>
+                                  {/* SEKCIJA: PROIZVODNJA & LAGER */}
+                                  <div>
+                                      <h3 className="text-slate-500 text-[10px] uppercase font-black tracking-widest mb-4 ml-2">Proizvodnja & Lager</h3>
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          {hasDozvola('Prijem trupaca') && <MenuCard naziv="Prijem Trupaca" ikona="🪵" bgGradient="bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-950" onClick={() => setActiveModule('prijem')} />}
+                                          {hasDozvola('Prorez (Trupci)') && <MenuCard naziv="Prorez (Trupci)" ikona="🪚" bgGradient="bg-gradient-to-br from-cyan-900 to-teal-950" onClick={() => setActiveModule('prorez')} />}
+                                          {hasDozvola('Pilana (Izlaz)') && <MenuCard naziv="Pilana (Izlaz)" ikona="🪵" bgGradient="bg-gradient-to-br from-emerald-800 to-green-950" onClick={() => setActiveModule('pilana')} />}
+                                          {hasDozvola('Dorada (Ulaz/Izlaz)') && <MenuCard naziv="Dorada (Ulaz/Izlaz)" ikona="🔄" bgGradient="bg-gradient-to-br from-amber-700 to-orange-900" onClick={() => setActiveModule('dorada')} />}
+                                          {hasDozvola('LAGER PAKETA') && <MenuCard naziv="Lager Paketa" ikona="🔍" bgGradient="bg-gradient-to-br from-blue-800 to-indigo-950" onClick={() => setActiveModule('qr_kontrola')} />}
+                                      </div>
+                                  </div>
+  
+                                  {/* SEKCIJA: PRODAJA & FINANSIJE */}
+                                  <div className="mt-8">
+                                      <h3 className="text-slate-500 text-[10px] uppercase font-black tracking-widest mb-4 ml-2">Prodaja & Finansije</h3>
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          {hasDozvola('Ponude') && <MenuCard naziv="Ponude" ikona="📝" bgGradient="bg-gradient-to-br from-rose-900 to-red-950" onClick={() => setActiveModule('ponude')} />}
+                                          {hasDozvola('Radni Nalozi') && <MenuCard naziv="R. Nalozi" ikona="📄" bgGradient="bg-gradient-to-br from-violet-900 to-purple-950" onClick={() => setActiveModule('nalozi')} />}
+                                          {hasDozvola('Otpremnice') && <MenuCard naziv="Otpremnice" ikona="🚚" bgGradient="bg-gradient-to-br from-orange-800 to-amber-950" onClick={() => setActiveModule('otpremnice')} />}
+                                          {hasDozvola('Računi') && <MenuCard naziv="Računi" ikona="💰" bgGradient="bg-gradient-to-br from-red-900 to-orange-950" onClick={() => setActiveModule('racuni')} />}
+                                          {hasDozvola('Blagajna (Keš)') && <MenuCard naziv="Blagajna (Keš)" ikona="💵" bgGradient="bg-gradient-to-br from-emerald-700 to-emerald-950" onClick={() => setActiveModule('blagajna')} />}
+                                          {hasDozvola('Kontrolni Toranj') && <MenuCard naziv="Kontrolni Toranj" ikona="📡" bgGradient="bg-gradient-to-br from-sky-800 to-blue-950" onClick={() => setActiveModule('toranj')} />}
+                                      </div>
+                                  </div>
+  
+                                  {/* ADMIN SEKCIJA (Analitika i Postavke) */}
                                   {loggedUser?.uloga === 'admin' && (
                                       <>
-                                          <button onClick={() => setActiveModule('analitika')} className="mt-4 h-32 bg-gradient-to-br from-blue-900/80 to-[#0f172a] rounded-[2rem] flex flex-col items-center justify-center gap-3 border border-blue-500/30 hover:scale-105 transition-all shadow-2xl relative overflow-hidden group">
-                                              <span className="text-4xl group-hover:scale-110 transition-all drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]">📊</span>
-                                              <span className="text-blue-400 font-black tracking-widest uppercase text-sm drop-shadow-[0_0_10px_rgba(0,0,0,1)]">PAMETNA ANALITIKA</span>
-                                          </button>
-                                          <button onClick={() => { const p = prompt("PIN:"); if(p==="0111") setActiveModule('settings') }} className="mt-4 bg-slate-800 text-slate-400 py-4 rounded-2xl uppercase text-xs hover:bg-slate-700 transition-all font-black w-full shadow-lg border border-slate-700">
-                                              ⚙️ Podešavanja Sistema
-                                          </button>
+                                          <div onClick={() => setActiveModule('analitika')} className="mt-8 bg-[#12192b] border border-slate-700/50 hover:border-slate-500 rounded-[2rem] p-8 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-[#1a233a] shadow-xl group">
+                                              <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-all">
+                                                  <span className="text-4xl drop-shadow-[0_0_15px_rgba(59,130,246,0.8)]">📊</span>
+                                              </div>
+                                              <h2 className="text-white font-black tracking-widest text-sm uppercase mb-1 drop-shadow-[0_0_10px_rgba(0,0,0,1)]">Pametna Analitika</h2>
+                                              <p className="text-slate-500 text-[10px]">KPI, finansije, procesi i AI u jednom pogledu</p>
+                                          </div>
+  
+                                          <div onClick={() => { const p = prompt("PIN:"); if(p==="0111") setActiveModule('settings') }} className="mt-4 bg-[#0f1523] border border-slate-800 hover:border-slate-600 rounded-2xl p-5 flex justify-center cursor-pointer transition-all hover:bg-[#151c2e]">
+                                              <span className="text-slate-400 font-bold tracking-widest text-[10px] uppercase">⚙️ Podešavanja Sistema</span>
+                                          </div>
                                       </>
                                   )}
-                              </div>
-                          </>
-                      );
-                  })()}
+                              </>
+                          );
+                      })()}
+                  </div>
               </div>
           ) : activeModule === 'prijem' ? (
               <PrijemModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('dashboard')} />
