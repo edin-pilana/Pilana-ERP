@@ -1,9 +1,10 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import SearchableInput from '../components/SearchableInput';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
+import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
@@ -41,6 +42,68 @@ export default function PonudeModule({ onExit }) {
 
     const hasKupacEdit = loggedUser.uloga === 'admin' || (loggedUser.dozvole && loggedUser.dozvole.includes('Baza Kupaca (Edit)'));
     const hasKatalogEdit = loggedUser.uloga === 'admin' || (loggedUser.dozvole && loggedUser.dozvole.includes('Katalog Proizvoda (Edit)'));
+
+    // === SaaS ALAT (Konfiguracija za zaglavlje ponude) ===
+    const saas = useSaaS('ponude_zaglavlje', {
+        boja_kartice: '#1e293b',
+        boja_naslova: 'text-pink-500',
+        polja: [
+            { id: 'kupac', label: '* KUPAC', span: 'col-span-2' },
+            { id: 'broj', label: 'BROJ PONUDE', span: 'col-span-2' },
+            { id: 'datum', label: 'Datum izdavanja', span: 'col-span-1' },
+            { id: 'rok', label: 'Rok Važenja', span: 'col-span-1' },
+            { id: 'placanje', label: 'Način Plaćanja', span: 'col-span-1' },
+            { id: 'valuta', label: 'Valuta', span: 'col-span-1' },
+            { id: 'paritet', label: 'Paritet (Mjesto isporuke)', span: 'col-span-2' },
+            { id: 'depozit', label: 'Uplaćen Depozit', span: 'col-span-1' },
+            { id: 'status', label: 'Status Ponude', span: 'col-span-1' }
+        ]
+    });
+
+    // Osigurač za povlačenje polja iz baze ili defaulta
+    const aktivnaPolja = saas.ui.polja?.length > 0 ? saas.ui.polja : saas.defaultConfig.polja;
+
+    // === Drag & Drop i Resize Logika ===
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+
+    const handleDragStart = (e, index) => { dragItem.current = index; };
+    const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+    const handleDrop = () => {
+        if(dragItem.current === null || dragOverItem.current === null) return;
+        const novaLista = [...aktivnaPolja];
+        const premjesteniItem = novaLista[dragItem.current];
+        novaLista.splice(dragItem.current, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteniItem);
+        dragItem.current = null; dragOverItem.current = null;
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const updatePolje = (index, key, val) => {
+        const novaLista = [...aktivnaPolja];
+        novaLista[index][key] = val;
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const toggleVelicinaPolja = (index) => {
+        const novaLista = [...aktivnaPolja];
+        const trenutno = novaLista[index].span;
+        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1');
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const spremiDimenzije = (e, index) => {
+        if (!saas.isEditMode) return;
+        const w = e.currentTarget.style.width;
+        const h = e.currentTarget.style.height;
+        if (w || h) {
+            const novaLista = [...aktivnaPolja];
+            if (w) novaLista[index].customWidth = w;
+            if (h) novaLista[index].customHeight = h;
+            saas.setUi({...saas.ui, polja: novaLista});
+        }
+    };
+    // ===========================
 
     const [tab, setTab] = useState('nova');
     const [kupci, setKupci] = useState([]);
@@ -246,6 +309,25 @@ export default function PonudeModule({ onExit }) {
     const ponudeOdlucivanje = ponude.filter(p => p.status === 'NA ODLUČIVANJU');
     const ponudeRealizovane = ponude.filter(p => p.status === 'REALIZOVANA ✅');
 
+    // Pomoćna funkcija za renderovanje dinamičnih polja zaglavlja ponude
+    const renderPoljeZaglavlja = (polje) => {
+        if (polje.id === 'kupac') return (
+            <div className="flex gap-2 items-center w-full h-full">
+                <div className="flex-1 min-w-0 h-full"><SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} /></div>
+                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+            </div>
+        );
+        if (polje.id === 'broj') return <input value={form.id} disabled={isEditingPonuda} onChange={e=>setForm({...form, id:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 font-black uppercase disabled:opacity-50" />;
+        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />;
+        if (polje.id === 'rok') return <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />;
+        if (polje.id === 'placanje') return <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>;
+        if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
+        if (polje.id === 'paritet') return <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="npr. FCA Srebrenik" />;
+        if (polje.id === 'depozit') return <input type="number" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />;
+        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-pink-900/20 rounded-xl text-xs text-pink-400 font-black outline-none border border-pink-500/50"><option value="NA ODLUČIVANJU">Na odlučivanju</option><option value="POTVRĐENA">POTVRĐENA ✅</option><option value="REALIZOVANA ✅">REALIZOVANA (Zatvorena)</option></select>;
+        return null;
+    };
+
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold">
             {showBrziKupac && (
@@ -259,74 +341,80 @@ export default function PonudeModule({ onExit }) {
                 </div>
             )}
 
-            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-pink-500/30 shadow-lg">
-                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
-                <h2 className="text-pink-400 font-black tracking-widest uppercase text-xs">📝 UPRAVLJANJE PONUDAMA</h2>
+            {/* ZAGLAVLJE MODULA I SAAS KONTROLE */}
+            <div className={`flex flex-col md:flex-row justify-between items-center p-4 rounded-3xl border shadow-lg gap-4 transition-all ${saas.isEditMode ? 'bg-amber-950/30 border-amber-500 ring-2 ring-amber-500' : 'bg-[#1e293b] border-pink-500/30'}`}>
+                <div className="flex items-center gap-3">
+                    <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700 text-white font-black transition-all">← Meni</button>
+                    <h2 className={`${saas.ui.boja_naslova} font-black tracking-widest uppercase text-xs hidden md:block`}>📝 UPRAVLJANJE PONUDAMA</h2>
+                </div>
+                
+                {loggedUser?.uloga === 'superadmin' && (
+                    saas.isEditMode ? (
+                        <div className="flex gap-2">
+                            <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all shadow-md">✕ Odustani</button>
+                            <button onClick={saas.spasiDizajn} className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
+                        </div>
+                    ) : (
+                        <button onClick={saas.pokreniEdit} className="px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-white transition-all shadow-md">✏️ Uredi Modul</button>
+                    )
+                )}
             </div>
 
             <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
-                <button onClick={() => {setTab('nova'); if(!isEditingPonuda) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'nova' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500'}`}>{isEditingPonuda ? '✏️ Ažuriranje Ponude' : '➕ Nova Ponuda'}</button>
-                <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'lista' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500'}`}>📋 Lista Ponuda</button>
+                <button onClick={() => {setTab('nova'); if(!isEditingPonuda) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'nova' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>{isEditingPonuda ? '✏️ Ažuriranje Ponude' : '➕ Nova Ponuda'}</button>
+                <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'lista' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>📋 Lista Ponuda</button>
             </div>
 
             {tab === 'nova' ? (
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
-                    <div className={`bg-[#1e293b] p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 ${isEditingPonuda ? 'border-amber-500/50' : 'border-pink-500/30'}`}>
-                        <div className="flex justify-between items-center">
-                            <h3 className={`${isEditingPonuda ? 'text-amber-500' : 'text-pink-500'} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
+                    
+                    {/* SAAS ZAGLAVLJE PONUDE */}
+                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
                             {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50">Odustani od izmjena ✕</button>}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4">
-                            <div className="relative z-50 col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* KUPAC</label>
-                                <div className="flex gap-2 items-center w-full">
-                                    <div className="flex-1 min-w-0">
-                                        <SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} />
-                                    </div>
-                                    {hasKupacEdit && (
-                                        <button onClick={() => setShowBrziKupac(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>
+
+                        {saas.isEditMode && (
+                            <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
+                                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Pozadine: <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Naslova: <input type="text" value={saas.ui.boja_naslova || 'text-pink-500'} onChange={e => saas.setUi({...saas.ui, boja_naslova: e.target.value})} className="w-32 p-1 bg-slate-900 border border-slate-700 rounded text-white font-mono" placeholder="text-pink-500" /></label>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4 items-start">
+                            {aktivnaPolja.map((polje, index) => (
+                                <div 
+                                    key={polje.id} 
+                                    className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                                    style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }}
+                                    draggable={saas.isEditMode} 
+                                    onDragStart={(e) => handleDragStart(e, index)} 
+                                    onDragEnter={(e) => handleDragEnter(e, index)} 
+                                    onDragEnd={handleDrop} 
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onMouseUp={(e) => spremiDimenzije(e, index)}
+                                >
+                                    {saas.isEditMode && (
+                                        <div className="flex justify-between items-center mb-2 shrink-0">
+                                            <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
+                                            <button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
+                                        </div>
                                     )}
+                                    {saas.isEditMode ? (
+                                        <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />
+                                    ) : (
+                                        polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
+                                    )}
+                                    <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        {renderPoljeZaglavlja(polje)}
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">BROJ PONUDE</label>
-                                <input value={form.id} disabled={isEditingPonuda} onChange={e=>setForm({...form, id:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 font-black uppercase disabled:opacity-50" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Datum izdavanja</label>
-                                <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Rok Važenja</label>
-                                <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Način Plaćanja</label>
-                                <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Valuta</label>
-                                <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>
-                            </div>
-                            <div className="col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Paritet (Mjesto isporuke)</label>
-                                <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="npr. FCA Srebrenik" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Uplaćen Depozit</label>
-                                <input type="number" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} className="w-full p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-pink-500 uppercase ml-2 block mb-1 font-black">Status Ponude</label>
-                                <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full p-3 bg-pink-900/20 rounded-xl text-xs text-pink-400 font-black outline-none border border-pink-500/50">
-                                    <option value="NA ODLUČIVANJU">Na odlučivanju</option>
-                                    <option value="POTVRĐENA">POTVRĐENA ✅</option>
-                                    <option value="REALIZOVANA ✅">REALIZOVANA (Zatvorena)</option>
-                                </select>
-                            </div>
+                            ))}
                         </div>
                     </div>
 
+                    {/* DINAMIČKI UNOS STAVKI (Bez izmjena u logici) */}
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički unos stavki</h3>
                         

@@ -25,3 +25,31 @@ body {
     )
     rgb(var(--background-start-rgb));
 }
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  /* Ukidamo gradijente i tamne pozadine */
+  .bg-\[\#0f172a\], .bg-\[\#1e293b\], .bg-slate-900, .bg-slate-800 {
+    background-color: transparent !important;
+  }
+  
+  /* Ponašanje stranice */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  /* Spriječava sječenje elemenata na prelazu stranice */
+  .page-break-avoid {
+    page-break-inside: avoid;
+  }
+
+  /* Specifična pravila za Recharts grafike u printu */
+  .recharts-wrapper {
+    width: 100% !important;
+    height: 100% !important;
+  }
+}

@@ -1,9 +1,11 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import MasterHeader from '../components/MasterHeader';
 import SearchableInput from '../components/SearchableInput';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
+import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
@@ -16,7 +18,7 @@ function RAC_SearchableProizvod({ katalog, value, onChange }) {
 
     return (
         <div className="relative font-black w-full">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-red-500" />
+            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-red-500 shadow-inner" />
             {open && filtered.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
                     {filtered.map(k => {
@@ -28,18 +30,79 @@ function RAC_SearchableProizvod({ katalog, value, onChange }) {
                             </div>
                         )
                     })}
-                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white">Zatvori</div>
+                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 sticky bottom-0">Zatvori</div>
                 </div>
             )}
         </div>
     );
 }
 
-export default function RacuniModule({ onExit }) {
+export default function RacuniModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
+    const currentUser = user?.ime_prezime ? user : loggedUser;
 
-    const hasKupacEdit = loggedUser.uloga === 'admin' || (loggedUser.dozvole && loggedUser.dozvole.includes('Baza Kupaca (Edit)'));
-    const hasKatalogEdit = loggedUser.uloga === 'admin' || (loggedUser.dozvole && loggedUser.dozvole.includes('Katalog Proizvoda (Edit)'));
+    const hasKupacEdit = currentUser.uloga === 'admin' || (currentUser.dozvole && currentUser.dozvole.includes('Baza Kupaca (Edit)'));
+    const hasKatalogEdit = currentUser.uloga === 'admin' || (currentUser.dozvole && currentUser.dozvole.includes('Katalog Proizvoda (Edit)'));
+
+    // === SaaS ALAT (Konfiguracija za zaglavlje računa) ===
+    const saas = useSaaS('racuni_zaglavlje', {
+        boja_kartice: '#1e293b',
+        boja_naslova: 'text-red-500',
+        polja: [
+            { id: 'veza', label: 'Vezni Dokument (Istorija)', span: 'col-span-2' },
+            { id: 'broj', label: 'BROJ RAČUNA', span: 'col-span-2' },
+            { id: 'kupac', label: '* KUPAC', span: 'col-span-2' },
+            { id: 'datum', label: 'Datum izdavanja', span: 'col-span-1' },
+            { id: 'rok', label: 'Rok plaćanja', span: 'col-span-1' },
+            { id: 'placanje', label: 'Način Plaćanja', span: 'col-span-1' },
+            { id: 'valuta', label: 'Valuta', span: 'col-span-1' },
+            { id: 'status', label: 'Status Računa', span: 'col-span-2' }
+        ]
+    });
+
+    const aktivnaPolja = saas.ui.polja?.length > 0 ? saas.ui.polja : saas.defaultConfig.polja;
+
+    // Drag & Drop i Resize Logika
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+
+    const handleDragStart = (e, index) => { dragItem.current = index; };
+    const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+    const handleDrop = () => {
+        if(dragItem.current === null || dragOverItem.current === null) return;
+        const novaLista = [...aktivnaPolja];
+        const premjesteniItem = novaLista[dragItem.current];
+        novaLista.splice(dragItem.current, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteniItem);
+        dragItem.current = null; dragOverItem.current = null;
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const updatePolje = (index, key, val) => {
+        const novaLista = [...aktivnaPolja];
+        novaLista[index][key] = val;
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const toggleVelicinaPolja = (index) => {
+        const novaLista = [...aktivnaPolja];
+        const trenutno = novaLista[index].span;
+        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1');
+        saas.setUi({...saas.ui, polja: novaLista});
+    };
+
+    const spremiDimenzije = (e, index) => {
+        if (!saas.isEditMode) return;
+        const w = e.currentTarget.style.width;
+        const h = e.currentTarget.style.height;
+        if (w || h) {
+            const novaLista = [...aktivnaPolja];
+            if (w) novaLista[index].customWidth = w;
+            if (h) novaLista[index].customHeight = h;
+            saas.setUi({...saas.ui, polja: novaLista});
+        }
+    };
+    // ===========================
 
     const [tab, setTab] = useState('novi');
     const [kupci, setKupci] = useState([]);
@@ -73,8 +136,6 @@ export default function RacuniModule({ onExit }) {
     const [kucanjeTimer, setKucanjeTimer] = useState(null);
     const [skenerInput, setSkenerInput] = useState('');
 
-    const [sveTransakcije, setSveTransakcije] = useState([]); // Za sinhronizaciju kase
-
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
@@ -84,7 +145,6 @@ export default function RacuniModule({ onExit }) {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: r} = await supabase.from('racuni').select('*').order('datum', { ascending: false }); setRacuni(r||[]);
-        const {data: b} = await supabase.from('blagajna').select('*'); setSveTransakcije(b||[]);
         
         const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
         const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
@@ -98,7 +158,7 @@ export default function RacuniModule({ onExit }) {
     };
 
     const zapisiU_Log = async (akcija, detalji) => {
-        await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]);
+        await supabase.from('sistem_audit_log').insert([{ korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji }]);
     };
 
     const sinhronizujKasu = async (racunId, status, nacinPlacanja, kupacNaziv, ukupnoZaNaplatu) => {
@@ -113,7 +173,7 @@ export default function RacuniModule({ onExit }) {
                 await supabase.from('blagajna').insert([{
                     id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`, tip: 'ULAZ', kategorija: 'Naplata Računa',
                     iznos: parseFloat(zaUplatu.toFixed(2)), opis: `Automatska gotovinska naplata računa: ${racunId} (${kupacNaziv})`,
-                    racun_id: racunId, datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: loggedUser.ime_prezime || 'Sistem'
+                    racun_id: racunId, datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: currentUser.ime_prezime || 'Sistem'
                 }]);
                 await zapisiU_Log('KASA_AUTO_UNOS', `Automatska gotovinska naplata za račun ${racunId}`);
             }
@@ -122,7 +182,7 @@ export default function RacuniModule({ onExit }) {
                 await supabase.from('blagajna').insert([{
                     id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`, tip: 'IZLAZ', kategorija: 'Storno Naplate',
                     iznos: parseFloat(netoUplaceno.toFixed(2)), opis: `STORNO: Poništena/Izmijenjena naplata računa: ${racunId} (${kupacNaziv})`,
-                    racun_id: racunId, datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: loggedUser.ime_prezime || 'Sistem'
+                    racun_id: racunId, datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: currentUser.ime_prezime || 'Sistem'
                 }]);
                 await zapisiU_Log('KASA_STORNO', `Automatski storno u blagajni za račun ${racunId} (Stornirano: ${netoUplaceno} KM)`);
             }
@@ -296,7 +356,7 @@ export default function RacuniModule({ onExit }) {
         const payload = {
             id: form.id.toUpperCase(), broj_veze: form.broj_veze, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_placanja: form.rok_placanja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, napomena: form.napomena, stavke_jsonb: stavke, status: form.status,
             ukupno_bez_pdv: parseFloat(totals.osnovica), ukupno_rabat: parseFloat(totals.rabat), ukupno_sa_pdv: parseFloat(totals.za_naplatu),
-            snimio_korisnik: loggedUser.ime_prezime
+            snimio_korisnik: currentUser.ime_prezime
         };
 
         if (isEditing) {
@@ -371,7 +431,7 @@ export default function RacuniModule({ onExit }) {
     };
 
     const resetFormu = () => {
-        setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: '', nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null });
+        setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null });
         setStavke([]); setSkenerInput(''); setIsEditing(false); setOdabraniKupac(null); setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '' });
     };
 
@@ -397,113 +457,107 @@ export default function RacuniModule({ onExit }) {
     const neplaceni = racuni.filter(r => r.status === 'NENAPLAĆENO');
     const placeni = racuni.filter(r => r.status === 'NAPLAĆENO');
 
-    return (
-        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold">
-            
-            {showBrziKupac && (
-                <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in">
-                    <SettingsModule onExit={() => { setShowBrziKupac(false); load(); }} lockedTab="kupci" />
-                </div>
-            )}
-            {showBrziKatalog && (
-                <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in">
-                    <SettingsModule onExit={() => { setShowBrziKatalog(false); load(); }} lockedTab="katalog" />
-                </div>
-            )}
-
-            <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-red-500/30 shadow-lg">
-                <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
-                <h2 className="text-red-400 font-black tracking-widest uppercase text-xs">💰 FINANSIJE: RAČUNI</h2>
+    const renderPoljeHeader = (polje) => {
+        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-slate-900 rounded-xl text-white outline-none border border-slate-700 uppercase focus:border-red-500 shadow-inner" placeholder="Nema veze" />;
+        if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-slate-800 rounded-xl text-white border border-slate-700 font-black disabled:opacity-50" />;
+        if (polje.id === 'kupac') return (
+            <div className="flex gap-2 items-center w-full h-full">
+                <div className="flex-1 min-w-0 h-full"><SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} /></div>
+                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
             </div>
+        );
+        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-red-500 shadow-inner" />;
+        if (polje.id === 'rok') return <input type="date" value={form.rok_placanja} onChange={e=>setForm({...form, rok_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-red-500 shadow-inner" />;
+        if (polje.id === 'placanje') return <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-red-500 shadow-inner"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>;
+        if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-red-500 shadow-inner"><option value="KM">KM</option><option value="EUR">EUR</option></select>;
+        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none"><option value="NENAPLAĆENO">Nenaplaćeno</option><option value="NAPLAĆENO">NAPLAĆENO</option></select>;
+        return null;
+    };
 
-            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
-                <button onClick={() => {setTab('novi'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'novi' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500'}`}>
-                    {isEditing ? '✏️ Ažuriraj Račun' : '➕ Kreiraj Račun'}
+    return (
+        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="računi" saas={saas} />
+
+            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700 shadow-xl">
+                <button onClick={() => {setTab('novi'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'novi' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>
+                    {isEditing ? '✏️ Ažuriranje Računa' : '➕ Kreiraj Račun'}
                 </button>
-                <button onClick={() => setTab('otvoreni')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${tab === 'otvoreni' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500'}`}>
+                <button onClick={() => setTab('otvoreni')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-2 ${tab === 'otvoreni' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>
                     ⏳ Otvoreni Računi <span className="bg-red-900/40 text-white px-2 rounded-full">{neplaceni.length}</span>
                 </button>
-                <button onClick={() => setTab('arhiva')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all flex items-center justify-center gap-2 ${tab === 'arhiva' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500'}`}>
+                <button onClick={() => setTab('arhiva')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-2 ${tab === 'arhiva' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>
                     🔐 Arhiva (Naplaćeno) <span className="bg-emerald-900/40 text-emerald-400 px-2 rounded-full">{placeni.length}</span>
                 </button>
             </div>
 
-            {tab === 'novi' && (
+            {tab === 'novi' ? (
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
+                    {showBrziKupac && (
+                        <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in">
+                            <SettingsModule onExit={() => { setShowBrziKupac(false); load(); }} lockedTab="kupci" />
+                        </div>
+                    )}
+                    {showBrziKatalog && (
+                        <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in">
+                            <SettingsModule onExit={() => { setShowBrziKatalog(false); load(); }} lockedTab="katalog" />
+                        </div>
+                    )}
+
                     {!isEditing && (
-                        <div className="bg-slate-900 border border-red-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative">
-                            <div className="text-2xl">📷</div>
-                            <div className="flex-1 relative">
-                                <label className="text-[10px] text-red-400 uppercase font-black block mb-1">Skener (Skeniraj OTP, RN ili PON)</label>
-                                <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-red-500 focus:border-red-400 uppercase font-black tracking-widest shadow-inner" />
-                                
-                                {prikaziDrop && skenerInput && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
-                                        {dostupniDokumenti
-                                            .filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput)))
-                                            .map(p => (
-                                            <div key={p.id} onClick={() => {
-                                                setSkenerInput(p.id); setPrikaziDrop(false);
-                                                if (kucanjeTimer) clearTimeout(kucanjeTimer);
-                                                skenirajVezu(p.id);
-                                            }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
-                                                <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-red-400 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                                <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
+                        <div className="bg-slate-900 border border-red-500/50 p-6 rounded-3xl shadow-2xl relative z-[60]">
+                            <div className="flex gap-3 items-center">
+                                <div className="text-2xl hidden md:block">📷</div>
+                                <div className="flex-1 relative">
+                                    <label className="text-[10px] text-red-400 uppercase font-black block mb-1 ml-2">Pametni unos (Skeniraj OTP, RN ili PON)</label>
+                                    <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] border-2 border-red-500 rounded-xl text-sm text-white outline-none focus:border-red-400 uppercase font-black shadow-inner relative z-10" />
+                                    
+                                    {prikaziDrop && skenerInput && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
+                                            {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).length === 0 && <div className="p-3 text-xs text-slate-500 text-center">Nema rezultata...</div>}
+                                            {dostupniDokumenti
+                                                .filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput)))
+                                                .map(p => (
+                                                <div key={p.id} onClick={() => {
+                                                    setSkenerInput(p.id); setPrikaziDrop(false);
+                                                    if (kucanjeTimer) clearTimeout(kucanjeTimer);
+                                                    skenirajVezu(p.id);
+                                                }} className="p-3 border-b border-slate-700 hover:bg-red-600 cursor-pointer flex justify-between items-center transition-all">
+                                                    <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-red-300 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                                    <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border-2 border-red-500/30 shadow-2xl space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-red-400 font-black uppercase text-xs">1. Parametri Računa</h3>
-                            {isEditing && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50">Odustani od izmjena ✕</button>}
+                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditing ? 'border-amber-500/50 bg-[#1e293b]' : 'border-red-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className={`${isEditing ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Parametri Računa</h3>
+                            {isEditing && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50 transition-all">Odustani od izmjena ✕</button>}
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4">
-                            <div className="col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Vezni Dokument (Istorija)</label>
-                                <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 uppercase" placeholder="Nema veznog dokumenta" />
+                        {saas.isEditMode && (
+                            <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
+                                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Pozadine: <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Naslova: <input type="text" value={saas.ui.boja_naslova || 'text-red-500'} onChange={e => saas.setUi({...saas.ui, boja_naslova: e.target.value})} className="w-32 p-1 bg-slate-900 border border-slate-700 rounded text-white font-mono" placeholder="text-red-500" /></label>
                             </div>
-                            <div className="col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">BROJ RAČUNA</label>
-                                <input value={form.id} disabled={isEditing} onChange={e=>setForm({...form, id:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 font-black uppercase disabled:opacity-50" />
-                            </div>
-                            <div className="relative z-50 col-span-2">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* KUPAC</label>
-                                <div className="flex gap-2 items-center w-full">
-                                    <div className="flex-1 min-w-0">
-                                        <SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} />
-                                    </div>
-                                    {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4 items-start">
+                            {aktivnaPolja.map((polje, index) => (
+                                <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index)}>
+                                    {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
+                                    {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
+                                    <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderPoljeHeader(polje)}</div>
                                 </div>
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Datum izdavanja</label>
-                                <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Rok plaćanja</label>
-                                <input type="date" value={form.rok_placanja} onChange={e=>setForm({...form, rok_placanja:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Način Plaćanja</label>
-                                <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>
-                            </div>
-                            <div>
-                                <label className="text-[8px] text-red-500 uppercase ml-2 block mb-1 font-black">Status Računa</label>
-                                <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black outline-none border border-red-500/50">
-                                    <option value="NENAPLAĆENO">Nenaplaćeno</option>
-                                    <option value="NAPLAĆENO">NAPLAĆENO (Zatvoreno)</option>
-                                </select>
-                            </div>
+                            ))}
                         </div>
                     </div>
 
-                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
+                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4 relative z-[30]">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički dodaj / uredi stavke</h3>
                         
                         <div className="relative z-40 mb-3">
@@ -517,7 +571,7 @@ export default function RacuniModule({ onExit }) {
                         </div>
 
                         {trenutniProizvod && (
-                            <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4">
+                            <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4 shadow-inner">
                                 <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                                     <div><p className="text-white text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Dim: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</p></div>
                                     <div className="text-right"><p className="text-[10px] text-slate-400 uppercase">Baza</p><p className="text-red-400 font-black text-lg">{trenutniProizvod.cijena} {form.valuta}</p></div>
@@ -527,23 +581,23 @@ export default function RacuniModule({ onExit }) {
                                     <div className="col-span-2">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Unos: Količina i Jedinica</label>
                                         <div className="flex gap-1">
-                                            <input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-[#0f172a] rounded-xl text-sm text-white font-black text-center outline-none border border-slate-700 focus:border-red-500" />
-                                            <select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select>
+                                            <input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-[#0f172a] rounded-xl text-sm text-white font-black text-center outline-none border border-slate-700 focus:border-red-500 shadow-inner" />
+                                            <select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700 shadow-inner"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select>
                                         </div>
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Obračun po</label>
                                         <div className="flex gap-1">
-                                            <input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} className="flex-1 p-3 bg-red-900/20 rounded-xl text-sm text-red-400 font-black text-center outline-none border border-red-500/50" />
-                                            <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select>
+                                            <input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} className="flex-1 p-3 bg-red-900/20 rounded-xl text-sm text-red-400 font-black text-center outline-none border border-red-500/50 shadow-inner" />
+                                            <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700 shadow-inner"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select>
                                         </div>
                                     </div>
                                     <div>
                                         <label className="text-[8px] text-pink-500 uppercase ml-2 block mb-1 font-black">Rabat %</label>
-                                        <input type="number" value={stavkaForm.konacni_rabat} onChange={e=>setStavkaForm({...stavkaForm, konacni_rabat:e.target.value})} className="w-full p-3 bg-pink-900/20 rounded-xl text-sm text-pink-400 font-black text-center outline-none border border-pink-500/50" title={`Sistemski predloženo: ${stavkaForm.sistemski_rabat}%`} />
+                                        <input type="number" value={stavkaForm.konacni_rabat} onChange={e=>setStavkaForm({...stavkaForm, konacni_rabat:e.target.value})} className="w-full p-3 bg-pink-900/20 rounded-xl text-sm text-pink-400 font-black text-center outline-none border border-pink-500/50 shadow-inner" title={`Sistemski predloženo: ${stavkaForm.sistemski_rabat}%`} />
                                     </div>
                                 </div>
-                                <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'}`}>
+                                <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'}`}>
                                     {stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na račun'}
                                 </button>
                             </div>
@@ -561,7 +615,7 @@ export default function RacuniModule({ onExit }) {
                             
                             <div className="space-y-2 mb-6">
                                 {stavke.map((s, i) => (
-                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-3 bg-slate-900 border border-slate-800 rounded-xl relative overflow-hidden cursor-pointer hover:border-red-500 transition-all">
+                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-slate-900 border border-slate-800 rounded-xl relative overflow-hidden cursor-pointer hover:border-red-500 transition-all group shadow-md">
                                         {s.rabat_procenat > 0 && <div className="absolute top-0 left-0 h-full w-1 bg-pink-500"></div>}
                                         <div className="flex items-center gap-3">
                                             <div className="w-6 h-6 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center text-[10px] font-black">{i+1}</div>
@@ -575,13 +629,13 @@ export default function RacuniModule({ onExit }) {
                                                 {s.rabat_procenat > 0 && <p className="text-[9px] text-pink-500 font-bold line-through">{(s.kolicina_obracun * s.cijena_baza).toFixed(2)}</p>}
                                                 <p className="text-red-400 font-black text-sm">{s.ukupno.toFixed(2)} {form.valuta} {s.rabat_procenat > 0 && <span className="text-pink-500 text-[8px] ml-1">(-{s.rabat_procenat}%)</span>}</p>
                                             </div>
-                                            <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 font-black p-2 hover:bg-red-500/20 rounded-lg">✕</button>
+                                            <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 font-black p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 rounded-lg transition-all">✕</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-700 space-y-2">
+                            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-700 space-y-2 shadow-inner">
                                 <div className="flex justify-between text-xs text-slate-400"><span>Iznos bez rabata:</span><span>{totals.bez_rabata} {form.valuta}</span></div>
                                 <div className="flex justify-between text-xs text-pink-500 font-bold"><span>Uračunat rabat:</span><span>- {totals.rabat} {form.valuta}</span></div>
                                 <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>Osnovica za PDV:</span><span>{totals.osnovica} {form.valuta}</span></div>
@@ -589,33 +643,32 @@ export default function RacuniModule({ onExit }) {
                                 <div className="flex justify-between text-xl text-white font-black pt-2 mt-2 border-t border-slate-700"><span>ZA NAPLATU:</span><span className="text-red-400">{totals.za_naplatu} {form.valuta}</span></div>
                             </div>
 
-                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na računu..." className="w-full mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-red-500" rows="2"></textarea>
-                            <button onClick={snimiRacun} className={`w-full mt-4 py-5 text-white font-black rounded-2xl uppercase text-sm shadow-xl transition-all ${isEditing ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'}`}>
-                                {isEditing ? '✅ Snimi izmjene računa' : '✅ Zaključi i Kreiraj Račun'}
+                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na računu..." className="w-full mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-red-500 shadow-inner" rows="2"></textarea>
+                            <button onClick={snimiRacun} className={`w-full mt-4 py-6 text-white font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(239,68,68,0.4)] transition-all text-sm tracking-widest ${isEditing ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-red-600 hover:bg-red-500'}`}>
+                                {isEditing ? '✅ Snimi izmjene računa' : '🏁 ZAKLJUČI I KREIRAJ RAČUN'}
                             </button>
                         </div>
                     )}
                 </div>
-            )}
-
-            {tab !== 'novi' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-right">
+            ) : (
+                <div className="animate-in slide-in-from-right max-w-5xl mx-auto">
                     
                     {tab === 'otvoreni' && (
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-red-500/30 shadow-2xl col-span-2 max-w-4xl mx-auto w-full">
+                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-red-500/30 shadow-2xl w-full">
                             <h3 className="text-red-500 font-black uppercase text-xs mb-4 flex justify-between"><span>⏳ ČEKA NAPLATU (OTVORENO)</span></h3>
-                            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2">
+                                {neplaceni.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-10 border-2 border-dashed border-slate-800 rounded-3xl">Nema otvorenih računa.</p>}
                                 {neplaceni.map(r => (
-                                    <div key={r.id} className="p-4 bg-slate-900 border border-red-500/20 rounded-2xl cursor-pointer hover:border-red-500 transition-all">
-                                        <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2" onClick={() => pokreniIzmjenu(r)}>
-                                            <div><p className="text-white text-sm font-black">{r.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{r.kupac_naziv}</p></div>
-                                            <div className="text-right"><p className="text-red-400 font-black text-lg">{r.ukupno_sa_pdv} {r.valuta}</p><p className="text-[9px] text-slate-500 uppercase">Rok: {formatirajDatum(r.rok_placanja)}</p></div>
+                                    <div key={r.id} className="p-5 bg-slate-900 border border-red-500/20 rounded-[2rem] cursor-pointer hover:border-red-500 transition-all shadow-lg group">
+                                        <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-3" onClick={() => pokreniIzmjenu(r)}>
+                                            <div><p className="text-white text-base font-black">{r.id}</p><p className="text-slate-400 text-xs font-bold mt-1 uppercase">{r.kupac_naziv}</p></div>
+                                            <div className="text-right"><p className="text-red-400 font-black text-lg">{r.ukupno_sa_pdv} {r.valuta}</p><p className="text-[9px] text-slate-500 uppercase mt-1">Rok: {formatirajDatum(r.rok_placanja)}</p></div>
                                         </div>
                                         <div className="flex justify-between items-center mt-2">
-                                            <button onClick={()=>promijeniStatusBrzo(r, 'NAPLAĆENO')} className="text-[9px] text-white font-black bg-emerald-600 px-3 py-1 rounded hover:bg-emerald-500 transition-all">Označi kao naplaćeno 💰</button>
+                                            <button onClick={()=>promijeniStatusBrzo(r, 'NAPLAĆENO')} className="text-[9px] text-white font-black bg-emerald-600 px-4 py-2 rounded-xl hover:bg-emerald-500 transition-all shadow-md">Označi kao naplaćeno 💰</button>
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${r.nacin_placanja === 'Gotovina' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-blue-900/30 text-blue-400'}`}>{r.nacin_placanja}</span>
-                                                <span className="text-[9px] text-slate-500">Veza: {r.broj_veze || '-'}</span>
+                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${r.nacin_placanja === 'Gotovina' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : 'bg-blue-900/30 text-blue-400 border border-blue-500/30'}`}>{r.nacin_placanja}</span>
+                                                <span className="text-[9px] text-slate-500 font-bold">Veza: {r.broj_veze || '-'}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -625,20 +678,21 @@ export default function RacuniModule({ onExit }) {
                     )}
 
                     {tab === 'arhiva' && (
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl col-span-2 max-w-4xl mx-auto w-full">
-                            <h3 className="text-emerald-500 font-black uppercase text-xs mb-4 flex justify-between"><span>✅ NAPLAĆENO (ZATVORENO)</span></h3>
-                            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl w-full">
+                            <h3 className="text-emerald-500 font-black uppercase text-xs mb-4 flex justify-between"><span>✅ NAPLAĆENO (ARHIVA)</span></h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2">
+                                {placeni.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-10 border-2 border-dashed border-slate-800 rounded-3xl">Arhiva je prazna.</p>}
                                 {placeni.map(r => (
-                                    <div key={r.id} className="p-4 bg-slate-900 border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
-                                        <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2" onClick={() => pokreniIzmjenu(r)}>
-                                            <div><p className="text-white text-sm font-black">{r.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{r.kupac_naziv}</p></div>
-                                            <div className="text-right"><p className="text-emerald-400 font-black text-lg">{r.ukupno_sa_pdv} {r.valuta}</p><p className="text-[9px] text-slate-500 uppercase">Izdano: {formatirajDatum(r.datum)}</p></div>
+                                    <div key={r.id} className="p-5 bg-slate-900 border border-emerald-500/20 rounded-[2rem] cursor-pointer hover:border-emerald-500 transition-all shadow-lg group">
+                                        <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-3" onClick={() => pokreniIzmjenu(r)}>
+                                            <div><p className="text-white text-base font-black">{r.id}</p><p className="text-slate-400 text-xs font-bold mt-1 uppercase">{r.kupac_naziv}</p></div>
+                                            <div className="text-right"><p className="text-emerald-400 font-black text-lg">{r.ukupno_sa_pdv} {r.valuta}</p><p className="text-[9px] text-slate-500 uppercase mt-1">Izdano: {formatirajDatum(r.datum)}</p></div>
                                         </div>
                                         <div className="flex justify-between items-center mt-2">
-                                            <button onClick={()=>promijeniStatusBrzo(r, 'NENAPLAĆENO')} className="text-[9px] text-slate-400 bg-slate-800 px-3 py-1 rounded hover:bg-red-900/50 hover:text-red-400 transition-all">Vrati u dugovanje ↩</button>
+                                            <button onClick={()=>promijeniStatusBrzo(r, 'NENAPLAĆENO')} className="text-[9px] text-slate-400 bg-slate-800 px-4 py-2 rounded-xl hover:bg-red-900/50 hover:text-red-400 transition-all border border-slate-700">Vrati u dugovanje ↩</button>
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded ${r.nacin_placanja === 'Gotovina' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-blue-900/30 text-blue-400'}`}>{r.nacin_placanja}</span>
-                                                <span className="text-[9px] text-slate-500">Veza: {r.broj_veze || '-'}</span>
+                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg bg-emerald-900/40 text-emerald-400 border border-emerald-500/30`}>{r.nacin_placanja}</span>
+                                                <span className="text-[9px] text-slate-500 font-bold">Veza: {r.broj_veze || '-'}</span>
                                             </div>
                                         </div>
                                     </div>

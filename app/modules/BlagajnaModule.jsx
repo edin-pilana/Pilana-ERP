@@ -31,7 +31,6 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     const [sviDokumenti, setSviDokumenti] = useState([]);
     
     const [skenDetalji, setSkenDetalji] = useState(null); 
-    
     const [prikazDokumenta, setPrikazDokumenta] = useState(null);
 
     const [form, setForm] = useState({
@@ -251,11 +250,12 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     
     const apsolutnoStanjeKase = sveTransakcije.filter(t => t.tip === 'ULAZ').reduce((a,b)=>a+parseFloat(b.iznos),0) - sveTransakcije.filter(t => t.tip === 'IZLAZ').reduce((a,b)=>a+parseFloat(b.iznos),0);
 
-    const unikatneKatUlaz = [...new Set(prikaneTransakcije.filter(t => t.tip === 'ULAZ').map(t => t.kategorija))];
-    const unikatneKatIzlaz = [...new Set(prikaneTransakcije.filter(t => t.tip === 'IZLAZ').map(t => t.kategorija))];
+    // ISPRAVLJENI TYPO OVDJE:
+    const unikatneKatUlaz = [...new Set(prikazaneTransakcije.filter(t => t.tip === 'ULAZ').map(t => t.kategorija))];
+    const unikatneKatIzlaz = [...new Set(prikazaneTransakcije.filter(t => t.tip === 'IZLAZ').map(t => t.kategorija))];
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold">
+        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
             {prikazDokumenta && (
                 <div className="fixed inset-0 z-[100] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-[#1e293b] border-2 border-emerald-500 p-8 rounded-[2.5rem] shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -264,19 +264,19 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                 <h3 className="text-emerald-400 font-black uppercase text-xs">Detalji: {prikazDokumenta.tip}</h3>
                                 <p className="text-white text-xl font-black mt-1">{prikazDokumenta.data.id}</p>
                             </div>
-                            <button onClick={() => setPrikazDokumenta(null)} className="text-red-400 bg-slate-800 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all">✕ Zatvori</button>
+                            <button onClick={() => setPrikazDokumenta(null)} className="text-red-400 bg-slate-800 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl text-xs font-black uppercase transition-all shadow-lg">✕ Zatvori</button>
                         </div>
                         <div className="space-y-4">
-                            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 shadow-inner">
                                 <p className="text-[10px] text-slate-500 uppercase font-black">Kupac</p>
                                 <p className="text-white font-black text-lg">{prikazDokumenta.data.kupac_naziv}</p>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 shadow-inner">
                                     <p className="text-[10px] text-slate-500 uppercase font-black">Datum</p>
                                     <p className="text-white font-bold">{formatirajDatum(prikazDokumenta.data.datum)}</p>
                                 </div>
-                                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
+                                <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 shadow-inner">
                                     <p className="text-[10px] text-slate-500 uppercase font-black">Status</p>
                                     <p className={`font-black uppercase ${prikazDokumenta.data.status.includes('NAPLAĆENO') || prikazDokumenta.data.status.includes('POTVRĐ') ? 'text-emerald-400' : 'text-red-400'}`}>{prikazDokumenta.data.status}</p>
                                 </div>
@@ -285,14 +285,14 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             {prikazDokumenta.data.stavke_jsonb && (
                                 <div className="mt-4">
                                     <p className="text-[10px] text-slate-400 uppercase font-black mb-2">Stavke na dokumentu:</p>
-                                    <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+                                    <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-inner">
                                         <table className="w-full text-xs text-left">
                                             <thead className="bg-slate-800 text-slate-400">
                                                 <tr><th className="p-3">Šifra i Proizvod</th><th className="p-3 text-center">Količina</th><th className="p-3 text-right">Ukupno</th></tr>
                                             </thead>
                                             <tbody className="text-white">
                                                 {prikazDokumenta.data.stavke_jsonb.map((s,i) => (
-                                                    <tr key={i} className="border-t border-slate-800 hover:bg-slate-800/50">
+                                                    <tr key={i} className="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
                                                         <td className="p-3 font-bold">{s.sifra} <span className="text-slate-400 font-normal ml-1 block mt-1">{s.naziv}</span></td>
                                                         <td className="p-3 text-center text-blue-400 font-bold">{s.kolicina_obracun} {s.jm_obracun}</td>
                                                         <td className="p-3 text-right font-black text-emerald-400">{s.ukupno?.toFixed(2)}</td>
@@ -304,7 +304,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                 </div>
                             )}
 
-                            <div className="bg-emerald-900/20 p-4 rounded-xl border border-emerald-500/30 text-center mt-4">
+                            <div className="bg-emerald-900/20 p-5 rounded-2xl border border-emerald-500/30 text-center mt-6 shadow-inner">
                                 <p className="text-[10px] text-emerald-400 uppercase font-black">Ukupno za naplatu</p>
                                 <p className="text-3xl text-white font-black">{prikazDokumenta.data.ukupno_sa_pdv} {prikazDokumenta.data.valuta || 'KM'}</p>
                             </div>
@@ -317,27 +317,28 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                 <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" />
             ) : (
                 <div className="flex justify-between items-center bg-[#1e293b] p-4 rounded-3xl border border-emerald-500/30 shadow-lg">
-                    <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700">← Meni</button>
+                    <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">← Meni</button>
                     <h2 className="text-emerald-400 font-black tracking-widest uppercase text-xs">💵 BLAGAJNA I FINANSIJE</h2>
+                    <div className="w-20"></div>
                 </div>
             )}
 
-            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
-                <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'unos' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>➕ Unos u Kasu</button>
-                <button onClick={() => setTab('pregled')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'pregled' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>📋 Dnevnik Kase</button>
-                <button onClick={() => setTab('analitika')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all ${tab === 'analitika' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500'}`}>📊 Analiza Troškova</button>
+            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700 shadow-xl">
+                <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'unos' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>➕ Unos u Kasu</button>
+                <button onClick={() => setTab('pregled')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'pregled' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>📋 Dnevnik Kase</button>
+                <button onClick={() => setTab('analitika')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'analitika' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>📊 Analiza Troškova</button>
             </div>
 
             {tab === 'unos' && (
                 <div className="space-y-6 max-w-4xl mx-auto animate-in slide-in-from-left">
-                    <div className="bg-slate-900 border border-blue-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative">
-                        <div className="text-2xl">📷</div>
+                    <div className="bg-slate-900 border border-blue-500/50 p-6 rounded-3xl flex gap-3 items-center shadow-2xl relative z-50">
+                        <div className="text-2xl hidden md:block">📷</div>
                         <div className="flex-1 relative">
-                            <label className="text-[10px] text-blue-400 uppercase font-black block mb-1">Brzi sken (Učitaj PONUDU, RN ili RAČUN za naplatu)</label>
-                            <input value={skener} onChange={handleSkenUnos} onFocus={() => setShowSkenerDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-blue-500 focus:border-blue-400 uppercase font-black tracking-widest shadow-inner" />
+                            <label className="text-[10px] text-blue-400 uppercase font-black block mb-2 ml-2">Pametni sken (Učitaj PONUDU, RN ili RAČUN za naplatu)</label>
+                            <input value={skener} onChange={handleSkenUnos} onFocus={() => setShowSkenerDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border-2 border-blue-500 focus:border-blue-400 uppercase font-black tracking-widest shadow-inner relative z-10" />
                             
                             {showSkenerDrop && skener && (
-                                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
                                     {sviDokumenti
                                         .filter(d => d.id.includes(skener) || (d.kupac && d.kupac.toUpperCase().includes(skener)))
                                         .map(p => (
@@ -345,9 +346,9 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                             setSkener(p.id); setShowSkenerDrop(false);
                                             if (kucanjeTimer) clearTimeout(kucanjeTimer);
                                             izvrsiSkeniranje(p.id);
-                                        }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
-                                            <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                            <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                        }} className="p-3 border-b border-slate-700 hover:bg-blue-600 cursor-pointer flex justify-between items-center transition-colors">
+                                            <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-blue-300 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                            <div className="text-slate-300 text-xs font-bold">{p.kupac}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -356,48 +357,48 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     </div>
 
                     {skenDetalji && (
-                        <div className="bg-slate-900 border-2 border-emerald-500/50 p-6 rounded-3xl shadow-2xl animate-in zoom-in-95">
-                            <div className="flex justify-between items-start border-b border-slate-700 pb-3 mb-4">
+                        <div className="bg-slate-900 border-2 border-emerald-500/50 p-6 rounded-3xl shadow-2xl animate-in zoom-in-95 relative z-40">
+                            <div className="flex justify-between items-start border-b border-slate-700 pb-4 mb-5">
                                 <div>
-                                    <h3 className="text-emerald-400 font-black text-sm uppercase">Pronađen finansijski trag</h3>
-                                    <p className="text-white text-lg font-black mt-1">{skenDetalji.kupac}</p>
+                                    <h3 className="text-emerald-400 font-black text-xs uppercase tracking-widest">Pronađen finansijski trag</h3>
+                                    <p className="text-white text-xl font-black mt-1">{skenDetalji.kupac}</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-slate-400 text-[10px] uppercase">Glavna Veza</p>
-                                    <p className="text-blue-400 font-bold">{skenDetalji.glavna_veza}</p>
+                                <div className="text-right bg-blue-900/20 border border-blue-500/30 px-4 py-2 rounded-xl">
+                                    <p className="text-slate-400 text-[9px] uppercase font-black">Glavna Veza (Dokument)</p>
+                                    <p className="text-blue-400 font-black text-base">{skenDetalji.glavna_veza}</p>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-4 text-center">
-                                <div className="bg-slate-800 p-3 rounded-xl"><p className="text-[9px] text-slate-400 uppercase">Ukupno</p><p className="text-white font-black">{skenDetalji.ukupno} KM</p></div>
-                                <div className="bg-emerald-900/30 border border-emerald-500/30 p-3 rounded-xl"><p className="text-[9px] text-emerald-400 uppercase">Već Uplaćeno</p><p className="text-emerald-400 font-black">{skenDetalji.placeno} KM</p></div>
-                                <div className="bg-red-900/30 border border-red-500/30 p-3 rounded-xl shadow-inner"><p className="text-[9px] text-red-400 uppercase">Preostali Dug</p><p className="text-red-400 font-black text-xl">{skenDetalji.preostalo} KM</p></div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                                <div className="bg-slate-800 p-4 rounded-2xl shadow-inner border border-slate-700"><p className="text-[10px] text-slate-400 uppercase font-black">Ukupno za naplatu</p><p className="text-white font-black text-xl mt-1">{skenDetalji.ukupno} KM</p></div>
+                                <div className="bg-emerald-900/30 border border-emerald-500/30 p-4 rounded-2xl shadow-inner"><p className="text-[10px] text-emerald-400 uppercase font-black">Već Uplaćeno</p><p className="text-emerald-400 font-black text-xl mt-1">{skenDetalji.placeno} KM</p></div>
+                                <div className="bg-red-900/30 border border-red-500/30 p-4 rounded-2xl shadow-inner"><p className="text-[10px] text-red-400 uppercase font-black">Preostali Dug</p><p className="text-red-400 font-black text-2xl mt-1">{skenDetalji.preostalo} KM</p></div>
                             </div>
                         </div>
                     )}
 
-                    <div className="flex gap-4">
-                        <button onClick={() => handleTipChange('ULAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'ULAZ' ? 'bg-emerald-900/30 border-emerald-500 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-emerald-900'}`}>+ ULAZ NOVCA</button>
-                        <button onClick={() => handleTipChange('IZLAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'IZLAZ' ? 'bg-red-900/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-red-900'}`}>- IZLAZ NOVCA</button>
+                    <div className="flex flex-col md:flex-row gap-4 relative z-30">
+                        <button onClick={() => handleTipChange('ULAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'ULAZ' ? 'bg-emerald-900/30 border-emerald-500 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-emerald-900 hover:text-emerald-500'}`}>+ ULAZ NOVCA</button>
+                        <button onClick={() => handleTipChange('IZLAZ')} className={`flex-1 py-6 rounded-[2rem] text-xl font-black uppercase transition-all border-4 ${form.tip === 'IZLAZ' ? 'bg-red-900/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-slate-900 border-slate-800 text-slate-600 hover:border-red-900 hover:text-red-500'}`}>- IZLAZ NOVCA</button>
                     </div>
 
-                    <div className={`bg-[#1e293b] p-8 rounded-[2.5rem] border-2 shadow-2xl space-y-6 ${form.tip === 'ULAZ' ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={`bg-[#1e293b] p-8 rounded-[2.5rem] border-2 shadow-2xl space-y-6 relative z-20 transition-all ${form.tip === 'ULAZ' ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Kategorija Transakcije</label>
-                                <select value={form.kategorija} onChange={e=>setForm({...form, kategorija:e.target.value})} className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 font-bold">
+                                <select value={form.kategorija} onChange={e=>setForm({...form, kategorija:e.target.value})} className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 font-bold shadow-inner focus:border-blue-500 uppercase">
                                     {kategorije.filter(k=>k.tip===form.tip).map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Iznos (KM)</label>
-                                <input type="number" value={form.iznos} onChange={e=>setForm({...form, iznos:e.target.value})} placeholder="0.00" className={`w-full p-4 bg-[#0f172a] rounded-xl text-2xl font-black text-center outline-none border-2 shadow-inner ${form.tip === 'ULAZ' ? 'border-emerald-500/50 text-emerald-400 focus:border-emerald-400' : 'border-red-500/50 text-red-400 focus:border-red-400'}`} />
+                                <input type="number" value={form.iznos} onChange={e=>setForm({...form, iznos:e.target.value})} placeholder="0.00" className={`w-full p-4 bg-black rounded-xl text-2xl font-black text-center outline-none border-2 shadow-inner ${form.tip === 'ULAZ' ? 'border-emerald-500/50 text-emerald-400 focus:border-emerald-400' : 'border-red-500/50 text-red-400 focus:border-red-400'}`} />
                             </div>
                         </div>
 
-                        <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
+                        <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 space-y-5 shadow-inner">
                             {(form.kategorija.toLowerCase().includes('račun') || form.kategorija.toLowerCase().includes('ponud') || form.kategorija.toLowerCase().includes('avans')) && (
                                 <div className="relative">
-                                    <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera na vrhu)</label>
+                                    <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera)</label>
                                     <input 
                                         value={form.racun_id} 
                                         onChange={(e) => {
@@ -406,13 +407,13 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                             if (val) { setKucanjeTimer(setTimeout(() => { setShowSkenerDrop(false); izvrsiSkeniranje(val); }, 2000)); }
                                         }} 
                                         onFocus={() => setShowSkenerDrop(true)} placeholder="npr. RAC-123" 
-                                        className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-emerald-500 focus:border-emerald-400 uppercase font-black shadow-inner" 
+                                        className="w-full p-4 bg-black rounded-xl text-sm text-white outline-none border border-emerald-500 focus:border-emerald-400 uppercase font-black shadow-inner relative z-10" 
                                     />
                                     
                                     {showSkenerDrop && form.racun_id && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 max-h-60 overflow-y-auto text-left">
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
                                             {sviDokumenti.filter(d => (d.tip === 'Račun' || d.tip === 'Ponuda') && (d.id.includes(form.racun_id) || (d.kupac && d.kupac.toUpperCase().includes(form.racun_id)))).map(p => (
-                                                <div key={p.id} onClick={() => { setForm({...form, racun_id: p.id}); setShowSkenerDrop(false); if (kucanjeTimer) clearTimeout(kucanjeTimer); izvrsiSkeniranje(p.id); }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-all">
+                                                <div key={p.id} onClick={() => { setForm({...form, racun_id: p.id}); setShowSkenerDrop(false); if (kucanjeTimer) clearTimeout(kucanjeTimer); izvrsiSkeniranje(p.id); }} className="p-3 border-b border-slate-700 hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-colors">
                                                     <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
                                                     <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
                                                 </div>
@@ -425,7 +426,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             {form.kategorija.toLowerCase().includes('mašin') && (
                                 <div>
                                     <label className="text-[10px] text-amber-500 uppercase font-black ml-2 block mb-1">Za koju mašinu se plaća?</label>
-                                    <select value={form.masina_naziv} onChange={e=>setForm({...form, masina_naziv:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700">
+                                    <select value={form.masina_naziv} onChange={e=>setForm({...form, masina_naziv:e.target.value})} className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 font-bold shadow-inner">
                                         <option value="">-- Odaberi mašinu --</option>{masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv}</option>)}
                                     </select>
                                 </div>
@@ -434,7 +435,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             {form.kategorija.toLowerCase().includes('radnic') && (
                                 <div>
                                     <label className="text-[10px] text-blue-400 uppercase font-black ml-2 block mb-1">Za kojeg radnika je isplata?</label>
-                                    <select value={form.radnik_ime} onChange={e=>setForm({...form, radnik_ime:e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700">
+                                    <select value={form.radnik_ime} onChange={e=>setForm({...form, radnik_ime:e.target.value})} className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 font-bold shadow-inner">
                                         <option value="">-- Odaberi radnika --</option>{radnici.map(r => <option key={r.ime_prezime} value={r.ime_prezime}>{r.ime_prezime}</option>)}
                                     </select>
                                 </div>
@@ -442,69 +443,71 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
 
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Svrha / Detaljan opis</label>
-                                <textarea value={form.opis} onChange={e=>setForm({...form, opis:e.target.value})} placeholder="Upiši detalje..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" rows="2"></textarea>
+                                <textarea value={form.opis} onChange={e=>setForm({...form, opis:e.target.value})} placeholder="Upiši detalje..." className="w-full p-4 bg-[#0f172a] rounded-xl text-sm text-white outline-none border border-slate-700 shadow-inner focus:border-blue-500" rows="2"></textarea>
                             </div>
                         </div>
 
-                        <button onClick={snimiTransakciju} className={`w-full py-5 text-white font-black rounded-2xl uppercase text-sm shadow-xl transition-all ${form.tip === 'ULAZ' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>✅ Proknjiži i Štampaj</button>
+                        <button onClick={snimiTransakciju} className={`w-full py-6 text-white font-black rounded-[2rem] uppercase text-sm shadow-xl transition-all tracking-widest ${form.tip === 'ULAZ' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : 'bg-red-600 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]'}`}>
+                            ✅ Proknjiži i Štampaj
+                        </button>
                     </div>
                 </div>
             )}
 
             {tab === 'pregled' && (
-                <div className="space-y-6 animate-in slide-in-from-right">
+                <div className="space-y-6 animate-in slide-in-from-right max-w-6xl mx-auto">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center"><p className="text-[10px] text-slate-500 uppercase font-black mb-1">Ulaz u periodu</p><p className="text-2xl text-emerald-400 font-black">{periodUlaz.toFixed(2)}</p></div>
-                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center"><p className="text-[10px] text-slate-500 uppercase font-black mb-1">Izlaz u periodu</p><p className="text-2xl text-red-400 font-black">{periodIzlaz.toFixed(2)}</p></div>
-                        <div className="bg-slate-900 p-6 rounded-3xl border border-blue-500/30 text-center"><p className="text-[10px] text-blue-400 uppercase font-black mb-1">Promet u periodu</p><p className="text-2xl text-white font-black">{periodPromet.toFixed(2)}</p></div>
-                        <div className="bg-blue-900/20 p-6 rounded-3xl border border-blue-500 text-center"><p className="text-[10px] text-blue-400 uppercase font-black mb-1">STVARNO STANJE KASE</p><p className="text-3xl text-white font-black">{apsolutnoStanjeKase.toFixed(2)} <span className="text-xs">KM</span></p></div>
+                        <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 text-center shadow-lg"><p className="text-[10px] text-slate-500 uppercase font-black mb-2">Ulaz u periodu</p><p className="text-2xl text-emerald-400 font-black tracking-wider">{periodUlaz.toFixed(2)}</p></div>
+                        <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 text-center shadow-lg"><p className="text-[10px] text-slate-500 uppercase font-black mb-2">Izlaz u periodu</p><p className="text-2xl text-red-400 font-black tracking-wider">{periodIzlaz.toFixed(2)}</p></div>
+                        <div className="bg-slate-900 p-6 rounded-[2rem] border border-blue-500/30 text-center shadow-lg"><p className="text-[10px] text-blue-400 uppercase font-black mb-2">Promet u periodu</p><p className="text-2xl text-white font-black tracking-wider">{periodPromet.toFixed(2)}</p></div>
+                        <div className="bg-blue-900/20 p-6 rounded-[2rem] border border-blue-500 text-center shadow-[0_0_20px_rgba(59,130,246,0.2)]"><p className="text-[10px] text-blue-400 uppercase font-black mb-2 tracking-widest">STVARNO STANJE KASE</p><p className="text-3xl text-white font-black tracking-widest">{apsolutnoStanjeKase.toFixed(2)} <span className="text-xs text-blue-400">KM</span></p></div>
                     </div>
 
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl">
-                        <div className="flex flex-wrap justify-between items-end mb-6 gap-4">
-                            <h3 className="text-slate-400 font-black uppercase text-[10px]">Knjiga Blagajne za: <span className="text-white text-sm bg-slate-800 px-3 py-1 rounded ml-2">{formatirajDatum(aktivniDatum)}</span></h3>
-                            <div className="flex gap-2">
-                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-slate-900 text-xs text-white p-3 rounded-xl border border-slate-700 outline-none">
-                                    <option value="SVE">Sve Kategorije</option>
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-slate-800 pb-4">
+                            <h3 className="text-slate-400 font-black uppercase text-xs w-full md:w-auto">Knjiga Blagajne za: <span className="text-white text-sm bg-slate-800 px-3 py-1.5 rounded-lg ml-2 border border-slate-700">{formatirajDatum(aktivniDatum)}</span></h3>
+                            <div className="flex gap-3 w-full md:w-auto">
+                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-slate-900 text-xs text-white p-3.5 rounded-xl border border-slate-700 outline-none font-bold uppercase flex-1 shadow-inner focus:border-blue-500">
+                                    <option value="SVE">-- Sve Kategorije --</option>
                                     {kategorije.map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
-                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis..." className="bg-slate-900 text-xs text-white p-3 rounded-xl border border-slate-700 outline-none w-48" />
+                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-slate-900 text-xs text-white p-3.5 rounded-xl border border-slate-700 outline-none w-full md:w-64 font-bold shadow-inner focus:border-blue-500" />
                             </div>
                         </div>
 
-                        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-                            {prikazaneTransakcije.length === 0 && <p className="text-center text-slate-500 py-10 font-bold">Nema transakcija za odabrani datum.</p>}
+                        <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                            {prikazaneTransakcije.length === 0 && <p className="text-center text-slate-500 py-10 font-bold border-2 border-dashed border-slate-800 rounded-3xl">Nema transakcija za odabrani datum.</p>}
                             {prikazaneTransakcije
                                 .filter(t => (header?.blagajnaFilterKat && header.blagajnaFilterKat !== 'SVE') ? t.kategorija === header.blagajnaFilterKat : true)
                                 .filter(t => (header?.blagajnaPretraga) ? (t.opis || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) || (t.racun_id || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) : true)
                                 .map(t => (
-                                <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex justify-between items-center hover:border-slate-600 transition-all group">
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xl border-4 shadow-lg shrink-0 ${t.tip === 'ULAZ' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30' : 'bg-red-900/40 text-red-400 border-red-500/30'}`}>
+                                <div key={t.id} className="p-4 bg-slate-900 border border-slate-800 rounded-[1.5rem] flex flex-col md:flex-row justify-between items-center hover:border-slate-600 transition-all group shadow-md gap-4">
+                                    <div className="flex items-center gap-4 w-full md:w-auto">
+                                        <div className={`w-14 h-14 rounded-full flex items-center justify-center font-black text-2xl border-4 shadow-lg shrink-0 ${t.tip === 'ULAZ' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-500/30' : 'bg-red-900/40 text-red-400 border-red-500/30'}`}>
                                             {t.tip === 'ULAZ' ? '+' : '-'}
                                         </div>
                                         <div>
-                                            <p className="text-white text-xs font-black uppercase">{t.kategorija}</p>
-                                            <p className="text-[10px] text-slate-400 mt-1">{t.opis || 'Nema opisa'}</p>
+                                            <p className="text-white text-sm font-black uppercase">{t.kategorija}</p>
+                                            <p className="text-xs text-slate-400 mt-1 line-clamp-1" title={t.opis}>{t.opis || 'Nema opisa'}</p>
                                             <div className="flex flex-wrap gap-2 mt-2 items-center">
-                                                <span className="text-[8px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-bold">{formatirajDatum(t.datum)} {t.vrijeme_tekst}</span>
-                                                <span className="text-[8px] bg-blue-900/30 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-bold">👤 {t.snimio_korisnik}</span>
+                                                <span className="text-[9px] bg-black text-slate-300 px-2 py-1 rounded font-bold border border-slate-800">{formatirajDatum(t.datum)} {t.vrijeme_tekst}</span>
+                                                <span className="text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 px-2 py-1 rounded font-bold">👤 {t.snimio_korisnik}</span>
                                                 {t.racun_id && (
-                                                    <span onClick={() => otvoriDokument(t.racun_id)} className="cursor-pointer hover:bg-emerald-800 text-[8px] bg-emerald-900/30 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold transition-all shadow-md">
-                                                        📄 Prikaži {t.racun_id}
-                                                    </span>
+                                                    <button onClick={() => otvoriDokument(t.racun_id)} className="text-[9px] bg-emerald-900/40 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded font-black hover:bg-emerald-600 hover:text-white transition-all shadow-md">
+                                                        📄 Vidi: {t.racun_id}
+                                                    </button>
                                                 )}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-6 w-full md:w-auto justify-end border-t md:border-none border-slate-800 pt-3 md:pt-0 mt-3 md:mt-0">
                                         <div className="text-right">
-                                            <p className={`text-xl font-black font-mono ${t.tip === 'ULAZ' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            <p className={`text-2xl font-black font-mono tracking-widest ${t.tip === 'ULAZ' ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {t.tip === 'ULAZ' ? '+' : '-'}{t.iznos.toFixed(2)}
                                             </p>
-                                            <button onClick={() => printPotvrda(t)} className="text-[8px] uppercase font-black text-slate-500 hover:text-white mt-1">🖨️ Print Potvrdu</button>
+                                            <button onClick={() => printPotvrda(t)} className="text-[9px] uppercase font-black text-slate-500 hover:text-white mt-1 border border-slate-700 px-3 py-1 rounded-lg bg-slate-800 transition-all">🖨️ Print Potvrdu</button>
                                         </div>
-                                        <button onClick={() => obrisiTransakciju(t)} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-xl transition-all">✕</button>
+                                        <button onClick={() => obrisiTransakciju(t)} className="text-red-500 bg-red-900/20 opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white w-10 h-10 flex items-center justify-center rounded-xl transition-all font-black text-lg border border-red-500/30">✕</button>
                                     </div>
                                 </div>
                             ))}
@@ -518,14 +521,14 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl">
                         <h3 className="text-emerald-500 font-black uppercase text-xs mb-4">📥 Struktura Ulaza na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
-                            {unikatneKatUlaz.length === 0 && <p className="text-slate-500 text-xs">Nema ulaznih transakcija za odabrani dan.</p>}
+                            {unikatneKatUlaz.length === 0 && <p className="text-slate-500 text-xs p-4 bg-slate-900 rounded-xl border border-slate-800 text-center">Nema ulaznih transakcija za odabrani dan.</p>}
                             {unikatneKatUlaz.map(katNaziv => {
                                 const suma = prikazaneTransakcije.filter(t => t.tip === 'ULAZ' && t.kategorija === katNaziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
                                 if (suma === 0) return null;
                                 return (
-                                    <div key={katNaziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                    <div key={katNaziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center shadow-md">
                                         <span className="text-white text-sm font-bold">{katNaziv}</span>
-                                        <span className="text-emerald-400 font-black font-mono">+ {suma.toFixed(2)} KM</span>
+                                        <span className="text-emerald-400 font-black font-mono tracking-widest bg-emerald-900/20 px-3 py-1 rounded-lg border border-emerald-500/20">+ {suma.toFixed(2)} KM</span>
                                     </div>
                                 )
                             })}
@@ -535,14 +538,14 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-red-500/30 shadow-2xl">
                         <h3 className="text-red-500 font-black uppercase text-xs mb-4">📤 Struktura Izlaza na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
-                            {unikatneKatIzlaz.length === 0 && <p className="text-slate-500 text-xs">Nema izlaznih transakcija za odabrani dan.</p>}
+                            {unikatneKatIzlaz.length === 0 && <p className="text-slate-500 text-xs p-4 bg-slate-900 rounded-xl border border-slate-800 text-center">Nema izlaznih transakcija za odabrani dan.</p>}
                             {unikatneKatIzlaz.map(katNaziv => {
                                 const suma = prikazaneTransakcije.filter(t => t.tip === 'IZLAZ' && t.kategorija === katNaziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
                                 if (suma === 0) return null;
                                 return (
-                                    <div key={katNaziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                                    <div key={katNaziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center shadow-md">
                                         <span className="text-white text-sm font-bold">{katNaziv}</span>
-                                        <span className="text-red-400 font-black font-mono">- {suma.toFixed(2)} KM</span>
+                                        <span className="text-red-400 font-black font-mono tracking-widest bg-red-900/20 px-3 py-1 rounded-lg border border-red-500/20">- {suma.toFixed(2)} KM</span>
                                     </div>
                                 )
                             })}
@@ -552,12 +555,14 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-amber-500/30 shadow-2xl">
                         <h3 className="text-amber-500 font-black uppercase text-xs mb-4">⚙️ Troškovi Mašina na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
+                            {masine.every(m => prikazaneTransakcije.filter(t => t.masina_naziv === m.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0) === 0) && <p className="text-slate-500 text-xs p-4 bg-slate-900 rounded-xl border border-slate-800 text-center">Nema troškova mašina.</p>}
                             {masine.map(m => {
                                 const trosakMasine = prikazaneTransakcije.filter(t => t.masina_naziv === m.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0);
                                 if (trosakMasine === 0) return null;
                                 return (
-                                    <div key={m.naziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
-                                        <span className="text-white text-sm font-bold">{m.naziv}</span><span className="text-red-400 font-black font-mono">- {trosakMasine.toFixed(2)} KM</span>
+                                    <div key={m.naziv} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center shadow-md">
+                                        <span className="text-white text-sm font-bold">{m.naziv}</span>
+                                        <span className="text-amber-400 font-black font-mono tracking-widest bg-amber-900/20 px-3 py-1 rounded-lg border border-amber-500/20">- {trosakMasine.toFixed(2)} KM</span>
                                     </div>
                                 )
                             })}
@@ -567,12 +572,14 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/30 shadow-2xl">
                         <h3 className="text-blue-400 font-black uppercase text-xs mb-4">👷 Isplate Radnicima na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
+                            {radnici.every(r => prikazaneTransakcije.filter(t => t.radnik_ime === r.ime_prezime).reduce((a, t) => a + parseFloat(t.iznos), 0) === 0) && <p className="text-slate-500 text-xs p-4 bg-slate-900 rounded-xl border border-slate-800 text-center">Nema isplata radnicima.</p>}
                             {radnici.map(r => {
                                 const radnikIsplate = prikazaneTransakcije.filter(t => t.radnik_ime === r.ime_prezime).reduce((a, t) => a + parseFloat(t.iznos), 0);
                                 if (radnikIsplate === 0) return null;
                                 return (
-                                    <div key={r.ime_prezime} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
-                                        <span className="text-white text-sm font-bold">{r.ime_prezime}</span><span className="text-blue-400 font-black font-mono">{radnikIsplate.toFixed(2)} KM</span>
+                                    <div key={r.ime_prezime} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center shadow-md">
+                                        <span className="text-white text-sm font-bold">{r.ime_prezime}</span>
+                                        <span className="text-blue-400 font-black font-mono tracking-widest bg-blue-900/20 px-3 py-1 rounded-lg border border-blue-500/20">{radnikIsplate.toFixed(2)} KM</span>
                                     </div>
                                 )
                             })}
