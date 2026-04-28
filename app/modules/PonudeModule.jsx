@@ -121,7 +121,58 @@ export default function PonudeModule({ onExit }) {
     const [isEditingPonuda, setIsEditingPonuda] = useState(false);
     const [odabraniKupac, setOdabraniKupac] = useState(null);
     const [stavke, setStavke] = useState([]);
-    
+    // NOVO: Stanje za pamćenje povezanog Radnog Naloga i kalkulacija razlika
+    const [povezaniRN, setPovezaniRN] = useState(null);
+
+    const razlikeUOdnosuNaRN = useMemo(() => {
+        if (!povezaniRN || !povezaniRN.stavke_jsonb) return [];
+        const razlike = [];
+        const rnStavke = povezaniRN.stavke_jsonb;
+        
+        // 1. Šta je izmijenjeno ili obrisano u proizvodnji?
+        stavke.forEach(ps => {
+            const rs = rnStavke.find(r => r.sifra === ps.sifra);
+            if (!rs) {
+                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'obrisano', poruka: `Obrisano u RN (bilo ${ps.kolicina_obracun})` });
+            } else if (parseFloat(rs.kolicina_obracun) !== parseFloat(rs.kolicina_obracun)) {
+                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'mijenjano', poruka: `Mijenjano sa ${ps.kolicina_obracun} na ${rs.kolicina_obracun}` });
+            }
+        });
+        
+        // 2. Šta je proizvodnja naknadno dodala?
+        rnStavke.forEach(rs => {
+            if (!stavke.find(p => p.sifra === rs.sifra)) {
+                razlike.push({ sifra: rs.sifra, naziv: rs.naziv, tip: 'dodato', poruka: `Dodato u RN (${rs.kolicina_obracun})` });
+            }
+        });
+        return razlike;
+    }, [stavke, povezaniRN]);
+
+    // Funkcija koja usklađuje Ponudu sa Radnim Nalogom jednim klikom
+    const sinhronizujSaRN = () => {
+        if(!povezaniRN) return;
+        const noveStavke = povezaniRN.stavke_jsonb.map(rs => {
+            const postojeca = stavke.find(ps => ps.sifra === rs.sifra);
+            const cijena_baza = postojeca ? postojeca.cijena_baza : 0; // Cijenu zadržava iz ponude
+            const rabat = postojeca ? postojeca.rabat_procenat : 0;
+            const kolicina = parseFloat(rs.kolicina_obracun) || 0;
+            const ukupno_bez_rabata = kolicina * cijena_baza;
+            const iznos_rabata = ukupno_bez_rabata * (rabat / 100);
+            
+            return {
+                id: postojeca ? postojeca.id : Math.random().toString(),
+                sifra: rs.sifra, naziv: rs.naziv,
+                kolicina_unos: rs.kolicina_unos, jm_unos: rs.jm_unos,
+                kolicina_obracun: kolicina, jm_obracun: rs.jm_obracun,
+                cijena_baza: cijena_baza, rabat_procenat: rabat,
+                iznos_rabata: iznos_rabata, ukupno: ukupno_bez_rabata - iznos_rabata
+            };
+        });
+        
+        setForm({...form, rn_modifikovan: false}); // Skidamo alarm
+        setStavke(noveStavke);
+        alert("✅ Ponuda je usklađena sa Radnim Nalogom!\n\nPAŽNJA: Ako ima NOVIH proizvoda, njihova cijena je 0. Ažurirajte ih ručno ispod, pa kliknite 'Snimi izmjene ponude'.");
+    };
     const [showBrziKupac, setShowBrziKupac] = useState(false);
     const [showBrziKatalog, setShowBrziKatalog] = useState(false);
 
@@ -289,13 +340,27 @@ export default function PonudeModule({ onExit }) {
         resetFormu(); load(); setTab('lista');
     };
 
-    const pokreniIzmjenuPonude = (p) => {
-        setForm({ id: p.id, kupac_naziv: p.kupac_naziv, datum: p.datum, rok_vazenja: p.rok_vazenja, nacin_placanja: p.nacin_placanja || 'Virmanski', valuta: p.valuta || 'KM', paritet: p.paritet || 'FCA Srebrenik', depozit: p.depozit || '', napomena: p.napomena || '', status: p.status || 'NA ODLUČIVANJU' });
-        setOdabraniKupac(kupci.find(k => k.naziv === p.kupac_naziv) || null); setStavke(p.stavke_jsonb || []); setIsEditingPonuda(true); setTab('nova'); window.scrollTo({ top: 0, behavior: 'smooth' });
+    const pokreniIzmjenuPonude = async (p) => {
+        setForm({ id: p.id, kupac_naziv: p.kupac_naziv, datum: p.datum, rok_vazenja: p.rok_vazenja, nacin_placanja: p.nacin_placanja || 'Virmanski', valuta: p.valuta || 'KM', paritet: p.paritet || 'FCA Srebrenik', depozit: p.depozit || '', napomena: p.napomena || '', status: p.status || 'NA ODLUČIVANJU', rn_modifikovan: p.rn_modifikovan || false });
+        setOdabraniKupac(kupci.find(k => k.naziv === p.kupac_naziv) || null); 
+        setStavke(p.stavke_jsonb || []); 
+        setIsEditingPonuda(true); 
+        setTab('nova'); 
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // Dohvatanje tačnog Radnog Naloga iz baze radi poređenja!
+        setPovezaniRN(null);
+        if (p.rn_modifikovan) {
+            const { data } = await supabase.from('radni_nalozi').select('id, stavke_jsonb').eq('broj_ponude', p.id).limit(1);
+            if (data && data.length > 0) setPovezaniRN(data[0]);
+        }
     };
 
     const promijeniStatusBrzo = async (p, noviStatus) => { await supabase.from('ponude').update({ status: noviStatus }).eq('id', p.id); await zapisiU_Log('STATUS_PONUDE', `Ponuda ${p.id} prebačena u ${noviStatus}`); load(); };
-    const resetFormu = () => { setForm({ id: generisiID(), kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_vazenja: '', nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU' }); setStavke([]); setOdabraniKupac(null); setIsEditingPonuda(false); };
+    const resetFormu = () => { 
+        setForm({ id: generisiID(), kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_vazenja: '', nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU', rn_modifikovan: false }); 
+        setStavke([]); setOdabraniKupac(null); setIsEditingPonuda(false); setPovezaniRN(null); 
+    };
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-'); return `${d}.${m}.${y}.`; };
 
     const kreirajPDF = () => {
@@ -436,14 +501,38 @@ export default function PonudeModule({ onExit }) {
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
                     <div className="flex justify-between items-center mb-2">
                     {form.rn_modifikovan && (
-                <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex items-center gap-4 mb-4 animate-pulse">
-                    <span className="text-3xl">🚫</span>
-                    <div>
-                        <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
-                        <p className="text-white text-[10px]">Količine na ovom nalogu su IZMIJENJENE u proizvodnji. Originalna ponuda više nije usklađena sa stvarnim stanjem. Provjerite Radni Nalog prije fakturisanja!</p>
-                    </div>
+    <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex flex-col gap-3 mb-4 shadow-lg animate-in zoom-in-95">
+        <div className="flex items-center gap-4 border-b border-red-500/20 pb-3">
+            <span className="text-3xl animate-pulse">🚫</span>
+            <div>
+                <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
+                <p className="text-white text-[10px]">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u proizvodnji! Ovo su evidentirane razlike:</p>
+            </div>
+        </div>
+        
+        {razlikeUOdnosuNaRN.length > 0 ? (
+            <div className="pl-0 md:pl-12">
+                <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2">
+                    {razlikeUOdnosuNaRN.map((r, idx) => (
+                        <div key={idx} className="flex flex-col md:flex-row justify-between md:items-center text-[10px] gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
+                            <div>
+                                <span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span>
+                            </div>
+                            <div className={`font-black px-2 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                {r.poruka}
+                            </div>
+                        </div>
+                    ))}
                 </div>
-            )}
+                <button onClick={sinhronizujSaRN} className="mt-3 w-full md:w-auto text-[10px] bg-red-600 hover:bg-red-500 text-white font-black px-6 py-2.5 rounded-lg transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase">
+                    🔄 Ažuriraj Ponudu prema RN-u
+                </button>
+            </div>
+        ) : (
+            <div className="pl-12 text-xs text-slate-400 italic">Učitavam detalje sa servera...</div>
+        )}
+    </div>
+)}
         <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
         <div className="flex gap-2">
             {isEditingPonuda && (
