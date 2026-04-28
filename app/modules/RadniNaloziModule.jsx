@@ -407,8 +407,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         setIsEditingNalog(true); setTab('novi'); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const kreirajPDF = () => {
+    const kreirajPDF = async () => {
+        // BLOKADA ŠTAMPE AKO JE NALOG MIJENJAN A NIJE ODOBREN U PONUDI
+        if (form.broj_ponude && form.modifikovan) {
+            const { data } = await supabase.from('ponude').select('rn_modifikovan').eq('id', form.broj_ponude).maybeSingle();
+            if (data && data.rn_modifikovan) {
+                alert("⛔ ZABRANJENO ŠTAMPANJE!\n\nOvaj Radni Nalog je izmijenjen u odnosu na ponudu. Prodaja/Finansije moraju prvo ODOBRITI ili ODBITI izmjene unutar modula 'PONUDE' da biste mogli štampati!");
+                return;
+            }
+        }
+    
         const stariNaslov = document.title;
+        // ... ostatak tvoje funkcije ...
         const cistiKupac = (form.kupac_naziv || 'Interno').replace(/\s+/g, '_');
         document.title = `radni_nalog_${form.id}_${cistiKupac}`;
         const odabraniKupac = kupci.find(k => k.naziv === form.kupac_naziv) || null;
@@ -448,9 +458,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
     // --- NOVA FUNKCIJA: PRINTANJE RN DIREKTNO IZ LISTE ---
-    const printDirektnoIzListe = (rn, e) => {
-        e.stopPropagation(); // Sprečava otvaranje forme
+    const printDirektnoIzListe = async (rn, e) => {
+        e.stopPropagation(); 
         
+        // BLOKADA ŠTAMPE IZ LISTE
+        if (rn.broj_ponude && rn.modifikovan) {
+            const { data } = await supabase.from('ponude').select('rn_modifikovan').eq('id', rn.broj_ponude).maybeSingle();
+            if (data && data.rn_modifikovan) {
+                alert("⛔ ŠTAMPA BLOKIRANA!\n\nIdite u modul 'PONUDE' i riješite neslaganje količina za ovaj nalog.");
+                return;
+            }
+        }
+    
         const stariNaslov = document.title;
         const cistiKupac = (rn.kupac_naziv || 'Interno').replace(/\s+/g, '_');
         document.title = `radni_nalog_${rn.id}_${cistiKupac}`;

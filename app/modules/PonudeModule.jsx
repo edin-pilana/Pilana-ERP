@@ -60,10 +60,8 @@ export default function PonudeModule({ onExit }) {
         ]
     });
 
-    // Osigurač za povlačenje polja iz baze ili defaulta
     const aktivnaPolja = saas.ui.polja?.length > 0 ? saas.ui.polja : saas.defaultConfig.polja;
 
-    // === Drag & Drop i Resize Logika ===
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
 
@@ -103,7 +101,6 @@ export default function PonudeModule({ onExit }) {
             saas.setUi({...saas.ui, polja: novaLista});
         }
     };
-    // ===========================
 
     const [tab, setTab] = useState('nova');
     const [kupci, setKupci] = useState([]);
@@ -115,13 +112,14 @@ export default function PonudeModule({ onExit }) {
     const [form, setForm] = useState({
         id: generisiID(), kupac_naziv: '', datum: new Date().toISOString().split('T')[0],
         rok_vazenja: new Date(new Date().setDate(new Date().getDate() + 7)).toISOString().split('T')[0],
-        nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU'
+        nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU', rn_modifikovan: false
     });
 
     const [isEditingPonuda, setIsEditingPonuda] = useState(false);
     const [odabraniKupac, setOdabraniKupac] = useState(null);
     const [stavke, setStavke] = useState([]);
-    // NOVO: Stanje za pamćenje povezanog Radnog Naloga i kalkulacija razlika
+    
+    // --- RN MODIFIKOVAN STANJA ---
     const [povezaniRN, setPovezaniRN] = useState(null);
 
     const razlikeUOdnosuNaRN = useMemo(() => {
@@ -129,7 +127,6 @@ export default function PonudeModule({ onExit }) {
         const razlike = [];
         const rnStavke = povezaniRN.stavke_jsonb;
         
-        // 1. Šta je izmijenjeno ili obrisano u proizvodnji?
         stavke.forEach(ps => {
             const rs = rnStavke.find(r => r.sifra === ps.sifra);
             if (!rs) {
@@ -139,7 +136,6 @@ export default function PonudeModule({ onExit }) {
             }
         });
         
-        // 2. Šta je proizvodnja naknadno dodala?
         rnStavke.forEach(rs => {
             if (!stavke.find(p => p.sifra === rs.sifra)) {
                 razlike.push({ sifra: rs.sifra, naziv: rs.naziv, tip: 'dodato', poruka: `Dodato u RN (${rs.kolicina_obracun})` });
@@ -148,12 +144,11 @@ export default function PonudeModule({ onExit }) {
         return razlike;
     }, [stavke, povezaniRN]);
 
-    // Funkcija koja usklađuje Ponudu sa Radnim Nalogom jednim klikom
-    const sinhronizujSaRN = () => {
+    const prihvatiIzmjene = async () => {
         if(!povezaniRN) return;
         const noveStavke = povezaniRN.stavke_jsonb.map(rs => {
             const postojeca = stavke.find(ps => ps.sifra === rs.sifra);
-            const cijena_baza = postojeca ? postojeca.cijena_baza : 0; // Cijenu zadržava iz ponude
+            const cijena_baza = postojeca ? postojeca.cijena_baza : 0; 
             const rabat = postojeca ? postojeca.rabat_procenat : 0;
             const kolicina = parseFloat(rs.kolicina_obracun) || 0;
             const ukupno_bez_rabata = kolicina * cijena_baza;
@@ -169,13 +164,32 @@ export default function PonudeModule({ onExit }) {
             };
         });
         
-        setForm({...form, rn_modifikovan: false}); // Skidamo alarm
         setStavke(noveStavke);
-        alert("✅ Ponuda je usklađena sa Radnim Nalogom!\n\nPAŽNJA: Ako ima NOVIH proizvoda, njihova cijena je 0. Ažurirajte ih ručno ispod, pa kliknite 'Snimi izmjene ponude'.");
+        setForm({...form, rn_modifikovan: false});
+        
+        await supabase.from('ponude').update({ rn_modifikovan: false, stavke_jsonb: noveStavke }).eq('id', form.id);
+        await supabase.from('radni_nalozi').update({ modifikovan: false }).eq('id', povezaniRN.id);
+        
+        setPovezaniRN(null);
+        alert("✅ Izmjene iz proizvodnje su PRIHVAĆENE! Ponuda je usklađena.");
     };
+
+    const odbijIzmjene = async () => {
+        if(!povezaniRN) return;
+        if(!window.confirm("Da li ste sigurni? Radni nalog će biti PREPISAN nazad na originalne količine iz ove ponude i vraćen u proizvodnju!")) return;
+        
+        setForm({...form, rn_modifikovan: false});
+        
+        await supabase.from('ponude').update({ rn_modifikovan: false }).eq('id', form.id);
+        await supabase.from('radni_nalozi').update({ stavke_jsonb: stavke, modifikovan: false }).eq('id', povezaniRN.id);
+        
+        setPovezaniRN(null);
+        alert("❌ Izmjene su ODBIJENE! Radni nalog je vraćen na staro stanje i može se printati.");
+    };
+    // ---------------------------------
+
     const [showBrziKupac, setShowBrziKupac] = useState(false);
     const [showBrziKatalog, setShowBrziKatalog] = useState(false);
-
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
@@ -234,18 +248,15 @@ export default function PonudeModule({ onExit }) {
         const kol = parseFloat(stavkaForm.kolicina_unos);
         let obracun = kol;
         
-        // Dimenzije pretvaramo u metre
         const v = (parseFloat(trenutniProizvod.visina) || 1) / 100; 
         const s = (parseFloat(trenutniProizvod.sirina) || 1) / 100; 
         const d = (parseFloat(trenutniProizvod.duzina) || 1) / 100;
 
-        // 1. KORAK: Sve pretvaramo u komade kao "osnovnu" valutu
         let komada = kol;
         if (stavkaForm.jm_unos === 'm3') komada = kol / (v * s * d);
         if (stavkaForm.jm_unos === 'm2') komada = kol / (s * d);
         if (stavkaForm.jm_unos === 'm1') komada = kol / d;
         
-        // 2. KORAK: Iz komada pretvaramo u ono po čemu obračunavamo (m3, m2...)
         if (stavkaForm.jm_obracun === 'm3') obracun = komada * (v * s * d);
         else if (stavkaForm.jm_obracun === 'm2') obracun = komada * (s * d);
         else if (stavkaForm.jm_obracun === 'm1') obracun = komada * d;
@@ -311,7 +322,7 @@ export default function PonudeModule({ onExit }) {
             nacin_placanja: form.nacin_placanja, valuta: form.valuta, paritet: form.paritet, depozit: parseFloat(form.depozit) || 0,
             napomena: form.napomena, stavke_jsonb: stavke, status: form.status,
             ukupno_bez_pdv: parseFloat(totals.osnovica), ukupno_rabat: parseFloat(totals.rabat), ukupno_sa_pdv: parseFloat(totals.za_naplatu),
-            snimio_korisnik: loggedUser.ime_prezime
+            snimio_korisnik: loggedUser.ime_prezime, rn_modifikovan: form.rn_modifikovan
         };
 
         if (isEditingPonuda) {
@@ -348,7 +359,6 @@ export default function PonudeModule({ onExit }) {
         setTab('nova'); 
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        // Dohvatanje tačnog Radnog Naloga iz baze radi poređenja!
         setPovezaniRN(null);
         if (p.rn_modifikovan) {
             const { data } = await supabase.from('radni_nalozi').select('id, stavke_jsonb').eq('broj_ponude', p.id).limit(1);
@@ -364,7 +374,6 @@ export default function PonudeModule({ onExit }) {
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-'); return `${d}.${m}.${y}.`; };
 
     const kreirajPDF = () => {
-        // Pametno ime fajla za PDF
         const stariNaslov = document.title;
         const cistiKupac = (form.kupac_naziv || 'Nepoznat_Kupac').replace(/\s+/g, '_');
         document.title = `ponuda_${form.id}_${cistiKupac}`;
@@ -389,18 +398,15 @@ export default function PonudeModule({ onExit }) {
             <div class="footer"><div style="width: 60%;"><b style="color: #0f172a;">Napomena uz ponudu:</b><br/>${form.napomena || 'Nema dodatnih napomena.'}</div><div style="text-align: right; width: 30%;"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis ovlaštenog lica</div></div>
         `;
         printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899');
-        
-        // Vraćamo stari naslov nakon 2 sekunde
         setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
-    // --- NOVA FUNKCIJA: PRINTANJE DIREKTNO IZ LISTE ---
+
     const printDirektnoIzListe = (p, e) => {
-        e.stopPropagation(); // Sprečava otvaranje forme kada kliknemo print
+        e.stopPropagation();
         
         const kupacObj = kupci.find(k => k.naziv === p.kupac_naziv) || {};
         const stavkeP = p.stavke_jsonb || [];
         
-        // Brza kalkulacija za listu
         let s_bez_rabata = 0, s_rabata = 0, s_krajnja = 0;
         stavkeP.forEach(s => { s_bez_rabata += (s.kolicina_obracun * s.cijena_baza); s_rabata += s.iznos_rabata; s_krajnja += s.ukupno; });
         const pdvP = s_krajnja * 0.17; 
@@ -438,7 +444,6 @@ export default function PonudeModule({ onExit }) {
     const ponudeOdlucivanje = ponude.filter(p => p.status === 'NA ODLUČIVANJU');
     const ponudeRealizovane = ponude.filter(p => p.status === 'REALIZOVANA ✅');
 
-    // Pomoćna funkcija za renderovanje dinamičnih polja zaglavlja ponude
     const renderPoljeZaglavlja = (polje) => {
         if (polje.id === 'kupac') return (
             <div className="flex gap-2 items-center w-full h-full">
@@ -470,7 +475,6 @@ export default function PonudeModule({ onExit }) {
                 </div>
             )}
 
-            {/* ZAGLAVLJE MODULA I SAAS KONTROLE */}
             <div className={`flex flex-col md:flex-row justify-between items-center p-4 rounded-3xl border shadow-lg gap-4 transition-all ${saas.isEditMode ? 'bg-amber-950/30 border-amber-500 ring-2 ring-amber-500' : 'bg-[#1e293b] border-pink-500/30'}`}>
                 <div className="flex items-center gap-3">
                     <button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700 text-white font-black transition-all">← Meni</button>
@@ -497,52 +501,51 @@ export default function PonudeModule({ onExit }) {
             {tab === 'nova' ? (
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
                     
-                    {/* SAAS ZAGLAVLJE PONUDE */}
-                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
-                    <div className="flex justify-between items-center mb-2">
                     {form.rn_modifikovan && (
-    <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex flex-col gap-3 mb-4 shadow-lg animate-in zoom-in-95">
-        <div className="flex items-center gap-4 border-b border-red-500/20 pb-3">
-            <span className="text-3xl animate-pulse">🚫</span>
-            <div>
-                <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
-                <p className="text-white text-[10px]">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u proizvodnji! Ovo su evidentirane razlike:</p>
-            </div>
-        </div>
-        
-        {razlikeUOdnosuNaRN.length > 0 ? (
-            <div className="pl-0 md:pl-12">
-                <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2">
-                    {razlikeUOdnosuNaRN.map((r, idx) => (
-                        <div key={idx} className="flex flex-col md:flex-row justify-between md:items-center text-[10px] gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
-                            <div>
-                                <span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span>
+                        <div className="bg-red-900/40 border-2 border-red-500 p-6 rounded-[2.5rem] flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top w-full">
+                            <div className="flex items-center gap-4 border-b border-red-500/20 pb-3">
+                                <span className="text-4xl animate-pulse">🚫</span>
+                                <div>
+                                    <p className="text-red-400 font-black uppercase text-sm">Ova ponuda je blokirala proizvodnju!</p>
+                                    <p className="text-white text-xs mt-1">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u pogonu. Dok ne odobrite ili odbijete izmjene, <b className="text-red-400">štampanje radnog naloga je zabranjeno.</b></p>
+                                </div>
                             </div>
-                            <div className={`font-black px-2 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                {r.poruka}
+                            
+                            {razlikeUOdnosuNaRN.length > 0 ? (
+                                <div className="w-full">
+                                    <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2 mb-4">
+                                        {razlikeUOdnosuNaRN.map((r, idx) => (
+                                            <div key={idx} className="flex justify-between items-center text-xs gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
+                                                <div><span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span></div>
+                                                <div className={`font-black px-3 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                    {r.poruka}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex flex-col md:flex-row gap-3">
+                                        <button onClick={prihvatiIzmjene} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)] uppercase text-xs">✅ Prihvati (Ažuriraj Ponudu)</button>
+                                        <button onClick={odbijIzmjene} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase text-xs">❌ Odbij (Vrati RN na staro)</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-xs text-slate-400 italic">Učitavam detalje razlika...</div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
+                        <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-2">
+                            <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
+                            <div className="flex gap-2">
+                                {isEditingPonuda && (
+                                    <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
+                                        🖨️ Isprintaj PDF
+                                    </button>
+                                )}
+                                {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
                             </div>
                         </div>
-                    ))}
-                </div>
-                <button onClick={sinhronizujSaRN} className="mt-3 w-full md:w-auto text-[10px] bg-red-600 hover:bg-red-500 text-white font-black px-6 py-2.5 rounded-lg transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase">
-                    🔄 Ažuriraj Ponudu prema RN-u
-                </button>
-            </div>
-        ) : (
-            <div className="pl-12 text-xs text-slate-400 italic">Učitavam detalje sa servera...</div>
-        )}
-    </div>
-)}
-        <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
-        <div className="flex gap-2">
-            {isEditingPonuda && (
-                <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
-                    🖨️ Isprintaj PDF
-                </button>
-            )}
-            {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
-        </div>
-    </div>
 
                         {saas.isEditMode && (
                             <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
@@ -583,7 +586,6 @@ export default function PonudeModule({ onExit }) {
                         </div>
                     </div>
 
-                    {/* DINAMIČKI UNOS STAVKI (Bez izmjena u logici) */}
                     <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički unos stavki</h3>
                         
@@ -645,6 +647,22 @@ export default function PonudeModule({ onExit }) {
                                         <div className="ml-2">
                                             <p className="text-white text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p>
                                             <p className="text-[9px] text-slate-500 uppercase mt-1">Unos: {s.kolicina_unos} {s.jm_unos} | Obr: <b className="text-white">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.cijena_baza.toFixed(2)} {form.valuta}</p>
+                                            
+                                            {form.rn_modifikovan && povezaniRN && (
+                                                <div className="mt-2 flex gap-2">
+                                                    {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra) ? (
+                                                        parseFloat(povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun) !== parseFloat(s.kolicina_obracun) && (
+                                                            <span className="bg-amber-500/20 text-amber-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-amber-500/30 animate-pulse">
+                                                                ⚠️ Proizvodnja traži: {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun} {s.jm_obracun}
+                                                            </span>
+                                                        )
+                                                    ) : (
+                                                        <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-red-500/30">
+                                                            🗑️ Obrisano u proizvodnji
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <div className="text-right">
@@ -686,24 +704,23 @@ export default function PonudeModule({ onExit }) {
                             {ponudePotvrdjene.map(p => (
                                 <div key={p.id} className="p-4 bg-slate-900 border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
                                     <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-        <div>
-        <p className="text-white text-sm font-black flex items-center gap-2">
-    {p.id}
-    {/* ALARM ZA IZMJENU U PROIZVODNJI */}
-    {p.rn_modifikovan && (
-        <span className="bg-red-600 text-white text-[8px] px-2 py-0.5 rounded-full animate-bounce shadow-[0_0_10px_rgba(220,38,38,0.5)]">
-            ⚠️ RN IZMIJENJEN
-        </span>
-    )}
-    <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
-</p>
-            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
-        </div>
-        <div className="text-right">
-            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
-            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
-        </div>
-    </div>
+                                        <div>
+                                            <p className="text-white text-sm font-black flex items-center gap-2">
+                                                {p.id}
+                                                {p.rn_modifikovan && (
+                                                    <span className="bg-red-600 text-white text-[8px] px-2 py-0.5 rounded-full animate-bounce shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+                                                        ⚠️ RN IZMIJENJEN
+                                                    </span>
+                                                )}
+                                                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+                                            </p>
+                                            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+                                            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+                                        </div>
+                                    </div>
                                     <div className="flex justify-between items-center mt-2">
                                         <button onClick={()=>promijeniStatusBrzo(p, 'NA ODLUČIVANJU')} className="text-[9px] text-slate-400 bg-slate-800 px-3 py-1 rounded hover:bg-amber-900/50 hover:text-amber-400 transition-all">Vrati na odlučivanje ↩</button>
                                         <span className="text-[9px] text-slate-500">Stavki: {p.stavke_jsonb ? p.stavke_jsonb.length : 0}</span>
@@ -720,19 +737,23 @@ export default function PonudeModule({ onExit }) {
                                 {ponudeOdlucivanje.map(p => (
                                     <div key={p.id} className="p-4 bg-slate-900 border border-amber-500/20 rounded-2xl cursor-pointer hover:border-amber-500 transition-all">
                                         <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-        <div>
-            <p className="text-white text-sm font-black flex items-center gap-2">
-                {p.id}
-                {/* OVO JE DUGME ZA BRZI PRINT */}
-                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
-            </p>
-            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
-        </div>
-        <div className="text-right">
-            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
-            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
-        </div>
-    </div>
+                                            <div>
+                                                <p className="text-white text-sm font-black flex items-center gap-2">
+                                                    {p.id}
+                                                    {p.rn_modifikovan && (
+                                                        <span className="bg-red-600 text-white text-[8px] px-2 py-0.5 rounded-full animate-bounce shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+                                                            ⚠️ RN IZMIJENJEN
+                                                        </span>
+                                                    )}
+                                                    <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+                                                </p>
+                                                <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+                                                <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+                                            </div>
+                                        </div>
                                         <div className="flex justify-between items-center mt-2">
                                             <button onClick={()=>promijeniStatusBrzo(p, 'POTVRĐENA')} className="text-[9px] text-white font-black bg-emerald-600 px-3 py-1 rounded hover:bg-emerald-500 transition-all">Potvrdi Ponudu ✅</button>
                                         </div>
@@ -746,21 +767,20 @@ export default function PonudeModule({ onExit }) {
                                 <h3 className="text-blue-500 font-black uppercase text-xs mb-4">🔐 REALIZOVANO (ZATVORENO)</h3>
                                 <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">
                                     {ponudeRealizovane.map(p => (
-                                        <div key={p.id} onClick={() => pokreniIzmjenuPonude(p)} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer">
+                                        <div key={p.id} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer">
                                             <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-        <div>
-            <p className="text-white text-sm font-black flex items-center gap-2">
-                {p.id}
-                {/* OVO JE DUGME ZA BRZI PRINT */}
-                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
-            </p>
-            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
-        </div>
-        <div className="text-right">
-            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
-            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
-        </div>
-    </div>
+                                                <div>
+                                                    <p className="text-white text-sm font-black flex items-center gap-2">
+                                                        {p.id}
+                                                        <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+                                                    </p>
+                                                    <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+                                                    <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
