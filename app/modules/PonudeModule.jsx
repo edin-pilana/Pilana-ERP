@@ -8,16 +8,6 @@ import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
-{form.rn_modifikovan && (
-    <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex items-center gap-4 mb-4 animate-pulse">
-        <span className="text-3xl">🚫</span>
-        <div>
-            <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
-            <p className="text-white text-[10px]">Količine na ovom nalogu su IZMIJENJENE u proizvodnji. Originalna ponuda više nije usklađena sa stvarnim stanjem. Provjerite Radni Nalog prije fakturisanja!</p>
-        </div>
-    </div>
-)}
-
 function PonudeSearchableProizvod({ katalog, value, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value);
@@ -445,6 +435,15 @@ export default function PonudeModule({ onExit }) {
                     {/* SAAS ZAGLAVLJE PONUDE */}
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
                     <div className="flex justify-between items-center mb-2">
+                    {form.rn_modifikovan && (
+                <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex items-center gap-4 mb-4 animate-pulse">
+                    <span className="text-3xl">🚫</span>
+                    <div>
+                        <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
+                        <p className="text-white text-[10px]">Količine na ovom nalogu su IZMIJENJENE u proizvodnji. Originalna ponuda više nije usklađena sa stvarnim stanjem. Provjerite Radni Nalog prije fakturisanja!</p>
+                    </div>
+                </div>
+            )}
         <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
         <div className="flex gap-2">
             {isEditingPonuda && (
