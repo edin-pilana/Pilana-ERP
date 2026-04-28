@@ -373,6 +373,10 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             alert("✅ Radni Nalog uspješno kreiran!");
         }
         
+        if (window.confirm("✅ Nalog uspješno snimljen! Da li želite odmah isprintati PDF dokument?")) {
+            kreirajPDF();
+        }
+
         resetFormu(); load(); setTab('lista');
     };
 
@@ -393,6 +397,9 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const kreirajPDF = () => {
+        const stariNaslov = document.title;
+        const cistiKupac = (form.kupac_naziv || 'Interno').replace(/\s+/g, '_');
+        document.title = `radni_nalog_${form.id}_${cistiKupac}`;
         const odabraniKupac = kupci.find(k => k.naziv === form.kupac_naziv) || null;
         let redovi = stavke.map((s, i) => `
             <tr>
@@ -427,6 +434,32 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             </div>
         `;
         printDokument('RADNI NALOG', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#a855f7');
+        setTimeout(() => { document.title = stariNaslov; }, 2000);
+    };
+    // --- NOVA FUNKCIJA: PRINTANJE RN DIREKTNO IZ LISTE ---
+    const printDirektnoIzListe = (rn, e) => {
+        e.stopPropagation(); // Sprečava otvaranje forme
+        
+        const stariNaslov = document.title;
+        const cistiKupac = (rn.kupac_naziv || 'Interno').replace(/\s+/g, '_');
+        document.title = `radni_nalog_${rn.id}_${cistiKupac}`;
+
+        const stavkeRN = rn.stavke_jsonb || [];
+        
+        let redovi = stavkeRN.map((s, i) => `<tr><td style="font-weight: bold; color: #64748b;">${i+1}.</td><td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td><td style="text-align: center; font-weight: 800; color: #0f172a; font-size: 14px;">${s.kolicina_obracun || s.kolicina_unos} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun || s.jm_unos}</span></td><td>${s.napomena || ''}</td></tr>`).join('');
+        
+        const htmlSadrzaj = `
+            <div class="info-grid">
+                <div class="info-col"><h4>Naručilac / Kupac</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${rn.kupac_naziv || 'Interni Nalog'}</p></div>
+                <div class="info-col" style="text-align: right;"><h4>Detalji Naloga</h4><p>Datum izdavanja: <span style="font-weight: 400; color: #475569;">${formatirajDatum(rn.datum)}</span></p><p style="color: #3b82f6; margin-top: 8px; font-weight: 800;">Rok isporuke: ${formatirajDatum(rn.rok_isporuke || rn.rok_zavrsetka)}</p></div>
+            </div>
+            <table><thead><tr><th style="width: 5%;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Zahtijevana Količina</th><th>Napomena uz stavku / Tehnologija</th></tr></thead><tbody>${redovi}</tbody></table>
+            <div class="footer"><div style="width: 60%;"><b style="color: #0f172a;">Glavna napomena za proizvodnju:</b><br/>${rn.napomena || 'Nema dodatnih napomena.'}</div><div style="text-align: right; width: 30%;"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis Rukovodioca Proizvodnje</div></div>
+        `;
+        
+        printDokument('RADNI NALOG', rn.id, formatirajDatum(rn.datum), htmlSadrzaj, '#3b82f6'); // Plava boja za radni nalog
+        
+        setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
 
     const renderPoljeHeader = (polje) => {
@@ -460,10 +493,17 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                     )}
 
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (form.modifikovan ? 'border-amber-500 bg-[#1e293b]' : 'border-purple-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
-                        <h3 className="text-purple-400 font-black uppercase text-xs mb-2 flex justify-between">
-                            <span>1. Parametri Radnog Naloga</span>
-                            {isEditingNalog && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50">Odustani od izmjena ✕</button>}
-                        </h3>
+                    <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-2">
+    <h3 className="text-purple-400 font-black uppercase text-xs">1. Parametri Radnog Naloga</h3>
+    <div className="flex gap-2">
+        {isEditingNalog && (
+            <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
+                🖨️ Isprintaj PDF
+            </button>
+        )}
+        {isEditingNalog && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
+    </div>
+</div>
 
                         {saas.isEditMode && (
                             <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
@@ -640,10 +680,20 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                             {n.tip_naloga === 'FAZNI' && <div className="absolute top-0 right-0 bg-amber-500 text-black text-[8px] px-3 py-1 font-black rounded-bl-lg uppercase shadow-md flex items-center gap-1">🔄 FAZNI</div>}
                             {n.modifikovan && n.tip_naloga !== 'FAZNI' && <div className="absolute top-0 right-0 bg-red-500 text-white text-[8px] px-3 py-1 font-black rounded-bl-lg uppercase shadow-md">MIJENJAN</div>}
                             
-                            <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-3">
-                                <div><p className="text-purple-400 text-base font-black">{n.id}</p><p className="text-white text-xs font-bold mt-1">{n.kupac_naziv}</p></div>
-                                <div className="text-right"><p className={`text-[9px] px-2 py-1 rounded font-black uppercase ${n.status === 'ZAVRŠENO' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-purple-900/30 text-purple-400'}`}>{n.status}</p><p className="text-[9px] text-slate-500 uppercase mt-2">Rok: {formatirajDatum(n.rok_isporuke)}</p></div>
-                            </div>
+                            <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-3 cursor-pointer" onClick={() => pokreniIzmjenuNaloga(n)}>
+    <div>
+        <p className="text-purple-400 text-base font-black flex items-center gap-2">
+            {n.id}
+            {/* OVO JE NOVO DUGME ZA BRZI PRINT */}
+            <button onClick={(e) => printDirektnoIzListe(n, e)} className="bg-slate-800 border border-slate-600 text-[9px] text-white px-2 py-1 rounded uppercase hover:bg-white hover:text-black transition-all shadow-md">🖨️ PDF</button>
+        </p>
+        <p className="text-white text-xs font-bold mt-1">{n.kupac_naziv}</p>
+    </div>
+    <div className="text-right">
+        <p className={`text-[9px] px-2 py-1 rounded font-black uppercase inline-block ${n.status === 'ZAVRŠENO' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-purple-900/30 text-purple-400'}`}>{n.status}</p>
+        <p className="text-[9px] text-slate-500 uppercase mt-2">Rok: {formatirajDatum(n.rok_isporuke)}</p>
+    </div>
+</div>
                             <div className="flex justify-between items-center">
                                 <span className="text-[9px] text-slate-400 font-bold bg-slate-900 px-2 py-1 rounded">Vezano: {n.broj_ponude || 'Nema'}</span>
                                 <span className="text-[10px] text-slate-300 font-black">Stavki: {n.stavke_jsonb ? n.stavke_jsonb.length : 0}</span>

@@ -182,12 +182,24 @@ export default function PonudeModule({ onExit }) {
         if(!trenutniProizvod || !stavkaForm.kolicina_unos) return;
         const kol = parseFloat(stavkaForm.kolicina_unos);
         let obracun = kol;
-        if (stavkaForm.jm_unos === 'kom' && stavkaForm.jm_obracun !== 'kom') {
-            const v = parseFloat(trenutniProizvod.visina) || 1; const s = parseFloat(trenutniProizvod.sirina) || 1; const d = parseFloat(trenutniProizvod.duzina) || 1;
-            if (stavkaForm.jm_obracun === 'm3') obracun = kol * (v/100) * (s/100) * (d/100);
-            if (stavkaForm.jm_obracun === 'm2') obracun = kol * (s/100) * (d/100);
-            if (stavkaForm.jm_obracun === 'm1') obracun = kol * (d/100);
-        }
+        
+        // Dimenzije pretvaramo u metre
+        const v = (parseFloat(trenutniProizvod.visina) || 1) / 100; 
+        const s = (parseFloat(trenutniProizvod.sirina) || 1) / 100; 
+        const d = (parseFloat(trenutniProizvod.duzina) || 1) / 100;
+
+        // 1. KORAK: Sve pretvaramo u komade kao "osnovnu" valutu
+        let komada = kol;
+        if (stavkaForm.jm_unos === 'm3') komada = kol / (v * s * d);
+        if (stavkaForm.jm_unos === 'm2') komada = kol / (s * d);
+        if (stavkaForm.jm_unos === 'm1') komada = kol / d;
+        
+        // 2. KORAK: Iz komada pretvaramo u ono po čemu obračunavamo (m3, m2...)
+        if (stavkaForm.jm_obracun === 'm3') obracun = komada * (v * s * d);
+        else if (stavkaForm.jm_obracun === 'm2') obracun = komada * (s * d);
+        else if (stavkaForm.jm_obracun === 'm1') obracun = komada * d;
+        else if (stavkaForm.jm_obracun === 'kom') obracun = komada;
+
         setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : kol}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
@@ -270,6 +282,10 @@ export default function PonudeModule({ onExit }) {
                 }]);
             }
         }
+        if (window.confirm("✅ Uspješno snimljeno! Da li želite odmah isprintati / sačuvati PDF ove ponude?")) {
+            kreirajPDF();
+        }
+
         resetFormu(); load(); setTab('lista');
     };
 
@@ -283,6 +299,11 @@ export default function PonudeModule({ onExit }) {
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-'); return `${d}.${m}.${y}.`; };
 
     const kreirajPDF = () => {
+        // Pametno ime fajla za PDF
+        const stariNaslov = document.title;
+        const cistiKupac = (form.kupac_naziv || 'Nepoznat_Kupac').replace(/\s+/g, '_');
+        document.title = `ponuda_${form.id}_${cistiKupac}`;
+
         const ukupnoSaPDV = parseFloat(totals.za_naplatu); const depozit = parseFloat(form.depozit) || 0; const preostaloZaNaplatu = (ukupnoSaPDV - depozit).toFixed(2);
         let redovi = stavke.map((s, i) => `<tr><td style="font-weight: bold; color: #64748b;">${i+1}.</td><td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td><td style="text-align: center; font-weight: 800; color: #0f172a;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun}</span></td><td style="text-align: right; font-weight: 600;">${s.cijena_baza.toFixed(2)}</td><td style="text-align: right; color: #ec4899; font-weight: 800;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td><td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 13px;">${s.ukupno.toFixed(2)}</td></tr>`).join('');
         const htmlSadrzajTabela = `
@@ -303,6 +324,49 @@ export default function PonudeModule({ onExit }) {
             <div class="footer"><div style="width: 60%;"><b style="color: #0f172a;">Napomena uz ponudu:</b><br/>${form.napomena || 'Nema dodatnih napomena.'}</div><div style="text-align: right; width: 30%;"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis ovlaštenog lica</div></div>
         `;
         printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899');
+        
+        // Vraćamo stari naslov nakon 2 sekunde
+        setTimeout(() => { document.title = stariNaslov; }, 2000);
+    };
+    // --- NOVA FUNKCIJA: PRINTANJE DIREKTNO IZ LISTE ---
+    const printDirektnoIzListe = (p, e) => {
+        e.stopPropagation(); // Sprečava otvaranje forme kada kliknemo print
+        
+        const kupacObj = kupci.find(k => k.naziv === p.kupac_naziv) || {};
+        const stavkeP = p.stavke_jsonb || [];
+        
+        // Brza kalkulacija za listu
+        let s_bez_rabata = 0, s_rabata = 0, s_krajnja = 0;
+        stavkeP.forEach(s => { s_bez_rabata += (s.kolicina_obracun * s.cijena_baza); s_rabata += s.iznos_rabata; s_krajnja += s.ukupno; });
+        const pdvP = s_krajnja * 0.17; 
+        const za_naplatuP = s_krajnja + pdvP;
+        const depozitP = parseFloat(p.depozit) || 0;
+        const preostaloP = za_naplatuP - depozitP;
+
+        const stariNaslov = document.title;
+        document.title = `ponuda_${p.id}_${(p.kupac_naziv||'').replace(/\s+/g, '_')}`;
+
+        let redovi = stavkeP.map((s, i) => `<tr><td style="font-weight: bold; color: #64748b;">${i+1}.</td><td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td><td style="text-align: center; font-weight: 800; color: #0f172a;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun}</span></td><td style="text-align: right; font-weight: 600;">${s.cijena_baza.toFixed(2)}</td><td style="text-align: right; color: #ec4899; font-weight: 800;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td><td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 13px;">${s.ukupno.toFixed(2)}</td></tr>`).join('');
+        
+        const htmlSadrzaj = `
+            <div class="info-grid">
+                <div class="info-col"><h4>Kupac / Klijent</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${p.kupac_naziv}</p><p style="font-weight: 400; color: #475569;">${kupacObj?.adresa || 'Adresa nije unesena'}</p><p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${kupacObj?.pdv_broj || 'N/A'}</p></div>
+                <div class="info-col" style="text-align: right;"><h4>Detalji Ponude</h4><p>Paritet: <span style="font-weight: 400; color: #475569;">${p.paritet||''}</span></p><p>Plaćanje: <span style="font-weight: 400; color: #475569;">${p.nacin_placanja||''}</span></p><p>Valuta: <span style="font-weight: 400; color: #475569;">${p.valuta||'KM'}</span></p><p style="color: #ec4899; margin-top: 8px; font-weight: 800;">Važi do: ${formatirajDatum(p.rok_vazenja)}</p></div>
+            </div>
+            <table><thead><tr><th style="width: 5%;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${p.valuta||'KM'})</th></tr></thead><tbody>${redovi}</tbody></table>
+            <div class="summary-box">
+                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${s_bez_rabata.toFixed(2)}</b></div>
+                <div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${s_rabata.toFixed(2)}</b></div>
+                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${s_krajnja.toFixed(2)}</b></div>
+                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${pdvP.toFixed(2)}</b></div>
+                <div class="summary-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #cbd5e1;"><span>UKUPNO SA PDV:</span> <b>${za_naplatuP.toFixed(2)}</b></div>
+                ${depozitP > 0 ? `<div class="summary-row" style="color: #10b981;"><span>Uplaćen depozit / Avans:</span> <b style="font-size:14px;">- ${depozitP.toFixed(2)}</b></div>` : ''}
+                <div class="summary-total"><span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">PREOSTALO ZA NAPLATU:</span><span>${preostaloP.toFixed(2)} ${p.valuta||'KM'}</span></div>
+            </div>
+            <div class="footer"><div style="width: 60%;"><b style="color: #0f172a;">Napomena uz ponudu:</b><br/>${p.napomena || 'Nema dodatnih napomena.'}</div><div style="text-align: right; width: 30%;"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis ovlaštenog lica</div></div>
+        `;
+        printDokument('PONUDA', p.id, formatirajDatum(p.datum), htmlSadrzaj, '#ec4899');
+        setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
 
     const ponudePotvrdjene = ponude.filter(p => p.status === 'POTVRĐENA');
@@ -370,10 +434,17 @@ export default function PonudeModule({ onExit }) {
                     
                     {/* SAAS ZAGLAVLJE PONUDE */}
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
-                            {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50">Odustani od izmjena ✕</button>}
-                        </div>
+                    <div className="flex justify-between items-center mb-2">
+        <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
+        <div className="flex gap-2">
+            {isEditingPonuda && (
+                <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
+                    🖨️ Isprintaj PDF
+                </button>
+            )}
+            {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
+        </div>
+    </div>
 
                         {saas.isEditMode && (
                             <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
@@ -516,10 +587,20 @@ export default function PonudeModule({ onExit }) {
                             {ponudePotvrdjene.length === 0 && <p className="text-center text-slate-500 text-xs">Nema potvrđenih ponuda.</p>}
                             {ponudePotvrdjene.map(p => (
                                 <div key={p.id} className="p-4 bg-slate-900 border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
-                                    <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2" onClick={() => pokreniIzmjenuPonude(p)}>
-                                        <div><p className="text-white text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
-                                        <div className="text-right"><p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p><p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p></div>
-                                    </div>
+                                    <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+        <div>
+            <p className="text-white text-sm font-black flex items-center gap-2">
+                {p.id}
+                {/* OVO JE DUGME ZA BRZI PRINT */}
+                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+            </p>
+            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+        </div>
+        <div className="text-right">
+            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+        </div>
+    </div>
                                     <div className="flex justify-between items-center mt-2">
                                         <button onClick={()=>promijeniStatusBrzo(p, 'NA ODLUČIVANJU')} className="text-[9px] text-slate-400 bg-slate-800 px-3 py-1 rounded hover:bg-amber-900/50 hover:text-amber-400 transition-all">Vrati na odlučivanje ↩</button>
                                         <span className="text-[9px] text-slate-500">Stavki: {p.stavke_jsonb ? p.stavke_jsonb.length : 0}</span>
@@ -535,10 +616,20 @@ export default function PonudeModule({ onExit }) {
                             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
                                 {ponudeOdlucivanje.map(p => (
                                     <div key={p.id} className="p-4 bg-slate-900 border border-amber-500/20 rounded-2xl cursor-pointer hover:border-amber-500 transition-all">
-                                        <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2" onClick={() => pokreniIzmjenuPonude(p)}>
-                                            <div><p className="text-white text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
-                                            <div className="text-right"><p className="text-amber-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p><p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p></div>
-                                        </div>
+                                        <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+        <div>
+            <p className="text-white text-sm font-black flex items-center gap-2">
+                {p.id}
+                {/* OVO JE DUGME ZA BRZI PRINT */}
+                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+            </p>
+            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+        </div>
+        <div className="text-right">
+            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+        </div>
+    </div>
                                         <div className="flex justify-between items-center mt-2">
                                             <button onClick={()=>promijeniStatusBrzo(p, 'POTVRĐENA')} className="text-[9px] text-white font-black bg-emerald-600 px-3 py-1 rounded hover:bg-emerald-500 transition-all">Potvrdi Ponudu ✅</button>
                                         </div>
@@ -553,10 +644,20 @@ export default function PonudeModule({ onExit }) {
                                 <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">
                                     {ponudeRealizovane.map(p => (
                                         <div key={p.id} onClick={() => pokreniIzmjenuPonude(p)} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer">
-                                            <div className="flex justify-between items-center">
-                                                <div><p className="text-blue-400 text-xs font-black">{p.id}</p><p className="text-[10px] text-slate-400 mt-1">{p.kupac_naziv}</p></div>
-                                                <p className="text-slate-300 font-black text-sm">{p.ukupno_sa_pdv} {p.valuta}</p>
-                                            </div>
+                                            <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+        <div>
+            <p className="text-white text-sm font-black flex items-center gap-2">
+                {p.id}
+                {/* OVO JE DUGME ZA BRZI PRINT */}
+                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+            </p>
+            <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
+        </div>
+        <div className="text-right">
+            <p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p>
+            <p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p>
+        </div>
+    </div>
                                         </div>
                                     ))}
                                 </div>
