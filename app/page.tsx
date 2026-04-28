@@ -24,7 +24,7 @@ export default function Page() {
     const [loggedUser, setLoggedUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
     
-    // Promijenjeno sa 'dashboard' na 'home' da izbjegnemo konflikt
+    // Promijenjeno sa 'dashboard' na 'home' da izbjegnemo konflikt1
     const [activeModule, setActiveModule] = useState('home');
     
     const [header, setHeader] = useState({
