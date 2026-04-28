@@ -361,19 +361,30 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             snimio_korisnik: currentUser.ime_prezime
         };
 
+        let res;
         if (isEditingNalog) {
-            const { error } = await supabase.from('radni_nalozi').update(payload).eq('id', form.id);
-            if(error) return alert("Greška: " + error.message);
-            await zapisiU_Log('IZMJENA_RN', `Ažuriran Radni Nalog ${form.id}.`);
-            alert("✅ Nalog uspješno ažuriran!");
+            res = await supabase.from('radni_nalozi').update(payload).eq('id', form.id);
         } else {
-            const { error } = await supabase.from('radni_nalozi').insert([payload]);
-            if(error) return alert("Greška pri snimanju: " + error.message);
-            await zapisiU_Log('KREIRAN_RN', `Novi Nalog ${form.id} za kupca ${form.kupac_naziv}`);
-            alert("✅ Radni Nalog uspješno kreiran!");
+            res = await supabase.from('radni_nalozi').insert([payload]);
         }
+
+        if(res.error) return alert("Greška: " + res.error.message);
+
+        // --- NOVO: REFLEKSIJA NA PONUDU ---
+        // Ako je nalog vezan za ponudu i ako je modifikovan (mijenjane količine)
+        if (form.broj_ponude && form.modifikovan) {
+            await supabase
+                .from('ponude')
+                .update({ rn_modifikovan: true })
+                .eq('id', form.broj_ponude.toUpperCase());
+            
+            await zapisiU_Log('ALARM_PONUDE', `Ponuda ${form.broj_ponude} označena kao neusklađena sa RN ${form.id}`);
+        }
+        // ---------------------------------
+
+        await zapisiU_Log(isEditingNalog ? 'IZMJENA_RN' : 'KREIRAN_RN', `Radni Nalog ${form.id}`);
         
-        if (window.confirm("✅ Nalog uspješno snimljen! Da li želite odmah isprintati PDF dokument?")) {
+        if (window.confirm("✅ Nalog snimljen! Da li želite PDF?")) {
             kreirajPDF();
         }
 

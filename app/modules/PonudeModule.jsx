@@ -8,6 +8,16 @@ import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
+{form.rn_modifikovan && (
+    <div className="bg-red-900/40 border-2 border-red-500 p-4 rounded-2xl flex items-center gap-4 mb-4 animate-pulse">
+        <span className="text-3xl">🚫</span>
+        <div>
+            <p className="text-red-400 font-black uppercase text-xs">Upozorenje za Finansije / Prodaju</p>
+            <p className="text-white text-[10px]">Količine na ovom nalogu su IZMIJENJENE u proizvodnji. Originalna ponuda više nije usklađena sa stvarnim stanjem. Provjerite Radni Nalog prije fakturisanja!</p>
+        </div>
+    </div>
+)}
+
 function PonudeSearchableProizvod({ katalog, value, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value);
@@ -589,11 +599,16 @@ export default function PonudeModule({ onExit }) {
                                 <div key={p.id} className="p-4 bg-slate-900 border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
                                     <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
         <div>
-            <p className="text-white text-sm font-black flex items-center gap-2">
-                {p.id}
-                {/* OVO JE DUGME ZA BRZI PRINT */}
-                <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
-            </p>
+        <p className="text-white text-sm font-black flex items-center gap-2">
+    {p.id}
+    {/* ALARM ZA IZMJENU U PROIZVODNJI */}
+    {p.rn_modifikovan && (
+        <span className="bg-red-600 text-white text-[8px] px-2 py-0.5 rounded-full animate-bounce shadow-[0_0_10px_rgba(220,38,38,0.5)]">
+            ⚠️ RN IZMIJENJEN
+        </span>
+    )}
+    <button onClick={(e) => printDirektnoIzListe(p, e)} className="bg-slate-800 border border-slate-600 text-[9px] px-2 py-0.5 rounded uppercase hover:bg-white hover:text-black transition-all">🖨️ PDF</button>
+</p>
             <p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p>
         </div>
         <div className="text-right">
