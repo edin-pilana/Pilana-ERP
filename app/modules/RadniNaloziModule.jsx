@@ -534,14 +534,22 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
 
                     <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 space-y-4 shadow-xl relative z-[30]">
                         <h3 className="text-blue-400 uppercase text-xs">2. Dodaj proizvode u nalog (Nus-proizvodi ili ručni unos)</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                            <div className="md:col-span-2"><RN_SearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} /></div>
-                            <div className="flex gap-1">
-                                <input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Kol." className="flex-1 p-4 bg-black rounded-xl text-lg text-white font-black text-center border border-slate-700 outline-none focus:border-purple-500" />
-                                <select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-4 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select>
-                            </div>
-                            <button onClick={dodajStavku} className="bg-blue-600 text-white p-4 rounded-xl font-black hover:bg-blue-500 shadow-lg transition-all">DODAJ +</button>
-                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+    <div className="md:col-span-6">
+        <RN_SearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} />
+    </div>
+    <div className="md:col-span-4 flex gap-2">
+        <input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Kol." className="w-1/2 min-w-0 p-4 bg-black rounded-xl text-lg text-white font-black text-center border border-slate-700 outline-none focus:border-purple-500" />
+        <select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-1/2 min-w-0 p-4 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none cursor-pointer">
+            <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
+        </select>
+    </div>
+    <div className="md:col-span-2">
+        <button onClick={dodajStavku} className="w-full h-full min-h-[56px] bg-blue-600 text-white p-4 rounded-xl font-black hover:bg-blue-500 shadow-lg transition-all flex items-center justify-center">
+            DODAJ +
+        </button>
+    </div>
+</div>
                         {trenutniProizvod && stavkaForm.kolicina_unos && (
                             <div className="text-[10px] text-emerald-400 bg-emerald-900/20 p-2 rounded-lg border border-emerald-500/20 text-center uppercase animate-in zoom-in-95">
                                 Automatski preračunato: <span className="text-white text-sm ml-1 font-black">{stavkaForm.kolicina_obracun} m³</span>
