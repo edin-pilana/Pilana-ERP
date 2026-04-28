@@ -130,15 +130,15 @@ export default function PonudeModule({ onExit }) {
         stavke.forEach(ps => {
             const rs = rnStavke.find(r => r.sifra === ps.sifra);
             if (!rs) {
-                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'obrisano', poruka: `Obrisano u RN (bilo ${ps.kolicina_obracun})` });
-            } else if (parseFloat(rs.kolicina_obracun) !== parseFloat(rs.kolicina_obracun)) {
-                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'mijenjano', poruka: `Mijenjano sa ${ps.kolicina_obracun} na ${rs.kolicina_obracun}` });
+                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'obrisano', poruka: `Obrisano (Bilo: ${ps.kolicina_unos} ${ps.jm_unos})` });
+            } else if (parseFloat(rs.kolicina_obracun) !== parseFloat(ps.kolicina_obracun) || parseFloat(rs.kolicina_unos) !== parseFloat(ps.kolicina_unos)) {
+                razlike.push({ sifra: ps.sifra, naziv: ps.naziv, tip: 'mijenjano', poruka: `Mijenjano sa ${ps.kolicina_unos} ${ps.jm_unos} na ${rs.kolicina_unos} ${rs.jm_unos}` });
             }
         });
         
         rnStavke.forEach(rs => {
             if (!stavke.find(p => p.sifra === rs.sifra)) {
-                razlike.push({ sifra: rs.sifra, naziv: rs.naziv, tip: 'dodato', poruka: `Dodato u RN (${rs.kolicina_obracun})` });
+                razlike.push({ sifra: rs.sifra, naziv: rs.naziv, tip: 'dodato', poruka: `Dodato naknadno (${rs.kolicina_unos} ${rs.jm_unos})` });
             }
         });
         return razlike;
@@ -502,37 +502,43 @@ export default function PonudeModule({ onExit }) {
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
                     
                     {form.rn_modifikovan && (
-                        <div className="bg-red-900/40 border-2 border-red-500 p-6 rounded-[2.5rem] flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top w-full">
-                            <div className="flex items-center gap-4 border-b border-red-500/20 pb-3">
-                                <span className="text-4xl animate-pulse">🚫</span>
-                                <div>
-                                    <p className="text-red-400 font-black uppercase text-sm">Ova ponuda je blokirala proizvodnju!</p>
-                                    <p className="text-white text-xs mt-1">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u pogonu. Dok ne odobrite ili odbijete izmjene, <b className="text-red-400">štampanje radnog naloga je zabranjeno.</b></p>
+    <div className="bg-red-900/40 border-2 border-red-500 p-6 rounded-[2.5rem] flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top w-full">
+        <div className="flex items-center gap-4 border-b border-red-500/20 pb-3">
+            <span className="text-4xl animate-pulse">🚫</span>
+            <div>
+                <p className="text-red-400 font-black uppercase text-sm">Ova ponuda je blokirala proizvodnju!</p>
+                <p className="text-white text-xs mt-1">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u pogonu. Dok ne odobrite ili odbijete izmjene, <b className="text-red-400">štampanje radnog naloga je zabranjeno.</b></p>
+            </div>
+        </div>
+        
+        {povezaniRN ? (
+            <div className="w-full">
+                {razlikeUOdnosuNaRN.length > 0 ? (
+                    <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2 mb-4">
+                        {razlikeUOdnosuNaRN.map((r, idx) => (
+                            <div key={idx} className="flex flex-col md:flex-row justify-between md:items-center text-xs gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
+                                <div><span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span></div>
+                                <div className={`font-black px-3 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {r.poruka}
                                 </div>
                             </div>
-                            
-                            {razlikeUOdnosuNaRN.length > 0 ? (
-                                <div className="w-full">
-                                    <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2 mb-4">
-                                        {razlikeUOdnosuNaRN.map((r, idx) => (
-                                            <div key={idx} className="flex justify-between items-center text-xs gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
-                                                <div><span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span></div>
-                                                <div className={`font-black px-3 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                                                    {r.poruka}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="flex flex-col md:flex-row gap-3">
-                                        <button onClick={prihvatiIzmjene} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)] uppercase text-xs">✅ Prihvati (Ažuriraj Ponudu)</button>
-                                        <button onClick={odbijIzmjene} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase text-xs">❌ Odbij (Vrati RN na staro)</button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="text-xs text-slate-400 italic">Učitavam detalje razlika...</div>
-                            )}
-                        </div>
-                    )}
+                        ))}
+                    </div>
+                ) : (
+                    <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2 mb-4 text-xs text-slate-400 italic">
+                        Nema evidentiranih razlika u količinama (moguće da su samo napomene mijenjane).
+                    </div>
+                )}
+                <div className="flex flex-col md:flex-row gap-3">
+                    <button onClick={prihvatiIzmjene} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)] uppercase text-xs">✅ Prihvati (Ažuriraj Ponudu)</button>
+                    <button onClick={odbijIzmjene} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase text-xs">❌ Odbij (Vrati RN na staro)</button>
+                </div>
+            </div>
+        ) : (
+            <div className="text-xs text-slate-400 italic">Učitavam detalje sa servera...</div>
+        )}
+    </div>
+)}
 
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-2">
@@ -649,20 +655,21 @@ export default function PonudeModule({ onExit }) {
                                             <p className="text-[9px] text-slate-500 uppercase mt-1">Unos: {s.kolicina_unos} {s.jm_unos} | Obr: <b className="text-white">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.cijena_baza.toFixed(2)} {form.valuta}</p>
                                             
                                             {form.rn_modifikovan && povezaniRN && (
-                                                <div className="mt-2 flex gap-2">
-                                                    {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra) ? (
-                                                        parseFloat(povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun) !== parseFloat(s.kolicina_obracun) && (
-                                                            <span className="bg-amber-500/20 text-amber-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-amber-500/30 animate-pulse">
-                                                                ⚠️ Proizvodnja traži: {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun} {s.jm_obracun}
-                                                            </span>
-                                                        )
-                                                    ) : (
-                                                        <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-red-500/30">
-                                                            🗑️ Obrisano u proizvodnji
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
+    <div className="mt-2 flex gap-2">
+        {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra) ? (
+            (parseFloat(povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun) !== parseFloat(s.kolicina_obracun) || parseFloat(povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_unos) !== parseFloat(s.kolicina_unos)) && (
+                <span className="bg-amber-500/20 text-amber-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-amber-500/30 animate-pulse">
+                    ⚠️ RN Traži: {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_unos} {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).jm_unos} 
+                    <span className="opacity-70 ml-1">(Obr: {povezaniRN.stavke_jsonb.find(rs => rs.sifra === s.sifra).kolicina_obracun} m³)</span>
+                </span>
+            )
+        ) : (
+            <span className="bg-red-500/20 text-red-500 px-2 py-1 rounded text-[9px] uppercase font-black border border-red-500/30">
+                🗑️ Obrisano u proizvodnji
+            </span>
+        )}
+    </div>
+)}
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <div className="text-right">
