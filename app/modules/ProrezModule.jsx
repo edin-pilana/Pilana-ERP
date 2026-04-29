@@ -1,10 +1,13 @@
 // Komponenta Dnevnik Masine specifična za Prorez
 function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje, toggleVelicina }) {
     const [logovi, setLogovi] = useState([]);
-    const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
+    const [form, setForm] = useState({ vrijeme_od: '', vrijeme_do: '', zastoj_min: '', napomena: '' });
 
-    useEffect(() => { loadLogove(); }, [header]);
+    // FIX: Postavljamo vrijeme unutar useEffect da Next.js ne bi prijavio grešku pri renderovanju
+    useEffect(() => { 
+        setForm(f => ({ ...f, vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) }));
+        loadLogove(); 
+    }, [header]);
 
     const loadLogove = async () => {
         if(!header || !header.datum || !header.masina) return;
@@ -54,7 +57,8 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
             <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800 items-start">
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
-                    {saasPolja.map((polje, index) => (
+                    {/* FIX: Dodano (saasPolja || []) da spriječi rušenje aplikacije */}
+                    {(saasPolja || []).map((polje, index) => (
                         <div 
                             key={polje.id} 
                             className={`relative flex flex-col ${polje.span} transition-all ${isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
@@ -207,21 +211,20 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>r.ime_prezime) : []));
     }, [header.masina, header.datum]);
 
-    // Učitavanje liste proreza SA podacima o trupcu (kako bi se vidio broj pločice i dimenzije)
+    // FIX: Vraćeno na ručno spajanje kako bi izbjegli grešku sa Foreign Key vezom
     const loadList = async () => {
         if(!header.masina) return;
-        const { data: logData } = await supabase.from('prorez_log')
-            .select('*, trupci(broj_plocice, duzina, promjer, vrsta, zapremina)')
-            .eq('masina', header.masina)
-            .eq('datum', header.datum)
-            .eq('zakljuceno', false)
-            .order('created_at', { ascending: false });
+        const { data: logData } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).eq('datum', header.datum).eq('zakljuceno', false).order('created_at', { ascending: false });
+        if (!logData || logData.length === 0) { setList([]); return; }
 
-        if (logData) {
-            setList(logData);
-        } else {
-            setList([]);
-        }
+        const trupacIds = logData.map(l => l.trupac_id);
+        const { data: trupciData } = await supabase.from('trupci').select('*').in('id', trupacIds);
+
+        const finalnaLista = logData.map(log => {
+            const detalji = (trupciData || []).find(t => t.id === log.trupac_id) || {};
+            return { ...log, detaljiTrupca: detalji };
+        });
+        setList(finalnaLista);
     };
 
     const handleInput = (val) => {
@@ -280,7 +283,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                     </div>
                 )}
 
-                {/* ZAGLAVLJE SA RADNICIMA (Responzivno flexbox rješenje umjesto grida) */}
                 <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-700 mb-4 items-start md:items-end w-full">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div 
@@ -315,7 +317,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                     ))}
                 </div>
 
-                {/* SKENER (Fix za mobitele: shrink-0 na dugmetu, centriran input) */}
                 <div className="relative font-black w-full">
                     {saas.isEditMode ? (
                         <input value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
@@ -329,7 +330,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                     </div>
                 </div>
 
-                {/* LISTA PROREZANIH TRUPACA SA DIMENZIJAMA U GLAVNOM PLANU */}
                 <div className="pt-4 border-t border-slate-700">
                     <div className="flex justify-between items-center mb-4">
                         <span className="text-[10px] text-slate-500 uppercase font-black">Prorezano u ovoj smjeni:</span>
@@ -340,11 +340,11 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                         {list.length === 0 && <p className="text-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-700 p-6 rounded-2xl">Skenirajte prvi trupac za ovu smjenu.</p>}
                         
                         {list.map((log) => {
-                            const plocica = log.broj_plocice || log.trupci?.broj_plocice;
-                            const duzina = log.duzina || log.trupci?.duzina || '?';
-                            const promjer = log.promjer || log.trupci?.promjer || '?';
-                            const vrsta = log.vrsta || log.trupci?.vrsta || 'N/A';
-                            const zapremina = log.zapremina || log.trupci?.zapremina || '0.00';
+                            const plocica = log.broj_plocice || log.detaljiTrupca?.broj_plocice;
+                            const duzina = log.duzina || log.detaljiTrupca?.duzina || '?';
+                            const promjer = log.promjer || log.detaljiTrupca?.promjer || '?';
+                            const vrsta = log.vrsta || log.detaljiTrupca?.vrsta || 'N/A';
+                            const zapremina = log.zapremina || log.detaljiTrupca?.zapremina || '0.00';
 
                             return (
                                 <div key={log.id} className="p-4 md:p-5 bg-[#0f172a] border border-slate-700 rounded-3xl flex flex-col justify-between items-start gap-3 shadow-lg hover:border-cyan-500/50 transition-all">
