@@ -1,16 +1,3 @@
-"use client";
-
-import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import MasterHeader from '../components/MasterHeader';
-import SmartSearchableInput from '../components/SmartSearchableInput';
-import ScannerOverlay from '../components/ScannerOverlay';
-import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 // Komponenta Dnevnik Masine specifična za Prorez
 function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje, toggleVelicina }) {
     const [logovi, setLogovi] = useState([]);
@@ -53,7 +40,6 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
         if (h) updatePolje(index, 'customHeight', h, 'polja_dnevnik');
     };
 
-    // Renderovanje polja za Dnevnik (sada sa h-full da prate visinu kontejnera)
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />;
         if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />;
@@ -63,40 +49,42 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
     };
 
     return (
-        <div className={`bg-[#1e293b] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 mt-6 transition-all ${isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-slate-700'}`}>
+        <div className={`bg-[#1e293b] p-4 md:p-6 rounded-[2.5rem] border shadow-2xl space-y-4 mt-6 transition-all ${isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-slate-700'}`}>
             <h3 className="text-amber-500 font-black uppercase text-xs">⚙️ EVIDENCIJA RADA I ZASTOJA MAŠINE</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800 items-start">
+            <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800 items-start">
                 
-                {saasPolja.map((polje, index) => (
-                    <div 
-                        key={polje.id} 
-                        className={`relative flex flex-col ${polje.span} transition-all ${isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
-                        style={{
-                            maxWidth: '100%',
-                            ...(isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}),
-                            width: polje.customWidth || undefined,
-                            height: polje.customHeight || undefined
-                        }}
-                        onMouseUp={(e) => spremiDimenzijeDnevnik(e, index)}
-                    >
-                        {isEditMode && (
-                            <div className="flex justify-between items-center mb-2 shrink-0">
-                                <span className="text-[9px] text-amber-500 uppercase font-black">☰</span>
-                                <button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
+                    {saasPolja.map((polje, index) => (
+                        <div 
+                            key={polje.id} 
+                            className={`relative flex flex-col ${polje.span} transition-all ${isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                            style={{
+                                maxWidth: '100%',
+                                ...(isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}),
+                                width: polje.customWidth || undefined,
+                                height: polje.customHeight || undefined
+                            }}
+                            onMouseUp={(e) => spremiDimenzijeDnevnik(e, index)}
+                        >
+                            {isEditMode && (
+                                <div className="flex justify-between items-center mb-2 shrink-0">
+                                    <span className="text-[9px] text-amber-500 uppercase font-black">☰</span>
+                                    <button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
+                                </div>
+                            )}
+                            {isEditMode ? (
+                                <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />
+                            ) : (
+                                polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
+                            )}
+                            <div className={`flex-1 ${isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {renderDnevnikPolje(polje)}
                             </div>
-                        )}
-                        {isEditMode ? (
-                            <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />
-                        ) : (
-                            polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
-                        )}
-                        <div className={`flex-1 ${isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
-                            {renderDnevnikPolje(polje)}
                         </div>
-                    </div>
-                ))}
+                    ))}
+                </div>
                 
-                <button onClick={snimiZastojIliRad} className={`w-full py-3 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 ${isEditMode ? 'opacity-50 pointer-events-none col-span-4' : 'col-span-4 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
+                <button onClick={snimiZastojIliRad} className={`w-full md:w-auto h-full min-h-[45px] px-6 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 shrink-0 ${isEditMode ? 'opacity-50 pointer-events-none mt-4 md:mt-0' : 'mt-4 md:mt-0'}`}>➕ Dodaj</button>
             </div>
             
             <div className="space-y-2 mt-4">
@@ -130,18 +118,17 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         boja_teksta: 'text-cyan-500',
         boja_bordera: 'border-cyan-500/50',
         polja_radnici: [
-            { id: 'brentista', label: '👨‍🔧 BRENTISTA', span: 'col-span-1' },
-            { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }
+            { id: 'brentista', label: '👨‍🔧 BRENTISTA', span: 'col-span-2' },
+            { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-2' }
         ],
         polja_dnevnik: [
             { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' },
             { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' },
-            { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' },
+            { id: 'zastoj', label: 'ZASTOJ (MIN)', span: 'col-span-1' },
             { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1' }
         ]
     });
 
-    // === Drag & Drop i Resize Logika ===
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
 
@@ -182,7 +169,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             saas.setUi({...saas.ui, [listaIme]: novaLista});
         }
     };
-    // ===========================
 
     const [scan, setScan] = useState('');
     const [list, setList] = useState([]);
@@ -221,20 +207,21 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>r.ime_prezime) : []));
     }, [header.masina, header.datum]);
 
+    // Učitavanje liste proreza SA podacima o trupcu (kako bi se vidio broj pločice i dimenzije)
     const loadList = async () => {
         if(!header.masina) return;
-        const { data: logData } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).eq('datum', header.datum).eq('zakljuceno', false);
-        if (!logData || logData.length === 0) { setList([]); return; }
+        const { data: logData } = await supabase.from('prorez_log')
+            .select('*, trupci(broj_plocice, duzina, promjer, vrsta, zapremina)')
+            .eq('masina', header.masina)
+            .eq('datum', header.datum)
+            .eq('zakljuceno', false)
+            .order('created_at', { ascending: false });
 
-        const trupacIds = logData.map(l => l.trupac_id);
-        const { data: trupciData } = await supabase.from('trupci').select('*').in('id', trupacIds);
-
-        const finalnaLista = logData.map(log => {
-            const detalji = (trupciData || []).find(t => t.id === log.trupac_id) || {};
-            return { ...log, detaljiTrupca: detalji };
-        });
-        finalnaLista.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-        setList(finalnaLista);
+        if (logData) {
+            setList(logData);
+        } else {
+            setList([]);
+        }
     };
 
     const handleInput = (val) => {
@@ -274,16 +261,16 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     };
 
     const renderRadnikPolje = (polje) => {
-        if (polje.id === 'brentista') return <div className="h-full min-h-[45px]"><SmartSearchableInput value={brentista} onChange={handleBrentistaChange} list={radniciList} /></div>;
-        if (polje.id === 'viljuskarista') return <div className="h-full min-h-[45px]"><SmartSearchableInput value={viljuskarista} onChange={handleViljuskaristaChange} list={radniciList} /></div>;
+        if (polje.id === 'brentista') return <div className="h-full w-full min-h-[45px]"><SmartSearchableInput value={brentista} onChange={handleBrentistaChange} list={radniciList} /></div>;
+        if (polje.id === 'viljuskarista') return <div className="h-full w-full min-h-[45px]"><SmartSearchableInput value={viljuskarista} onChange={handleViljuskaristaChange} list={radniciList} /></div>;
         return null;
     };
 
     return (
-        <div className="p-4 max-w-2xl mx-auto space-y-6 animate-in fade-in font-bold">
+        <div className="p-2 md:p-4 max-w-2xl mx-auto space-y-6 animate-in fade-in font-bold">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-cyan-500" user={user} modulIme="prorez" hideWorkers={true} saas={saas} />
             
-            <div className={`p-6 rounded-[2.5rem] shadow-2xl space-y-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? '' : saas.ui.boja_bordera, borderWidth: saas.isEditMode ? '0' : '1px' }}>
+            <div className={`p-4 md:p-6 rounded-[2.5rem] shadow-2xl space-y-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? '' : saas.ui.boja_bordera, borderWidth: saas.isEditMode ? '0' : '1px' }}>
                 
                 {saas.isEditMode && (
                     <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
@@ -293,14 +280,13 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                     </div>
                 )}
 
-                {/* ZAGLAVLJE SA RADNICIMA (SADA SA 2D RESIZE-om) */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-700 mb-4 items-start">
+                {/* ZAGLAVLJE SA RADNICIMA (Responzivno flexbox rješenje umjesto grida) */}
+                <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-700 mb-4 items-start md:items-end w-full">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div 
                             key={polje.id} 
-                            className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                            className={`relative flex flex-col w-full flex-1 transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
                             style={{
-                                maxWidth: '100%',
                                 ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}),
                                 width: polje.customWidth || undefined,
                                 height: polje.customHeight || undefined
@@ -315,7 +301,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                             {saas.isEditMode && (
                                 <div className="flex justify-between items-center mb-2 shrink-0">
                                     <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
-                                    <button onClick={() => toggleVelicinaPolja(index, 'polja_radnici')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
                                 </div>
                             )}
                             {saas.isEditMode ? (
@@ -323,51 +308,88 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                             ) : (
                                 polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
                             )}
-                            <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <div className={`w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
                                 {renderRadnikPolje(polje)}
                             </div>
                         </div>
                     ))}
                 </div>
 
-                {/* SKENER */}
-                <div className="relative font-black">
+                {/* SKENER (Fix za mobitele: shrink-0 na dugmetu, centriran input) */}
+                <div className="relative font-black w-full">
                     {saas.isEditMode ? (
                         <input value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
                     ) : (
                         <label className={`text-[10px] uppercase ${saas.ui.boja_teksta} block mb-2 tracking-widest ml-2`}>{saas.ui.naslov_skenera}</label>
                     )}
                     
-                    <div className={`flex bg-[#0f172a] border-2 rounded-2xl overflow-hidden shadow-inner ${saas.isEditMode ? 'opacity-50 pointer-events-none border-dashed border-amber-500/50' : saas.ui.boja_bordera}`}>
-                        <input value={scan} onChange={e => handleInput(e.target.value)} className="flex-1 p-5 bg-transparent text-xl text-center text-white outline-none uppercase font-black placeholder-slate-600" placeholder="Čekam sken..." />
-                        <button onClick={() => setIsScanning(true)} className="px-6 bg-cyan-600 text-white font-black hover:bg-cyan-500 transition-colors text-2xl">📷</button>
+                    <div className={`flex flex-row bg-[#0f172a] border-2 rounded-2xl overflow-hidden shadow-inner w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none border-dashed border-amber-500/50' : saas.ui.boja_bordera}`}>
+                        <input value={scan} onChange={e => handleInput(e.target.value)} className="w-full min-w-0 p-4 md:p-5 bg-transparent text-lg md:text-xl text-center text-white outline-none uppercase font-black placeholder-slate-600" placeholder="Čekam sken..." />
+                        <button onClick={() => setIsScanning(true)} className="px-4 md:px-6 py-4 bg-cyan-600 text-white font-black hover:bg-cyan-500 transition-colors shrink-0 text-xl flex items-center justify-center gap-2">📷 <span className="hidden md:inline">SCAN</span></button>
                     </div>
                 </div>
 
+                {/* LISTA PROREZANIH TRUPACA SA DIMENZIJAMA U GLAVNOM PLANU */}
                 <div className="pt-4 border-t border-slate-700">
                     <div className="flex justify-between items-center mb-4">
                         <span className="text-[10px] text-slate-500 uppercase font-black">Prorezano u ovoj smjeni:</span>
-                        <span className="text-cyan-500 font-black">{list.length} kom</span>
+                        <span className="text-cyan-500 font-black text-lg bg-cyan-900/20 px-3 py-1 rounded-xl border border-cyan-500/30">{list.length} kom</span>
                     </div>
                     
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                    <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                         {list.length === 0 && <p className="text-center text-slate-600 text-xs font-bold border-2 border-dashed border-slate-700 p-6 rounded-2xl">Skenirajte prvi trupac za ovu smjenu.</p>}
-                        {list.map(l => (
-                            <div key={l.id} onClick={() => obrisiIzProreza(l.id, l.trupac_id)} className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center group cursor-pointer hover:border-red-500 transition-all shadow-lg animate-in slide-in-from-right-2">
-                                <div>
-                                    <span className="text-cyan-400 font-black tracking-widest block text-sm">
-                                        {l.trupac_id} <span className="text-white text-[10px] ml-2">[{l.detaljiTrupca?.broj_plocice || 'Bez pločice'}]</span>
-                                    </span>
-                                    <span className="text-[10px] text-white uppercase mt-1 block font-bold">
-                                        {l.detaljiTrupca?.vrsta || 'Nepoznato'} | L: {l.detaljiTrupca?.duzina || 0}m | Ø: {l.detaljiTrupca?.promjer || 0}cm
-                                    </span>
+                        
+                        {list.map((log) => {
+                            const plocica = log.broj_plocice || log.trupci?.broj_plocice;
+                            const duzina = log.duzina || log.trupci?.duzina || '?';
+                            const promjer = log.promjer || log.trupci?.promjer || '?';
+                            const vrsta = log.vrsta || log.trupci?.vrsta || 'N/A';
+                            const zapremina = log.zapremina || log.trupci?.zapremina || '0.00';
+
+                            return (
+                                <div key={log.id} className="p-4 md:p-5 bg-[#0f172a] border border-slate-700 rounded-3xl flex flex-col justify-between items-start gap-3 shadow-lg hover:border-cyan-500/50 transition-all">
+                                    
+                                    <div className="w-full flex justify-between items-start border-b border-slate-800 pb-3 mb-1">
+                                        <span className="text-2xl text-cyan-400 font-black tracking-widest drop-shadow-md">
+                                            {log.trupac_id}
+                                        </span>
+                                        {plocica ? (
+                                            <span className="bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg text-[10px] uppercase font-black border border-slate-600 tracking-wider">
+                                                Pl: {plocica}
+                                            </span>
+                                        ) : (
+                                            <span className="bg-red-900/20 text-red-400 px-3 py-1.5 rounded-lg text-[10px] uppercase font-black border border-red-500/30 tracking-wider">
+                                                BEZ PLOČICE
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="w-full flex flex-row justify-between items-end gap-2">
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex gap-2">
+                                                <span className="bg-cyan-900/40 text-cyan-300 px-3 py-1.5 rounded-xl text-sm font-black border border-cyan-500/50 shadow-inner">
+                                                    L: {duzina}m
+                                                </span>
+                                                <span className="bg-cyan-900/40 text-cyan-300 px-3 py-1.5 rounded-xl text-sm font-black border border-cyan-500/50 shadow-inner">
+                                                    Ø: {promjer}cm
+                                                </span>
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest pl-1 mt-1">
+                                                Vrsta drveta: <span className="text-slate-300 ml-1">{vrsta}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-col items-end gap-2">
+                                            <span className="text-2xl text-emerald-400 font-black leading-none">{zapremina} <span className="text-xs text-emerald-500/50">m³</span></span>
+                                            <button onClick={() => obrisiIzProreza(log.id, log.trupac_id)} className="text-[10px] text-red-500 font-black hover:text-white bg-red-900/20 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-all uppercase border border-red-500/20 shadow-md">
+                                                PONIŠTI ✕
+                                            </button>
+                                        </div>
+                                    </div>
+
                                 </div>
-                                <div className="flex flex-col items-end gap-1">
-                                    <span className="text-base text-emerald-400 font-black">{l.detaljiTrupca?.zapremina || '0.00'} m³</span>
-                                    <span className="text-[9px] text-red-500 uppercase font-black group-hover:underline">Poništi ✕</span>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {list.length > 0 && (
@@ -376,7 +398,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                 for(let item of list) await supabase.from('prorez_log').update({ zakljuceno: true }).eq('id', item.id);
                                 setList([]); alert("Lista uspješno zaključena i poslana u analitiku!");
                             }
-                        }} className="w-full mt-5 py-4 bg-cyan-900/30 border border-cyan-500 text-cyan-400 font-black rounded-xl text-xs uppercase hover:bg-cyan-600 hover:text-white transition-all shadow-lg">🏁 ZAKLJUČI SMJENU PROREZA</button>
+                        }} className="w-full mt-6 py-5 bg-cyan-900/30 border-2 border-cyan-500 text-cyan-400 font-black rounded-2xl text-sm uppercase hover:bg-cyan-600 hover:text-white transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] tracking-widest">🏁 ZAKLJUČI SMJENU PROREZA</button>
                     )}
                 </div>
             </div>
