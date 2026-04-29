@@ -11,7 +11,6 @@ const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Pomoćna funkcija za pomjeranje datuma
 const shiftDateString = (isoStr, days) => {
     if(!isoStr) return new Date().toISOString().split('T')[0];
     const d = new Date(isoStr);
@@ -21,7 +20,6 @@ const shiftDateString = (isoStr, days) => {
 
 export default function PrijemModule({ user, header, setHeader, onExit }) {
     
-    // === SaaS ALAT ===
     const saas = useSaaS('prijem_trupaca', {
         boja_zaglavlja: '#1e293b',
         boja_kartice: '#1e293b',
@@ -46,7 +44,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         ]
     });
 
-    // === Drag & Drop Logika ===
+    const aktivnaPoljaZaglavlja = saas.ui.polja_zaglavlje?.length > 0 ? saas.ui.polja_zaglavlje : saas.defaultConfig.polja_zaglavlje;
+    const aktivnaPoljaUnosa = saas.ui.polja_unos?.length > 0 ? saas.ui.polja_unos : saas.defaultConfig.polja_unos;
+
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
 
@@ -75,9 +75,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1');
         saas.setUi({...saas.ui, [listaIme]: novaLista});
     };
-    // ===========================
 
-    // BAZE PODATAKA ZA PADAJUĆE MENIJE
     const [sumarijeList, setSumarijeList] = useState([]);
     const [podruzniceList, setPodruzniceList] = useState([]);
     const [prevozniciList, setPrevozniciList] = useState([]);
@@ -100,7 +98,6 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         setPodruzniceList(data?data.map(d=>d.naziv):[]);
     };
 
-    // STATE ZA ZAGLAVLJE OTPREMNICE (Pamti se u localStorage)
     const [pHeader, setPHeader] = useState({
         sumarija: typeof window !== 'undefined' ? localStorage.getItem('pr_sumarija') || '' : '',
         podruznica: typeof window !== 'undefined' ? localStorage.getItem('pr_podruznica') || '' : '',
@@ -112,12 +109,17 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
     useEffect(() => { if(pHeader.sumarija) ucitajPodruznice(pHeader.sumarija); }, []);
 
-    // STATE ZA TRENUTNI TRUPAC I LISTU
     const [scan, setScan] = useState('');
     const [isScanning, setIsScanning] = useState(false);
-    const [form, setForm] = useState({ broj_plocice: '', redni_broj: '', vrsta: 'Jela', klasa: 'I', duzina: '', promjer: '' });
-    const [listaPrijema, setListaPrijema] = useState([]);
     
+    // NOVO: Dodani state-ovi za kontrolne dimenzije
+    const [form, setForm] = useState({ 
+        broj_plocice: '', redni_broj: '', vrsta: 'Jela', klasa: 'I', 
+        duzina: '', promjer: '',
+        isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: ''
+    });
+    
+    const [listaPrijema, setListaPrijema] = useState([]);
     const scanTimerRef = useRef(null);
 
     useEffect(() => { loadPrijemList(); }, [pHeader.otpremnica_broj]);
@@ -125,7 +127,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const loadPrijemList = async () => {
         if(!pHeader.otpremnica_broj) return;
         const { data, error } = await supabase.from('trupci').select('*').eq('otpremnica_broj', pHeader.otpremnica_broj).eq('zakljucen_prijem', false);
-        if (error) { alert("⚠️ GREŠKA PRI UČITAVANJU LISTE: " + error.message); console.error(error); }
+        if (error) console.error(error);
         setListaPrijema(data || []);
     };
 
@@ -136,11 +138,19 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         localStorage.setItem(`pr_${key}`, val);
     };
 
+    // Obračun zapremine sa Otpremnice
     const calculatedZapremina = useMemo(() => {
         if(!form.duzina || !form.promjer) return "0.00";
         const r = parseFloat(form.promjer) / 200; 
         return (r * r * Math.PI * parseFloat(form.duzina)).toFixed(2);
-    }, [form]);
+    }, [form.duzina, form.promjer]);
+
+    // Obračun KONTROLNE zapremine
+    const calculatedKontrolnaZapremina = useMemo(() => {
+        if(!form.kontrolna_duzina || !form.kontrolni_promjer) return "0.00";
+        const r = parseFloat(form.kontrolni_promjer) / 200; 
+        return (r * r * Math.PI * parseFloat(form.kontrolna_duzina)).toFixed(2);
+    }, [form.kontrolna_duzina, form.kontrolni_promjer]);
 
     const handleScanInput = (val) => {
         setScan(val);
@@ -150,10 +160,11 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                 const id = val.toUpperCase();
                 const { data: existing } = await supabase.from('trupci').select('id, status, otpremnica_broj').eq('id', id).maybeSingle();
                 if(existing) {
-                    const confirmed = window.confirm(`⚠️ UPOZORENJE!\nTrupac sa QR kodom ${id} već postoji u bazi!\n\nTrenutni status: ${existing.status ? existing.status.toUpperCase() : 'N/A'}.\nOtpremnica: ${existing.otpremnica_broj || 'N/A'}\n\nŽelite li prepisati podatke i zadužiti ga ponovo?`);
-                    if(!confirmed) { setScan(''); }
+                    // ISPRAVLJENO: Nema više pitanja "Da li želite prepisati". Sada je striktna blokada.
+                    alert(`⛔ GREŠKA! QR KOD JE VEĆ ISKORIŠTEN!\n\nTrupac sa kodom ${id} već postoji u bazi!\nTrenutni status: ${existing.status ? existing.status.toUpperCase() : 'N/A'}\nOtpremnica: ${existing.otpremnica_broj || 'N/A'}\n\nUzmite i skenirajte drugu (novu) pločicu!`);
+                    setScan(''); 
                 }
-            }, 2000);
+            }, 1000); // Ubrzano na 1 sekundu
         }
     };
 
@@ -161,8 +172,10 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         if(!pHeader.otpremnica_broj || !pHeader.sumarija) return alert("Popunite Šumariju i Broj Otpremnice u Zaglavlju!");
         if(!scan || !form.duzina || !form.promjer) return alert("Skeniraj QR, unesi dužinu i prečnik.");
+        if(form.isKontrola && (!form.kontrolna_duzina || !form.kontrolni_promjer)) return alert("Upalili ste Kontrolu. Unesite kontrolnu dužinu i prečnik!");
         
         const trupacID = scan.toUpperCase();
+        
         const trupacData = {
             id: trupacID, 
             broj_plocice: form.broj_plocice || null, 
@@ -172,6 +185,12 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
             duzina: parseFloat(form.duzina), 
             promjer: parseFloat(form.promjer), 
             zapremina: parseFloat(calculatedZapremina), 
+            
+            // SPAŠAVANJE KONTROLNIH MJERA U BAZU
+            kontrolna_duzina: form.isKontrola ? parseFloat(form.kontrolna_duzina) : null,
+            kontrolni_promjer: form.isKontrola ? parseFloat(form.kontrolni_promjer) : null,
+            kontrolna_zapremina: form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : null,
+            
             sumarija: pHeader.sumarija,
             podruznica: pHeader.podruznica || null, 
             otpremnica_broj: pHeader.otpremnica_broj,
@@ -189,8 +208,13 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
         if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(100); 
 
+        // ISPRAVLJENO: Potpuni reset SVIH polja za sljedeći trupac
         setScan(''); 
-        setForm(f => ({ ...f, broj_plocice: '', redni_broj: '' })); 
+        setForm({ 
+            broj_plocice: '', redni_broj: '', vrsta: 'Jela', klasa: 'I', 
+            duzina: '', promjer: '', isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: '' 
+        }); 
+        
         await loadPrijemList();
     };
 
@@ -205,9 +229,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    // Pomoćna funkcija za renderovanje polja
     const renderPolje = (polje, formData, setFormData) => {
-        // Osiguranje za stare verzije koje su snimljene u bazu
         const actualId = polje.id === 'datum' ? 'otpremnica_datum' : (polje.id === 'broj' ? 'otpremnica_broj' : polje.id);
         const val = formData[actualId] || '';
         const setVal = (v) => setFormData(actualId, v);
@@ -219,9 +241,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         
         if (actualId === 'otpremnica_datum') return (
             <div className="flex items-center gap-1 bg-[#0f172a] border border-slate-700 rounded-xl p-1 focus-within:border-indigo-500">
-                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-8 h-8 bg-slate-800 rounded hover:bg-indigo-600 text-white font-black flex items-center justify-center transition-all shrink-0">-</button>
-                <input type="date" value={val} onChange={e => setVal(e.target.value)} className="flex-1 w-full bg-transparent text-xs text-white outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert" />
-                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-8 h-8 bg-slate-800 rounded hover:bg-indigo-600 text-white font-black flex items-center justify-center transition-all shrink-0">+</button>
+                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-8 h-8 bg-slate-800 rounded hover:bg-indigo-600 text-white font-black shrink-0">-</button>
+                <input type="date" value={val} onChange={e => setVal(e.target.value)} className="flex-1 w-full bg-transparent text-xs text-white outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:invert" />
+                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-8 h-8 bg-slate-800 rounded hover:bg-indigo-600 text-white font-black shrink-0">+</button>
             </div>
         );
         if (actualId === 'otpremnica_broj') return <input type="text" value={val} onChange={e => setVal(e.target.value.toUpperCase())} className="w-full p-3 bg-[#0f172a] border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-500" placeholder="Unesi broj..." />;
@@ -243,32 +265,42 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
+    // Zbirna analitika za otpremnicu
+    const { totalDeklarisano, totalStvarno, totalRazlikaM3 } = useMemo(() => {
+        let dek = 0, stv = 0;
+        listaPrijema.forEach(t => {
+            dek += parseFloat(t.zapremina || 0);
+            stv += parseFloat(t.kontrolna_zapremina || t.zapremina || 0);
+        });
+        return { totalDeklarisano: dek.toFixed(2), totalStvarno: stv.toFixed(2), totalRazlikaM3: (stv - dek).toFixed(2) };
+    }, [listaPrijema]);
+
     return (
         <div className="p-4 max-w-2xl mx-auto space-y-6 font-bold">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} hideMasina={true} saas={saas} />
 
             {pHeader.otpremnica_broj && listaPrijema.length > 0 && (
-                <div className="bg-indigo-900/40 p-4 rounded-3xl border border-indigo-500 flex justify-between items-center animate-in slide-in-from-top">
+                <div className="bg-[#1e293b] p-5 rounded-[2rem] border border-indigo-500/50 shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4 animate-in slide-in-from-top">
                     <div>
-                        <span className="text-white text-sm font-black">OTPREMNICA: {pHeader.otpremnica_broj}</span>
-                        <p className="text-[10px] text-indigo-400 mt-1 uppercase">Skenirano: {listaPrijema.length} trupaca</p>
+                        <span className="text-white text-base font-black">OTPREMNICA: {pHeader.otpremnica_broj}</span>
+                        <div className="text-[10px] text-slate-400 mt-2 flex gap-4 uppercase font-black">
+                            <p>Skenirano: <span className="text-indigo-400 text-sm ml-1">{listaPrijema.length} kom</span></p>
+                            <p>Papir: <span className="text-white text-sm ml-1">{totalDeklarisano} m³</span></p>
+                        </div>
+                        {parseFloat(totalRazlikaM3) !== 0 && (
+                            <div className="mt-2 text-xs uppercase font-black">
+                                Stvarno stanje: <span className="text-white">{totalStvarno} m³</span> | 
+                                Razlika: <span className={parseFloat(totalRazlikaM3) > 0 ? "text-emerald-400 ml-1" : "text-red-500 ml-1"}>{parseFloat(totalRazlikaM3) > 0 ? '+' : ''}{totalRazlikaM3} m³</span>
+                            </div>
+                        )}
                     </div>
-                    <button onClick={zakljuciOtpremnicu} className="px-6 py-4 bg-indigo-600 text-white font-black rounded-xl text-xs uppercase shadow-[0_0_20px_rgba(79,70,229,0.5)] hover:bg-indigo-500 transition-all">
+                    <button onClick={zakljuciOtpremnicu} className="w-full md:w-auto px-6 py-4 bg-indigo-600 text-white font-black rounded-xl text-xs uppercase shadow-[0_0_20px_rgba(79,70,229,0.5)] hover:bg-indigo-500 transition-all">
                         🏁 ZAKLJUČI OTPREMNICU
                     </button>
                 </div>
             )}
 
-            {/* ZAGLAVLJE SA RIJEŠENIM Z-INDEXOM */}
             <div className={`p-6 rounded-[2.5rem] shadow-xl space-y-4 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui.boja_zaglavlja }}>
-                
-                {saas.isEditMode && (
-                    <div className="bg-black/40 p-3 rounded-xl flex gap-4 items-center mb-4 border border-amber-500/30">
-                        <span className="text-[10px] text-amber-500 uppercase font-black">Boja Zaglavlja:</span>
-                        <input type="color" value={saas.ui.boja_zaglavlja || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_zaglavlja: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" />
-                    </div>
-                )}
-
                 <div className="text-center font-black relative mb-4">
                     {saas.isEditMode ? (
                         <input value={saas.ui.naslov_zaglavlja} onChange={e => saas.setUi({...saas.ui, naslov_zaglavlja: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 rounded border border-amber-500/50 text-xs uppercase font-black text-center" placeholder="Naziv zaglavlja..." />
@@ -278,75 +310,67 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 relative">
-                    {(saas.ui.polja_zaglavlje || []).map((polje, index) => (
-                        <div key={polje.id} className={`relative ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20' : ''}`} style={{ zIndex: 50 - index }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_zaglavlje')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_zaglavlje')} onDragOver={(e) => e.preventDefault()}>
-                            {saas.isEditMode && (
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
-                                    <button onClick={() => toggleVelicinaPolja(index, 'polja_zaglavlje')} className="text-[8px] text-amber-500 font-black">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
-                                </div>
-                            )}
-                            {saas.isEditMode ? (
-                                <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_zaglavlje')} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center" placeholder="Ostavite prazno za bez naslova" />
-                            ) : (
-                                polje.label && <label className="text-[8px] text-slate-500 uppercase block mb-1 ml-2">{polje.label}</label>
-                            )}
-                            <div className={saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}>
-                                {renderPolje(polje, pHeader, updateHeader)}
-                            </div>
+                    {aktivnaPoljaZaglavlja.map((polje, index) => (
+                        <div key={polje.id} className={`relative ${polje.span} transition-all`} style={{ zIndex: 50 - index }}>
+                            {polje.label && <label className="text-[8px] text-slate-500 uppercase block mb-1 ml-2">{polje.label}</label>}
+                            {renderPolje(polje, pHeader, updateHeader)}
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* DONJA KARTICA SA POPRAVLJENIM SCAN DUGMETOM */}
-            <div className={`p-6 rounded-[2.5rem] border border-indigo-500/30 shadow-2xl space-y-5 transition-all mt-4 ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+            <div className={`p-6 rounded-[2.5rem] border border-indigo-500/30 shadow-2xl space-y-5 transition-all mt-4`} style={{ backgroundColor: saas.ui.boja_kartice }}>
                 
-                {saas.isEditMode && (
-                    <div className="bg-black/40 p-3 rounded-xl flex gap-4 items-center mb-4 border border-amber-500/30">
-                        <span className="text-[10px] text-amber-500 uppercase font-black">Boja Kartice:</span>
-                        <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" />
-                    </div>
-                )}
-
                 <div className="relative font-black">
-                    {saas.isEditMode ? (
-                        <input value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
-                    ) : (
-                        <label className={`text-[8px] uppercase ${saas.ui.boja_teksta} block mb-1 ml-2`}>{saas.ui.naslov_skenera}</label>
-                    )}
-                    
-                    <div className={`flex bg-[#0f172a] border-2 border-indigo-500/50 rounded-2xl overflow-hidden shadow-inner ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <label className={`text-[8px] uppercase ${saas.ui.boja_teksta} block mb-1 ml-2`}>{saas.ui.naslov_skenera}</label>
+                    <div className="flex bg-[#0f172a] border-2 border-indigo-500/50 rounded-2xl overflow-hidden shadow-inner">
                         <input value={scan} onChange={e => handleScanInput(e.target.value)} className="flex-1 p-5 bg-transparent text-xl text-center text-white outline-none uppercase placeholder-slate-600 w-full" placeholder="Čekam sken..." />
                         <button onClick={() => setIsScanning(true)} className="px-6 bg-indigo-600 text-white font-black hover:bg-indigo-500 transition-colors shrink-0">📷 SCAN</button>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 relative">
-                    {(saas.ui.polja_unos || []).map((polje, index) => (
-                        <div key={polje.id} className={`relative ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20' : ''}`} style={{ zIndex: 50 - index }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_unos')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_unos')} onDragOver={(e) => e.preventDefault()}>
-                            {saas.isEditMode && (
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
-                                    <button onClick={() => toggleVelicinaPolja(index, 'polja_unos')} className="text-[8px] text-amber-500 font-black">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
-                                </div>
-                            )}
-                            {saas.isEditMode ? (
-                                <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_unos')} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center" placeholder="Ostavite prazno za bez naslova" />
-                            ) : (
-                                polje.label && <label className="text-[8px] text-slate-500 uppercase block mb-1 text-center">{polje.label}</label>
-                            )}
-                            <div className={saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}>
-                                {renderPolje(polje, form, (key, val) => setForm({...form, [key]: val}))}
-                            </div>
+                    {aktivnaPoljaUnosa.map((polje, index) => (
+                        <div key={polje.id} className={`relative ${polje.span} transition-all`} style={{ zIndex: 50 - index }}>
+                            {polje.label && <label className="text-[8px] text-slate-500 uppercase block mb-1 text-center">{polje.label}</label>}
+                            {renderPolje(polje, form, (key, val) => setForm({...form, [key]: val}))}
                         </div>
                     ))}
                 </div>
 
                 <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-700">
-                    <span className="text-xs text-slate-400 uppercase">Kubikaža:</span>
+                    <span className="text-xs text-slate-400 uppercase">Deklarisano (Papir):</span>
                     <span className="text-2xl text-indigo-400 font-black">{calculatedZapremina} m³</span>
                 </div>
+
+                {/* NOVO: KONTROLA DIMENZIJA PREKIDAČ */}
+                <div className="flex items-center justify-between bg-[#0f172a] p-4 rounded-2xl border border-emerald-500/20">
+                    <div>
+                        <span className="text-xs text-emerald-400 uppercase font-black">Kontrola Dimenzija</span>
+                        <p className="text-[9px] text-slate-500">Omogući unos kontrolnih mjera</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={form.isKontrola} onChange={e => setForm({...form, isKontrola: e.target.checked})} />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                </div>
+
+                {form.isKontrola && (
+                    <div className="grid grid-cols-2 gap-3 mt-2 p-5 bg-emerald-900/10 border border-emerald-500/30 rounded-2xl animate-in zoom-in-95">
+                        <div>
+                            <label className="text-[8px] text-emerald-400 uppercase block mb-1 text-center font-black">Stvarna Dužina (M)</label>
+                            <input type="number" value={form.kontrolna_duzina} onChange={e => setForm({...form, kontrolna_duzina: e.target.value})} className="w-full p-4 bg-black border border-emerald-500/50 rounded-xl text-emerald-400 outline-none focus:border-emerald-400 text-center text-sm font-black shadow-inner" placeholder="0" />
+                        </div>
+                        <div>
+                            <label className="text-[8px] text-emerald-400 uppercase block mb-1 text-center font-black">Stvarni Prečnik (CM)</label>
+                            <input type="number" value={form.kontrolni_promjer} onChange={e => setForm({...form, kontrolni_promjer: e.target.value})} className="w-full p-4 bg-black border border-emerald-500/50 rounded-xl text-emerald-400 outline-none focus:border-emerald-400 text-center text-sm font-black shadow-inner" placeholder="0" />
+                        </div>
+                        <div className="col-span-2 text-center mt-2 flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-emerald-500/20">
+                            <span className="text-[10px] text-slate-400 uppercase">Stvarna Kubikaža: </span>
+                            <span className="text-emerald-400 font-black text-xl">{calculatedKontrolnaZapremina} m³</span>
+                        </div>
+                    </div>
+                )}
 
                 <button onClick={snimiTrupac} className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl uppercase shadow-xl hover:bg-indigo-500 transition-all">➕ DODAJ NA OTPREMNICU</button>
             </div>
@@ -354,22 +378,43 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
             {pHeader.otpremnica_broj && listaPrijema.length > 0 && (
                 <div className="bg-[#1e293b] p-4 rounded-[2rem] border border-slate-700 animate-in fade-in">
                     <div className="flex justify-between items-center mb-3 px-2">
-                        <span className="text-[10px] text-slate-500 uppercase">Lista trupaca:</span>
-                        <span className="text-indigo-400 font-black">{listaPrijema.length} kom</span>
+                        <span className="text-[10px] text-slate-500 uppercase">Lista skeniranih trupaca:</span>
                     </div>
-                    <div className="space-y-2 max-h-60 overflow-y-auto mb-4 scrollbar-hide">
-                        {listaPrijema.map(t => (
-                            <div key={t.id} className="flex justify-between items-center p-3 bg-slate-900 border border-slate-800 rounded-xl">
-                                <div>
-                                    <div className="text-xs text-white font-black">{t.id} <span className="text-indigo-400 ml-1">[{t.broj_plocice}]</span></div>
-                                    <div className="text-[9px] text-slate-500 uppercase">{t.vrsta} | Klasa {t.klasa} | L:{t.duzina}m Ø:{t.promjer}cm</div>
+                    <div className="space-y-2 max-h-[500px] overflow-y-auto mb-4 custom-scrollbar pr-2">
+                        {listaPrijema.map(t => {
+                            const isKontrolisan = t.kontrolna_zapremina !== null;
+                            const razlika = isKontrolisan ? (parseFloat(t.kontrolna_zapremina) - parseFloat(t.zapremina)).toFixed(2) : 0;
+                            
+                            return (
+                                <div key={t.id} className={`flex flex-col p-4 bg-slate-900 border rounded-2xl ${isKontrolisan ? 'border-emerald-500/30' : 'border-slate-800'}`}>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="text-sm text-white font-black flex items-center gap-2">
+                                                {t.id} <span className="text-indigo-400 text-xs bg-indigo-900/30 px-2 py-0.5 rounded">P: {t.broj_plocice || '-'}</span>
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 uppercase mt-1">
+                                                {t.vrsta} | Klasa {t.klasa} | Deklarisano: L:{t.duzina}m Ø:{t.promjer}cm
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-lg text-white font-black">{t.zapremina} m³</div>
+                                            <button onClick={async () => { if(window.confirm("Brisati trupac?")) { await supabase.from('trupci').delete().eq('id', t.id); loadPrijemList(); } }} className="text-[9px] text-red-500 uppercase hover:underline font-black bg-red-900/20 px-2 py-1 rounded mt-1">Obriši ×</button>
+                                        </div>
+                                    </div>
+                                    
+                                    {isKontrolisan && (
+                                        <div className="mt-3 pt-3 border-t border-emerald-500/20 flex justify-between items-center bg-emerald-900/10 p-2 rounded-xl">
+                                            <div className="text-[9px] text-emerald-400 uppercase font-black">
+                                                Stvarno: L:{t.kontrolna_duzina}m Ø:{t.kontrolni_promjer}cm = {t.kontrolna_zapremina} m³
+                                            </div>
+                                            <div className={`text-xs font-black ${razlika > 0 ? 'text-emerald-400' : (razlika < 0 ? 'text-red-500' : 'text-slate-400')}`}>
+                                                {razlika > 0 ? '+' : ''}{razlika} m³
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="text-right">
-                                    <div className="text-sm text-white font-black">{t.zapremina} m³</div>
-                                    <button onClick={async () => { if(window.confirm("Brisati trupac?")) { await supabase.from('trupci').delete().eq('id', t.id); loadPrijemList(); } }} className="text-[9px] text-red-500 uppercase hover:underline">Obriši ×</button>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}
