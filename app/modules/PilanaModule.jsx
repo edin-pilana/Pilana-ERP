@@ -25,8 +25,8 @@ function PD_SearchableRN({ nalozi, value, onSelect, onScanClick }) {
 
     return (
         <div className="relative font-black w-full">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} onKeyDown={e => { if(e.key === 'Enter' && search) { onSelect(search); setOpen(false); } }} placeholder="Upiši nalog ili skeniraj..." className="w-full p-4 pr-16 bg-slate-900 rounded-xl text-center text-white outline-none focus:border-blue-500 uppercase shadow-inner" />
-            <button onClick={onScanClick} className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 rounded-xl text-white font-black hover:bg-blue-500 shadow-lg transition-all">📷</button>
+            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} onKeyDown={e => { if(e.key === 'Enter' && search) { onSelect(search); setOpen(false); } }} placeholder="Upiši broj naloga/ponude ili skeniraj..." className="w-full p-4 pr-16 bg-slate-900 rounded-xl text-center text-white outline-none focus:border-blue-500 uppercase shadow-inner border border-slate-700" />
+            <button onClick={onScanClick} className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 rounded-xl text-white font-black hover:bg-blue-500 shadow-lg transition-all text-xl">📷</button>
             {open && search && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left">
                     {filtered.map(n => (
@@ -35,7 +35,7 @@ function PD_SearchableRN({ nalozi, value, onSelect, onScanClick }) {
                             <div className="text-[9px] text-slate-400">{n.kupac_naziv}</div>
                         </div>
                     ))}
-                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 rounded-b-xl">ZATVORI</div>
+                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 rounded-b-xl uppercase tracking-widest font-black">Zatvori</div>
                 </div>
             )}
         </div>
@@ -60,7 +60,7 @@ function PD_SearchableProizvod({ katalog, value, onSelect }) {
                             <div className="text-[9px] text-slate-400">Dim: {k.visina}x{k.sirina}x{k.duzina} | Baza: {k.default_jedinica}</div>
                         </div>
                     ))}
-                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 rounded-b-xl">ZATVORI</div>
+                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 rounded-b-xl uppercase tracking-widest font-black">Zatvori</div>
                 </div>
             )}
         </div>
@@ -178,7 +178,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         ]
     });
 
-    // === Drag & Drop i Resize Logika ===
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
 
@@ -218,7 +217,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             saas.setUi({...saas.ui, [listaIme]: novaLista});
         }
     };
-    // ===========================
 
     const [izlazScan, setIzlazScan] = useState('');
     const [radniNalog, setRadniNalog] = useState('');
@@ -312,13 +310,14 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             ...form, naziv: stavka.naziv_proizvoda, debljina: kat?.visina||'', sirina: kat?.sirina||'', duzina: kat?.duzina||'', 
             jm: 'kom', rn_jm: stavka.jm, rn_stavka_id: stavka.id, naruceno: parseFloat(stavka.naruceno).toFixed(4), napravljeno: parseFloat(stavka.napravljeno || 0).toFixed(4) 
         });
-        window.scrollTo({ top: 400, behavior: 'smooth' });
+        window.scrollTo({ top: 600, behavior: 'smooth' });
     };
 
     const fetchIzlaz = async (pid) => { 
         const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid); 
         setIzlazPackageItems(data || []); 
         
+        // Automatsko ucitavanje Radnog Naloga ako je paket vec vezan za neki
         if (data && data.length > 0 && data[0].broj_veze) {
             handleNalogSelect(data[0].broj_veze);
         }
@@ -350,7 +349,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const toggleOznaka = (o) => { setOdabraneOznake(prev => prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o]); };
 
     const save = async () => {
-        if (!selectedIzlazId) return alert("Prvo skenirajte IZLAZNI PAKET!");
+        if (!selectedIzlazId) return alert("Prvo skenirajte ili unesite ID za IZLAZNI PAKET!");
         if (!form.kolicina_ulaz) return alert("⚠️ Unesite količinu prije snimanja!");
 
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
@@ -512,20 +511,59 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     ))}
                 </div>
 
-                <div className="pt-2">
-                    <label className="text-[10px] text-amber-500 uppercase font-black ml-2 mb-2 block">📦 Započeti Paketi (Spremni za nastavak):</label>
+                {/* NOVO: RADNI NALOG POMJEREN NA VRH, UVIJEK VIDLJIV */}
+                <div className="relative font-black bg-blue-900/20 p-5 rounded-2xl border border-blue-500/30 shadow-inner mb-6 mt-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-[10px] text-blue-400 uppercase font-black tracking-widest">RADNI NALOG / PONUDA</label>
+                        {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]);}} className="text-[9px] text-red-400 hover:text-white uppercase px-3 py-1 rounded bg-red-900/30 font-black border border-red-500/30">✕ Ukloni</button>}
+                    </div>
+                    
+                    <PD_SearchableRN nalozi={aktivniNalozi} value={radniNalog} onSelect={handleNalogSelect} onScanClick={() => {setScanTarget('nalog'); setIsScanning(true);}} />
+                    
+                    {rnStavke.length > 0 && (
+                        <div className="mt-4 space-y-2 border-t border-blue-500/30 pt-4 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                            <span className="text-[10px] text-blue-300 uppercase font-black mb-2 block tracking-widest">Stavke na nalogu (Klikni za izradu):</span>
+                            {rnStavke.map(s => {
+                                const preostalo = s.naruceno - s.napravljeno;
+                                let pM3 = 0, pKom = 0;
+                                if (preostalo > 0) {
+                                    if (s.jm === 'm3') { pM3 = preostalo; pKom = s.vol1kom > 0 ? Math.ceil(preostalo / s.vol1kom) : 0; }
+                                    else if (s.jm === 'kom') { pKom = preostalo; pM3 = preostalo * s.vol1kom; }
+                                    else { pM3 = preostalo; }
+                                }
+                                return (
+                                <div key={s.id} onClick={() => {
+                                    if(!selectedIzlazId) return alert("⚠️ UPOZORENJE:\n\nPrvo ispod skenirajte ili upišite ime novog PAKETA u koji ćete slagati ovu robu!");
+                                    handleStavkaSelect(s);
+                                }} className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 bg-slate-800 rounded-xl cursor-pointer hover:bg-blue-600 transition-all border border-slate-700 shadow-md group">
+                                    <div>
+                                        <div className="text-xs text-white font-black">{s.sifra_proizvoda} - {s.naziv_proizvoda}</div>
+                                        <div className="text-[10px] text-slate-400 mt-1 font-bold">Dimenzije: {s.dimenzije}</div>
+                                    </div>
+                                    <div className="text-right mt-3 md:mt-0 bg-slate-900/80 p-2 rounded-lg border border-slate-700 group-hover:border-blue-400 transition-colors w-full md:w-auto">
+                                        <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno}</span> | Urađeno: <span className="text-emerald-400">{s.napravljeno}</span></div>
+                                        <div className={`text-sm font-black mt-1 ${preostalo > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>Preostalo: {preostalo > 0 ? `${pM3.toFixed(3)} m³ (${pKom} kom)` : 'GOTOVO ✅'}</div>
+                                    </div>
+                                </div>
+                            )})}
+                        </div>
+                    )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-700">
+                    <label className="text-[10px] text-amber-500 uppercase font-black ml-2 mb-2 block pt-2">📦 Započeti Paketi (Spremni za nastavak):</label>
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                        {activeIzlazIds.length === 0 && <span className="text-xs text-slate-500 italic ml-2 border border-dashed border-slate-700 p-2 rounded-xl">Trenutno nema započetih paketa...</span>}
+                        {activeIzlazIds.length === 0 && <span className="text-xs text-slate-500 italic ml-2 border border-dashed border-slate-700 p-3 rounded-xl">Trenutno nema započetih paketa...</span>}
                         {activeIzlazIds.map(id => (
                             <div key={id} className={`flex items-center rounded-xl border-2 transition-all shrink-0 ${selectedIzlazId === id ? 'bg-emerald-600 border-white font-black shadow-[0_0_10px_rgba(16,185,129,0.5)] scale-105' : 'bg-slate-800 border-slate-700 hover:border-emerald-500/50'}`}>
-                                <button onClick={() => {setSelectedIzlazId(id); fetchIzlaz(id);}} className="px-4 py-2 font-black">{id}</button>
-                                <button onClick={() => otkaziPaket(id)} className="px-3 py-2 text-red-300 hover:text-white hover:bg-red-500 rounded-r-lg font-black border-l border-slate-700" title="Skloni sa ekrana">✕</button>
+                                <button onClick={() => {setSelectedIzlazId(id); fetchIzlaz(id);}} className="px-4 py-3 font-black">{id}</button>
+                                <button onClick={() => otkaziPaket(id)} className="px-3 py-3 text-red-300 hover:text-white hover:bg-red-500 rounded-r-lg font-black border-l border-slate-700" title="Skloni sa ekrana">✕</button>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <div className="relative font-black border-t border-slate-700 pt-5">
+                <div className="relative font-black pt-4">
                     {saas.isEditMode ? (
                         <input value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
                     ) : (
@@ -533,7 +571,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     )}
                     <div className={`relative flex bg-[#0f172a] border-2 rounded-2xl overflow-hidden shadow-inner ${saas.isEditMode ? 'opacity-50 pointer-events-none border-dashed border-amber-500/50' : saas.ui.boja_bordera}`}>
                         <input type="text" value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleIzlazInput(izlazScan, true) }} placeholder="Upiši novi paket ili skeniraj..." className="w-full p-5 bg-transparent text-center text-xl text-white outline-none uppercase font-black" />
-                        <button onClick={() => {setScanTarget('paket'); setIsScanning(true);}} className="absolute right-3 top-3 bottom-3 px-4 bg-emerald-600 rounded-xl text-white font-bold hover:bg-emerald-500 shadow-lg text-xl transition-all">📷</button>
+                        <button onClick={() => {setScanTarget('paket'); setIsScanning(true);}} className="absolute right-3 top-3 bottom-3 px-6 bg-emerald-600 rounded-xl text-white font-bold hover:bg-emerald-500 shadow-lg text-2xl transition-all">📷</button>
                     </div>
                 </div>
                 
@@ -541,44 +579,13 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     <div className="animate-in zoom-in-50 space-y-4 bg-slate-900 p-5 rounded-3xl border border-emerald-500/50 mt-4 shadow-2xl">
                         <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
                             <h3 className="text-emerald-400 font-black uppercase text-sm drop-shadow-md">Paket u radu: <span className="text-white text-lg">{selectedIzlazId}</span></h3>
-                            <button onClick={() => zakljuciPaket(selectedIzlazId)} className="bg-red-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all">🏁 Zaključi Paket</button>
-                        </div>
-
-                        <div className="relative font-black bg-blue-900/20 p-4 rounded-2xl border border-blue-500/30 shadow-inner">
-                            <label className="text-[10px] text-blue-400 uppercase ml-2 block mb-1">RADNI NALOG ZA OVAJ PAKET</label>
-                            <PD_SearchableRN nalozi={aktivniNalozi} value={radniNalog} onSelect={handleNalogSelect} onScanClick={() => {setScanTarget('nalog'); setIsScanning(true);}} />
-                            
-                            {rnStavke.length > 0 && (
-                                <div className="mt-3 space-y-2 border-t border-blue-500/30 pt-3">
-                                    <span className="text-[10px] text-blue-300 uppercase font-black mb-2 block tracking-widest">Stavke na nalogu (Klikni za izradu):</span>
-                                    {rnStavke.map(s => {
-                                        const preostalo = s.naruceno - s.napravljeno;
-                                        let pM3 = 0, pKom = 0;
-                                        if (preostalo > 0) {
-                                            if (s.jm === 'm3') { pM3 = preostalo; pKom = s.vol1kom > 0 ? Math.ceil(preostalo / s.vol1kom) : 0; }
-                                            else if (s.jm === 'kom') { pKom = preostalo; pM3 = preostalo * s.vol1kom; }
-                                            else { pM3 = preostalo; }
-                                        }
-                                        return (
-                                        <div key={s.id} onClick={() => handleStavkaSelect(s)} className="flex flex-col md:flex-row justify-between items-start md:items-center p-3 bg-slate-800 rounded-xl cursor-pointer hover:bg-blue-600 transition-all border border-slate-700 shadow-md">
-                                            <div>
-                                                <div className="text-xs text-white font-black">{s.sifra_proizvoda} - {s.naziv_proizvoda}</div>
-                                                <div className="text-[10px] text-slate-400 mt-0.5 font-bold">Dimenzije: {s.dimenzije}</div>
-                                            </div>
-                                            <div className="text-right mt-2 md:mt-0 bg-slate-900/50 p-2 rounded-lg border border-slate-700">
-                                                <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno}</span> | Urađeno: <span className="text-emerald-400">{s.napravljeno}</span></div>
-                                                <div className={`text-sm font-black mt-1 ${preostalo > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>Preostalo: {preostalo > 0 ? `${pM3.toFixed(3)} m³ (${pKom} kom)` : 'GOTOVO ✅'}</div>
-                                            </div>
-                                        </div>
-                                    )})}
-                                </div>
-                            )}
+                            <button onClick={() => zakljuciPaket(selectedIzlazId)} className="bg-red-600 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all">🏁 Zaključi Paket</button>
                         </div>
 
                         {activeEditItem && (
-                            <div className="p-4 bg-slate-950/80 rounded-2xl border border-blue-500/50 shadow-inner">
+                            <div className="p-4 bg-slate-950/80 rounded-2xl border border-blue-500/50 shadow-inner mb-4">
                                 <div className="flex justify-between items-center"><span className="text-[10px] text-blue-300 uppercase font-black">Ažuriranje: {activeEditItem.naziv_proizvoda}</span><button onClick={()=>setActiveEditItem(null)} className="text-red-500 text-xs font-black hover:underline">PONIŠTI ×</button></div>
-                                <div className="flex bg-slate-900 p-1 rounded-xl mt-3"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='dodaj'?'bg-emerald-600 text-white shadow-lg':'text-slate-500'}`}>+ Dodaj komade</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-2 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='oduzmi'?'bg-red-600 text-white shadow-lg':'text-slate-500'}`}>- Oduzmi komade</button></div>
+                                <div className="flex bg-slate-900 p-1 rounded-xl mt-3"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='dodaj'?'bg-emerald-600 text-white shadow-lg':'text-slate-500'}`}>+ Dodaj komade</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='oduzmi'?'bg-red-600 text-white shadow-lg':'text-slate-500'}`}>- Oduzmi komade</button></div>
                             </div>
                         )}
                         
@@ -614,7 +621,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             {activeEditItem ? `✅ SAČUVAJ IZMJENE STAVKE` : `➕ DODAJ U PAKET`}
                         </button>
                         
-                        <div className="pt-6 space-y-3 max-h-60 overflow-y-auto border-t border-slate-700">
+                        <div className="pt-6 space-y-3 max-h-[400px] overflow-y-auto border-t border-slate-700 pr-2 custom-scrollbar">
                         <label className="text-[10px] text-slate-400 uppercase font-black block mb-2 tracking-widest">Šta se sve nalazi u ovom paketu:</label>
                         {izlazPackageItems.length === 0 && <div className="text-center p-6 border-2 border-dashed border-slate-700 rounded-2xl text-slate-500 text-xs font-bold">Paket je prazan.</div>}
                         {izlazPackageItems.map(item => {
