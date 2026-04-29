@@ -1,16 +1,29 @@
-// Komponenta Dnevnik Masine specifična za Prorez
+"use client";
+
+import React, { useState, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import MasterHeader from '../components/MasterHeader';
+import SmartSearchableInput from '../components/SmartSearchableInput';
+import ScannerOverlay from '../components/ScannerOverlay';
+import { useSaaS } from '../utils/useSaaS';
+
+const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje, toggleVelicina }) {
     const [logovi, setLogovi] = useState([]);
     const [form, setForm] = useState({ vrijeme_od: '', vrijeme_do: '', zastoj_min: '', napomena: '' });
 
-    // FIX: Postavljamo vrijeme unutar useEffect da Next.js ne bi prijavio grešku pri renderovanju
     useEffect(() => { 
         setForm(f => ({ ...f, vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) }));
-        loadLogove(); 
-    }, [header]);
+        if (header?.datum && header?.masina) {
+            loadLogove(); 
+        }
+    }, [header?.datum, header?.masina]);
 
     const loadLogove = async () => {
-        if(!header || !header.datum || !header.masina) return;
+        if(!header?.datum || !header?.masina) return;
         const { data } = await supabase.from('dnevnik_masine').select('*').eq('datum', header.datum).eq('masina', header.masina).eq('modul', modul).order('vrijeme_od', { ascending: false });
         if (data) setLogovi(data);
     };
@@ -20,7 +33,7 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
         const payload = {
             datum: header.datum, masina: header.masina, modul: modul,
             vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null,
-            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user.ime_prezime
+            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
         };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
         if (error) return alert("Greška: " + error.message);
@@ -57,7 +70,6 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
             <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800 items-start">
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
-                    {/* FIX: Dodano (saasPolja || []) da spriječi rušenje aplikacije */}
                     {(saasPolja || []).map((polje, index) => (
                         <div 
                             key={polje.id} 
@@ -113,8 +125,6 @@ function DnevnikMasine({ modul, header, user, isEditMode, saasPolja, updatePolje
 }
 
 export default function ProrezModule({ user, header, setHeader, onExit }) {
-    
-    // === SaaS ALAT ===
     const saas = useSaaS('prorez_trupaca', {
         boja_zaglavlja: '#1e293b',
         boja_kartice: '#1e293b',
@@ -178,16 +188,24 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const [list, setList] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
     
-    const [brentista, setBrentista] = useState(typeof window !== 'undefined' ? localStorage.getItem('shared_brentista') || '' : '');
-    const [viljuskarista, setViljuskarista] = useState(typeof window !== 'undefined' ? localStorage.getItem('shared_viljuskarista') || '' : '');
+    // FIX: Hydration safe state za localStorage
+    const [brentista, setBrentista] = useState('');
+    const [viljuskarista, setViljuskarista] = useState('');
     const [radniciList, setRadniciList] = useState([]);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setBrentista(localStorage.getItem('shared_brentista') || '');
+            setViljuskarista(localStorage.getItem('shared_viljuskarista') || '');
+        }
+    }, []);
 
     const handleBrentistaChange = async (novoIme) => {
         const staroIme = localStorage.getItem('shared_brentista');
-        if (staroIme && staroIme !== novoIme) {
+        if (staroIme && staroIme !== novoIme && header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('radnik_ime', staroIme).eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
         }
-        if (novoIme) {
+        if (novoIme && header?.masina) {
             await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
         }
         setBrentista(novoIme); localStorage.setItem('shared_brentista', novoIme);
@@ -195,10 +213,10 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
     const handleViljuskaristaChange = async (novoIme) => {
         const staroIme = localStorage.getItem('shared_viljuskarista');
-        if (staroIme && staroIme !== novoIme) {
+        if (staroIme && staroIme !== novoIme && header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('radnik_ime', staroIme).eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
         }
-        if (novoIme) {
+        if (novoIme && header?.masina) {
             await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
         }
         setViljuskarista(novoIme); localStorage.setItem('shared_viljuskarista', novoIme);
@@ -207,13 +225,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const timerRef = useRef(null);
 
     useEffect(() => { 
-        loadList(); 
+        if (header?.masina && header?.datum) {
+            loadList(); 
+        }
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>r.ime_prezime) : []));
-    }, [header.masina, header.datum]);
+    }, [header?.masina, header?.datum]);
 
-    // FIX: Vraćeno na ručno spajanje kako bi izbjegli grešku sa Foreign Key vezom
     const loadList = async () => {
-        if(!header.masina) return;
+        if(!header?.masina) return;
         const { data: logData } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).eq('datum', header.datum).eq('zakljuceno', false).order('created_at', { ascending: false });
         if (!logData || logData.length === 0) { setList([]); return; }
 
@@ -234,7 +253,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     };
 
     const obradiTrupac = async (trupacId) => {
-        if (!header.masina) return alert("Odaberi mašinu u zaglavlju!");
+        if (!header?.masina) return alert("Odaberi mašinu u zaglavlju!");
         if (!brentista) return alert("Molimo unesite ko je Brentista!");
         
         const { data: trupac } = await supabase.from('trupci').select('*').eq('id', trupacId).maybeSingle();
@@ -273,7 +292,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         <div className="p-2 md:p-4 max-w-2xl mx-auto space-y-6 animate-in fade-in font-bold">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-cyan-500" user={user} modulIme="prorez" hideWorkers={true} saas={saas} />
             
-            <div className={`p-4 md:p-6 rounded-[2.5rem] shadow-2xl space-y-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? '' : saas.ui.boja_bordera, borderWidth: saas.isEditMode ? '0' : '1px' }}>
+            <div className={`p-4 md:p-6 rounded-[2.5rem] shadow-2xl space-y-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500' : ''}`} style={{ backgroundColor: saas.ui?.boja_kartice || '#1e293b', borderColor: saas.isEditMode ? '' : (saas.ui?.boja_bordera || ''), borderWidth: saas.isEditMode ? '0' : '1px' }}>
                 
                 {saas.isEditMode && (
                     <div className="bg-black/40 p-3 rounded-xl flex flex-wrap gap-4 items-center mb-4 border border-amber-500/30">
@@ -284,7 +303,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 )}
 
                 <div className="flex flex-col md:flex-row gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-700 mb-4 items-start md:items-end w-full">
-                    {(saas.ui.polja_radnici || []).map((polje, index) => (
+                    {(saas.ui?.polja_radnici || []).map((polje, index) => (
                         <div 
                             key={polje.id} 
                             className={`relative flex flex-col w-full flex-1 transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
@@ -319,12 +338,12 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
                 <div className="relative font-black w-full">
                     {saas.isEditMode ? (
-                        <input value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
+                        <input value={saas.ui?.naslov_skenera || ''} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full bg-slate-900 text-amber-400 p-2 mb-2 rounded border border-amber-500/50 text-[10px] uppercase font-black" placeholder="Naslov iznad skenera..." />
                     ) : (
-                        <label className={`text-[10px] uppercase ${saas.ui.boja_teksta} block mb-2 tracking-widest ml-2`}>{saas.ui.naslov_skenera}</label>
+                        <label className={`text-[10px] uppercase ${saas.ui?.boja_teksta || ''} block mb-2 tracking-widest ml-2`}>{saas.ui?.naslov_skenera || ''}</label>
                     )}
                     
-                    <div className={`flex flex-row bg-[#0f172a] border-2 rounded-2xl overflow-hidden shadow-inner w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none border-dashed border-amber-500/50' : saas.ui.boja_bordera}`}>
+                    <div className={`flex flex-row bg-[#0f172a] border-2 rounded-2xl overflow-hidden shadow-inner w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none border-dashed border-amber-500/50' : (saas.ui?.boja_bordera || '')}`}>
                         <input value={scan} onChange={e => handleInput(e.target.value)} className="w-full min-w-0 p-4 md:p-5 bg-transparent text-lg md:text-xl text-center text-white outline-none uppercase font-black placeholder-slate-600" placeholder="Čekam sken..." />
                         <button onClick={() => setIsScanning(true)} className="px-4 md:px-6 py-4 bg-cyan-600 text-white font-black hover:bg-cyan-500 transition-colors shrink-0 text-xl flex items-center justify-center gap-2">📷 <span className="hidden md:inline">SCAN</span></button>
                     </div>
@@ -386,7 +405,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                             </button>
                                         </div>
                                     </div>
-
                                 </div>
                             );
                         })}
@@ -403,7 +421,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 </div>
             </div>
             
-            <DnevnikMasine modul="Prorez" header={header} user={user} isEditMode={saas.isEditMode} saasPolja={saas.ui.polja_dnevnik} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} />
+            <DnevnikMasine modul="Prorez" header={header} user={user} isEditMode={saas.isEditMode} saasPolja={saas.ui?.polja_dnevnik || []} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} />
             
             {isScanning && <ScannerOverlay onScan={(text) => { obradiTrupac(text.toUpperCase()); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
