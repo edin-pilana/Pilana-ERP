@@ -234,7 +234,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const loadList = async () => {
         if(!header?.masina) return;
         
-        // Uklonili smo order('created_at') koji je rušio prikaz
         const { data: logData, error } = await supabase.from('prorez_log')
             .select('*')
             .eq('masina', header.masina)
@@ -252,11 +251,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         const { data: trupciData } = await supabase.from('trupci').select('*').in('id', trupacIds);
 
         const finalnaLista = logData.map(log => {
-            const detalji = (trupciData || []).find(t => t.id === log.trupac_id) || {};
+            // FIX: Osiguravamo da se ID-jevi 100% poklope (čistimo razmake i velika slova)
+            const siguranLogId = String(log.trupac_id || '').trim().toUpperCase();
+            const detalji = (trupciData || []).find(t => String(t.id || '').trim().toUpperCase() === siguranLogId) || {};
+            
             return { ...log, detaljiTrupca: detalji };
         });
         
-        // Ručno sortiranje (najnoviji na vrhu) koristeći vrijeme_unosa
+        // Sortiranje najnovijih na vrh
         finalnaLista.sort((a, b) => {
             if (a.vrijeme_unosa && b.vrijeme_unosa) return b.vrijeme_unosa.localeCompare(a.vrijeme_unosa);
             return 0;
