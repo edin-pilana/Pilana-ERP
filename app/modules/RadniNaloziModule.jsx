@@ -184,7 +184,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const [katalog, setKatalog] = useState([]);
     const [nalozi, setNalozi] = useState([]);
     const [aktivnePonude, setAktivnePonude] = useState([]);
-    
     const [masineList, setMasineList] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
     
@@ -351,6 +350,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         provjeriModifikacije(noveStavke);
     };
 
+    // --- LOGIKA ZA VIŠEFAZNU RAZRADU ---
     const otvoriRazradu = async () => {
         setTab('razrada');
         const noveTeh = { ...tehnologija };
@@ -824,10 +824,10 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                             const dostupneOznake = odabranaMasinaObj?.atributi_paketa || [];
 
                                             return (
-                                            <div key={faza.id} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-end bg-[#0f172a] p-5 rounded-2xl border border-slate-800 relative group">
+                                            <div key={faza.id} className="flex flex-col lg:flex-row gap-3 items-end bg-[#0f172a] p-5 rounded-2xl border border-slate-800 relative group flex-wrap">
                                                 <div className="absolute -left-3 -top-3 w-6 h-6 bg-amber-500 text-black font-black text-[10px] flex items-center justify-center rounded-full border-2 border-slate-900 z-10">{index + 1}</div>
                                                 
-                                                <div className="lg:col-span-3 w-full">
+                                                <div className="flex-1 w-full min-w-[140px]">
                                                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Mašina</label>
                                                     <select 
                                                         value={faza.masina || ''} 
@@ -839,7 +839,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                     </select>
                                                 </div>
                                                 
-                                                <div className="lg:col-span-3 w-full">
+                                                <div className="flex-1 w-full min-w-[140px]">
                                                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Ulazna (radna) dimenzija</label>
                                                     <input 
                                                         value={faza.dimenzija || ''} 
@@ -849,7 +849,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                     />
                                                 </div>
 
-                                                <div className="lg:col-span-2 w-full">
+                                                <div className="w-full lg:w-48 shrink-0">
                                                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Faktor/Količina</label>
                                                     <div className="flex gap-1">
                                                         <input 
@@ -857,19 +857,19 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                             value={faza.kolicina || ''} 
                                                             onChange={e=>updateFazu(s.id, faza.id, 'kolicina', e.target.value)} 
                                                             placeholder="Kol." 
-                                                            className="flex-1 p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none font-black focus:border-amber-500 text-center" 
+                                                            className="flex-1 min-w-0 p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none font-black focus:border-amber-500 text-center" 
                                                         />
                                                         <select 
                                                             value={faza.jm || 'kom'} 
                                                             onChange={e=>updateFazu(s.id, faza.id, 'jm', e.target.value)} 
-                                                            className="w-16 p-3 bg-slate-800 rounded-xl text-[10px] text-white border border-slate-700 outline-none focus:border-amber-500 cursor-pointer"
+                                                            className="w-16 shrink-0 p-3 bg-slate-800 rounded-xl text-[10px] text-white border border-slate-700 outline-none focus:border-amber-500 cursor-pointer"
                                                         >
                                                             <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
                                                         </select>
                                                     </div>
                                                 </div>
 
-                                                <div className="lg:col-span-3 w-full">
+                                                <div className="flex-[1.5] w-full min-w-[140px]">
                                                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Napomena (Opciono)</label>
                                                     <input 
                                                         value={faza.napomena || ''} 
@@ -879,7 +879,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                     />
                                                 </div>
 
-                                                <div className="lg:col-span-1 flex items-center justify-end md:justify-center w-full mt-2 lg:mt-0">
+                                                <div className="w-full lg:w-auto shrink-0 flex items-center justify-end mt-2 lg:mt-0">
                                                     <button 
                                                         onClick={() => ukloniFazu(s.id, faza.id)} 
                                                         className="w-full lg:w-auto bg-red-900/30 text-red-500 p-3 rounded-xl font-black hover:bg-red-500 hover:text-white transition-all opacity-100 lg:opacity-0 group-hover:opacity-100 border border-red-500/20"
@@ -889,7 +889,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                 </div>
 
                                                 {dostupneOznake.length > 0 && (
-                                                    <div className="col-span-1 md:col-span-2 lg:col-span-12 mt-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                                                    <div className="w-full mt-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
                                                         <label className="text-[10px] text-slate-500 uppercase block mb-2 font-black ml-1">Opcije obrade za ovu fazu:</label>
                                                         <div className="flex flex-wrap gap-2">
                                                             {dostupneOznake.map(o => {
