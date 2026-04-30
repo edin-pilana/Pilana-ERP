@@ -8,7 +8,6 @@ import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
-// PRETRAGA PROIZVODA SA PODRŠKOM ZA TASTATURU (STRELICE I ENTER)
 function PonudeSearchableProizvod({ katalog, value, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value || '');
@@ -180,7 +179,7 @@ export default function PonudeModule({ onExit }) {
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: p} = await supabase.from('ponude').select('*').order('datum', { ascending: false }); setPonude(p||[]);
         
-        // SUPERADMIN UČITAVANJE LOGOVA
+        // SUPERADMIN UČITAVANJE LOGOVA ZA RABATE
         if (loggedUser.uloga === 'superadmin') {
             const {data: logs} = await supabase.from('sistem_audit_log').select('*').eq('akcija', 'RUČNA_IZMJENA_RABATA').order('vrijeme', { ascending: false }).limit(10);
             setSuperadminLogs(logs || []);
@@ -189,6 +188,13 @@ export default function PonudeModule({ onExit }) {
 
     const zapisiU_Log = async (akcija, detalji) => {
         await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]);
+    };
+
+    // NOVO: POTVRDA UPOZORENJA ZA SUPERADMINA
+    const potvrdiUpozorenje = async (logId) => {
+        // Označavamo akciju kao pročitanu da ne bi više iskakala u query-ju
+        await supabase.from('sistem_audit_log').update({ akcija: 'RUČNA_IZMJENA_RABATA_PROČITANO' }).eq('id', logId);
+        setSuperadminLogs(prev => prev.filter(l => l.id !== logId));
     };
 
     const handleKupacSelect = (naziv) => {
@@ -261,7 +267,7 @@ export default function PonudeModule({ onExit }) {
         const cijena_baza = dinamickaCijena; 
         const rabat_konacni = parseFloat(stavkaForm.konacni_rabat) || 0;
         
-        // LOGIKANJE ZA SUPERADMINA
+        // Zapisujemo u log samo ako je rabat POBOLJŠAN (veći popust) za kupca
         if (rabat_konacni > stavkaForm.sistemski_rabat) {
             await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Za "${trenutniProizvod.naziv}" kupcu "${form.kupac_naziv}" na ponudi ${form.id}, rabat ručno povećan na ${rabat_konacni}% (Sistem davao: ${stavkaForm.sistemski_rabat}%).`);
         }
@@ -281,7 +287,6 @@ export default function PonudeModule({ onExit }) {
         setTrenutniProizvod(null);
     };
 
-    // --- PRIMJENA GLOBALNOG RABATA NA SVE STAVKE ---
     const primijeniGlobalniRabat = async () => {
         const rabat = parseFloat(globalRabat);
         if (isNaN(rabat) || rabat < 0 || rabat > 100) return alert("Unesite validan procenat rabata (0-100)!");
@@ -373,74 +378,69 @@ export default function PonudeModule({ onExit }) {
     const resetFormu = () => { setForm({ id: generisiID(), kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_vazenja: '', nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU', rn_modifikovan: false }); setStavke([]); setOdabraniKupac(null); setIsEditingPonuda(false); setPovezaniRN(null); setGlobalRabat(''); };
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-'); return `${d}.${m}.${y}.`; };
 
-    // PDF Optimizovan za 20 stavki na jednoj strani
+    // PDF Optimizovan za 20 stavki i u potpunosti podržava Globalni Logo / Reklamu
     const kreirajPDF = () => {
         const stariNaslov = document.title; 
         document.title = `ponuda_${form.id}_${(form.kupac_naziv || 'Nepoznat_Kupac').replace(/\s+/g, '_')}`;
+        
         const ukupnoSaPDV = parseFloat(totals.za_naplatu); 
         const depozit = parseFloat(form.depozit) || 0; 
         const preostaloZaNaplatu = (ukupnoSaPDV - depozit).toFixed(2);
         
-        let redovi = stavke.map((s, i) => `
-            <tr>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #64748b;">${i+1}.</td>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0;">
-                    <b style="color: #0f172a; font-size: 10px;">${s.sifra}</b><br/>
-                    <span style="color: #64748b; font-size: 9px;">${s.naziv}</span>
-                </td>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 800; color: #0f172a; font-size: 10px;">
-                    ${s.kolicina_obracun} <span style="color: #64748b; font-size: 8px;">${s.jm_obracun}</span>
-                </td>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600; font-size: 10px;">${s.cijena_baza.toFixed(2)}</td>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #ec4899; font-weight: 800; font-size: 10px;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td>
-                <td style="padding: 2px 4px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; color: #0f172a; font-size: 11px;">${s.ukupno.toFixed(2)}</td>
-            </tr>
-        `).join('');
-
+        let redovi = stavke.map((s, i) => `<tr><td style="font-weight: bold; color: #64748b;">${i+1}.</td><td><b style="color: #0f172a; font-size: 11px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 10px;">${s.naziv}</span></td><td style="text-align: center; font-weight: 800; color: #0f172a; font-size: 11px;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 9px; font-weight: 600;">${s.jm_obracun}</span></td><td style="text-align: right; font-weight: 600; font-size: 11px;">${s.cijena_baza.toFixed(2)}</td><td style="text-align: right; color: #ec4899; font-weight: 800; font-size: 11px;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td><td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 12px;">${s.ukupno.toFixed(2)}</td></tr>`).join('');
+        
         const htmlSadrzajTabela = `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; line-height: 1.2;">
-                <div>
-                    <h4 style="margin: 0 0 3px 0; font-size: 11px; color: #64748b;">Kupac / Klijent</h4>
-                    <p style="font-size: 16px; font-weight: 900; margin: 0 0 2px 0;">${form.kupac_naziv}</p>
-                    <p style="font-size: 10px; color: #475569; margin: 0;">${odabraniKupac?.adresa || 'Adresa nije unesena'}</p>
-                    <p style="font-size: 10px; color: #0f172a; font-weight: bold; margin: 4px 0 0 0;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
+            <style>
+                /* OVO KOMPRESUJE TABELU DA STANE 20 STAVKI, A NE RUŠI GLOBALNI LOGO I HEADER */
+                table th, table td { padding: 4px 6px !important; }
+                .info-grid { margin-bottom: 15px !important; }
+                .summary-box { padding: 10px !important; margin-top: 15px !important; font-size: 11px !important; width: 50% !important; margin-left: auto !important; }
+                .summary-row { margin-bottom: 4px !important; }
+                .summary-total { padding-top: 6px !important; font-size: 13px !important; border-top: 2px solid #cbd5e1 !important; }
+                .footer { margin-top: 20px !important; font-size: 11px !important; }
+            </style>
+            
+            <div class="info-grid">
+                <div class="info-col">
+                    <h4>Kupac / Klijent</h4>
+                    <p style="font-size: 16px; font-weight: 900; margin-bottom: 3px;">${form.kupac_naziv}</p>
+                    <p style="font-weight: 400; color: #475569; font-size: 11px;">${odabraniKupac?.adresa || 'Adresa nije unesena'}</p>
+                    <p style="font-weight: 600; color: #0f172a; font-size: 11px; margin-top: 4px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
                 </div>
-                <div style="text-align: right;">
-                    <h4 style="margin: 0 0 3px 0; font-size: 11px; color: #64748b;">Detalji Ponude</h4>
-                    <p style="font-size: 10px; margin: 0 0 2px 0;">Paritet: <b>${form.paritet}</b></p>
-                    <p style="font-size: 10px; margin: 0 0 2px 0;">Plaćanje: <b>${form.nacin_placanja}</b></p>
-                    <p style="font-size: 10px; margin: 0 0 2px 0;">Valuta: <b>${form.valuta}</b></p>
-                    <p style="font-size: 11px; color: #ec4899; font-weight: bold; margin: 4px 0 0 0;">Važi do: ${formatirajDatum(form.rok_vazenja)}</p>
+                <div class="info-col" style="text-align: right;">
+                    <h4>Detalji Ponude</h4>
+                    <p style="font-size: 11px;">Paritet: <span style="font-weight: 400; color: #475569;">${form.paritet}</span></p>
+                    <p style="font-size: 11px;">Plaćanje: <span style="font-weight: 400; color: #475569;">${form.nacin_placanja}</span></p>
+                    <p style="font-size: 11px;">Valuta: <span style="font-weight: 400; color: #475569;">${form.valuta}</span></p>
+                    <p style="color: #ec4899; margin-top: 6px; font-weight: 800; font-size: 11px;">Važi do: ${formatirajDatum(form.rok_vazenja)}</p>
                 </div>
             </div>
             
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
+            <table>
                 <thead>
-                    <tr style="background: #f8fafc;">
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: left; font-size: 9px; width: 5%;">R.B.</th>
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: left; font-size: 9px;">Šifra i Naziv Proizvoda</th>
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: center; font-size: 9px;">Količina</th>
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: right; font-size: 9px;">Cijena</th>
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: right; font-size: 9px;">Rabat</th>
-                        <th style="padding: 4px; border-bottom: 2px solid #cbd5e1; text-align: right; font-size: 9px;">Ukupno (${form.valuta})</th>
+                    <tr>
+                        <th style="width: 5%;">R.B.</th>
+                        <th>Šifra i Naziv Proizvoda</th>
+                        <th style="text-align:center;">Količina</th>
+                        <th style="text-align:right;">Cijena</th>
+                        <th style="text-align:right;">Rabat</th>
+                        <th style="text-align:right;">Ukupno (${form.valuta})</th>
                     </tr>
                 </thead>
                 <tbody>${redovi}</tbody>
             </table>
             
-            <div style="width: 45%; margin-left: auto; font-size: 10px;">
-                <div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>Iznos bez rabata:</span> <b>${totals.bez_rabata}</b></div>
-                <div style="display: flex; justify-content: space-between; padding: 2px 0; color: #ec4899;"><span>Uračunati rabat:</span> <b>- ${totals.rabat}</b></div>
-                <div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>Osnovica za PDV:</span> <b>${totals.osnovica}</b></div>
-                <div style="display: flex; justify-content: space-between; padding: 2px 0;"><span>PDV iznos (17%):</span> <b>${totals.pdv}</b></div>
-                <div style="display: flex; justify-content: space-between; padding: 4px 0; margin-top: 4px; border-top: 1px solid #cbd5e1; font-size: 11px;"><span>UKUPNO SA PDV:</span> <b>${ukupnoSaPDV.toFixed(2)}</b></div>
-                ${depozit > 0 ? `<div style="display: flex; justify-content: space-between; padding: 2px 0; color: #10b981;"><span>Uplaćen depozit:</span> <b>- ${depozit.toFixed(2)}</b></div>` : ''}
-                <div style="display: flex; justify-content: space-between; padding: 4px 0; margin-top: 4px; border-top: 2px solid #cbd5e1; font-size: 13px; font-weight: bold;">
-                    <span>ZA NAPLATU:</span><span>${preostaloZaNaplatu} ${form.valuta}</span>
-                </div>
+            <div class="summary-box">
+                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${totals.bez_rabata}</b></div>
+                <div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${totals.rabat}</b></div>
+                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${totals.osnovica}</b></div>
+                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${totals.pdv}</b></div>
+                <div class="summary-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #cbd5e1;"><span>UKUPNO SA PDV:</span> <b>${ukupnoSaPDV.toFixed(2)}</b></div>
+                ${depozit > 0 ? `<div class="summary-row" style="color: #10b981;"><span>Uplaćen depozit / Avans:</span> <b style="font-size:12px;">- ${depozit.toFixed(2)}</b></div>` : ''}
+                <div class="summary-total"><span style="font-size: 13px; letter-spacing: 1px; padding-top:4px;">ZA NAPLATU:</span><span>${preostaloZaNaplatu} ${form.valuta}</span></div>
             </div>
             
-            <div style="display: flex; justify-content: space-between; margin-top: 15px; font-size: 9px; line-height: 1.3;">
+            <div class="footer">
                 <div style="width: 60%;">
                     <b style="color: #0f172a;">Napomena uz ponudu:</b><br/>
                     ${form.napomena || 'Nema dodatnih napomena.'}
@@ -451,6 +451,7 @@ export default function PonudeModule({ onExit }) {
                 </div>
             </div>
         `;
+        
         printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899');
         setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
@@ -530,7 +531,6 @@ export default function PonudeModule({ onExit }) {
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
                                     <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Unos: Količina i Jedinica</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Količina" className="flex-1 p-3 bg-[#0f172a] rounded-xl text-sm text-white font-black text-center outline-none border border-slate-700 focus:border-blue-500" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700 cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
                                     
-                                    {/* BLOKIRANO POLJE KOLIČINE OBRACUNA + SLOBODAN SELECT */}
                                     <div className="col-span-2">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Obračunava se po (Preračunato)</label>
                                         <div className="flex gap-1">
@@ -592,15 +592,18 @@ export default function PonudeModule({ onExit }) {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-right">
                     
-                    {/* SUPERADMIN ALARM ZA MANIPULACIJU RABATIMA */}
+                    {/* SUPERADMIN ALARM ZA MANIPULACIJU RABATIMA SA DUGMETOM PROČITANO */}
                     {loggedUser?.uloga === 'superadmin' && superadminLogs.length > 0 && (
                         <div className="bg-red-950/50 border-2 border-red-500 p-4 rounded-2xl mb-2 shadow-lg col-span-full animate-pulse">
-                            <h3 className="text-red-500 font-black uppercase text-[10px] mb-3 flex items-center gap-2 tracking-widest"><span>🚨</span> SUPERADMIN UPOZORENJA: RUČNA KOREKCIJA RABATA (Posljednjih 10)</h3>
+                            <h3 className="text-red-500 font-black uppercase text-[10px] mb-3 flex items-center gap-2 tracking-widest"><span>🚨</span> SUPERADMIN UPOZORENJA: RUČNA KOREKCIJA RABATA</h3>
                             <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                                 {superadminLogs.map(l => (
-                                    <div key={l.id} className="text-[10px] text-slate-300 flex flex-col md:flex-row md:justify-between border-b border-red-500/20 pb-2">
-                                        <span><b className="text-red-400">{l.korisnik}</b>: {l.detalji}</span>
-                                        <span className="text-slate-500 shrink-0 md:ml-4">{new Date(l.vrijeme).toLocaleString('de-DE')}</span>
+                                    <div key={l.id} className="text-[10px] text-slate-300 flex flex-col md:flex-row md:justify-between md:items-center border-b border-red-500/20 pb-2">
+                                        <span className="flex-1"><b className="text-red-400">{l.korisnik}</b>: {l.detalji}</span>
+                                        <div className="flex items-center gap-4 mt-2 md:mt-0 shrink-0">
+                                            <span className="text-slate-500">{new Date(l.vrijeme).toLocaleString('de-DE')}</span>
+                                            <button onClick={() => potvrdiUpozorenje(l.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1 rounded transition-all font-black uppercase border border-red-500/30 shadow-md">✓ Pročitano</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
