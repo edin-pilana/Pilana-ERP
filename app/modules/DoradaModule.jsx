@@ -68,7 +68,7 @@ function PD_SearchableRN({ nalozi, value, onSelect, onScanClick }) {
     );
 }
 
-function PD_SearchableProizvod({ katalog, value, onSelect }) {
+function PD_SearchableProizvod({ katalog, value, onSelect, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value || '');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -93,18 +93,20 @@ function PD_SearchableProizvod({ katalog, value, onSelect }) {
             e.preventDefault();
             if (filtered.length > 0) {
                 const k = filtered[selectedIndex];
-                onSelect(k); setSearch(k.naziv); setOpen(false);
+                onSelect(k); setSearch(k.naziv); onChange(k.naziv); setOpen(false);
+            } else {
+                setOpen(false);
             }
         } else if (e.key === 'Escape') setOpen(false);
     };
 
     return (
         <div ref={wrapperRef} className="relative font-black w-full">
-            <input value={search} onFocus={() => setOpen(true)} onKeyDown={handleKeyDown} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi proizvod (Šifra ili Naziv)..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-emerald-500 uppercase" />
+            <input value={search} onFocus={() => setOpen(true)} onKeyDown={handleKeyDown} onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true); }} placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-emerald-500 uppercase" />
             {open && search && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.map((k, index) => (
-                        <div key={k.sifra} onClick={() => { onSelect(k); setSearch(k.naziv); setOpen(false); }} onMouseEnter={()=>setSelectedIndex(index)} className={`p-3 border-b border-slate-700 cursor-pointer transition-colors ${index === selectedIndex ? 'bg-emerald-600' : 'hover:bg-slate-700'}`}>
+                        <div key={k.sifra} onClick={() => { onSelect(k); setSearch(k.naziv); onChange(k.naziv); setOpen(false); }} onMouseEnter={()=>setSelectedIndex(index)} className={`p-3 border-b border-slate-700 cursor-pointer transition-colors ${index === selectedIndex ? 'bg-emerald-600' : 'hover:bg-slate-700'}`}>
                             <div className="text-white text-xs font-black">{k.sifra} - {k.naziv}</div>
                             <div className="text-[9px] text-slate-400">Dim: {k.visina}x{k.sirina}x{k.duzina} | Baza: {k.default_jedinica}</div>
                         </div>
@@ -252,7 +254,6 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 
 export default function DoradaModule({ user, header, setHeader, onExit }) {
     
-    // === SaaS ALAT ===
     const saas = useSaaS('dorada_modul', {
         boja_kartice: '#1e293b',
         boja_teksta_ulaz: 'text-red-500',
@@ -325,7 +326,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
 
     const [activeUlazIds, setActiveUlazIds] = useState([]);
     const [ulazneStavke, setUlazneStavke] = useState([]); 
-    const [predlozeniPaketi, setPredlozeniPaketi] = useState([]); // NOVO: Za sugestije paketa
+    const [predlozeniPaketi, setPredlozeniPaketi] = useState([]);
     
     const [razduziZapis, setRazduziZapis] = useState(null);
     const [razduziMod, setRazduziMod] = useState('potroseno'); 
@@ -353,6 +354,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const [viljuskarista, setViljuskarista] = useState(typeof window !== 'undefined' ? localStorage.getItem('shared_viljuskarista') || '' : '');
     const [radniciList, setRadniciList] = useState([]);
 
+    // OVE LINIJE SU FALILE U PROŠLOM KODU
     const handleBrentistaChange = (v) => { setBrentista(v); localStorage.setItem('shared_brentista', v); };
     const handleViljuskaristaChange = (v) => { setViljuskarista(v); localStorage.setItem('shared_viljuskarista', v); };
 
@@ -400,7 +402,41 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         ucitajDezurneRadnike();
     }, [header?.masina]);
 
-    // OVDJE SE NALAZI PAMETNA LOGIKA ZA PREUZIMANJE TEHNOLOGIJE (BOM) ZA ODABRANU MAŠINU
+    useEffect(() => {
+        const fetchSve = async () => {
+            if (!header?.masina) return;
+            
+            const { data: paks } = await supabase.from('paketi').select('*').gt('kolicina_final', 0).is('closed_at', null).neq('masina', header.masina);
+            const { data: techData } = await supabase.from('tehnologija_katalog').select('finalna_sifra, faze_jsonb');
+
+            let validni = paks || [];
+
+            if (radniNalog) {
+                validni = validni.filter(p => p.broj_veze === radniNalog);
+            }
+
+            validni = validni.filter(p => {
+                const katItem = katalog.find(k => k.naziv === p.naziv_proizvoda);
+                if (!katItem) return true; 
+                
+                const bom = techData?.find(t => t.finalna_sifra === katItem.sifra);
+                if (!bom || !bom.faze_jsonb) return true; 
+                
+                const currIdx = bom.faze_jsonb.findIndex(f => f.masina.toUpperCase() === header.masina.toUpperCase());
+                
+                if (currIdx > 0) {
+                    const prevMasina = bom.faze_jsonb[currIdx - 1].masina.toUpperCase();
+                    return p.masina?.toUpperCase() === prevMasina;
+                }
+                
+                return true; 
+            });
+
+            setPredlozeniPaketi(validni);
+        };
+        fetchSve();
+    }, [header?.masina, radniNalog, katalog]);
+
     const handleNalogSelect = async (val) => {
         if(!val) return;
         setRadniNalog(val);
@@ -419,6 +455,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     let naruceno = parseFloat(s.kolicina_obracun || s.kolicina || 0);
                     let jm = s.jm_obracun || s.jm_unos || 'm3';
                     let oznake = [];
+                    let napravljeno = 0;
 
                     if (isFazni) {
                         const fazaZaOvuMasinu = (tehnologija[s.id] || []).find(f => f.masina?.toUpperCase() === header.masina?.toUpperCase());
@@ -428,6 +465,9 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         naruceno = parseFloat(fazaZaOvuMasinu.kolicina || 0);
                         jm = fazaZaOvuMasinu.jm || jm;
                         oznake = fazaZaOvuMasinu.oznake || [];
+                        napravljeno = parseFloat(s.napravljeno_po_fazama?.[header.masina] || 0);
+                    } else {
+                        napravljeno = parseFloat(s.napravljeno || 0);
                     }
 
                     const v = parseFloat(katItem.visina) || 0; const sir = parseFloat(katItem.sirina) || 0; const d = parseFloat(katItem.duzina) || 0;
@@ -439,7 +479,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         naziv_proizvoda: s.naziv, 
                         jm: jm, 
                         naruceno: naruceno, 
-                        napravljeno: parseFloat(s.napravljeno || 0),
+                        napravljeno: napravljeno,
                         dimenzije: dimenzije,
                         vol1kom: vol1kom,
                         predlozene_oznake: oznake,
@@ -453,15 +493,10 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 }
                 setRnStavke(mapiraneStavke);
 
-                // NOVO: Pretraga sirovina (Započetih paketa) za ovaj RN da se predlože korisniku!
-                const { data: paks } = await supabase.from('paketi').select('*').eq('broj_veze', val.toUpperCase()).gt('kolicina_final', 0).is('closed_at', null);
-                setPredlozeniPaketi(paks || []);
-
-            } else { alert(`Nalog ${val} nema stavki!`); setRnStavke([]); setPredlozeniPaketi([]); }
-        } else { alert(`Nalog ${val} ne postoji!`); setRnStavke([]); setPredlozeniPaketi([]); }
+            } else { alert(`Nalog ${val} nema stavki!`); setRnStavke([]); }
+        } else { alert(`Nalog ${val} ne postoji!`); setRnStavke([]); }
     };
 
-    // KADA KORISNIK KLIKNE STAVKU IZ NALOGA, SISTEM PREPISUJE NJENE FAZNE POSTAVKE U FORMU
     const handleStavkaSelect = async (stavka) => {
         let deb = '', sir = '', duz = '';
         
@@ -505,7 +540,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             setUlazneStavke(prev => [...prev, ...data]); 
             setUlazScan(''); 
 
-            // NOVO: PAMETNO AUTO-POPUNJAVANJE NALOGA AKO JE VEZAN ZA OVAJ ULAZ
             if (paket.broj_veze && !radniNalog) {
                 if(window.confirm(`Skenirani paket pripada Radnom Nalogu: ${paket.broj_veze}\nŽelite li automatski učitati taj nalog na mašinu?`)) {
                     handleNalogSelect(paket.broj_veze);
@@ -612,51 +646,71 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
 
         const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
 
-        if (form.rn_stavka_id && !activeEditItem) {
-            const rnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id);
-            if (rnStavka) {
-                const vecNapravljeno = parseFloat(rnStavka.napravljeno) || 0;
-                const naruceno = parseFloat(rnStavka.naruceno) || 0;
-                
-                let kolikoSadPravimo = komada;
-                if (rnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket;
-                else if (rnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100);
-                else if (rnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
+        // Provjera nusproizvoda
+        let isNusProizvod = false;
+        let currentRnStavka = null;
 
-                if ((vecNapravljeno + kolikoSadPravimo) > naruceno) {
-                    const preostalo = naruceno - vecNapravljeno;
-                    if (!window.confirm(`⚠️ UPOZORENJE: PRELAZITE NORMU!\n\nZa ovaj Radni Nalog je preostalo samo: ${preostalo.toFixed(3)} ${rnStavka.jm}.\nVi pokušavate dodati: ${kolikoSadPravimo.toFixed(3)} ${rnStavka.jm}.\n\nDa li ste sigurni da želite napraviti ovaj višak?`)) {
-                        return; 
-                    }
+        if (form.rn_stavka_id) {
+            currentRnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id);
+            if (currentRnStavka && currentRnStavka.naziv_proizvoda !== form.naziv) isNusProizvod = true; 
+        } else if (radniNalog) {
+            isNusProizvod = true; 
+        }
+
+        if (currentRnStavka && !isNusProizvod && !activeEditItem && !activeUlazIds.includes(selectedIzlazId)) {
+            const vecNapravljeno = parseFloat(currentRnStavka.napravljeno) || 0;
+            const naruceno = parseFloat(currentRnStavka.naruceno) || 0;
+            
+            let kolikoSadPravimo = komada;
+            if (currentRnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket;
+            else if (currentRnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100);
+            else if (currentRnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
+
+            if ((vecNapravljeno + kolikoSadPravimo) > naruceno) {
+                const preostalo = naruceno - vecNapravljeno;
+                if (!window.confirm(`⚠️ UPOZORENJE: PRELAZITE NORMU!\n\nZa ovaj Radni Nalog je preostalo samo: ${preostalo.toFixed(3)} ${currentRnStavka.jm}.\nVi pokušavate dodati: ${kolikoSadPravimo.toFixed(3)} ${currentRnStavka.jm}.\n\nDa li ste sigurni da želite napraviti ovaj višak?`)) {
+                    return; 
                 }
             }
         }
 
+        // --- SPAJANJE SVIH AKTIVNIH RADNIKA ---
         const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-        const radniciNaMasini = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).join(', ') : '';
+        const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
+        const sviRadniciPilana = [brentista, viljuskarista, ...ostaliRadnici].filter(Boolean).join(', ');
 
         if (activeEditItem) {
             const newM3 = updateMode === 'dodaj' ? parseFloat(activeEditItem.kolicina_final) + qtyZaPaket : parseFloat(activeEditItem.kolicina_final) - qtyZaPaket;
+            
+            // OVDJE RADI MORPH (Promjena mašine i dodavanje oznaka kada stari paket prolazi kroz Doradu)
             const { error } = await supabase.from('paketi').update({ 
-                kolicina_final: parseFloat(newM3.toFixed(3)), vrijeme_tekst: timeNow, snimio_korisnik: user?.ime_prezime || 'Nepoznat',
-                radnici_pilana: radniciNaMasini, brentista: brentista, viljuskarista: viljuskarista,
-                oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
-                broj_veze: radniNalog || activeEditItem.broj_veze 
+                kolicina_final: parseFloat(newM3.toFixed(3)), 
+                vrijeme_tekst: timeNow, 
+                snimio_korisnik: user?.ime_prezime || 'Nepoznat',
+                radnici_pilana: sviRadniciPilana, 
+                brentista: brentista, 
+                viljuskarista: viljuskarista,
+                oznake: odabraneOznake, // Primjenjujemo NOVE + STARE odabrane oznake
+                broj_veze: radniNalog || activeEditItem.broj_veze,
+                je_nusproizvod: activeEditItem.je_nusproizvod,
+                masina: header.masina // Mijenjamo mašinu u onu na kojoj se trenutno nalazimo
             }).eq('id', activeEditItem.id);
+            
             if (error) return alert("❌ GREŠKA PRI AŽURIRANJU PAKETA: " + error.message);
         } else {
             const { error } = await supabase.from('paketi').insert([{ 
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, 
                 kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, 
                 mjesto: header.mjesto, masina: header.masina, snimio_korisnik: user?.ime_prezime || 'Nepoznat',
-                radnici_pilana: radniciNaMasini, brentista: brentista, viljuskarista: viljuskarista,
+                radnici_pilana: sviRadniciPilana, brentista: brentista, viljuskarista: viljuskarista,
                 vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum,
-                ai_sirovina_ids: activeUlazIds, oznake: odabraneOznake, broj_veze: radniNalog 
+                ai_sirovina_ids: activeUlazIds, oznake: odabraneOznake, broj_veze: radniNalog,
+                je_nusproizvod: isNusProizvod 
             }]);
             
             if (error) return alert("❌ GREŠKA PRI SNIMANJU PAKETA U BAZU: " + error.message);
             
-            if(form.rn_stavka_id) {
+            if(currentRnStavka && !isNusProizvod) {
                 const rn_jm = form.rn_jm || 'm3';
                 let napravljenoZaRN = komada;
 
@@ -664,12 +718,18 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100);
                 else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
 
-                const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb').eq('id', radniNalog.toUpperCase()).maybeSingle();
+                const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
                 if (rn && rn.stavke_jsonb) {
+                    const isFazni = rn.tip_naloga === 'FAZNI';
                     const azuriraneStavke = rn.stavke_jsonb.map(st => {
                         if (st.id === form.rn_stavka_id) {
-                            const novaKol = (parseFloat(st.napravljeno) || 0) + napravljenoZaRN;
-                            return { ...st, napravljeno: parseFloat(novaKol.toFixed(4)) };
+                            if (isFazni) {
+                                const trenutnoFaza = parseFloat(st.napravljeno_po_fazama?.[header.masina] || 0);
+                                return { ...st, napravljeno_po_fazama: { ...(st.napravljeno_po_fazama || {}), [header.masina]: parseFloat((trenutnoFaza + napravljenoZaRN).toFixed(4)) } };
+                            } else {
+                                const novaKol = (parseFloat(st.napravljeno) || 0) + napravljenoZaRN;
+                                return { ...st, napravljeno: parseFloat(novaKol.toFixed(4)) };
+                            }
                         }
                         return st;
                     });
@@ -680,6 +740,13 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             }
         }
         fetchIzlaz(selectedIzlazId); setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
+    };
+
+    const obrisiStavkuIzPaketa = async (item, e) => {
+        e.stopPropagation();
+        if(!window.confirm(`Da li ste sigurni da želite OBRISATI stavku iz ovog paketa?\n(Napomena: Količina na Radnom Nalogu se neće automatski umanjiti, korigujte je ručno po potrebi!)`)) return;
+        await supabase.from('paketi').delete().eq('id', item.id);
+        fetchIzlaz(selectedIzlazId);
     };
 
     const zakljuciPaket = async (pid) => {
@@ -693,12 +760,12 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
             if (window.confirm(`📦 Paket uspješno zaključen!\n\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`)) {
                 
-                // NOVO: Da li je paket fazni? Printaj narandžastu deklaraciju!
                 const stavkaNaloga = rnStavke.find(s => s.naziv_proizvoda === izlazPackageItems[0]?.naziv_proizvoda);
                 if (stavkaNaloga && stavkaNaloga.isFazni) {
-                    const {data: rnDb} = await supabase.from('radni_nalozi').select('tehnologija_jsonb').eq('id', radniNalog).single();
-                    const teh = rnDb?.tehnologija_jsonb?.[stavkaNaloga.id] || [];
-                    printFaznaDeklaracijaPaketa(pid, izlazPackageItems, radniNalog, header.masina, teh);
+                    supabase.from('radni_nalozi').select('tehnologija_jsonb').eq('id', radniNalog).single().then(({data: rnDb}) => {
+                        const teh = rnDb?.tehnologija_jsonb?.[stavkaNaloga.id] || [];
+                        printFaznaDeklaracijaPaketa(pid, izlazPackageItems, radniNalog, header.masina, teh);
+                    });
                 } else {
                     printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog);
                 }
@@ -731,6 +798,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
+    const sveOznakeZaPrikaz = Array.from(new Set([...dostupneOznake, ...odabraneOznake]));
+
     if (!header?.masina) {
         return (
             <div className="p-4 max-w-2xl mx-auto space-y-6 font-bold animate-in fade-in">
@@ -738,7 +807,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 <div className="bg-red-900/30 border-2 border-red-500 p-10 rounded-[2.5rem] text-center shadow-2xl mt-10">
                     <span className="text-6xl block mb-4 animate-bounce">⚠️</span>
                     <h2 className="text-2xl text-red-400 font-black uppercase tracking-widest">Mašina nije odabrana!</h2>
-                    <p className="text-slate-300 mt-4 text-sm">Da biste započeli rad na Doradi i učitali ispravne pakete, molimo odaberite mašinu u gornjem meniju.</p>
                 </div>
             </div>
         );
@@ -796,11 +864,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-700 mb-4 items-start w-full">
+                <div className="flex flex-col md:flex-row gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-700 mb-4 items-start w-full">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div 
                             key={polje.id} 
-                            className={`relative flex flex-col w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                            className={`relative flex flex-col w-full flex-1 transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
                             style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }}
                             draggable={saas.isEditMode} 
                             onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} 
@@ -839,9 +907,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     </div>
 
                     {/* PAMETNI SUGESTIVNI BLOK ZA ULAZ */}
-                    {predlozeniPaketi.length > 0 && radniNalog && (
-                        <div className="mt-4 bg-blue-900/10 border border-blue-500/20 p-4 rounded-2xl shadow-inner">
-                            <span className="text-[10px] text-blue-400 uppercase font-black mb-3 block">Dostupni paketi (sirovina) iz naloga {radniNalog} na ovoj mašini:</span>
+                    {predlozeniPaketi.length > 0 && (
+                        <div className="mt-4 bg-blue-900/10 border border-blue-500/20 p-4 rounded-2xl shadow-inner animate-in fade-in">
+                            <span className="text-[10px] text-blue-400 uppercase font-black mb-3 block">
+                                Dostupni paketi (sirovina) {radniNalog ? `iz naloga ${radniNalog}` : 'koji čekaju ovu fazu'}:
+                            </span>
                             <div className="flex gap-2 flex-wrap">
                                 {predlozeniPaketi.filter(p => !activeUlazIds.includes(p.paket_id)).map(p => (
                                     <button 
@@ -884,13 +954,13 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 <div className="relative font-black bg-blue-900/20 p-4 rounded-2xl border border-blue-500/30">
                     <div className="flex justify-between items-center mb-2">
                         <label className="text-[10px] text-blue-400 uppercase font-black tracking-widest">RADNI NALOG ZA IZLAZ</label>
-                        {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]); setPredlozeniPaketi([]);}} className="text-[9px] text-red-400 hover:text-white uppercase px-3 py-1 rounded bg-red-900/30 font-black border border-red-500/30">✕ Ukloni</button>}
+                        {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]); setPredlozeniPaketi([]); ucitajSveZapoocetePakete();}} className="text-[9px] text-red-400 hover:text-white uppercase px-3 py-1 rounded bg-red-900/30 font-black border border-red-500/30">✕ Ukloni</button>}
                     </div>
                     
                     <PD_SearchableRN nalozi={aktivniNalozi} value={radniNalog} onSelect={handleNalogSelect} onScanClick={() => {setScanTarget('nalog'); setIsScanning(true);}} />
                     
                     {rnStavke.length > 0 && (
-                        <div className="mt-3 space-y-2 border-t border-blue-500/30 pt-3">
+                        <div className="mt-3 space-y-2 border-t border-blue-500/30 pt-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
                             <span className="text-[10px] text-blue-300 uppercase font-black mb-2 block tracking-widest">Stavke na nalogu (Klikni za izradu):</span>
                             {rnStavke.map(s => {
                                 const preostalo = s.naruceno - s.napravljeno;
@@ -917,7 +987,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                         )}
                                     </div>
                                     <div className="text-right mt-3 md:mt-0 bg-slate-900/80 p-2 rounded-lg border border-slate-700 group-hover:border-blue-400 transition-colors w-full md:w-auto">
-                                        <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno} {s.jm}</span> | Urađeno: <span className="text-emerald-400">{s.napravljeno}</span></div>
+                                        <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno} {s.jm}</span> | Urađeno na mašini: <span className="text-emerald-400">{s.napravljeno}</span></div>
                                         <div className={`text-sm font-black mt-1 ${preostalo > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>Preostalo: {preostalo > 0 ? `${pM3.toFixed(3)} m³ (${pKom} kom)` : 'GOTOVO ✅'}</div>
                                     </div>
                                 </div>
@@ -969,7 +1039,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         
                         <div className="pt-2">
                             <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">PROIZVOD KOJI SE SLAŽE</label>
-                            <PD_SearchableProizvod katalog={katalog} value={form.naziv} onSelect={k => setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'})} />
+                            <PD_SearchableProizvod katalog={katalog} value={form.naziv} onChange={v => setForm({...form, naziv: v})} onSelect={k => setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'})} />
                         </div>
 
                         <div className="grid grid-cols-3 gap-2 mt-2">
@@ -982,11 +1052,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                             <select value={form.jm} onChange={e => setForm({...form, jm: e.target.value})} className="bg-slate-800 p-5 rounded-2xl text-white font-black outline-none border border-slate-700 focus:border-emerald-500 text-lg uppercase"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select>
                         </div>
 
-                        {dostupneOznake.length > 0 && (
+                        {sveOznakeZaPrikaz.length > 0 && (
                             <div className="space-y-2 mt-4 bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner">
-                                <label className="text-[10px] text-slate-400 uppercase font-black ml-1">Opcije obrade za ovu fazu:</label>
+                                <label className="text-[10px] text-slate-400 uppercase font-black ml-1">Opcije obrade za ovu fazu (Naslijeđeno i Novo):</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {dostupneOznake.map(o => (
+                                    {sveOznakeZaPrikaz.map(o => (
                                         <button key={o} onClick={() => toggleOznaka(o)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${odabraneOznake.includes(o) ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_15px_rgba(217,119,6,0.4)] scale-105' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500 hover:bg-slate-700'}`}>
                                             {odabraneOznake.includes(o) ? '✓ ' : '+ '} {o}
                                         </button>
@@ -1005,7 +1075,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         {izlazPackageItems.map(item => {
                             const rnStavka = rnStavke.find(rs => rs.naziv_proizvoda === item.naziv_proizvoda);
                             let preostaloText = null;
-                            if (rnStavka) {
+                            if (rnStavka && !item.je_nusproizvod) {
                                 const preostalo = rnStavka.naruceno - rnStavka.napravljeno;
                                 if (preostalo > 0) {
                                     let pM3 = 0, pKom = 0;
@@ -1017,18 +1087,25 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                             }
 
                             return (
-                            <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all shadow-md group">
+                            <div key={item.id} onClick={() => { 
+                                setActiveEditItem(item); 
+                                setForm({...item, kolicina_ulaz: '' }); 
+                                setOdabraneOznake(item.oznake || []);
+                            }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all shadow-md group">
                                 <div>
-                                    <div className="text-xs uppercase text-white font-black">{item.naziv_proizvoda}</div>
+                                    <div className="text-xs uppercase text-white font-black">{item.naziv_proizvoda} {item.je_nusproizvod ? <span className="text-amber-500 text-[9px] ml-2">(Nusproizvod)</span> : ''}</div>
                                     <div className="text-emerald-500 text-lg font-black tracking-tighter mt-1 drop-shadow-md">{item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-slate-500 ml-1">cm</span></div>
                                     <div className="flex flex-wrap gap-2 items-center mt-2">
                                         {item.oznake && item.oznake.length > 0 && (<div className="flex gap-1">{item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/40 text-amber-400 px-2 py-1 rounded uppercase font-black border border-amber-500/30">{o}</span>)}</div>)}
-                                        {rnStavka && (<div className="text-[9px] bg-blue-900/40 border border-blue-500/30 px-2 py-1 rounded uppercase font-black text-blue-300 shadow-sm">Nalog Preostalo: <span className={preostaloText !== '0 (GOTOVO)' ? 'text-amber-400' : 'text-emerald-400'}>{preostaloText}</span></div>)}
+                                        {rnStavka && !item.je_nusproizvod && (<div className="text-[9px] bg-blue-900/40 border border-blue-500/30 px-2 py-1 rounded uppercase font-black text-blue-300 shadow-sm">Nalog Preostalo: <span className={preostaloText !== '0 (GOTOVO)' ? 'text-amber-400' : 'text-emerald-400'}>{preostaloText}</span></div>)}
                                     </div>
                                 </div>
                                 <div className="flex flex-col items-end gap-3">
                                     <div className="text-right font-black"><div className="text-2xl text-white drop-shadow-lg">{item.kolicina_final} <span className="text-emerald-500 text-sm">m³</span></div><div className="text-[10px] text-slate-500 bg-slate-900 px-2 py-1 rounded mt-1 text-center inline-block">{item.kolicina_ulaz} {item.jm}</div></div>
-                                    <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🖨️ Print QR</button>
+                                    <div className="flex gap-2">
+                                        <button onClick={(e) => obrisiStavkuIzPaketa(item, e)} className="bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-red-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🗑️ Obriši</button>
+                                        <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🖨️ Print</button>
+                                    </div>
                                 </div>
                             </div>
                         )})}

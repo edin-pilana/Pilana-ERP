@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
 import SmartSearchableInput from '../components/SmartSearchableInput';
 import ScannerOverlay from '../components/ScannerOverlay';
-import { printDeklaracijaPaketa } from '../utils/printHelpers';
+import { printDeklaracijaPaketa, printFaznaDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
@@ -69,7 +69,7 @@ function PD_SearchableRN({ nalozi, value, onSelect, onScanClick }) {
     );
 }
 
-function PD_SearchableProizvod({ katalog, value, onSelect }) {
+function PD_SearchableProizvod({ katalog, value, onSelect, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value || '');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -94,18 +94,20 @@ function PD_SearchableProizvod({ katalog, value, onSelect }) {
             e.preventDefault();
             if (filtered.length > 0) {
                 const k = filtered[selectedIndex];
-                onSelect(k); setSearch(k.naziv); setOpen(false);
+                onSelect(k); setSearch(k.naziv); onChange(k.naziv); setOpen(false);
+            } else {
+                setOpen(false);
             }
         } else if (e.key === 'Escape') setOpen(false);
     };
 
     return (
         <div ref={wrapperRef} className="relative font-black w-full">
-            <input value={search} onFocus={() => setOpen(true)} onKeyDown={handleKeyDown} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi proizvod (Šifra ili Naziv)..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-emerald-500 uppercase" />
+            <input value={search} onFocus={() => setOpen(true)} onKeyDown={handleKeyDown} onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true); }} placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-emerald-500 uppercase" />
             {open && search && (
                 <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.map((k, index) => (
-                        <div key={k.sifra} onClick={() => { onSelect(k); setSearch(k.naziv); setOpen(false); }} onMouseEnter={()=>setSelectedIndex(index)} className={`p-3 border-b border-slate-700 cursor-pointer transition-colors ${index === selectedIndex ? 'bg-emerald-600' : 'hover:bg-slate-700'}`}>
+                        <div key={k.sifra} onClick={() => { onSelect(k); setSearch(k.naziv); onChange(k.naziv); setOpen(false); }} onMouseEnter={()=>setSelectedIndex(index)} className={`p-3 border-b border-slate-700 cursor-pointer transition-colors ${index === selectedIndex ? 'bg-emerald-600' : 'hover:bg-slate-700'}`}>
                             <div className="text-white text-xs font-black">{k.sifra} - {k.naziv}</div>
                             <div className="text-[9px] text-slate-400">Dim: {k.visina}x{k.sirina}x{k.duzina} | Baza: {k.default_jedinica}</div>
                         </div>
@@ -292,22 +294,25 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     useEffect(() => {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>r.ime_prezime) : []));
         supabase.from('katalog_proizvoda').select('*').then(({data}) => setKatalog(data || []));
-        supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO').then(({data}) => setAktivniNalozi(data || []));
+        supabase.from('radni_nalozi').select('id, kupac_naziv, status, tip_naloga, stavke_jsonb, tehnologija_jsonb').neq('status', 'ZAVRŠENO').then(({data}) => setAktivniNalozi(data || []));
         
         ucitajSveZapoocetePakete();
-    }, []);
+    }, [header?.masina]);
 
     const ucitajSveZapoocetePakete = async () => {
-        const { data } = await supabase.from('paketi').select('paket_id').is('closed_at', null);
+        if (!header?.masina) return;
+        const { data } = await supabase.from('paketi').select('paket_id').is('closed_at', null).eq('masina', header.masina);
         if (data && data.length > 0) {
             const jedinstveniPaketi = [...new Set(data.map(p => p.paket_id))];
             setActiveIzlazIds(jedinstveniPaketi);
+        } else {
+            setActiveIzlazIds([]);
         }
     };
 
     useEffect(() => {
         const fetchMasinaAtribute = async () => {
-            if (!header.masina) return;
+            if (!header?.masina) return;
             const { data } = await supabase.from('masine').select('atributi_paketa').eq('naziv', header.masina).maybeSingle();
             setDostupneOznake(data?.atributi_paketa || []);
             setOdabraneOznake([]); 
@@ -315,7 +320,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         fetchMasinaAtribute();
 
         const ucitajDezurneRadnike = async () => {
-            if (!header.masina) return;
+            if (!header?.masina) return;
             const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
             if (data) {
                 const b = data.find(r => r.uloga === 'brentista');
@@ -325,9 +330,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             }
         };
         ucitajDezurneRadnike();
-    }, [header.masina]);
+    }, [header?.masina]);
 
-    // OVDJE SE NALAZI PAMETNA LOGIKA ZA PREUZIMANJE TEHNOLOGIJE (BOM) ZA ODABRANU MAŠINU
     const handleNalogSelect = async (val) => {
         if(!val) return;
         setRadniNalog(val);
@@ -346,16 +350,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     let naruceno = parseFloat(s.kolicina_obracun || s.kolicina || 0);
                     let jm = s.jm_obracun || s.jm_unos || 'm3';
                     let oznake = [];
+                    let napravljeno = 0;
 
-                    // AKO JE NALOG FAZNI, IZVLAČIMO DIMENZIJE SAMO ZA TRENUTNU MAŠINU
                     if (isFazni) {
-                        const fazaZaOvuMasinu = (tehnologija[s.id] || []).find(f => f.masina === header.masina);
-                        if (!fazaZaOvuMasinu) return; // Preskače stavku ako ona ne ide na ovu mašinu
+                        const fazaZaOvuMasinu = (tehnologija[s.id] || []).find(f => f.masina?.toUpperCase() === header.masina?.toUpperCase());
+                        if (!fazaZaOvuMasinu) return; 
 
                         dimenzije = fazaZaOvuMasinu.dimenzija || dimenzije;
                         naruceno = parseFloat(fazaZaOvuMasinu.kolicina || 0);
                         jm = fazaZaOvuMasinu.jm || jm;
                         oznake = fazaZaOvuMasinu.oznake || [];
+                        napravljeno = parseFloat(s.napravljeno_po_fazama?.[header.masina] || 0);
+                    } else {
+                        napravljeno = parseFloat(s.napravljeno || 0);
                     }
 
                     const v = parseFloat(katItem.visina) || 0; const sir = parseFloat(katItem.sirina) || 0; const d = parseFloat(katItem.duzina) || 0;
@@ -367,7 +374,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         naziv_proizvoda: s.naziv, 
                         jm: jm, 
                         naruceno: naruceno, 
-                        napravljeno: parseFloat(s.napravljeno || 0),
+                        napravljeno: napravljeno,
                         dimenzije: dimenzije,
                         vol1kom: vol1kom,
                         predlozene_oznake: oznake,
@@ -376,23 +383,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 });
                 
                 if(mapiraneStavke.length === 0 && isFazni) {
-                    alert(`Ovaj nalog ne sadrži stavke predviđene za mašinu: ${header.masina}`);
+                    alert(`⚠️ Ovaj nalog ne sadrži stavke predviđene za mašinu: ${header.masina}`);
                 }
                 setRnStavke(mapiraneStavke);
             } else { alert(`Nalog ${val} nema stavki!`); setRnStavke([]); }
         } else { alert(`Nalog ${val} ne postoji!`); setRnStavke([]); }
     };
 
-    // KADA KORISNIK KLIKNE STAVKU IZ NALOGA, SISTEM PREPISUJE NJENE FAZNE POSTAVKE U FORMU
     const handleStavkaSelect = async (stavka) => {
         let deb = '', sir = '', duz = '';
         
-        // Parsiranje tehnološke dimenzije (npr. 64x10x700)
         if (stavka.isFazni && stavka.dimenzije && stavka.dimenzije !== 'Nema u katalogu') {
-            const parts = stavka.dimenzije.split(/x|\*/i); // Razdvaja po X, x, ili *
-            if (parts.length >= 3) {
-                deb = parts[0].trim(); sir = parts[1].trim(); duz = parts[2].trim();
-            }
+            const parts = stavka.dimenzije.split(/x|\*/i); 
+            if (parts.length >= 3) { deb = parts[0].trim(); sir = parts[1].trim(); duz = parts[2].trim(); }
         } else {
             const {data: kat} = await supabase.from('katalog_proizvoda').select('*').eq('sifra', stavka.sifra_proizvoda).maybeSingle();
             deb = kat?.visina||''; sir = kat?.sirina||''; duz = kat?.duzina||'';
@@ -407,7 +410,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             napravljeno: parseFloat(stavka.napravljeno || 0).toFixed(4) 
         });
 
-        // AUTO-ODABIR OZNAKA IZ FAZE
         if (stavka.predlozene_oznake && stavka.predlozene_oznake.length > 0) {
             setOdabraneOznake(stavka.predlozene_oznake);
         } else {
@@ -462,22 +464,34 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         else if (form.jm === 'm1') komada = unosKol / (d/100);
         const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
 
-        if (form.rn_stavka_id && !activeEditItem) {
-            const rnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id);
-            if (rnStavka) {
-                const vecNapravljeno = parseFloat(rnStavka.napravljeno) || 0;
-                const naruceno = parseFloat(rnStavka.naruceno) || 0;
-                
-                let kolikoSadPravimo = komada;
-                if (rnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket;
-                else if (rnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100);
-                else if (rnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
+        // PAMETNO PREPOZNAVANJE NUS-PROIZVODA
+        let isNusProizvod = false;
+        let currentRnStavka = null;
 
-                if ((vecNapravljeno + kolikoSadPravimo) > naruceno) {
-                    const preostalo = naruceno - vecNapravljeno;
-                    if (!window.confirm(`⚠️ UPOZORENJE: PRELAZITE NORMU!\n\nZa ovaj Radni Nalog je preostalo samo: ${preostalo.toFixed(3)} ${rnStavka.jm}.\nVi pokušavate dodati: ${kolikoSadPravimo.toFixed(3)} ${rnStavka.jm}.\n\nDa li ste sigurni da želite napraviti ovaj višak? (Samo uz odobrenje šefa)`)) {
-                        return; 
-                    }
+        if (form.rn_stavka_id) {
+            currentRnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id);
+            // Ako je radnik promijenio naziv u formi nakon klika na RN stavku
+            if (currentRnStavka && currentRnStavka.naziv_proizvoda !== form.naziv) {
+                isNusProizvod = true;
+            }
+        } else if (radniNalog) {
+            // Radnik nije kliknuo stavku, nego ručno kuca dok je Nalog otvoren
+            isNusProizvod = true; 
+        }
+
+        if (currentRnStavka && !isNusProizvod && !activeEditItem) {
+            const vecNapravljeno = parseFloat(currentRnStavka.napravljeno) || 0;
+            const naruceno = parseFloat(currentRnStavka.naruceno) || 0;
+            
+            let kolikoSadPravimo = komada;
+            if (currentRnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket;
+            else if (currentRnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100);
+            else if (currentRnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
+
+            if ((vecNapravljeno + kolikoSadPravimo) > naruceno) {
+                const preostalo = naruceno - vecNapravljeno;
+                if (!window.confirm(`⚠️ UPOZORENJE: PRELAZITE NORMU!\n\nZa ovaj Radni Nalog je preostalo samo: ${preostalo.toFixed(3)} ${currentRnStavka.jm}.\nVi pokušavate dodati: ${kolikoSadPravimo.toFixed(3)} ${currentRnStavka.jm}.\n\nDa li ste sigurni da želite napraviti ovaj višak? (Samo uz odobrenje šefa)`)) {
+                    return; 
                 }
             }
         }
@@ -513,19 +527,26 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             const { error } = await supabase.from('paketi').insert([payload]);
             if (error) return alert("Greška: " + error.message);
 
-            if(form.rn_stavka_id) {
+            // Ažuriramo količinu naloga SAMO AKO NIJE NUSPROIZVOD
+            if(currentRnStavka && !isNusProizvod) {
                 const rn_jm = form.rn_jm || 'm3';
                 let napravljenoZaRN = komada;
                 if (rn_jm === 'm3') napravljenoZaRN = komada * (v/100) * (s/100) * (d/100);
                 else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100);
                 else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
 
-                const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb').eq('id', radniNalog.toUpperCase()).maybeSingle();
+                const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
                 if (rn && rn.stavke_jsonb) {
+                    const isFazni = rn.tip_naloga === 'FAZNI';
                     const azurirane = rn.stavke_jsonb.map(st => {
                         if (st.id === form.rn_stavka_id) {
-                            const nova = (parseFloat(st.napravljeno) || 0) + napravljenoZaRN;
-                            return { ...st, napravljeno: parseFloat(nova.toFixed(4)) };
+                            if (isFazni) {
+                                const trenutnoFaza = parseFloat(st.napravljeno_po_fazama?.[header.masina] || 0);
+                                return { ...st, napravljeno_po_fazama: { ...(st.napravljeno_po_fazama || {}), [header.masina]: parseFloat((trenutnoFaza + napravljenoZaRN).toFixed(4)) } };
+                            } else {
+                                const nova = (parseFloat(st.napravljeno) || 0) + napravljenoZaRN;
+                                return { ...st, napravljeno: parseFloat(nova.toFixed(4)) };
+                            }
                         }
                         return st;
                     });
@@ -538,16 +559,31 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         fetchIzlaz(selectedIzlazId); setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
     };
 
+    const obrisiStavkuIzPaketa = async (item, e) => {
+        e.stopPropagation();
+        if(!window.confirm(`Da li ste sigurni da želite OBRISATI stavku iz ovog paketa?\n(Napomena: Količina na Radnom Nalogu se neće automatski umanjiti, korigujte je ručno po potrebi!)`)) return;
+        await supabase.from('paketi').delete().eq('id', item.id);
+        fetchIzlaz(selectedIzlazId);
+    };
+
     const zakljuciPaket = async (pid) => {
         if(izlazPackageItems.length === 0) {
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) setSelectedIzlazId('');
             alert(`Prazan paket ${pid} je zatvoren i oslobođen.`); return;
         }
-        if (window.confirm(`ZAKLJUČITI paket ${pid}? Ovaj paket ide na Lager gotove robe.`)) {
+        if (window.confirm(`ZAKLJUČITI paket ${pid}?`)) {
             await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
             if (window.confirm(`📦 Paket uspješno zaključen!\n\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`)) {
-                printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog);
+                const stavkaNaloga = rnStavke.find(s => s.naziv_proizvoda === izlazPackageItems[0]?.naziv_proizvoda);
+                if (stavkaNaloga && stavkaNaloga.isFazni) {
+                    supabase.from('radni_nalozi').select('tehnologija_jsonb').eq('id', radniNalog).single().then(({data: rnDb}) => {
+                        const teh = rnDb?.tehnologija_jsonb?.[stavkaNaloga.id] || [];
+                        printFaznaDeklaracijaPaketa(pid, izlazPackageItems, radniNalog, header.masina, teh);
+                    });
+                } else {
+                    printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog);
+                }
             }
             setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
@@ -567,6 +603,18 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
+    if (!header?.masina) {
+        return (
+            <div className="p-4 max-w-2xl mx-auto space-y-6 font-bold animate-in fade-in">
+                <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} saas={saas} />
+                <div className="bg-red-900/30 border-2 border-red-500 p-10 rounded-[2.5rem] text-center shadow-2xl mt-10">
+                    <span className="text-6xl block mb-4 animate-bounce">⚠️</span>
+                    <h2 className="text-2xl text-red-400 font-black uppercase tracking-widest">Mašina nije odabrana!</h2>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="p-4 max-w-2xl mx-auto space-y-6 font-bold animate-in fade-in">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} modulIme="pilana" saas={saas} />
@@ -582,7 +630,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     </div>
                 )}
 
-                {/* POPRAVLJEN DIZAJN: Grid sistem umjesto Flexa sprječava bježanje imena iz okvira */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-700 mb-4 items-start w-full">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div 
@@ -645,7 +692,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         </div>
                                     </div>
                                     <div className="text-right mt-3 md:mt-0 bg-slate-900/80 p-2 rounded-lg border border-slate-700 group-hover:border-blue-400 transition-colors w-full md:w-auto">
-                                        <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno} {s.jm}</span> | Urađeno: <span className="text-emerald-400">{s.napravljeno}</span></div>
+                                        <div className="text-[10px] text-blue-300 font-black">Naručeno: <span className="text-white">{s.naruceno} {s.jm}</span> | Urađeno na mašini: <span className="text-emerald-400">{s.napravljeno}</span></div>
                                         <div className={`text-sm font-black mt-1 ${preostalo > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>Preostalo: {preostalo > 0 ? `${pM3.toFixed(3)} m³ (${pKom} kom)` : 'GOTOVO ✅'}</div>
                                     </div>
                                 </div>
@@ -695,7 +742,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         
                         <div className="pt-2">
                             <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">PROIZVOD KOJI SE SLAŽE</label>
-                            <PD_SearchableProizvod katalog={katalog} value={form.naziv} onSelect={k => setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'})} />
+                            <PD_SearchableProizvod katalog={katalog} value={form.naziv} onChange={v => setForm({...form, naziv: v})} onSelect={k => setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'})} />
                         </div>
 
                         <div className="grid grid-cols-3 gap-2 mt-2">
@@ -731,7 +778,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         {izlazPackageItems.map(item => {
                             const rnStavka = rnStavke.find(rs => rs.naziv_proizvoda === item.naziv_proizvoda);
                             let preostaloText = null;
-                            if (rnStavka) {
+                            if (rnStavka && !item.je_nusproizvod) {
                                 const preostalo = rnStavka.naruceno - rnStavka.napravljeno;
                                 if (preostalo > 0) {
                                     let pM3 = 0, pKom = 0;
@@ -745,16 +792,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             return (
                             <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex justify-between items-center p-4 bg-slate-950 border border-slate-800 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all shadow-md group">
                                 <div>
-                                    <div className="text-xs uppercase text-white font-black">{item.naziv_proizvoda}</div>
+                                    <div className="text-xs uppercase text-white font-black">{item.naziv_proizvoda} {item.je_nusproizvod ? <span className="text-amber-500 text-[9px] ml-2">(Nusproizvod)</span> : ''}</div>
                                     <div className="text-emerald-500 text-lg font-black tracking-tighter mt-1 drop-shadow-md">{item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-slate-500 ml-1">cm</span></div>
                                     <div className="flex flex-wrap gap-2 items-center mt-2">
                                         {item.oznake && item.oznake.length > 0 && (<div className="flex gap-1">{item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-900/40 text-amber-400 px-2 py-1 rounded uppercase font-black border border-amber-500/30">{o}</span>)}</div>)}
-                                        {rnStavka && (<div className="text-[9px] bg-blue-900/40 border border-blue-500/30 px-2 py-1 rounded uppercase font-black text-blue-300 shadow-sm">Nalog Preostalo: <span className={preostaloText !== '0 (GOTOVO)' ? 'text-amber-400' : 'text-emerald-400'}>{preostaloText}</span></div>)}
+                                        {rnStavka && !item.je_nusproizvod && (<div className="text-[9px] bg-blue-900/40 border border-blue-500/30 px-2 py-1 rounded uppercase font-black text-blue-300 shadow-sm">Nalog Preostalo: <span className={preostaloText !== '0 (GOTOVO)' ? 'text-amber-400' : 'text-emerald-400'}>{preostaloText}</span></div>)}
                                     </div>
                                 </div>
                                 <div className="flex flex-col items-end gap-3">
                                     <div className="text-right font-black"><div className="text-2xl text-white drop-shadow-lg">{item.kolicina_final} <span className="text-emerald-500 text-sm">m³</span></div><div className="text-[10px] text-slate-500 bg-slate-900 px-2 py-1 rounded mt-1 text-center inline-block">{item.kolicina_ulaz} {item.jm}</div></div>
-                                    <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🖨️ Print QR</button>
+                                    <div className="flex gap-2">
+                                        <button onClick={(e) => obrisiStavkuIzPaketa(item, e)} className="bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-red-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🗑️ Obriši</button>
+                                        <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg opacity-0 group-hover:opacity-100">🖨️ Print</button>
+                                    </div>
                                 </div>
                             </div>
                         )})}
