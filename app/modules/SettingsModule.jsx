@@ -1003,7 +1003,6 @@ function TabBrending() {
     const [fajlSlike, setFajlSlike] = useState(null);
     const [uploading, setUploading] = useState(false);
 
-    // NOVO: Podaci o firmi + Prilagođeni Footer
     const [firmaInfo, setFirmaInfo] = useState({ 
         adresa: '', telefon: '', email: '', 
         footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' 
@@ -1017,14 +1016,27 @@ function TabBrending() {
         const { data } = await supabase.from('brending').select('*').order('naziv'); 
         setLogotipi(data || []); 
         
-        // Učitavanje iz localStorage
-        const info = JSON.parse(localStorage.getItem('erp_firma_info') || '{"adresa":"","telefon":"","email":"","footer_tekst":"","footer_boja":"#64748b","footer_velicina":"12"}');
-        setFirmaInfo(info);
+        // NOVO: Učitavamo postavke direktno iz baze
+        const { data: fData } = await supabase.from('postavke_firme').select('*').eq('id', 1).maybeSingle();
+        if (fData) {
+            setFirmaInfo({
+                adresa: fData.adresa || '', 
+                telefon: fData.telefon || '', 
+                email: fData.email || '', 
+                footer_tekst: fData.footer_tekst || '', 
+                footer_boja: fData.footer_boja || '#64748b', 
+                footer_velicina: fData.footer_velicina || '12'
+            });
+        }
     };
 
-    const spasiFirmuInfo = () => {
-        localStorage.setItem('erp_firma_info', JSON.stringify(firmaInfo));
-        alert("✅ Podaci o firmi i Footer uspješno spašeni! Prikazivaće se na novim PDF dokumentima.");
+    const spasiFirmuInfo = async () => {
+        const { error } = await supabase.from('postavke_firme').upsert({ id: 1, ...firmaInfo });
+        if (error) {
+            alert("Greška pri spašavanju baze: " + error.message);
+        } else {
+            alert("✅ Podaci o firmi i Footer uspješno spašeni u bazu!\nSada su vidljivi na svim uređajima.");
+        }
     };
 
     const toggleLokacija = (lok) => { setForm(prev => ({...prev, lokacije_jsonb: prev.lokacije_jsonb.includes(lok) ? prev.lokacije_jsonb.filter(l => l !== lok) : [...prev.lokacije_jsonb, lok] })); };
@@ -1050,8 +1062,6 @@ function TabBrending() {
         if(isEditing) await supabase.from('brending').update(payload).eq('id', form.id);
         else await supabase.from('brending').insert([payload]);
         
-        const { data: bData } = await supabase.from('brending').select('*');
-        localStorage.setItem('erp_brending', JSON.stringify(bData || []));
         setUploading(false); ponisti(); load();
         alert("✅ Brending uspješno snimljen!");
     };
@@ -1095,7 +1105,7 @@ function TabBrending() {
                     )}
                 </div>
 
-                <button onClick={spasiFirmuInfo} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-blue-500 transition-all mt-4">💾 Spasi Kontakt Podatke i Footer</button>
+                <button onClick={spasiFirmuInfo} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-blue-500 transition-all mt-4">💾 Spasi i Sinhronizuj u Bazu</button>
             </div>
 
             <div className={`p-6 rounded-[2.5rem] border shadow-2xl space-y-4 transition-all ${isEditing ? 'bg-amber-950/30 border-amber-500' : 'bg-[#1e293b] border-slate-700'}`}>

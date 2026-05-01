@@ -1,10 +1,31 @@
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 export const POSTAVKE = {
     imeAplikacije: "TTM DOO ERP",
     imeFirme: "TTM d.o.o.",
     bojaFirme: "#3b82f6" 
 };
 
-export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6') => {
+// Pomoćna funkcija za centralno preuzimanje iz baze u trenutku printa
+const fetchPrintSettings = async () => {
+    let brending = [];
+    let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' };
+    try {
+        const [bRes, fRes] = await Promise.all([
+            supabase.from('brending').select('*'),
+            supabase.from('postavke_firme').select('*').eq('id', 1).maybeSingle()
+        ]);
+        if (bRes.data) brending = bRes.data;
+        if (fRes.data) firmaInfo = fRes.data;
+    } catch(e) { console.log(e); }
+    return { brending, firmaInfo };
+};
+
+export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6') => {
     const originalTitle = document.title;
     const nazivFajla = `${datum} ${tipDokumenta} ${brojDokumenta}`;
     document.title = nazivFajla; 
@@ -16,28 +37,21 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
     if (tipDokumenta === 'RAČUN') trazenaLokacija = 'PDF Račun';
     if (tipDokumenta.includes('POTVRDA')) trazenaLokacija = 'PDF Blagajna';
 
+    const { brending, firmaInfo } = await fetchPrintSettings();
+
     let topBannerHtml = '';
     let leftLogoHtml = '<div class="company-name">SmartTimber ERP</div>';
-    
-    // NOVO: Dohvatamo firmu iz baze
-    let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' };
 
-    try {
-        const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
-        const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes(trazenaLokacija)) || brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti'));
-        
-        if (logoObj && logoObj.url_slike) {
-            if (logoObj.full_width) {
-                topBannerHtml = `<div style="width: 100%; margin-bottom: 25px; text-align: center;"><img src="${logoObj.url_slike}" style="width: 100%; max-height: 180px; object-fit: contain; display: block;" alt="Banner Firme" /></div>`;
-                leftLogoHtml = ''; 
-            } else {
-                leftLogoHtml = `<img src="${logoObj.url_slike}" style="max-height: 65px; max-width: 250px; object-fit: contain; margin-bottom: 8px;" alt="Logo Firme" />`;
-            }
+    const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes(trazenaLokacija)) || brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti'));
+    
+    if (logoObj && logoObj.url_slike) {
+        if (logoObj.full_width) {
+            topBannerHtml = `<div style="width: 100%; margin-bottom: 25px; text-align: center;"><img src="${logoObj.url_slike}" style="width: 100%; max-height: 180px; object-fit: contain; display: block;" alt="Banner Firme" /></div>`;
+            leftLogoHtml = ''; 
+        } else {
+            leftLogoHtml = `<img src="${logoObj.url_slike}" style="max-height: 65px; max-width: 250px; object-fit: contain; margin-bottom: 8px;" alt="Logo Firme" />`;
         }
-        
-        const storedInfo = localStorage.getItem('erp_firma_info');
-        if (storedInfo) firmaInfo = { ...firmaInfo, ...JSON.parse(storedInfo) };
-    } catch(e) { console.log("Greška pri učitavanju brendinga", e); }
+    }
 
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
@@ -75,7 +89,7 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
                 .info-col p { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.5; }
                 .footer { clear: both; padding-top: 30px; margin-top: 50px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
                 
-                /* NOVO: Prilagođeni Footer na dnu svake stranice */
+                /* Prilagođeni Footer na dnu svake stranice */
                 .global-footer-custom {
                     text-align: center;
                     margin-top: auto;
@@ -118,23 +132,17 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
     setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 300000);
 };
 
-export const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
+export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '') => {
     if (!items || items.length === 0) return;
 
     const originalTitle = document.title;
     document.title = `Deklaracija_${paketId}`;
 
+    const { brending, firmaInfo } = await fetchPrintSettings();
+
     let logoUrl = '';
-    let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' };
-
-    try {
-        const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
-        const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-        if (logoObj && logoObj.url_slike) logoUrl = logoObj.url_slike;
-
-        const storedInfo = localStorage.getItem('erp_firma_info');
-        if (storedInfo) firmaInfo = { ...firmaInfo, ...JSON.parse(storedInfo) };
-    } catch(e) {}
+    const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
+    if (logoObj && logoObj.url_slike) logoUrl = logoObj.url_slike;
 
     const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paketId}`;
     const qrVeza = vezniDokument ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${vezniDokument}` : '';
@@ -263,7 +271,7 @@ export const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
     setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
 };
 
-export const printFaznaDeklaracijaPaketa = (paketId, stavke, rn, masina, tehnologija) => {
+export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, tehnologija) => {
     const stariNaslov = document.title;
     document.title = `FAZA_${paketId}`;
 
@@ -321,11 +329,11 @@ export const printFaznaDeklaracijaPaketa = (paketId, stavke, rn, masina, tehnolo
         </div>
     `;
 
-    printDokument('FAZNI PAKET', paketId, new Date().toLocaleDateString('de-DE'), htmlSadrzaj, '#d97706');
+    await printDokument('FAZNI PAKET', paketId, new Date().toLocaleDateString('de-DE'), htmlSadrzaj, '#d97706');
     setTimeout(() => { document.title = stariNaslov; }, 2000);
 };
 
-export const printRadniNalogZaMasinu = (rn, masina) => {
+export const printRadniNalogZaMasinu = async (rn, masina) => {
     const stariNaslov = document.title;
     document.title = `RN_${rn.id}_${masina}`;
     
@@ -366,11 +374,11 @@ export const printRadniNalogZaMasinu = (rn, masina) => {
         </table>
     `;
 
-    printDokument(`NALOG - ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
+    await printDokument(`NALOG - ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
     setTimeout(() => { document.title = stariNaslov; }, 2000);
 };
 
-export const printRadniNalogSveFaze = (rn) => {
+export const printRadniNalogSveFaze = async (rn) => {
     const stariNaslov = document.title;
     document.title = `RN_SVE_FAZE_${rn.id}`;
     
@@ -405,6 +413,6 @@ export const printRadniNalogSveFaze = (rn) => {
         </table>
     `;
 
-    printDokument('KOMPLETAN RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
+    await printDokument('KOMPLETAN RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
     setTimeout(() => { document.title = stariNaslov; }, 2000);
 };
