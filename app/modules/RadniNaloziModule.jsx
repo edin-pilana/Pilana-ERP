@@ -184,11 +184,13 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const [katalog, setKatalog] = useState([]);
     const [nalozi, setNalozi] = useState([]);
     const [aktivnePonude, setAktivnePonude] = useState([]);
+    
     const [masineList, setMasineList] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
     
     const generisiID = () => `RN-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
 
+    // NOVO: Dodan 'tip_naloga' u osnovnu formu
     const [form, setForm] = useState({ 
         id: generisiID(), 
         broj_ponude: '', 
@@ -197,6 +199,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         rok_isporuke: '', 
         napomena: '', 
         status: 'U PROIZVODNJI', 
+        tip_naloga: 'OBIČNI', // Po defaultu obična proizvodnja
         modifikovan: false 
     });
 
@@ -350,7 +353,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         provjeriModifikacije(noveStavke);
     };
 
-    // --- LOGIKA ZA VIŠEFAZNU RAZRADU ---
     const otvoriRazradu = async () => {
         setTab('razrada');
         const noveTeh = { ...tehnologija };
@@ -417,13 +419,11 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         if(!form.kupac_naziv) return alert("Kupac je obavezan!");
         if(stavke.length === 0) return alert("Nalog mora imati stavke!");
         
-        const isFazni = Object.values(tehnologija).some(faze => faze.length > 1);
-
         const payload = {
             id: form.id.toUpperCase(), broj_ponude: form.broj_ponude, kupac_naziv: form.kupac_naziv, 
             datum: form.datum, rok_isporuke: form.rok_isporuke, napomena: form.napomena, 
-            stavke_jsonb: stavke, tehnologija_jsonb: tehnologija, status: form.status, 
-            modifikovan: form.modifikovan, tip_naloga: isFazni ? 'FAZNI' : 'OBIČNI',
+            stavke_jsonb: stavke, tehnologija_jsonb: form.tip_naloga === 'FAZNI' ? tehnologija : {}, status: form.status, 
+            modifikovan: form.modifikovan, tip_naloga: form.tip_naloga, // NOVO
             snimio_korisnik: currentUser.ime_prezime
         };
 
@@ -448,14 +448,15 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         await zapisiU_Log(isEditingNalog ? 'IZMJENA_RN' : 'KREIRAN_RN', `Radni Nalog ${form.id}`);
         
         if (window.confirm("✅ Nalog snimljen! Da li želite PDF?")) {
-            kreirajPDF();
+            // Kreira direktni pdf ako nije fazni nalog
+            form.tip_naloga === 'FAZNI' ? setTab('lista') : kreirajPDF(); 
         }
 
         resetFormu(); load(); setTab('lista');
     };
 
     const resetFormu = () => {
-        setForm({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', modifikovan: false });
+        setForm({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI', modifikovan: false });
         setStavke([]); setOriginalneStavke(null); setSkenerInput(''); setIsEditingNalog(false); setTehnologija({});
     };
 
@@ -472,6 +473,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             rok_isporuke: n.rok_isporuke || '', 
             napomena: n.napomena || '', 
             status: n.status || 'U PROIZVODNJI', 
+            tip_naloga: n.tip_naloga || 'OBIČNI',
             modifikovan: n.modifikovan || false 
         });
         setStavke(n.stavke_jsonb || []);
@@ -647,15 +649,24 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                     )}
 
                     <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (form.modifikovan ? 'border-amber-500 bg-[#1e293b]' : 'border-purple-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
-                        <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-2">
-                            <h3 className="text-purple-400 font-black uppercase text-xs">1. Parametri Radnog Naloga</h3>
-                            <div className="flex gap-2">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-700/50">
+                            <div>
+                                <h3 className="text-purple-400 font-black uppercase text-xs">1. Parametri Radnog Naloga</h3>
+                                <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
+                                    <span className="text-[10px] text-slate-400 uppercase font-black">Vrsta proizvodnje:</span>
+                                    <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                        <button onClick={() => setForm({...form, tip_naloga: 'OBIČNI'})} className={`px-4 py-2 rounded-md text-[10px] font-black uppercase transition-all ${form.tip_naloga === 'OBIČNI' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-500 hover:text-white'}`}>Obična (Direktna)</button>
+                                        <button onClick={() => setForm({...form, tip_naloga: 'FAZNI'})} className={`px-4 py-2 rounded-md text-[10px] font-black uppercase transition-all ${form.tip_naloga === 'FAZNI' ? 'bg-amber-500 text-black shadow-md' : 'text-slate-500 hover:text-white'}`}>Fazna (BOM)</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 self-start">
                                 {isEditingNalog && (
-                                    <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
+                                    <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-2 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">
                                         🖨️ Isprintaj PDF
                                     </button>
                                 )}
-                                {isEditingNalog && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
+                                {isEditingNalog && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-2 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
                             </div>
                         </div>
 
@@ -678,7 +689,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4 items-start">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-start">
                             {aktivnaPolja.map((polje, index) => (
                                 <div 
                                     key={polje.id} 
@@ -711,7 +722,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                     </div>
 
                     <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 space-y-4 shadow-xl relative z-[30]">
-                        <h3 className="text-blue-400 uppercase text-xs">2. Dodaj proizvode u nalog (Nus-proizvodi ili ručni unos)</h3>
+                        <h3 className="text-blue-400 uppercase text-xs">2. Dodaj proizvode u nalog</h3>
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                             <div className="md:col-span-6">
                                 <RN_SearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} />
@@ -796,155 +807,164 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
 
             {tab === 'razrada' && (
                 <div className="space-y-6 animate-in slide-in-from-right max-w-4xl mx-auto">
-                    <div className="bg-amber-900/20 border-2 border-amber-500/50 p-6 rounded-[2.5rem] shadow-2xl">
-                        <h3 className="text-amber-500 font-black uppercase text-sm mb-2">🧪 VIŠEFAZNA TEHNOLOŠKA RAZRADA (BOM)</h3>
-                        <p className="text-[10px] text-slate-400 mb-6 uppercase tracking-wider">Definišite tačne korake i mašine kroz koje ovaj proizvod mora proći prije finalizacije.</p>
-                        
-                        {stavke.length === 0 && <div className="text-center text-amber-500/50 p-10 border border-dashed border-amber-500/30 rounded-2xl font-bold">Prvo dodajte proizvode u Glavnom nalogu.</div>}
+                    {form.tip_naloga === 'OBIČNI' ? (
+                        <div className="bg-slate-900 border border-amber-500/50 p-10 rounded-[2.5rem] text-center shadow-2xl animate-in fade-in">
+                            <span className="text-5xl block mb-4">ℹ️</span>
+                            <h2 className="text-xl text-amber-400 font-black uppercase">Obična Proizvodnja</h2>
+                            <p className="text-slate-400 mt-3 text-sm">Ovaj radni nalog je označen kao "Obična (Direktna)" proizvodnja.<br/>Da biste definisali faze obrade, vratite se na Glavni Nalog i promijenite tip u <b className="text-amber-500">"Fazna (BOM)"</b>.</p>
+                            <button onClick={() => setTab('novi')} className="mt-6 bg-slate-800 hover:bg-white hover:text-black text-slate-300 px-6 py-3 rounded-xl font-black uppercase transition-all shadow-lg border border-slate-600">← Vrati se na nalog</button>
+                        </div>
+                    ) : (
+                        <div className="bg-amber-900/20 border-2 border-amber-500/50 p-6 rounded-[2.5rem] shadow-2xl animate-in fade-in">
+                            <h3 className="text-amber-500 font-black uppercase text-sm mb-2">🧪 VIŠEFAZNA TEHNOLOŠKA RAZRADA (BOM)</h3>
+                            <p className="text-[10px] text-slate-400 mb-6 uppercase tracking-wider">Definišite tačne korake i mašine kroz koje ovaj proizvod mora proći prije finalizacije.</p>
+                            
+                            {stavke.length === 0 && <div className="text-center text-amber-500/50 p-10 border border-dashed border-amber-500/30 rounded-2xl font-bold">Prvo dodajte proizvode u Glavnom nalogu.</div>}
 
-                        <div className="space-y-8">
-                            {stavke.map(s => {
-                                const faze = tehnologija[s.id] || [];
-                                return (
-                                <div key={s.id} className="bg-slate-900 p-6 rounded-[2rem] border border-slate-700 flex flex-col gap-4 shadow-lg">
-                                    <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                                        <div>
-                                            <span className="text-slate-400 text-[10px] block font-black uppercase mb-1">Ciljni (prodajni) proizvod:</span>
-                                            <span className="text-blue-400 text-base font-black">{s.sifra} - {s.naziv}</span>
+                            <div className="space-y-8">
+                                {stavke.map(s => {
+                                    const faze = tehnologija[s.id] || [];
+                                    return (
+                                    <div key={s.id} className="bg-slate-900 p-6 rounded-[2rem] border border-slate-700 flex flex-col gap-4 shadow-lg">
+                                        <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                                            <div>
+                                                <span className="text-slate-400 text-[10px] block font-black uppercase mb-1">Ciljni (prodajni) proizvod:</span>
+                                                <span className="text-blue-400 text-base font-black">{s.sifra} - {s.naziv}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-slate-500 text-[10px] block uppercase">Ciljna količina:</span>
+                                                <span className="text-white font-black text-xl">{s.kolicina_unos} <span className="text-sm text-slate-400">{s.jm_unos}</span></span>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <span className="text-slate-500 text-[10px] block uppercase">Ciljna količina:</span>
-                                            <span className="text-white font-black text-xl">{s.kolicina_unos} <span className="text-sm text-slate-400">{s.jm_unos}</span></span>
-                                        </div>
-                                    </div>
 
-                                    <div className="space-y-3">
-                                        {faze.map((faza, index) => {
-                                            const odabranaMasinaObj = masineList.find(m => m.naziv === faza.masina);
-                                            const dostupneOznake = odabranaMasinaObj?.atributi_paketa || [];
+                                        <div className="space-y-3">
+                                            {faze.map((faza, index) => {
+                                                const odabranaMasinaObj = masineList.find(m => m.naziv === faza.masina);
+                                                const dostupneOznake = odabranaMasinaObj?.atributi_paketa || [];
 
-                                            return (
-                                            <div key={faza.id} className="flex flex-col lg:flex-row gap-3 items-end bg-[#0f172a] p-5 rounded-2xl border border-slate-800 relative group flex-wrap">
-                                                <div className="absolute -left-3 -top-3 w-6 h-6 bg-amber-500 text-black font-black text-[10px] flex items-center justify-center rounded-full border-2 border-slate-900 z-10">{index + 1}</div>
-                                                
-                                                <div className="flex-1 w-full min-w-[140px]">
-                                                    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Mašina</label>
-                                                    <select 
-                                                        value={faza.masina || ''} 
-                                                        onChange={e=>updateFazu(s.id, faza.id, 'masina', e.target.value)} 
-                                                        className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none uppercase font-bold focus:border-amber-500 cursor-pointer"
-                                                    >
-                                                        <option value="">Odaberi mašinu...</option>
-                                                        {masineList.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv}</option>)}
-                                                    </select>
-                                                </div>
-                                                
-                                                <div className="flex-1 w-full min-w-[140px]">
-                                                    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Ulazna (radna) dimenzija</label>
-                                                    <input 
-                                                        value={faza.dimenzija || ''} 
-                                                        onChange={e=>updateFazu(s.id, faza.id, 'dimenzija', e.target.value)} 
-                                                        placeholder="npr. 23x163x4000" 
-                                                        className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none uppercase font-black focus:border-amber-500" 
-                                                    />
-                                                </div>
-
-                                                <div className="w-full lg:w-48 shrink-0">
-                                                    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Faktor/Količina</label>
-                                                    <div className="flex gap-1">
-                                                        <input 
-                                                            type="number" 
-                                                            value={faza.kolicina || ''} 
-                                                            onChange={e=>updateFazu(s.id, faza.id, 'kolicina', e.target.value)} 
-                                                            placeholder="Kol." 
-                                                            className="flex-1 min-w-0 p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none font-black focus:border-amber-500 text-center" 
-                                                        />
+                                                return (
+                                                <div key={faza.id} className="flex flex-col lg:flex-row gap-3 items-end bg-[#0f172a] p-5 rounded-2xl border border-slate-800 relative group flex-wrap">
+                                                    <div className="absolute -left-3 -top-3 w-6 h-6 bg-amber-500 text-black font-black text-[10px] flex items-center justify-center rounded-full border-2 border-slate-900 z-10">{index + 1}</div>
+                                                    
+                                                    <div className="flex-1 w-full min-w-[140px]">
+                                                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Mašina</label>
                                                         <select 
-                                                            value={faza.jm || 'kom'} 
-                                                            onChange={e=>updateFazu(s.id, faza.id, 'jm', e.target.value)} 
-                                                            className="w-16 shrink-0 p-3 bg-slate-800 rounded-xl text-[10px] text-white border border-slate-700 outline-none focus:border-amber-500 cursor-pointer"
+                                                            value={faza.masina || ''} 
+                                                            onChange={e=>updateFazu(s.id, faza.id, 'masina', e.target.value)} 
+                                                            className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none uppercase font-bold focus:border-amber-500 cursor-pointer"
                                                         >
-                                                            <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
+                                                            <option value="">Odaberi mašinu...</option>
+                                                            {masineList.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv}</option>)}
                                                         </select>
                                                     </div>
-                                                </div>
+                                                    
+                                                    <div className="flex-1 w-full min-w-[140px]">
+                                                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Ulazna (radna) dimenzija</label>
+                                                        <input 
+                                                            value={faza.dimenzija || ''} 
+                                                            onChange={e=>updateFazu(s.id, faza.id, 'dimenzija', e.target.value)} 
+                                                            placeholder="npr. 23x163x4000" 
+                                                            className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none uppercase font-black focus:border-amber-500" 
+                                                        />
+                                                    </div>
 
-                                                <div className="flex-[1.5] w-full min-w-[140px]">
-                                                    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Napomena (Opciono)</label>
-                                                    <input 
-                                                        value={faza.napomena || ''} 
-                                                        onChange={e=>updateFazu(s.id, faza.id, 'napomena', e.target.value)} 
-                                                        placeholder="Npr. pazi na čvorove..." 
-                                                        className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" 
-                                                    />
-                                                </div>
-
-                                                <div className="w-full lg:w-auto shrink-0 flex items-center justify-end mt-2 lg:mt-0">
-                                                    <button 
-                                                        onClick={() => ukloniFazu(s.id, faza.id)} 
-                                                        className="w-full lg:w-auto bg-red-900/30 text-red-500 p-3 rounded-xl font-black hover:bg-red-500 hover:text-white transition-all opacity-100 lg:opacity-0 group-hover:opacity-100 border border-red-500/20"
-                                                    >
-                                                        ✕ Ukloni
-                                                    </button>
-                                                </div>
-
-                                                {dostupneOznake.length > 0 && (
-                                                    <div className="w-full mt-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                                                        <label className="text-[10px] text-slate-500 uppercase block mb-2 font-black ml-1">Opcije obrade za ovu fazu:</label>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {dostupneOznake.map(o => {
-                                                                const isSelected = faza.oznake?.includes(o);
-                                                                return (
-                                                                    <button 
-                                                                        key={o} 
-                                                                        onClick={() => toggleOznakaUFazi(s.id, faza.id, o)} 
-                                                                        className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${isSelected ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)] scale-105' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white hover:border-slate-500'}`}
-                                                                    >
-                                                                        {isSelected ? '✓ ' : '+ '} {o}
-                                                                    </button>
-                                                                )
-                                                            })}
+                                                    <div className="w-full lg:w-48 shrink-0">
+                                                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Faktor/Količina</label>
+                                                        <div className="flex gap-1">
+                                                            <input 
+                                                                type="number" 
+                                                                value={faza.kolicina || ''} 
+                                                                onChange={e=>updateFazu(s.id, faza.id, 'kolicina', e.target.value)} 
+                                                                placeholder="Kol." 
+                                                                className="flex-1 min-w-0 p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none font-black focus:border-amber-500 text-center" 
+                                                            />
+                                                            <select 
+                                                                value={faza.jm || 'kom'} 
+                                                                onChange={e=>updateFazu(s.id, faza.id, 'jm', e.target.value)} 
+                                                                className="w-16 shrink-0 p-3 bg-slate-800 rounded-xl text-[10px] text-white border border-slate-700 outline-none focus:border-amber-500 cursor-pointer"
+                                                            >
+                                                                <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
+                                                            </select>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        )})}
-                                    </div>
-                                    
-                                    <div className="flex flex-col md:flex-row justify-between items-center mt-2 border-t border-slate-800 pt-4 gap-3">
-                                        <button 
-                                            onClick={() => dodajFazu(s.id)} 
-                                            className="text-[10px] text-amber-500 font-black uppercase hover:bg-amber-500/10 px-4 py-2 rounded-xl transition-all border border-amber-500/30 w-full md:w-auto"
-                                        >
-                                            + Dodaj sljedeću fazu obrade
-                                        </button>
-                                        
-                                        <div className="flex gap-2 w-full md:w-auto">
-                                            <button 
-                                                onClick={spasiSamoU_Nalog} 
-                                                className="flex-1 px-4 py-3 bg-slate-800 text-white rounded-xl text-[10px] uppercase font-black hover:bg-slate-700 border border-slate-600 transition-all"
-                                            >
-                                                Sačuvaj u Nalog
-                                            </button>
-                                            <button 
-                                                onClick={() => snimiPraviloKaoSablon(s.sifra, faze)} 
-                                                className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] uppercase font-black hover:bg-emerald-500 shadow-lg shadow-emerald-600/30 transition-all border border-emerald-400"
-                                            >
-                                                💾 Snimi kao Šablon
-                                            </button>
-                                        </div>
-                                    </div>
 
-                                    {faze.length > 0 && faze[0].masina && (
-                                        <div className="flex items-center gap-2 mt-2 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-                                            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                                            <span className="text-[9px] text-amber-400 uppercase font-black">Ova roba će kroz pogon biti označena i knjižena kao "FAZNA PROIZVODNJA".</span>
+                                                    <div className="flex-[1.5] w-full min-w-[140px]">
+                                                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Napomena (Opciono)</label>
+                                                        <input 
+                                                            value={faza.napomena || ''} 
+                                                            onChange={e=>updateFazu(s.id, faza.id, 'napomena', e.target.value)} 
+                                                            placeholder="Npr. pazi na čvorove..." 
+                                                            className="w-full p-3 bg-slate-800 rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" 
+                                                        />
+                                                    </div>
+
+                                                    <div className="w-full lg:w-auto shrink-0 flex items-center justify-end mt-2 lg:mt-0">
+                                                        <button 
+                                                            onClick={() => ukloniFazu(s.id, faza.id)} 
+                                                            className="w-full lg:w-auto bg-red-900/30 text-red-500 p-3 rounded-xl font-black hover:bg-red-500 hover:text-white transition-all opacity-100 lg:opacity-0 group-hover:opacity-100 border border-red-500/20"
+                                                        >
+                                                            ✕ Ukloni
+                                                        </button>
+                                                    </div>
+
+                                                    {dostupneOznake.length > 0 && (
+                                                        <div className="w-full mt-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                                                            <label className="text-[10px] text-slate-500 uppercase block mb-2 font-black ml-1">Opcije obrade za ovu fazu:</label>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {dostupneOznake.map(o => {
+                                                                    const isSelected = faza.oznake?.includes(o);
+                                                                    return (
+                                                                        <button 
+                                                                            key={o} 
+                                                                            onClick={() => toggleOznakaUFazi(s.id, faza.id, o)} 
+                                                                            className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${isSelected ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(217,119,6,0.4)] scale-105' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white hover:border-slate-500'}`}
+                                                                        >
+                                                                            {isSelected ? '✓ ' : '+ '} {o}
+                                                                        </button>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )})}
                                         </div>
-                                    )}
-                                </div>
-                            )})}
+                                        
+                                        <div className="flex flex-col md:flex-row justify-between items-center mt-2 border-t border-slate-800 pt-4 gap-3">
+                                            <button 
+                                                onClick={() => dodajFazu(s.id)} 
+                                                className="text-[10px] text-amber-500 font-black uppercase hover:bg-amber-500/10 px-4 py-2 rounded-xl transition-all border border-amber-500/30 w-full md:w-auto"
+                                            >
+                                                + Dodaj sljedeću fazu obrade
+                                            </button>
+                                            
+                                            <div className="flex gap-2 w-full md:w-auto">
+                                                <button 
+                                                    onClick={spasiSamoU_Nalog} 
+                                                    className="flex-1 px-4 py-3 bg-slate-800 text-white rounded-xl text-[10px] uppercase font-black hover:bg-slate-700 border border-slate-600 transition-all"
+                                                >
+                                                    Sačuvaj u Nalog
+                                                </button>
+                                                <button 
+                                                    onClick={() => snimiPraviloKaoSablon(s.sifra, faze)} 
+                                                    className="flex-1 px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] uppercase font-black hover:bg-emerald-500 shadow-lg shadow-emerald-600/30 transition-all border border-emerald-400"
+                                                >
+                                                    💾 Snimi kao Šablon
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {faze.length > 0 && faze[0].masina && (
+                                            <div className="flex items-center gap-2 mt-2 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                                                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                                                <span className="text-[9px] text-amber-400 uppercase font-black">Ova roba će kroz pogon biti označena i knjižena kao "FAZNA PROIZVODNJA".</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )})}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             )}
 
@@ -964,12 +984,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                 <div>
                                     <p className="text-purple-400 text-base font-black flex items-center gap-2">
                                         {n.id}
-                                        <button 
-                                            onClick={(e) => printDirektnoIzListe(n, e)} 
-                                            className="bg-slate-800 border border-slate-600 text-[9px] text-white px-2 py-1 rounded uppercase hover:bg-white hover:text-black transition-all shadow-md"
-                                        >
-                                            🖨️ PDF
-                                        </button>
                                     </p>
                                     <p className="text-white text-xs font-bold mt-1">{n.kupac_naziv}</p>
                                 </div>
@@ -978,9 +992,39 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                     <p className="text-[9px] text-slate-500 uppercase mt-2">Rok: {formatirajDatum(n.rok_isporuke)}</p>
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center">
+                            <div className="flex justify-between items-center mb-3">
                                 <span className="text-[9px] text-slate-400 font-bold bg-slate-900 px-2 py-1 rounded">Vezano: {n.broj_ponude || 'Nema'}</span>
                                 <span className="text-[10px] text-slate-300 font-black">Stavki: {n.stavke_jsonb ? n.stavke_jsonb.length : 0}</span>
+                            </div>
+                            
+                            {/* NAPREDNO PRINTANJE */}
+                            <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-800">
+                                {n.tip_naloga === 'FAZNI' ? (
+                                    <>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); printRadniNalogSveFaze({ ...n, stavke_jsonb: n.stavke_jsonb, tehnologija_jsonb: n.tehnologija_jsonb }); }} 
+                                            className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-lg border border-amber-400 w-full mb-1"
+                                        >
+                                            🖨️ SVE FAZE (BOM KARTA)
+                                        </button>
+                                        {[...new Set(Object.values(n.tehnologija_jsonb || {}).flat().map(f => f.masina))].filter(Boolean).map(m => (
+                                            <button 
+                                                key={m} 
+                                                onClick={(e) => { e.stopPropagation(); printRadniNalogZaMasinu({ ...n, stavke_jsonb: n.stavke_jsonb, tehnologija_jsonb: n.tehnologija_jsonb }, m); }} 
+                                                className="flex-1 bg-slate-800 hover:bg-white hover:text-black text-slate-300 px-2 py-1.5 rounded-lg text-[8px] font-black uppercase shadow-md border border-slate-600 transition-colors"
+                                            >
+                                                🖨️ {m}
+                                            </button>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <button 
+                                        onClick={(e) => printDirektnoIzListe(n, e)} 
+                                        className="w-full bg-slate-800 hover:bg-white hover:text-black text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase shadow-md border border-slate-600 transition-colors"
+                                    >
+                                        🖨️ PRINTAJ NALOG
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}

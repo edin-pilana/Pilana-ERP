@@ -18,6 +18,9 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
 
     let topBannerHtml = '';
     let leftLogoHtml = '<div class="company-name">SmartTimber ERP</div>';
+    
+    // NOVO: Dohvatamo firmu iz baze
+    let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' };
 
     try {
         const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
@@ -31,7 +34,10 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
                 leftLogoHtml = `<img src="${logoObj.url_slike}" style="max-height: 65px; max-width: 250px; object-fit: contain; margin-bottom: 8px;" alt="Logo Firme" />`;
             }
         }
-    } catch(e) { console.log("Greška pri učitavanju logotipa", e); }
+        
+        const storedInfo = localStorage.getItem('erp_firma_info');
+        if (storedInfo) firmaInfo = { ...firmaInfo, ...JSON.parse(storedInfo) };
+    } catch(e) { console.log("Greška pri učitavanju brendinga", e); }
 
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
@@ -47,7 +53,7 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
                 body { font-family: 'Inter', sans-serif; padding: 0; margin: 0; color: #1e293b; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                .page-container { padding: 40px; }
+                .page-container { padding: 40px; min-height: 90vh; display: flex; flex-direction: column; }
                 .top-bar { height: 14px; background-color: ${themeColor}; width: 100%; }
                 .header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0; margin-bottom: 30px; }
                 .logo-area { display: flex; flex-direction: column; }
@@ -68,24 +74,39 @@ export const printDokument = (tipDokumenta, brojDokumenta, datum, htmlSadrzajTab
                 .info-col h4 { margin: 0 0 10px 0; font-size: 10px; text-transform: uppercase; color: #64748b; letter-spacing: 1px; font-weight: 800; }
                 .info-col p { margin: 0; font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.5; }
                 .footer { clear: both; padding-top: 30px; margin-top: 50px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
+                
+                /* NOVO: Prilagođeni Footer na dnu svake stranice */
+                .global-footer-custom {
+                    text-align: center;
+                    margin-top: auto;
+                    padding-top: 20px;
+                    border-top: 1px solid #e2e8f0;
+                    color: ${firmaInfo.footer_boja};
+                    font-size: ${firmaInfo.footer_velicina}px;
+                    font-weight: 600;
+                }
             </style>
         </head>
         <body>
             <div class="top-bar"></div>
             <div class="page-container">
-                ${topBannerHtml}
-                <div class="header">
-                    <div class="logo-area">
-                        ${leftLogoHtml}
-                        <div class="doc-title">${tipDokumenta}</div>
-                        <div style="color: #64748b; font-size: 14px; font-weight: 600; margin-top: 8px; letter-spacing: 0.5px;">Broj: <span style="color: #0f172a;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datum}</div>
+                <div>
+                    ${topBannerHtml}
+                    <div class="header">
+                        <div class="logo-area">
+                            ${leftLogoHtml}
+                            <div class="doc-title">${tipDokumenta}</div>
+                            <div style="color: #64748b; font-size: 14px; font-weight: 600; margin-top: 8px; letter-spacing: 0.5px;">Broj: <span style="color: #0f172a;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datum}</div>
+                        </div>
+                        <div class="qr-wrapper">
+                            <img src="${qrCodeUrl}" alt="QR" />
+                            <div class="qr-text">${brojDokumenta}</div>
+                        </div>
                     </div>
-                    <div class="qr-wrapper">
-                        <img src="${qrCodeUrl}" alt="QR" />
-                        <div class="qr-text">${brojDokumenta}</div>
-                    </div>
+                    ${htmlSadrzajTabela}
                 </div>
-                ${htmlSadrzajTabela}
+                
+                ${firmaInfo.footer_tekst ? `<div class="global-footer-custom">${firmaInfo.footer_tekst}</div>` : ''}
             </div>
             ${printSkripta}
         </body>
@@ -104,10 +125,15 @@ export const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
     document.title = `Deklaracija_${paketId}`;
 
     let logoUrl = '';
+    let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' };
+
     try {
         const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
         const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
         if (logoObj && logoObj.url_slike) logoUrl = logoObj.url_slike;
+
+        const storedInfo = localStorage.getItem('erp_firma_info');
+        if (storedInfo) firmaInfo = { ...firmaInfo, ...JSON.parse(storedInfo) };
     } catch(e) {}
 
     const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${paketId}`;
@@ -218,13 +244,12 @@ export const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
                 <div class="footer">
                     <div>
                         <b>${POSTAVKE.imeFirme}</b><br>
-                        Rijeka bb, 75328 Doborovci,<br>
-                        Bosnia and Herzegovina<br>
-                        Tel: +387 49 591 900
+                        ${firmaInfo.adresa || 'Rijeka bb, 75328 Doborovci, Bosnia and Herzegovina'}<br>
+                        Tel: ${firmaInfo.telefon || '+387 49 591 900'}
                     </div>
                     <div class="footer-links">
-                        www.ttmdoo.com<br>
-                        E-mail: info@ttmdoo.com
+                        E-mail: ${firmaInfo.email || 'info@ttmdoo.com'}<br>
+                        ${firmaInfo.footer_tekst ? `<span style="color: ${firmaInfo.footer_boja}; font-size: ${firmaInfo.footer_velicina}px; text-decoration: none;">${firmaInfo.footer_tekst}</span>` : ''}
                     </div>
                 </div>
             </div>
@@ -236,4 +261,150 @@ export const printDeklaracijaPaketa = (paketId, items, vezniDokument = '') => {
     iframe.contentWindow.document.open(); iframe.contentWindow.document.write(html); iframe.contentWindow.document.close();
     setTimeout(() => { document.title = originalTitle; }, 3000);
     setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
+};
+
+export const printFaznaDeklaracijaPaketa = (paketId, stavke, rn, masina, tehnologija) => {
+    const stariNaslov = document.title;
+    document.title = `FAZA_${paketId}`;
+
+    let redovi = stavke.map((s, i) => `
+        <tr>
+            <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 4px;">${i+1}.</td>
+            <td style="border-bottom: 1px solid #cbd5e1; padding: 4px;"><b style="font-size: 14px;">${s.sifra_proizvoda || s.naziv_proizvoda}</b></td>
+            <td style="border-bottom: 1px solid #cbd5e1; padding: 4px; font-weight: 800; font-size: 16px;">${s.debljina}x${s.sirina}x${s.duzina}</td>
+            <td style="text-align: right; border-bottom: 1px solid #cbd5e1; padding: 4px; font-size: 18px; font-weight: 900; color: #d97706;">${s.kolicina_final} <span style="font-size: 12px; color: #475569;">m³</span></td>
+        </tr>
+    `).join('');
+
+    let tehnologijaHtml = '<p style="font-size: 10px; color: #64748b;">Nema definisanih faza.</p>';
+    if (tehnologija && tehnologija.length > 0) {
+        tehnologijaHtml = tehnologija.map((f, i) => {
+            const isTrenutna = f.masina.toUpperCase() === masina.toUpperCase();
+            return `
+                <div style="padding: 4px; margin-bottom: 4px; border-left: 4px solid ${isTrenutna ? '#d97706' : '#cbd5e1'}; background: ${isTrenutna ? '#fffbeb' : 'transparent'};">
+                    <b style="color: ${isTrenutna ? '#d97706' : '#475569'};">${i+1}. ${f.masina} ${isTrenutna ? '(TRENUTNI KORAK)' : ''}</b><br/>
+                    <span style="font-size: 10px;">Cilj: ${f.dimenzija} | Faktor: ${f.kolicina} ${f.jm}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    const htmlSadrzaj = `
+        <div style="border: 4px solid #d97706; padding: 15px; border-radius: 10px; background: #fff8f1;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #d97706; padding-bottom: 10px; margin-bottom: 10px;">
+                <div>
+                    <h2 style="color: #d97706; margin: 0; font-size: 24px; text-transform: uppercase;">⚠️ FAZNA PROIZVODNJA</h2>
+                    <p style="margin: 5px 0 0 0; font-size: 12px; font-weight: bold; color: #0f172a;">NE IDE NA LAGER GOTOVE ROBE!</p>
+                </div>
+                <div style="text-align: right;">
+                    <p style="margin: 0; font-size: 10px; color: #475569;">Radni Nalog:</p>
+                    <p style="margin: 0; font-size: 18px; font-weight: 900;">${rn || 'Interno'}</p>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                <div style="width: 65%;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f8fafc; color: #475569; font-size: 10px; text-align: left;">
+                                <th style="padding: 4px;">#</th><th>Proizvod</th><th>Radna Dimenzija</th><th style="text-align: right;">Količina</th>
+                            </tr>
+                        </thead>
+                        <tbody>${redovi}</tbody>
+                    </table>
+                </div>
+                <div style="width: 30%; border-left: 2px dashed #cbd5e1; padding-left: 10px;">
+                    <h4 style="margin: 0 0 5px 0; font-size: 12px; color: #0f172a; text-transform: uppercase;">Proizvodni Procesi:</h4>
+                    ${tehnologijaHtml}
+                </div>
+            </div>
+        </div>
+    `;
+
+    printDokument('FAZNI PAKET', paketId, new Date().toLocaleDateString('de-DE'), htmlSadrzaj, '#d97706');
+    setTimeout(() => { document.title = stariNaslov; }, 2000);
+};
+
+export const printRadniNalogZaMasinu = (rn, masina) => {
+    const stariNaslov = document.title;
+    document.title = `RN_${rn.id}_${masina}`;
+    
+    const stavkeZaMasinu = rn.stavke_jsonb.map((s, i) => {
+        const faza = (rn.tehnologija_jsonb[s.id] || []).find(f => f.masina === masina);
+        if (!faza) return null;
+        return `
+            <tr>
+                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1;">${i+1}.</td>
+                <td style="border-bottom: 1px solid #cbd5e1;"><b style="font-size: 13px;">${s.sifra}</b><br/><span style="font-size: 10px; color: #475569;">${s.naziv}</span></td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 14px; color: #d97706;">${faza.dimenzija}</td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 14px;">${faza.kolicina} <span style="font-size: 10px;">${faza.jm}</span></td>
+                <td style="border-bottom: 1px solid #cbd5e1; font-size: 10px;">${faza.oznake?.join(', ') || ''} <br/> <i>${faza.napomena || ''}</i></td>
+            </tr>
+        `;
+    }).filter(s => s !== null).join('');
+
+    if (!stavkeZaMasinu) return alert(`Nema definisanih zadataka za mašinu: ${masina}`);
+
+    const htmlSadrzaj = `
+        <div style="border-bottom: 3px solid #0f172a; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+                <h2 style="margin: 0; color: #0f172a; font-size: 20px; text-transform: uppercase;">PROIZVODNI NALOG: <span style="color: #d97706;">${masina}</span></h2>
+                <p style="margin: 5px 0 0 0; font-size: 12px; color: #475569;">Samo obaveze za odabranu mašinu</p>
+            </div>
+            <div style="text-align: right;">
+                <p style="margin: 0; font-size: 10px;">Kupac: <b style="font-size: 14px;">${rn.kupac_naziv}</b></p>
+                <p style="margin: 2px 0 0 0; font-size: 10px; color: #ec4899;">Rok: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
+            </div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8fafc; font-size: 10px; text-align: left; color: #475569;">
+                    <th style="padding: 4px; width: 5%;">#</th><th style="padding: 4px;">Konačni Proizvod</th><th style="padding: 4px; text-align: center;">Radna Dimenzija</th><th style="padding: 4px; text-align: center;">Zadatak</th><th style="padding: 4px;">Obrada / Napomena</th>
+                </tr>
+            </thead>
+            <tbody>${stavkeZaMasinu}</tbody>
+        </table>
+    `;
+
+    printDokument(`NALOG - ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
+    setTimeout(() => { document.title = stariNaslov; }, 2000);
+};
+
+export const printRadniNalogSveFaze = (rn) => {
+    const stariNaslov = document.title;
+    document.title = `RN_SVE_FAZE_${rn.id}`;
+    
+    let redovi = rn.stavke_jsonb.map((s, i) => {
+        const faze = rn.tehnologija_jsonb[s.id] || [];
+        const fazeHtml = faze.map((f, fi) => `
+            <div style="font-size: 9px; border-left: 2px solid #d97706; padding-left: 4px; margin-bottom: 2px;">
+                <b>Faza ${fi+1}: ${f.masina}</b> | Dim: ${f.dimenzija} | Kol: ${f.kolicina} ${f.jm}
+            </div>
+        `).join('');
+
+        return `
+            <tr>
+                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 4px; vertical-align: top;">${i+1}.</td>
+                <td style="border-bottom: 1px solid #cbd5e1; padding: 4px; vertical-align: top;">
+                    <b style="font-size: 13px;">${s.sifra}</b><br/><span style="font-size: 10px; color: #475569;">${s.naziv}</span>
+                    <div style="margin-top: 5px;">${fazeHtml}</div>
+                </td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; vertical-align: top; font-weight: 800; font-size: 14px; color: #a855f7; padding: 4px;">${s.kolicina_obracun} <span style="font-size: 10px;">${s.jm_obracun}</span></td>
+            </tr>
+        `;
+    }).join('');
+
+    const htmlSadrzaj = `
+        <div style="margin-bottom: 15px; display: flex; justify-content: space-between;">
+            <div><h4 style="margin: 0; color: #64748b;">Naručilac</h4><p style="font-size: 18px; font-weight: 900; margin: 0;">${rn.kupac_naziv}</p></div>
+            <div style="text-align: right;"><h4 style="margin: 0; color: #64748b;">Detalji</h4><p style="margin: 0; color: #a855f7; font-weight: bold;">Rok: ${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</p></div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead><tr style="background: #f8fafc; font-size: 10px; text-align: left;"><th style="padding: 4px; width: 5%;">#</th><th style="padding: 4px;">Proizvod i Procesi (BOM)</th><th style="padding: 4px; text-align: center;">Ciljna Količina</th></tr></thead>
+            <tbody>${redovi}</tbody>
+        </table>
+    `;
+
+    printDokument('KOMPLETAN RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
+    setTimeout(() => { document.title = stariNaslov; }, 2000);
 };

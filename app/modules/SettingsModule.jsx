@@ -414,10 +414,9 @@ function TabKatalog() {
     const [form, setForm] = useState({ sifra: '', naziv: '', dimenzije: '', kategorija: '', default_jedinica: 'm3', cijena: '', m3: '', m2: '', m1: '', duzina: '', sirina: '', visina: '' });
     const [isEditing, setIsEditing] = useState(false);
     
-    // NOVO: Pametno upravljanje cijenama po kategoriji
     const [odabranaKategorija, setOdabranaKategorija] = useState('');
     const [novaGlobalnaCijena, setNovaGlobalnaCijena] = useState('');
-    const [cijeneEditMap, setCijeneEditMap] = useState({}); // Čuva { sifra: novaCijena }
+    const [cijeneEditMap, setCijeneEditMap] = useState({}); 
 
     useEffect(() => { load(); }, []);
     
@@ -433,7 +432,6 @@ function TabKatalog() {
         return katalog.filter(k => k.kategorija === odabranaKategorija);
     }, [odabranaKategorija, katalog]);
 
-    // Kada se promijeni kategorija, resetuj polja za unos cijena
     useEffect(() => {
         const inicijalno = {};
         proizvodiUKategoriji.forEach(p => {
@@ -495,21 +493,15 @@ function TabKatalog() {
     const primijeniNaSveIspod = () => {
         if (!novaGlobalnaCijena || isNaN(novaGlobalnaCijena)) return;
         const novoStanje = { ...cijeneEditMap };
-        Object.keys(novoStanje).forEach(sifra => {
-            novoStanje[sifra] = novaGlobalnaCijena;
-        });
+        Object.keys(novoStanje).forEach(sifra => { novoStanje[sifra] = novaGlobalnaCijena; });
         setCijeneEditMap(novoStanje);
     };
 
     const snimiNoveCijeneBaza = async () => {
         if (!odabranaKategorija) return;
         
-        // Priprema niza za bulk upsert
         const podaciZaUpdate = proizvodiUKategoriji.map(p => {
-            return {
-                ...p,
-                cijena: parseFloat(cijeneEditMap[p.sifra]) || parseFloat(p.cijena)
-            };
+            return { ...p, cijena: parseFloat(cijeneEditMap[p.sifra]) || parseFloat(p.cijena) };
         });
 
         if (!window.confirm(`Da li ste sigurni da želite ažurirati cijene za ${podaciZaUpdate.length} proizvoda u kategoriji ${odabranaKategorija}?`)) return;
@@ -527,7 +519,6 @@ function TabKatalog() {
     return (
         <div className="space-y-4 animate-in fade-in">
             
-            {/* MASOVNA IZMJENA CIJENA PO KATEGORIJI */}
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-amber-500/30 shadow-2xl">
                 <h3 className="text-amber-500 font-black uppercase text-xs mb-4">📈 Brza izmjena cijena (Po kategorijama)</h3>
                 
@@ -586,7 +577,6 @@ function TabKatalog() {
                 )}
             </div>
 
-            {/* Ručni Unos */}
             <div className={`bg-[#1e293b] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 transition-all ${isEditing ? 'border-amber-500/50' : 'border-slate-700'}`}>
                 <div className="flex justify-between items-center">
                     <h3 className={`${isEditing ? 'text-amber-500' : 'text-blue-500'} font-black uppercase text-xs`}>
@@ -665,7 +655,7 @@ function KatalogSearchableDetail({ katalog, value, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value);
     useEffect(() => { setSearch(value); }, [value]);
-    const filtered = katalog.filter(k => k.sifra.toUpperCase().includes(search.toUpperCase()) || k.naziv.toUpperCase().includes(search.toUpperCase()));
+    const filtered = katalog.filter(k => k.sifra.toUpperCase().includes((search||'').toUpperCase()) || k.naziv.toUpperCase().includes((search||'').toUpperCase()));
 
     return (
         <div className="relative font-black w-full">
@@ -1013,8 +1003,11 @@ function TabBrending() {
     const [fajlSlike, setFajlSlike] = useState(null);
     const [uploading, setUploading] = useState(false);
 
-    // Podaci o firmi za PDF
-    const [firmaInfo, setFirmaInfo] = useState({ adresa: '', telefon: '', email: '' });
+    // NOVO: Podaci o firmi + Prilagođeni Footer
+    const [firmaInfo, setFirmaInfo] = useState({ 
+        adresa: '', telefon: '', email: '', 
+        footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12' 
+    });
 
     const opcijeLokacija = ['Ikona u pregledniku (Favicon)', 'Glavni Meni (Dashboard Vrh)', 'Svi PDF Dokumenti', 'PDF Ponuda', 'PDF Radni Nalog', 'PDF Otpremnica', 'PDF Račun', 'PDF Blagajna'];
 
@@ -1024,13 +1017,14 @@ function TabBrending() {
         const { data } = await supabase.from('brending').select('*').order('naziv'); 
         setLogotipi(data || []); 
         
-        const info = JSON.parse(localStorage.getItem('erp_firma_info') || '{"adresa":"","telefon":"","email":""}');
+        // Učitavanje iz localStorage
+        const info = JSON.parse(localStorage.getItem('erp_firma_info') || '{"adresa":"","telefon":"","email":"","footer_tekst":"","footer_boja":"#64748b","footer_velicina":"12"}');
         setFirmaInfo(info);
     };
 
     const spasiFirmuInfo = () => {
         localStorage.setItem('erp_firma_info', JSON.stringify(firmaInfo));
-        alert("✅ Podaci o firmi uspješno spašeni! Prikazivaće se na novim PDF dokumentima.");
+        alert("✅ Podaci o firmi i Footer uspješno spašeni! Prikazivaće se na novim PDF dokumentima.");
     };
 
     const toggleLokacija = (lok) => { setForm(prev => ({...prev, lokacije_jsonb: prev.lokacije_jsonb.includes(lok) ? prev.lokacije_jsonb.filter(l => l !== lok) : [...prev.lokacije_jsonb, lok] })); };
@@ -1070,11 +1064,38 @@ function TabBrending() {
             <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/30 shadow-2xl space-y-4">
                 <h3 className="text-blue-500 font-black uppercase text-xs border-b border-slate-700 pb-2">🏢 Podaci o firmi (Za PDF Izvještaje)</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Adresa Firme</label><input value={firmaInfo.adresa} onChange={e=>setFirmaInfo({...firmaInfo, adresa:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="Rijeka bb, 75328..." /></div>
-                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Telefon</label><input value={firmaInfo.telefon} onChange={e=>setFirmaInfo({...firmaInfo, telefon:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="+387 61..." /></div>
-                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Email</label><input value={firmaInfo.email} onChange={e=>setFirmaInfo({...firmaInfo, email:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="info@..." /></div>
+                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Adresa Firme</label><input value={firmaInfo.adresa} onChange={e=>setFirmaInfo({...firmaInfo, adresa:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-blue-500" placeholder="Rijeka bb, 75328..." /></div>
+                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Telefon</label><input value={firmaInfo.telefon} onChange={e=>setFirmaInfo({...firmaInfo, telefon:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-blue-500" placeholder="+387 61..." /></div>
+                    <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Email</label><input value={firmaInfo.email} onChange={e=>setFirmaInfo({...firmaInfo, email:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-blue-500" placeholder="info@..." /></div>
                 </div>
-                <button onClick={spasiFirmuInfo} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-blue-500 transition-all">💾 Spasi Kontakt Podatke</button>
+
+                <div className="mt-4 pt-4 border-t border-slate-700">
+                    <h4 className="text-[10px] text-amber-500 font-black uppercase mb-3">📝 Prilagođeni tekst u dnu PDF-a (Footer)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div className="md:col-span-8">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Tekst (npr. Vaš partner za drvo...)</label>
+                            <input value={firmaInfo.footer_tekst} onChange={e=>setFirmaInfo({...firmaInfo, footer_tekst:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-amber-500" placeholder="Unesite tekst koji će pisati u dnu svakog dokumenta..." />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Boja Teksta</label>
+                            <div className="flex bg-slate-900 rounded-xl border border-slate-700 p-1 items-center h-[42px]">
+                                <input type="color" value={firmaInfo.footer_boja} onChange={e=>setFirmaInfo({...firmaInfo, footer_boja:e.target.value})} className="w-full h-full cursor-pointer rounded bg-transparent border-none" />
+                            </div>
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Veličina (px)</label>
+                            <input type="number" value={firmaInfo.footer_velicina} onChange={e=>setFirmaInfo({...firmaInfo, footer_velicina:e.target.value})} className="w-full p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 focus:border-amber-500 text-center" placeholder="12" />
+                        </div>
+                    </div>
+                    {firmaInfo.footer_tekst && (
+                        <div className="mt-4 p-4 bg-slate-950 rounded-xl text-center border border-slate-800">
+                            <span className="text-[8px] text-slate-500 uppercase block mb-2 font-black">Uživo pregled teksta:</span>
+                            <span style={{ color: firmaInfo.footer_boja, fontSize: `${firmaInfo.footer_velicina}px` }}>{firmaInfo.footer_tekst}</span>
+                        </div>
+                    )}
+                </div>
+
+                <button onClick={spasiFirmuInfo} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-blue-500 transition-all mt-4">💾 Spasi Kontakt Podatke i Footer</button>
             </div>
 
             <div className={`p-6 rounded-[2.5rem] border shadow-2xl space-y-4 transition-all ${isEditing ? 'bg-amber-950/30 border-amber-500' : 'bg-[#1e293b] border-slate-700'}`}>
