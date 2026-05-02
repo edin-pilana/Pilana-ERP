@@ -124,11 +124,11 @@ export default function TabAiAnalitika({ saas }) {
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
 
     return (
-        <div className="relative max-w-4xl mx-auto h-[750px] flex flex-col bg-[#1e293b] rounded-[2.5rem] border border-slate-700 shadow-2xl overflow-hidden animate-in zoom-in-95">
+        <div className="relative max-w-4xl mx-auto h-[750px] flex flex-col bg-theme-card rounded-box border border-slate-700 shadow-2xl overflow-hidden animate-in zoom-in-95">
             
-            <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-[#1e293b] z-10 shrink-0">
+            <div className="p-5 border-b border-theme-border flex justify-between items-center bg-theme-card z-10 shrink-0">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center text-2xl shadow-inner">🤖</div>
+                    <div className="w-12 h-12 rounded-full bg-theme-card border border-slate-700 flex items-center justify-center text-2xl shadow-inner">🤖</div>
                     <div>
                         <h3 className="text-white font-black uppercase tracking-widest text-sm">TTM AI Kontrolor</h3>
                         <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
@@ -139,10 +139,10 @@ export default function TabAiAnalitika({ saas }) {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#0f172a] custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-theme-main custom-scrollbar">
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] md:max-w-[75%] p-5 rounded-2xl shadow-md ${msg.role === 'user' ? 'bg-slate-800 text-white rounded-tr-sm border border-slate-700' : 'bg-[#1e293b] text-slate-200 rounded-tl-sm border border-blue-500/20'}`}>
+                        <div className={`max-w-[85%] md:max-w-[75%] p-5 rounded-2xl shadow-md ${msg.role === 'user' ? 'bg-theme-panel text-white rounded-tr-sm border border-slate-700' : 'bg-theme-card text-slate-200 rounded-tl-sm border border-blue-500/20'}`}>
                             {msg.role === 'ai' && <div className="text-[10px] text-blue-400 font-black mb-2 uppercase tracking-widest border-b border-slate-700/50 pb-1">AI Asistent</div>}
                             <div className="text-sm font-medium leading-relaxed">{msg.role === 'user' ? msg.text : renderMarkdown(msg.text)}</div>
                         </div>
@@ -151,7 +151,7 @@ export default function TabAiAnalitika({ saas }) {
                 
                 {isTyping && (
                     <div className="flex justify-start">
-                        <div className="max-w-[75%] p-5 rounded-2xl rounded-tl-sm bg-[#1e293b] border border-blue-500/20 flex items-center gap-2">
+                        <div className="max-w-[75%] p-5 rounded-2xl rounded-tl-sm bg-theme-card border border-blue-500/20 flex items-center gap-2">
                             <span className="text-xs text-blue-400 font-bold ml-2 animate-pulse">Čitam cijelu bazu podataka i analiziram...</span>
                         </div>
                     </div>
@@ -159,7 +159,7 @@ export default function TabAiAnalitika({ saas }) {
                 <div ref={chatEndRef} />
             </div>
 
-            <div className="p-4 bg-[#1e293b] border-t border-slate-800 shrink-0">
+            <div className="p-4 bg-theme-card border-t border-theme-border shrink-0">
                 <div className="relative flex items-center">
                     <input 
                         type="text" 
@@ -168,7 +168,7 @@ export default function TabAiAnalitika({ saas }) {
                         onKeyDown={(e) => { if (e.key === 'Enter') posaljiPoruku(); }} 
                         placeholder="Pitaj nešto, npr: Nabroj mi sve proizvode koje smo proizveli ovog mjeseca..." 
                         disabled={isTyping} 
-                        className="w-full p-5 pr-20 bg-slate-900 rounded-2xl text-sm text-white font-bold outline-none border border-slate-700 focus:border-blue-500 transition-all disabled:opacity-50" 
+                        className="w-full p-5 pr-20 bg-theme-card rounded-2xl text-sm text-white font-bold outline-none border border-slate-700 focus:border-blue-500 transition-all disabled:opacity-50" 
                     />
                     <button 
                         onClick={posaljiPoruku} 

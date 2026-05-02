@@ -38,16 +38,16 @@ export default function DnevnikMasine({ modul, header, user }) {
     };
 
     return (
-        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4 mt-6">
+        <div className="bg-theme-card p-6 rounded-box border border-slate-700 shadow-2xl space-y-4 mt-6">
             <h3 className="text-amber-500 font-black uppercase text-xs">⚙️ EVIDENCIJA RADA I ZASTOJA MAŠINE</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-slate-900 p-4 rounded-2xl border border-slate-800 items-end">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-theme-card p-4 rounded-2xl border border-theme-border items-end">
                 <div>
                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Početak</label>
-                    <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
+                    <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full p-3 bg-theme-main rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
                 </div>
                 <div>
                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Završetak</label>
-                    <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
+                    <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full p-3 bg-theme-main rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
                 </div>
                 <div>
                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Zastoj (Minuta)</label>
@@ -55,14 +55,14 @@ export default function DnevnikMasine({ modul, header, user }) {
                 </div>
                 <div className="col-span-2 md:col-span-1">
                     <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Napomena / Razlog</label>
-                    <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
+                    <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full p-3 bg-theme-main rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-amber-500" />
                 </div>
                 <button onClick={snimiZastojIliRad} className="w-full py-3 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500">➕ Dodaj</button>
             </div>
             <div className="space-y-2 mt-4">
                 {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
                 {logovi.map(l => (
-                    <div key={l.id} className="flex justify-between items-center p-3 bg-slate-800 border border-slate-700 rounded-xl">
+                    <div key={l.id} className="flex justify-between items-center p-3 bg-theme-panel border border-slate-700 rounded-xl">
                         <div>
                             <p className="text-[10px] text-slate-400 font-black">
                                 <span className="text-emerald-400">{l.vrijeme_od}</span> - {l.vrijeme_do ? <span className="text-amber-400">{l.vrijeme_do}</span> : <span className="text-slate-500">...</span>}

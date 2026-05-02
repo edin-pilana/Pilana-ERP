@@ -48,7 +48,7 @@ export default function WorkerModal({ masina, onClose }) {
     };
 
     return (
-        <div className="absolute top-0 left-0 w-full bg-[#0f172a] p-6 rounded-[2.5rem] border border-blue-500 shadow-2xl z-50 animate-in zoom-in-95">
+        <div className="absolute top-0 left-0 w-full bg-theme-main p-6 rounded-box border border-blue-500 shadow-2xl z-50 animate-in zoom-in-95">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h3 className="text-blue-500 text-xs tracking-widest uppercase font-black">Prijava na mašinu</h3>

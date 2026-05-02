@@ -68,7 +68,7 @@ export default function SearchableInput({ value, onChange, list = [], placeholde
             />
             
             {open && filtered.length > 0 && (
-                <div className="absolute z-[100] w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+                <div className="absolute z-[100] w-full mt-1 bg-theme-panel border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.map((item, index) => (
                         <div 
                             key={index} 

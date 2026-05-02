@@ -242,7 +242,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
             {/* ======================================================== */}
             {/* PRINT HEADER (Vidljiv samo na papiru - sakriven na ekranu) */}
             {/* ======================================================== */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-slate-800 pb-4 mb-6 pt-4">
+            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
                 <div className="flex items-center gap-4">
                     {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
                     <div className="border-l-2 border-slate-300 pl-4 ml-2">
@@ -257,10 +257,10 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
             </div>
 
             {/* EKRAN KONTROLE (Skrivene na printu) */}
-            <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg print:hidden">
+            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
                 <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-400 font-black uppercase">Filtriraj po Brentisti:</span>
-                    <select value={brentistaFilter} onChange={e => setBrentistaFilter(e.target.value)} className="bg-slate-800 text-emerald-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-slate-900 [&>option]:text-white cursor-pointer">
+                    <select value={brentistaFilter} onChange={e => setBrentistaFilter(e.target.value)} className="bg-theme-panel text-emerald-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-theme-card [&>option]:text-white cursor-pointer">
                         <option value="SVI">SVI ZAPOSLENI</option>
                         {data.smjenaInfo.sviBrentiste.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
@@ -272,23 +272,23 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             {/* 1. TOP KPI KARTICE (5 u redu) */}
             <div className="grid grid-cols-5 gap-3">
-                <Card decoration="top" decorationColor="emerald" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4">
+                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Izrezano Trupaca (Ulaz)</Text>
                     <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="blue" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4">
+                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Proizvedeno (Izlaz)</Text>
                     <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="amber" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4">
+                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Iskorištenost (Yield)</Text>
                     <Metric className="text-amber-400 print:text-black text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="purple" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4">
+                <Card decoration="top" decorationColor="purple" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Brzina Rezanja</Text>
                     <Metric className="text-purple-400 print:text-black text-xl mt-1">{data.kpi.m3PoSatu} <span className="text-sm">m³/h</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="red" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4">
+                <Card decoration="top" decorationColor="red" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
                     <Metric className="text-red-400 print:text-black text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
                 </Card>
@@ -297,7 +297,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
             {/* 2. TABELE PODATAKA */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 print:gap-4 page-break-avoid">
                 {/* ULAZ TRUPACA */}
-                <div className="md:col-span-5 bg-[#1e293b] print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
+                <div className="md:col-span-5 bg-theme-card print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-3 border-b border-slate-700 print:border-slate-300 pb-2">Trupci po dužinama (Sirovina)</Title>
                     <table className="w-full text-left text-xs">
                         <thead className="text-slate-500 print:text-slate-600 uppercase border-b border-slate-700 print:border-slate-300">
@@ -306,7 +306,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                         <tbody className="text-slate-200 print:text-slate-800 font-bold">
                             {data.trupciStruktura.length === 0 && <tr><td colSpan="4" className="py-4 text-center italic text-slate-500">Nema evidentiranih trupaca.</td></tr>}
                             {data.trupciStruktura.map(t => (
-                                <tr key={t.duzina} className="border-b border-slate-800/50 print:border-slate-200">
+                                <tr key={t.duzina} className="border-b border-theme-border/50 print:border-slate-200">
                                     <td className="py-2 text-emerald-400 print:text-black">{t.duzina} m</td>
                                     <td className="py-2 text-center">{t.kom}</td>
                                     <td className="py-2 text-center text-slate-400 print:text-slate-600">Ø {t.avgPrecnik} cm</td>
@@ -324,7 +324,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                 </div>
 
                 {/* IZLAZ GOTOVE ROBE */}
-                <div className="md:col-span-7 bg-[#1e293b] print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
+                <div className="md:col-span-7 bg-theme-card print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-3 border-b border-slate-700 print:border-slate-300 pb-2">Proizvedeno (Gotova Roba)</Title>
                     <table className="w-full text-left text-[10px]">
                         <thead className="text-slate-500 print:text-slate-600 uppercase border-b border-slate-700 print:border-slate-300">
@@ -334,13 +334,13 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                             {data.proizvodiStruktura.length === 0 && <tr><td colSpan="3" className="py-4 text-center italic text-slate-500">Nema proizvedene građe.</td></tr>}
                             {data.proizvodiStruktura.map((p, i) => (
                                 <React.Fragment key={i}>
-                                    <tr className="bg-slate-800/30 print:bg-slate-100 border-y border-slate-700/50 print:border-slate-300">
+                                    <tr className="bg-theme-panel/30 print:bg-slate-100 border-y border-slate-700/50 print:border-slate-300">
                                         <td className="py-2 font-black text-blue-400 print:text-black text-xs uppercase" colSpan="3">{p.naziv}</td>
                                     </tr>
                                     {(p.paketi || []).map(paket => (
-                                        <tr key={paket.id} className="border-b border-slate-800/30 print:border-slate-200">
+                                        <tr key={paket.id} className="border-b border-theme-border/30 print:border-slate-200">
                                             <td className="py-1.5 pl-2 font-bold">{paket.paket_id} <span className="text-slate-500 print:text-slate-600 ml-1">({paket.debljina}x{paket.sirina}x{paket.duzina})</span>
-                                                {paket.broj_veze && <span className="ml-2 text-[8px] bg-slate-800 print:bg-slate-200 px-1 rounded">RN: {paket.broj_veze}</span>}
+                                                {paket.broj_veze && <span className="ml-2 text-[8px] bg-theme-panel print:bg-slate-200 px-1 rounded">RN: {paket.broj_veze}</span>}
                                             </td>
                                             <td className="py-1.5 text-center font-bold">{paket.kolicina_ulaz} {paket.jm}</td>
                                             <td className="py-1.5 text-right font-black text-sm">{paket.kolicina_final}</td>
@@ -359,7 +359,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             {/* 3. GRAFIKONI (Sa isAnimationActive={false} zbog Printa i fiksnim height) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 page-break-avoid print:mt-6">
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-2 text-center">Učešće proizvoda u prorezu</Title>
                     {data.grafikonProizvoda.length === 0 ? <div className="flex h-[220px] items-center justify-center text-slate-500 text-xs">Nema podataka</div> : (
                     <ResponsiveContainer width="100%" height={220}>
@@ -374,7 +374,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                     )}
                 </Card>
 
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Trend Iskorištenja (30 Dana): {brentistaFilter} vs Pilana</Title>
                     <ResponsiveContainer width="100%" height={220}>
                         <LineChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -391,7 +391,7 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
             </div>
 
             {/* 4. ZASTOJI I SMJENA (FOOTER) */}
-            <div className="border-t-4 border-slate-800 print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
+            <div className="border-t-4 border-theme-border print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
                 <div className="w-[60%]">
                     <h3 className="text-xs font-black uppercase text-slate-400 print:text-slate-800 mb-2">Dnevnik Zastoja i Napomene</h3>
                     {data.zastoji.length === 0 ? (

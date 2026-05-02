@@ -47,10 +47,10 @@ function PonudeSearchableProizvod({ katalog, value, onChange }) {
                 onKeyDown={handleKeyDown} 
                 onChange={e => { setSearch(e.target.value); setOpen(true); }} 
                 placeholder="Pronađi šifru ili naziv..." 
-                className="w-full p-3 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-blue-500" 
+                className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-blue-500" 
             />
             {open && filtered.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
                     {filtered.map((k, index) => {
                         const tekstZaPolje = `${k.sifra} | ${k.naziv} | Dim: ${k.visina}x${k.sirina}x${k.duzina}`;
                         return (
@@ -58,10 +58,10 @@ function PonudeSearchableProizvod({ katalog, value, onChange }) {
                                 key={k.sifra} 
                                 onMouseEnter={()=>setSelectedIndex(index)} 
                                 onClick={() => { onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} 
-                                className={`p-3 border-b border-slate-700 cursor-pointer transition-all ${index === selectedIndex ? 'bg-blue-600' : 'hover:bg-slate-700'}`}
+                                className={`p-3 border-b border-theme-border cursor-pointer transition-all ${index === selectedIndex ? 'bg-theme-accent' : 'hover:bg-slate-700'}`}
                             >
-                                <div className="text-white text-xs font-black">{k.sifra} <span className="text-blue-300 ml-1">{k.naziv}</span></div>
-                                <div className="text-[9px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Cijena: <b className="text-white">{k.cijena} KM/{k.default_jedinica}</b></div>
+                                <div className="text-theme-text text-xs font-black">{k.sifra} <span className="text-blue-300 ml-1">{k.naziv}</span></div>
+                                <div className="text-[9px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Cijena: <b className="text-theme-text">{k.cijena} KM/{k.default_jedinica}</b></div>
                             </div>
                         )
                     })}
@@ -457,15 +457,15 @@ export default function PonudeModule({ onExit }) {
     };
 
     const renderPoljeZaglavlja = (polje) => {
-        if (polje.id === 'kupac') return (<div className="flex gap-2 items-center w-full h-full"><div className="flex-1 min-w-0 h-full"><SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} /></div>{hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}</div>);
-        if (polje.id === 'broj') return <input value={form.id} disabled={isEditingPonuda} onChange={e=>setForm({...form, id:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-slate-900 rounded-xl text-xs text-white outline-none border border-slate-700 font-black uppercase disabled:opacity-50" />;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />;
-        if (polje.id === 'rok') return <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" />;
-        if (polje.id === 'placanje') return <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>;
-        if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
-        if (polje.id === 'paritet') return <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-[#0f172a] rounded-xl text-xs text-white outline-none border border-slate-700" placeholder="npr. FCA Srebrenik" />;
+        if (polje.id === 'kupac') return (<div className="flex gap-2 items-center w-full h-full"><div className="flex-1 min-w-0 h-full"><SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} /></div>{hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-theme-text px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}</div>);
+        if (polje.id === 'broj') return <input value={form.id} disabled={isEditingPonuda} onChange={e=>setForm({...form, id:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border font-black uppercase disabled:opacity-50" />;
+        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'rok') return <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'placanje') return <select value={form.nacin_placanja} onChange={e=>setForm({...form, nacin_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border"><option value="Virmanski">Virmanski</option><option value="Gotovina">Gotovina</option><option value="Kartica">Kartica</option></select>;
+        if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
+        if (polje.id === 'paritet') return <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" placeholder="npr. FCA Srebrenik" />;
         if (polje.id === 'depozit') return <input type="number" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />;
-        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-pink-900/20 rounded-xl text-xs text-pink-400 font-black outline-none border border-pink-500/50"><option value="NA ODLUČIVANJU">Na odlučivanju</option><option value="POTVRĐENA">POTVRĐENA ✅</option><option value="REALIZOVANA ✅">REALIZOVANA (Zatvorena)</option></select>;
+        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-pink-900/20 rounded-xl text-xs text-theme-accent font-black outline-none border border-pink-500/50"><option value="NA ODLUČIVANJU">Na odlučivanju</option><option value="POTVRĐENA">POTVRĐENA ✅</option><option value="REALIZOVANA ✅">REALIZOVANA (Zatvorena)</option></select>;
         return null;
     };
 
@@ -474,68 +474,72 @@ export default function PonudeModule({ onExit }) {
             {showBrziKupac && <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in"><SettingsModule onExit={() => { setShowBrziKupac(false); load(); }} lockedTab="kupci" /></div>}
             {showBrziKatalog && <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md animate-in fade-in"><SettingsModule onExit={() => { setShowBrziKatalog(false); load(); }} lockedTab="katalog" /></div>}
 
-            <div className={`flex flex-col md:flex-row justify-between items-center p-4 rounded-3xl border shadow-lg gap-4 transition-all ${saas.isEditMode ? 'bg-amber-950/30 border-amber-500 ring-2 ring-amber-500' : 'bg-[#1e293b] border-pink-500/30'}`}>
-                <div className="flex items-center gap-3"><button onClick={onExit} className="bg-slate-800 text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700 text-white font-black transition-all">← Meni</button><h2 className={`${saas.ui.boja_naslova} font-black tracking-widest uppercase text-xs hidden md:block`}>📝 UPRAVLJANJE PONUDAMA</h2></div>
+            <div className={`flex flex-col md:flex-row justify-between items-center p-4 rounded-box border shadow-lg gap-4 transition-all ${saas.isEditMode ? 'bg-amber-950/30 border-amber-500 ring-2 ring-amber-500' : 'bg-theme-card backdrop-blur-[var(--glass-blur)] border-pink-500/30'}`}>
+                <div className="flex items-center gap-3"><button onClick={onExit} className="bg-theme-panel text-[10px] px-4 py-2 rounded-xl uppercase hover:bg-slate-700 text-theme-text font-black transition-all">← Meni</button><h2 className={`${saas.ui.boja_naslova} font-black tracking-widest uppercase text-xs hidden md:block`}>📝 UPRAVLJANJE PONUDAMA</h2></div>
             </div>
 
-            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700">
-                <button onClick={() => {setTab('nova'); if(!isEditingPonuda) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'nova' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>{isEditingPonuda ? '✏️ Ažuriranje Ponude' : '➕ Nova Ponuda'}</button>
-                <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'lista' ? 'bg-pink-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>📋 Lista Ponuda</button>
-            </div>
+            <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
+    <button onClick={() => {setTab('nova'); if(!isEditingPonuda) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'nova' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+        {isEditingPonuda ? '✏️ Ažuriranje Ponude' : '➕ Nova Ponuda'}
+    </button>
+    <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'lista' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+        📋 Lista Ponuda
+    </button>
+</div>
 
             {tab === 'nova' ? (
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
                     
                     {form.rn_modifikovan && (
-                        <div className="bg-red-900/40 border-2 border-red-500 p-6 rounded-[2.5rem] flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top w-full">
-                            <div className="flex items-center gap-4 border-b border-red-500/20 pb-3"><span className="text-4xl animate-pulse">🚫</span><div><p className="text-red-400 font-black uppercase text-sm">Ova ponuda je blokirala proizvodnju!</p><p className="text-white text-xs mt-1">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u pogonu. Dok ne odobrite ili odbijete izmjene, <b className="text-red-400">štampanje radnog naloga je zabranjeno.</b></p></div></div>
+                        <div className="bg-red-900/40 border-2 border-red-500 p-6 rounded-box flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top w-full">
+                            <div className="flex items-center gap-4 border-b border-red-500/20 pb-3"><span className="text-4xl animate-pulse">🚫</span><div><p className="text-red-400 font-black uppercase text-sm">Ova ponuda je blokirala proizvodnju!</p><p className="text-theme-text text-xs mt-1">Radni Nalog {povezaniRN ? `(${povezaniRN.id})` : ''} je izmijenjen u pogonu. Dok ne odobrite ili odbijete izmjene, <b className="text-red-400">štampanje radnog naloga je zabranjeno.</b></p></div></div>
                             {razlikeUOdnosuNaRN.length > 0 ? (
                                 <div className="w-full">
                                     <div className="bg-black/30 rounded-xl p-3 border border-red-500/30 space-y-2 mb-4">
                                         {razlikeUOdnosuNaRN.map((r, idx) => (
                                             <div key={idx} className="flex flex-col md:flex-row justify-between md:items-center text-xs gap-2 border-b border-red-500/10 pb-2 last:border-0 last:pb-0">
-                                                <div><span className="text-white font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span></div>
+                                                <div><span className="text-theme-text font-bold">{r.sifra}</span> <span className="text-slate-400 ml-1">{r.naziv}</span></div>
                                                 <div className={`font-black px-3 py-1 rounded uppercase tracking-widest ${r.tip === 'obrisano' ? 'bg-red-500/20 text-red-400' : r.tip === 'dodato' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>{r.poruka}</div>
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="flex flex-col md:flex-row gap-3"><button onClick={prihvatiIzmjene} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)] uppercase text-xs">✅ Prihvati (Ažuriraj Ponudu)</button><button onClick={odbijIzmjene} className="flex-1 bg-red-600 hover:bg-red-500 text-white font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase text-xs">❌ Odbij (Vrati RN na staro)</button></div>
+                                    <div className="flex flex-col md:flex-row gap-3"><button onClick={prihvatiIzmjene} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-theme-text font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)] uppercase text-xs">✅ Prihvati (Ažuriraj Ponudu)</button><button onClick={odbijIzmjene} className="flex-1 bg-red-600 hover:bg-red-500 text-theme-text font-black px-6 py-4 rounded-2xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.4)] uppercase text-xs">❌ Odbij (Vrati RN na staro)</button></div>
                                 </div>
                             ) : (<div className="text-xs text-slate-400 italic">Učitavam detalje razlika...</div>)}
                         </div>
                     )}
 
-                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-[#1e293b]' : 'border-pink-500/30 bg-[#1e293b]')}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
-                        <div className="flex justify-between items-center mb-2 border-b border-slate-700/50 pb-2">
+                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditingPonuda ? 'border-amber-500/50 bg-theme-card backdrop-blur-[var(--glass-blur)]' : 'border-pink-500/30 bg-theme-card backdrop-blur-[var(--glass-blur)]')}`} >
+                        <div className="flex justify-between items-center mb-2 border-b border-theme-border/50 pb-2">
                             <h3 className={`${isEditingPonuda ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Podaci o kupcu i parametrima ponude</h3>
                             <div className="flex gap-2">
-                                {isEditingPonuda && <button onClick={kreirajPDF} className="text-[10px] bg-slate-800 text-white border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">🖨️ Isprintaj PDF</button>}
+                                {isEditingPonuda && <button onClick={kreirajPDF} className="text-[10px] bg-theme-panel text-theme-text border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all shadow-md font-black">🖨️ Isprintaj PDF</button>}
                                 {isEditingPonuda && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase hover:bg-red-900/50">Odustani ✕</button>}
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4 items-start">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-theme-border pb-4 items-start">
                             {aktivnaPolja.map((polje, index) => (
                                 <div key={polje.id} className={`relative flex flex-col ${polje.span}`}>{polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>}<div className="flex-1">{renderPoljeZaglavlja(polje)}</div></div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl space-y-4">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-4">
                         <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički unos stavki</h3>
-                        <div className="relative z-40 mb-3"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod (Koristi strelice i Enter)</label><div className="flex gap-2 items-center w-full"><div className="flex-1 min-w-0"><PonudeSearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} /></div>{hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}</div></div>
+                        <div className="relative z-40 mb-3"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod (Koristi strelice i Enter)</label><div className="flex gap-2 items-center w-full"><div className="flex-1 min-w-0"><PonudeSearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} /></div>{hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-theme-text px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}</div></div>
 
                         {trenutniProizvod && (
                             <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4">
-                                <div className="flex justify-between items-center border-b border-slate-700 pb-3"><div><p className="text-white text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Dim: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</p></div><div className="text-right"><p className="text-[10px] text-slate-400 uppercase">Cijena po {stavkaForm.jm_obracun}</p><p className="text-emerald-400 font-black text-lg">{dinamickaCijena.toFixed(2)} {form.valuta}</p></div></div>
+                                <div className="flex justify-between items-center border-b border-theme-border pb-3"><div><p className="text-theme-text text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Dim: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</p></div><div className="text-right"><p className="text-[10px] text-slate-400 uppercase">Cijena po {stavkaForm.jm_obracun}</p><p className="text-emerald-400 font-black text-lg">{dinamickaCijena.toFixed(2)} {form.valuta}</p></div></div>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
-                                    <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Unos: Količina i Jedinica</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Količina" className="flex-1 p-3 bg-[#0f172a] rounded-xl text-sm text-white font-black text-center outline-none border border-slate-700 focus:border-blue-500" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700 cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
+                                    <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Unos: Količina i Jedinica</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Količina" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-theme-border focus:border-blue-500" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
                                     
                                     <div className="col-span-2">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Obračunava se po (Preračunato)</label>
                                         <div className="flex gap-1">
-                                            <input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-blue-900/10 rounded-xl text-sm text-blue-400 font-black text-center border border-blue-500/20 outline-none cursor-not-allowed pointer-events-none opacity-80" />
-                                            <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-slate-800 rounded-xl text-xs text-white outline-none border border-slate-700 hover:border-blue-500 cursor-pointer transition-all">
+                                            <input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-blue-900/10 rounded-xl text-sm text-theme-accent font-black text-center border border-blue-500/20 outline-none cursor-not-allowed pointer-events-none opacity-80" />
+                                            <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border hover:border-blue-500 cursor-pointer transition-all">
                                                 <option value="m3">m³</option>
                                                 <option value="m2">m²</option>
                                                 <option value="m1">m1</option>
@@ -544,48 +548,48 @@ export default function PonudeModule({ onExit }) {
                                         </div>
                                     </div>
                                     
-                                    <div><label className="text-[8px] text-pink-500 uppercase ml-2 block mb-1 font-black">Konačni Rabat %</label><input type="number" value={stavkaForm.konacni_rabat} onChange={e=>setStavkaForm({...stavkaForm, konacni_rabat:e.target.value})} className="w-full p-3 bg-pink-900/20 rounded-xl text-sm text-pink-400 font-black text-center outline-none border border-pink-500/50" /></div>
+                                    <div><label className="text-[8px] text-pink-500 uppercase ml-2 block mb-1 font-black">Konačni Rabat %</label><input type="number" value={stavkaForm.konacni_rabat} onChange={e=>setStavkaForm({...stavkaForm, konacni_rabat:e.target.value})} className="w-full p-3 bg-pink-900/20 rounded-xl text-sm text-theme-accent font-black text-center outline-none border border-pink-500/50" /></div>
                                 </div>
-                                <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}>{stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na ponudu'}</button>
+                                <button onClick={dodajStavku} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase mt-2 ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-theme-accent hover:opacity-80'}`}>{stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na ponudu'}</button>
                             </div>
                         )}
                     </div>
 
                     {stavke.length > 0 && (
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl animate-in slide-in-from-bottom">
-                            <div className="flex justify-between items-center mb-4"><h3 className="text-emerald-500 font-black uppercase text-xs">3. Pregled Ponude i PDF</h3><button onClick={kreirajPDF} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button></div>
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl animate-in slide-in-from-bottom">
+                            <div className="flex justify-between items-center mb-4"><h3 className="text-emerald-500 font-black uppercase text-xs">3. Pregled Ponude i PDF</h3><button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button></div>
                             
                             <div className="space-y-2 mb-6">
                                 {stavke.map((s) => (
-                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-3 bg-slate-900 border border-slate-800 rounded-xl relative overflow-hidden cursor-pointer hover:border-blue-500 transition-all">
+                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-3 bg-theme-card border border-theme-border rounded-xl relative overflow-hidden cursor-pointer hover:border-blue-500 transition-all">
                                         {s.rabat_procenat > 0 && <div className="absolute top-0 left-0 h-full w-1 bg-pink-500"></div>}
-                                        <div className="ml-2"><p className="text-white text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p><p className="text-[9px] text-slate-500 uppercase mt-1">Unos: {s.kolicina_unos} {s.jm_unos} | Obr: <b className="text-white">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.cijena_baza.toFixed(2)} {form.valuta}</p></div>
+                                        <div className="ml-2"><p className="text-theme-text text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p><p className="text-[9px] text-slate-500 uppercase mt-1">Unos: {s.kolicina_unos} {s.jm_unos} | Obr: <b className="text-theme-text">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.cijena_baza.toFixed(2)} {form.valuta}</p></div>
                                         <div className="flex items-center gap-4"><div className="text-right">{s.rabat_procenat > 0 && <p className="text-[9px] text-pink-500 font-bold line-through">{(s.kolicina_obracun * s.cijena_baza).toFixed(2)}</p>}<p className="text-emerald-400 font-black text-sm">{s.ukupno.toFixed(2)} {form.valuta} {s.rabat_procenat > 0 && <span className="text-pink-500 text-[8px] ml-1">(-{s.rabat_procenat}%)</span>}</p></div><button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 font-black p-2 hover:bg-red-500/20 rounded-lg">✕</button></div>
                                     </div>
                                 ))}
                             </div>
 
                             {/* GLOBALNI RABAT NA SVE STAVKE */}
-                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-700 pb-4 mb-4">
+                            <div className="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-theme-border pb-4 mb-4">
                                 <div className="flex gap-2 items-center bg-pink-900/20 p-2 rounded-xl border border-pink-500/30 w-full md:w-auto">
-                                    <label className="text-[9px] text-pink-400 font-black uppercase ml-2">Postavi rabat za SVE stavke (%):</label>
-                                    <input type="number" value={globalRabat} onChange={e=>setGlobalRabat(e.target.value)} className="w-16 p-2 bg-black text-white text-center rounded-lg outline-none border border-pink-500/50 font-black" placeholder="0" />
-                                    <button onClick={primijeniGlobalniRabat} className="bg-pink-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:bg-pink-500 transition-all shadow-md">Primijeni</button>
+                                    <label className="text-[9px] text-theme-accent font-black uppercase ml-2">Postavi rabat za SVE stavke (%):</label>
+                                    <input type="number" value={globalRabat} onChange={e=>setGlobalRabat(e.target.value)} className="w-16 p-2 bg-black text-theme-text text-center rounded-lg outline-none border border-pink-500/50 font-black" placeholder="0" />
+                                    <button onClick={primijeniGlobalniRabat} className="bg-theme-accent text-theme-text px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:opacity-80 transition-all shadow-md">Primijeni</button>
                                 </div>
                             </div>
 
-                            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-700 space-y-2">
+                            <div className="bg-theme-card p-5 rounded-2xl border border-theme-border space-y-2">
                                 <div className="flex justify-between text-xs text-slate-400"><span>Iznos bez rabata:</span><span>{totals.bez_rabata} {form.valuta}</span></div>
                                 <div className="flex justify-between text-xs text-pink-500 font-bold"><span>Uračunat rabat:</span><span>- {totals.rabat} {form.valuta}</span></div>
-                                <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>Osnovica za PDV:</span><span>{totals.osnovica} {form.valuta}</span></div>
-                                <div className="flex justify-between text-xs text-slate-400 border-b border-slate-800 pb-2 mb-2"><span>PDV (17%):</span><span>{totals.pdv} {form.valuta}</span></div>
-                                <div className="flex justify-between text-sm text-white font-bold"><span>UKUPNO SA PDV:</span><span>{totals.za_naplatu} {form.valuta}</span></div>
+                                <div className="flex justify-between text-xs text-slate-400 border-b border-theme-border pb-2 mb-2"><span>Osnovica za PDV:</span><span>{totals.osnovica} {form.valuta}</span></div>
+                                <div className="flex justify-between text-xs text-slate-400 border-b border-theme-border pb-2 mb-2"><span>PDV (17%):</span><span>{totals.pdv} {form.valuta}</span></div>
+                                <div className="flex justify-between text-sm text-theme-text font-bold"><span>UKUPNO SA PDV:</span><span>{totals.za_naplatu} {form.valuta}</span></div>
                                 {parseFloat(form.depozit) > 0 && <div className="flex justify-between text-sm text-emerald-400 font-bold mt-1"><span>Uplaćen depozit / Avans:</span><span>- {parseFloat(form.depozit).toFixed(2)} {form.valuta}</span></div>}
-                                <div className="flex justify-between text-xl text-white font-black pt-2 mt-2 border-t border-slate-700"><span>PREOSTALO ZA NAPLATU:</span><span className="text-pink-400">{(totals.za_naplatu - (parseFloat(form.depozit)||0)).toFixed(2)} {form.valuta}</span></div>
+                                <div className="flex justify-between text-xl text-theme-text font-black pt-2 mt-2 border-t border-theme-border"><span>PREOSTALO ZA NAPLATU:</span><span className="text-theme-accent">{(totals.za_naplatu - (parseFloat(form.depozit)||0)).toFixed(2)} {form.valuta}</span></div>
                             </div>
 
-                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Dodatna napomena na ponudi (opciono)..." className="w-full mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-emerald-500" rows="2"></textarea>
-                            <button onClick={snimiPonudu} className={`w-full mt-4 py-5 text-white font-black rounded-2xl uppercase text-sm shadow-xl transition-all ${isEditingPonuda ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>{isEditingPonuda ? '✅ Snimi izmjene ponude' : '✅ Kreiraj Ponudu'}</button>
+                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Dodatna napomena na ponudi (opciono)..." className="w-full mt-4 p-4 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-emerald-500" rows="2"></textarea>
+                            <button onClick={snimiPonudu} className={`w-full mt-4 py-5 text-theme-text font-black rounded-2xl uppercase text-sm shadow-xl transition-all ${isEditingPonuda ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>{isEditingPonuda ? '✅ Snimi izmjene ponude' : '✅ Kreiraj Ponudu'}</button>
                         </div>
                     )}
                 </div>
@@ -602,7 +606,7 @@ export default function PonudeModule({ onExit }) {
                                         <span className="flex-1"><b className="text-red-400">{l.korisnik}</b>: {l.detalji}</span>
                                         <div className="flex items-center gap-4 mt-2 md:mt-0 shrink-0">
                                             <span className="text-slate-500">{new Date(l.vrijeme).toLocaleString('de-DE')}</span>
-                                            <button onClick={() => potvrdiUpozorenje(l.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1 rounded transition-all font-black uppercase border border-red-500/30 shadow-md">✓ Pročitano</button>
+                                            <button onClick={() => potvrdiUpozorenje(l.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-theme-text px-3 py-1 rounded transition-all font-black uppercase border border-red-500/30 shadow-md">✓ Pročitano</button>
                                         </div>
                                     </div>
                                 ))}
@@ -610,46 +614,46 @@ export default function PonudeModule({ onExit }) {
                         </div>
                     )}
 
-                    <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-emerald-500/30 shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl">
                         <h3 className="text-emerald-500 font-black uppercase text-xs mb-4 flex justify-between"><span>✅ POTVRĐENE PONUDE</span> <span className="bg-emerald-900/40 px-2 rounded">{ponude.filter(p => p.status === 'POTVRĐENA').length}</span></h3>
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                             {ponude.filter(p => p.status === 'POTVRĐENA').length === 0 && <p className="text-center text-slate-500 text-xs">Nema potvrđenih ponuda.</p>}
                             {ponude.filter(p => p.status === 'POTVRĐENA').map(p => (
-                                <div key={p.id} className="p-4 bg-slate-900 border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
-                                    <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-                                        <div><p className="text-white text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
+                                <div key={p.id} className="p-4 bg-theme-card border border-emerald-500/20 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all">
+                                    <div className="flex justify-between items-start border-b border-theme-border pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+                                        <div><p className="text-theme-text text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
                                         <div className="text-right"><p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p><p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p></div>
                                     </div>
-                                    <div className="flex justify-between items-center mt-2"><button onClick={()=>promijeniStatusBrzo(p, 'NA ODLUČIVANJU')} className="text-[9px] text-slate-400 bg-slate-800 px-3 py-1 rounded hover:bg-amber-900/50 hover:text-amber-400 transition-all">Vrati na odlučivanje ↩</button><span className="text-[9px] text-slate-500">Stavki: {p.stavke_jsonb ? p.stavke_jsonb.length : 0}</span></div>
+                                    <div className="flex justify-between items-center mt-2"><button onClick={()=>promijeniStatusBrzo(p, 'NA ODLUČIVANJU')} className="text-[9px] text-slate-400 bg-theme-panel px-3 py-1 rounded hover:bg-amber-900/50 hover:text-amber-400 transition-all">Vrati na odlučivanje ↩</button><span className="text-[9px] text-slate-500">Stavki: {p.stavke_jsonb ? p.stavke_jsonb.length : 0}</span></div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
                     <div className="space-y-6">
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-amber-500/30 shadow-2xl">
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-amber-500/30 shadow-2xl">
                             <h3 className="text-amber-500 font-black uppercase text-xs mb-4 flex justify-between"><span>⏳ NA ODLUČIVANJU</span> <span className="bg-amber-900/40 px-2 rounded">{ponude.filter(p => p.status === 'NA ODLUČIVANJU').length}</span></h3>
                             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                 {ponude.filter(p => p.status === 'NA ODLUČIVANJU').map(p => (
-                                    <div key={p.id} className="p-4 bg-slate-900 border border-amber-500/20 rounded-2xl cursor-pointer hover:border-amber-500 transition-all">
-                                        <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-                                            <div><p className="text-white text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
+                                    <div key={p.id} className="p-4 bg-theme-card border border-amber-500/20 rounded-2xl cursor-pointer hover:border-amber-500 transition-all">
+                                        <div className="flex justify-between items-start border-b border-theme-border pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+                                            <div><p className="text-theme-text text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
                                             <div className="text-right"><p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p><p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p></div>
                                         </div>
-                                        <div className="flex justify-between items-center mt-2"><button onClick={()=>promijeniStatusBrzo(p, 'POTVRĐENA')} className="text-[9px] text-white font-black bg-emerald-600 px-3 py-1 rounded hover:bg-emerald-500 transition-all">Potvrdi Ponudu ✅</button></div>
+                                        <div className="flex justify-between items-center mt-2"><button onClick={()=>promijeniStatusBrzo(p, 'POTVRĐENA')} className="text-[9px] text-theme-text font-black bg-emerald-600 px-3 py-1 rounded hover:bg-emerald-500 transition-all">Potvrdi Ponudu ✅</button></div>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
                         {ponude.filter(p => p.status === 'REALIZOVANA ✅').length > 0 && (
-                            <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-blue-500/30 shadow-2xl opacity-70 hover:opacity-100 transition-all">
+                            <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-2xl opacity-70 hover:opacity-100 transition-all">
                                 <h3 className="text-blue-500 font-black uppercase text-xs mb-4">🔐 REALIZOVANO (ZATVORENO)</h3>
                                 <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                                     {ponude.filter(p => p.status === 'REALIZOVANA ✅').map(p => (
-                                        <div key={p.id} onClick={() => pokreniIzmjenuPonude(p)} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer">
-                                            <div className="flex justify-between items-start border-b border-slate-800 pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
-                                                <div><p className="text-white text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
+                                        <div key={p.id} onClick={() => pokreniIzmjenuPonude(p)} className="p-4 bg-theme-card border border-theme-border rounded-2xl cursor-pointer">
+                                            <div className="flex justify-between items-start border-b border-theme-border pb-2 mb-2 cursor-pointer" onClick={() => pokreniIzmjenuPonude(p)}>
+                                                <div><p className="text-theme-text text-sm font-black">{p.id}</p><p className="text-slate-400 text-xs font-bold mt-1">{p.kupac_naziv}</p></div>
                                                 <div className="text-right"><p className="text-emerald-400 font-black text-lg">{p.ukupno_sa_pdv} {p.valuta}</p><p className="text-[9px] text-slate-500 uppercase">{formatirajDatum(p.datum)}</p></div>
                                             </div>
                                         </div>

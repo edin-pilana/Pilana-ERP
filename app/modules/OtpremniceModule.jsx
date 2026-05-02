@@ -20,19 +20,19 @@ function OTP_SearchableProizvod({ katalog, value, onChange }) {
 
     return (
         <div className="relative font-black w-full">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none focus:border-orange-500 shadow-inner" />
+            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-orange-500 shadow-inner" />
             {open && filtered.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
                     {filtered.map(k => {
                         const tekstZaPolje = `${k.sifra} | ${k.naziv} | Dim: ${k.visina}x${k.sirina}x${k.duzina}`;
                         return (
-                            <div key={k.sifra} onClick={() => { onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} className="p-3 border-b border-slate-700 hover:bg-orange-600 cursor-pointer transition-all">
-                                <div className="text-white text-xs font-black">{k.sifra} <span className="text-orange-300 ml-1">{k.naziv}</span></div>
+                            <div key={k.sifra} onClick={() => { onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} className="p-3 border-b border-theme-border hover:bg-theme-card border-b border-theme-border cursor-pointer transition-all">
+                                <div className="text-theme-text text-xs font-black">{k.sifra} <span className="text-orange-300 ml-1">{k.naziv}</span></div>
                                 <div className="text-[9px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Dim: {k.visina}x{k.sirina}x{k.duzina}</div>
                             </div>
                         )
                     })}
-                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-white bg-slate-900 sticky bottom-0">Zatvori</div>
+                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[8px] text-slate-500 cursor-pointer hover:text-theme-text bg-theme-card sticky bottom-0">Zatvori</div>
                 </div>
             )}
         </div>
@@ -305,13 +305,13 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     };
 
     const renderPoljeHeader = (polje) => {
-        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-slate-900 rounded-xl text-white outline-none border border-slate-700 uppercase focus:border-orange-500" placeholder="Nema veznog dokumenta" />;
-        if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-slate-800 rounded-xl text-white border border-slate-700 font-black disabled:opacity-50" />;
+        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border uppercase focus:border-orange-500" placeholder="Nema veznog dokumenta" />;
+        if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border font-black disabled:opacity-50" />;
         if (polje.id === 'kupac') return <div className="h-full min-h-[45px]"><SearchableInput value={form.kupac_naziv} onChange={v=>setForm({...form, kupac_naziv:v})} list={kupci.map(k=>k.naziv)} /></div>;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-xs text-white border border-slate-700 outline-none" />;
-        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-orange-400 font-black border border-orange-500/50 outline-none uppercase"><option value="KREIRANA">Kreirana</option><option value="ISPORUČENO">Isporučeno</option></select>;
-        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e=>setForm({...form, vozac:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-white border border-slate-700 outline-none focus:border-orange-500" placeholder="npr. Marko Marković" />;
-        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e=>setForm({...form, registracija:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-[#0f172a] rounded-xl text-white border border-slate-700 outline-none uppercase focus:border-orange-500" placeholder="npr. A12-B-345" />;
+        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none" />;
+        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-accent font-black border border-orange-500/50 outline-none uppercase"><option value="KREIRANA">Kreirana</option><option value="ISPORUČENO">Isporučeno</option></select>;
+        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e=>setForm({...form, vozac:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="npr. Marko Marković" />;
+        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e=>setForm({...form, registracija:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none uppercase focus:border-orange-500" placeholder="npr. A12-B-345" />;
         return null;
     };
 
@@ -319,35 +319,39 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-orange-500" user={user} modulIme="otpremnice" saas={saas} />
 
-            <div className="flex bg-[#1e293b] p-1 rounded-2xl border border-slate-700 shadow-xl">
-                <button onClick={() => {setTab('nova'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'nova' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>{isEditing ? '✏️ Ažuriranje Otpremnice' : '➕ Nova Otpremnica'}</button>
-                <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'lista' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-800'}`}>📋 Pregled Otpremnica</button>
-            </div>
+            <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
+    <button onClick={() => {setTab('nova'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'nova' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+        {isEditing ? '✏️ Ažuriranje Otpremnice' : '➕ Nova Otpremnica'}
+    </button>
+    <button onClick={() => setTab('lista')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'lista' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+        📋 Pregled Otpremnica
+    </button>
+</div>
 
             {tab === 'nova' ? (
                 <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
                     
                     {!isEditing && (
-                        <div className="bg-slate-900 border border-orange-500/50 p-6 rounded-3xl shadow-2xl relative z-[60]">
-                            <label className="text-[10px] text-orange-400 uppercase font-black block mb-2 ml-2">Pametni unos (Skeniraj Ponudu ili Radni Nalog)</label>
-                            <div className="flex bg-[#0f172a] border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner">
+                        <div className="bg-theme-card border border-orange-500/50 p-6 rounded-box shadow-2xl relative z-[60]">
+                            <label className="text-[10px] text-theme-accent uppercase font-black block mb-2 ml-2">Pametni unos (Skeniraj Ponudu ili Radni Nalog)</label>
+                            <div className="flex bg-theme-panel border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner">
                                 <input 
                                     value={skenerInput} 
                                     onChange={handleSkenUnos} 
                                     onFocus={() => setPrikaziDrop(true)} 
                                     placeholder="Skeniraj ili ukucaj broj..." 
-                                    className="flex-1 p-4 bg-transparent text-sm text-white outline-none uppercase font-black tracking-widest relative z-10" 
+                                    className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10" 
                                 />
-                                <button onClick={() => setIsScanningOverlay(true)} className="px-6 bg-orange-600 text-white text-xl hover:bg-orange-500 transition-all border-l border-orange-500/50 relative z-10">📷</button>
+                                <button onClick={() => setIsScanningOverlay(true)} className="px-6 bg-theme-card border-b border-theme-border text-theme-text text-xl hover:opacity-80 transition-all border-l border-orange-500/50 relative z-10">📷</button>
                                 
                                 {prikaziDrop && skenerInput && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-theme-panel border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
                                         {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).length === 0 && <div className="p-3 text-xs text-slate-500 text-center">Nema rezultata...</div>}
                                         {dostupniDokumenti
                                             .filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput)))
                                             .map(p => (
-                                            <div key={p.id} onClick={() => odaberiIzDropdowna(p.id)} className="p-3 border-b border-slate-700 hover:bg-orange-600 cursor-pointer flex justify-between items-center transition-colors">
-                                                <div><span className="text-white font-black">{p.id}</span> <span className="text-[10px] text-orange-300 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                            <div key={p.id} onClick={() => odaberiIzDropdowna(p.id)} className="p-3 border-b border-theme-border hover:bg-theme-card border-b border-theme-border cursor-pointer flex justify-between items-center transition-colors">
+                                                <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-orange-300 ml-2 uppercase font-bold">{p.tip}</span></div>
                                                 <div className="text-slate-300 text-[10px] font-bold">{p.kupac} | <span className={p.status === 'ZAVRŠENO' ? 'text-emerald-400' : 'text-amber-400'}>{p.status}</span></div>
                                             </div>
                                         ))}
@@ -357,9 +361,9 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                         </div>
                     )}
 
-                    <div className={`p-6 rounded-[2.5rem] border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : 'border-orange-500/30 bg-[#1e293b]'}`} style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_kartice }}>
+                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : 'border-orange-500/30 bg-theme-card backdrop-blur-[var(--glass-blur)]'}`} >
                         <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-orange-400 font-black uppercase text-xs">1. Parametri Otpremnice</h3>
+                            <h3 className="text-theme-accent font-black uppercase text-xs">1. Parametri Otpremnice</h3>
                             {isEditing && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50 transition-all">Odustani od izmjena ✕</button>}
                         </div>
 
@@ -369,19 +373,19 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-slate-700 pb-4 items-start">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-theme-border pb-4 items-start">
                             {aktivnaPolja.map((polje, index) => (
                                 <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index)}>
                                     {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
-                                    {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-slate-900 text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
+                                    {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
                                     <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderPoljeHeader(polje)}</div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800 space-y-4 shadow-xl relative z-[30]">
-                        <h3 className="text-blue-400 uppercase text-xs">2. Stavke otpremnice (Ručni unos)</h3>
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border space-y-4 shadow-xl relative z-[30]">
+                        <h3 className="text-theme-accent uppercase text-xs">2. Stavke otpremnice (Ručni unos)</h3>
                         
                         <div className="relative mb-3">
                             <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod</label>
@@ -390,21 +394,21 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
                         {trenutniProizvod && (
                             <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4 shadow-inner">
-                                <div className="border-b border-slate-700 pb-3">
-                                    <p className="text-white text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p>
-                                    <p className="text-[10px] text-slate-400 mt-1">Dimenzije: <span className="text-white">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</span></p>
+                                <div className="border-b border-theme-border pb-3">
+                                    <p className="text-theme-text text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">Dimenzije: <span className="text-theme-text">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</span></p>
                                 </div>
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina za isporuku</label>
-                                        <input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} placeholder="0.00" className="w-full p-4 bg-black rounded-xl text-lg text-white font-black text-center outline-none border border-slate-700 focus:border-blue-500" />
+                                        <input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} placeholder="0.00" className="w-full p-4 bg-black rounded-xl text-lg text-theme-text font-black text-center outline-none border border-theme-border focus:border-blue-500" />
                                     </div>
                                     <div className="w-32">
                                         <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Jedinica</label>
-                                        <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-full p-4 bg-slate-800 rounded-xl text-sm text-white font-black outline-none border border-slate-700 uppercase"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select>
+                                        <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text font-black outline-none border border-theme-border uppercase"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select>
                                     </div>
                                 </div>
-                                <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                                <button onClick={dodajStavku} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-theme-accent hover:opacity-80'}`}>
                                     {stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj na otpremnicu'}
                                 </button>
                             </div>
@@ -412,45 +416,45 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     </div>
 
                     {stavke.length > 0 && (
-                        <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-orange-500/30 shadow-2xl animate-in slide-in-from-bottom">
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-orange-500/30 shadow-2xl animate-in slide-in-from-bottom">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-orange-400 font-black uppercase text-xs">3. Pregled Otpremnice</h3>
-                                <button onClick={kreirajPDF} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button>
+                                <h3 className="text-theme-accent font-black uppercase text-xs">3. Pregled Otpremnice</h3>
+                                <button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all">🖨️ Kreiraj PDF</button>
                             </div>
                             <div className="space-y-3 mb-6">
                                 {stavke.map((s, i) => (
-                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer hover:border-orange-500 transition-all group shadow-md">
+                                    <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-theme-card border border-theme-border rounded-xl cursor-pointer hover:border-orange-500 transition-all group shadow-md">
                                         <div className="flex items-center gap-4">
                                             <span className="text-slate-500 text-sm font-black">{i+1}.</span>
-                                            <div><p className="text-white text-sm font-black">{s.naziv}</p><p className="text-[9px] text-slate-500 mt-1 uppercase tracking-widest">{s.sifra}</p></div>
+                                            <div><p className="text-theme-text text-sm font-black">{s.naziv}</p><p className="text-[9px] text-slate-500 mt-1 uppercase tracking-widest">{s.sifra}</p></div>
                                         </div>
                                         <div className="flex items-center gap-6 text-right">
-                                            <p className="text-orange-400 font-black text-xl">{s.kolicina_obracun} <span className="text-xs text-slate-400">{s.jm_obracun}</span></p>
+                                            <p className="text-theme-accent font-black text-xl">{s.kolicina_obracun} <span className="text-xs text-slate-400">{s.jm_obracun}</span></p>
                                             <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na isporuci (opciono)..." className="w-full mt-4 p-4 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-orange-500 shadow-inner" rows="3"></textarea>
-                            <button onClick={snimiOtpremnicu} className={`w-full mt-4 py-6 text-white font-black rounded-[2rem] uppercase shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all text-sm tracking-widest ${isEditing ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-orange-600 hover:bg-orange-500'}`}>
+                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na isporuci (opciono)..." className="w-full mt-4 p-4 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-orange-500 shadow-inner" rows="3"></textarea>
+                            <button onClick={snimiOtpremnicu} className={`w-full mt-4 py-6 text-theme-text font-black rounded-box uppercase shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all text-sm tracking-widest ${isEditing ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-theme-card border-b border-theme-border hover:opacity-80'}`}>
                                 {isEditing ? '✅ Snimi izmjene otpremnice' : '🏁 KREIRAJ OTPREMNICU'}
                             </button>
                         </div>
                     )}
                 </div>
             ) : (
-                <div className="bg-[#1e293b] p-6 rounded-[2.5rem] border border-slate-700 shadow-2xl animate-in slide-in-from-right">
+                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl animate-in slide-in-from-right">
                     <h3 className="text-slate-400 font-black uppercase text-[10px] mb-4">Arhiva Otpremnica</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto pr-2">
                         {otpremnice.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full">Nema kreiranih otpremnica.</p>}
                         {otpremnice.map(o => (
-                            <div key={o.id} onClick={() => pokreniIzmjenu(o)} className="p-5 bg-slate-900 border border-slate-800 rounded-[2rem] cursor-pointer hover:border-orange-500 hover:-translate-y-1 transition-all relative overflow-hidden group shadow-lg">
-                                <div className="flex justify-between items-start border-b border-slate-800 pb-3 mb-3">
-                                    <div><p className="text-orange-400 font-black text-base">{o.id}</p><p className="text-white text-xs font-bold mt-1 uppercase">{o.kupac_naziv}</p></div>
-                                    <div className="text-right"><p className={`text-[9px] px-3 py-1 rounded-lg font-black uppercase ${o.status === 'ISPORUČENO' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-orange-900/30 text-orange-400'}`}>{o.status}</p><p className="text-[9px] text-slate-500 uppercase mt-2">{formatirajDatum(o.datum)}</p></div>
+                            <div key={o.id} onClick={() => pokreniIzmjenu(o)} className="p-5 bg-theme-card border border-theme-border rounded-box cursor-pointer hover:border-orange-500 hover:-translate-y-1 transition-all relative overflow-hidden group shadow-lg">
+                                <div className="flex justify-between items-start border-b border-theme-border pb-3 mb-3">
+                                    <div><p className="text-theme-accent font-black text-base">{o.id}</p><p className="text-theme-text text-xs font-bold mt-1 uppercase">{o.kupac_naziv}</p></div>
+                                    <div className="text-right"><p className={`text-[9px] px-3 py-1 rounded-lg font-black uppercase ${o.status === 'ISPORUČENO' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-orange-900/30 text-theme-accent'}`}>{o.status}</p><p className="text-[9px] text-slate-500 uppercase mt-2">{formatirajDatum(o.datum)}</p></div>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-[9px] text-slate-400 font-bold bg-slate-950 px-2 py-1 rounded">Veza: {o.broj_veze || 'Nema'}</span>
+                                    <span className="text-[9px] text-slate-400 font-bold bg-theme-panel px-2 py-1 rounded">Veza: {o.broj_veze || 'Nema'}</span>
                                     <span className="text-[10px] text-slate-300 font-black">Stavki: {o.stavke_jsonb ? o.stavke_jsonb.length : 0}</span>
                                 </div>
                             </div>

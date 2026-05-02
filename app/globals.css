@@ -2,54 +2,189 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+    /* 1. INDUSTRIAL (Standardna tema) */
+    --bg-main: #0f172a;       
+    --bg-card: rgba(30, 41, 59, 0.8); 
+    --bg-panel: rgba(0, 0, 0, 0.4);   
+    --text-primary: #f8fafc;  
+    --text-muted: #94a3b8;    
+    --border-color: rgba(59, 130, 246, 0.3); 
+    --border-glow: 0 0 0px transparent;      
+    --radius-box: 1rem; 
+    --glass-blur: blur(12px); 
+  }
+
+  [data-theme="aurora"] {
+    /* 2. NANO BANANA GLOSSY (Pravi stakleni efekt) */
+    --bg-main: #0B0E14; /* Jako tamno plava baza */
+    --bg-card: rgba(255, 255, 255, 0.04); /* Staklena kartica */
+    --bg-panel: rgba(0, 0, 0, 0.5); /* Jako tamna polja za unos da izgledaju utisnuto */
+    --text-primary: #ffffff;
+    --text-muted: #cbd5e1;
+    --border-color: rgba(255, 255, 255, 0.12); /* Sivi rub na karticama */
+    --border-glow: 0 0 20px rgba(255,255,255,0.03); 
+    --radius-box: 1.25rem;    
+    --glass-blur: blur(16px);
+  }
+
+  [data-theme="light"] {
+    /* 3. CLINICAL LIGHT */
+    --bg-main: #f8fafc; --bg-card: #ffffff; --bg-panel: #f1f5f9; 
+    --text-primary: #0f172a; --text-muted: #64748b; 
+    --border-color: #e2e8f0; --border-glow: 0 10px 15px -3px rgba(0,0,0,0.05); 
+    --radius-box: 1rem; --glass-blur: blur(0px);  
+  }
+
+  [data-theme="executive"] {
+    /* EXECUTIVE GOLD — Tamna luksuzna tema sa zlatnim akcentima */
+    --bg-main: #13111a;
+    --bg-card: rgba(28, 25, 36, 0.95);
+    --bg-panel: rgba(14, 12, 20, 0.8);
+    --text-primary: #e8e0d5;
+    --text-muted: #8a7f6e;
+    --border-color: rgba(200, 170, 110, 0.22);
+    --border-glow: 0 0 18px rgba(200, 170, 110, 0.08);
+    --radius-box: 0.75rem;
+    --glass-blur: blur(14px);
   }
 }
 
+/* ==================================================== */
+/* ☢️ NUKLEARNI PREKIDAČ SA DINAMIČKIM AKCENTNIM BOJAMA */
+/* ==================================================== */
+body:not([data-theme="light"]) input[type="text"],
+body:not([data-theme="light"]) input[type="number"],
+body:not([data-theme="light"]) input[type="date"],
+body:not([data-theme="light"]) select,
+body:not([data-theme="light"]) textarea {
+  background-color: var(--bg-panel) !important;
+  color: var(--text-primary) !important;
+  
+  /* MAGIJA: Uzima boju tvog modula i pravi je 30% vidljivom za prelijep okvir! */
+  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 30%, transparent) !important; 
+  
+  border-radius: 0.75rem !important; 
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.5) !important;
+  padding: 0.8rem 1rem !important; 
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease !important;
+}
+
+body:not([data-theme="light"]) input:focus,
+body:not([data-theme="light"]) select:focus,
+body:not([data-theme="light"]) textarea:focus {
+  outline: none !important;
+  
+  /* Kad klikneš na polje, boja modula zasija do 70% vidljivosti */
+  border-color: color-mix(in srgb, var(--theme-accent, rgba(255, 255, 255, 0.4)) 70%, transparent) !important; 
+  
+  /* I dobije lagani unutrašnji sjaj (glow) u boji tvog modula! */
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.5), 0 0 12px color-mix(in srgb, var(--theme-accent, rgba(255,255,255,0.1)) 20%, transparent) !important;
+}
+
+/* Rješava problem dropdown menija na tamnoj temi */
+body:not([data-theme="light"]) select option {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+/* Kartice analitike i veliki blokovi sada dobijaju blagi sjaj po ivicama u boji modula */
+body:not([data-theme="light"]) .bg-white {
+  background-color: var(--bg-card) !important;
+  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 15%, transparent) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ==================================================== */
+/* 🍏 MAC-STYLE SCROLLBAROVI */
+/* ==================================================== */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+  background: var(--border-color); 
+  border-radius: 10px; 
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+/* Glavno ponašanje tijela */
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  min-height: 100vh;
 }
-@media print {
-  body {
-    background-color: white !important;
-    color: black !important;
-  }
-  
-  /* Ukidamo gradijente i tamne pozadine */
-  .bg-\[\#0f172a\], .bg-\[\#1e293b\], .bg-slate-900, .bg-slate-800 {
-    background-color: transparent !important;
-  }
-  
-  /* Ponašanje stranice */
-  @page {
-    size: A4 portrait;
-    margin: 10mm;
-  }
 
-  /* Spriječava sječenje elemenata na prelazu stranice */
-  .page-break-avoid {
-    page-break-inside: avoid;
-  }
+/* Maglica za Aurora */
+body[data-theme="aurora"]::before {
+  content: ''; position: fixed; top: -10%; left: -10%; width: 50vw; height: 50vh;
+  background: radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 60%);
+  z-index: -1; pointer-events: none;
+}
+body[data-theme="aurora"]::after {
+  content: ''; position: fixed; bottom: -10%; right: -10%; width: 50vw; height: 50vh;
+  background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 60%);
+  z-index: -1; pointer-events: none;
+}
+/* Maglica za Executive */
+body[data-theme="executive"]::before {
+  content: ''; position: fixed; top: -10%; right: -10%; width: 45vw; height: 45vh;
+  background: radial-gradient(circle, rgba(200,170,110,0.07) 0%, transparent 60%);
+  z-index: -1; pointer-events: none;
+}
+body[data-theme="executive"]::after {
+  content: ''; position: fixed; bottom: -10%; left: -10%; width: 40vw; height: 40vh;
+  background: radial-gradient(circle, rgba(180,140,70,0.05) 0%, transparent 60%);
+  z-index: -1; pointer-events: none;
+}
+/* ==================================================== */
+/* 📊 FORSIRANJE TREMOR GRAFIKA DA BUDU STAKLENI */
+/* ==================================================== */
+.tremor-Card-root {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  box-shadow: var(--border-glow) !important;
+  border-radius: var(--radius-box) !important;
+}
 
-  /* Specifična pravila za Recharts grafike u printu */
-  .recharts-wrapper {
-    width: 100% !important;
-    height: 100% !important;
-  }
+/* Tooltipovi unutar grafika (da ne budu jarko bijeli na tamnoj temi) */
+body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: var(--bg-panel) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 0.75rem !important;
+  backdrop-filter: blur(8px) !important;
+  color: var(--text-primary) !important;
+}
+/* ==================================================== */
+/* 📊 FORSIRANJE TREMOR GRAFIKA DA BUDU STAKLENI */
+/* ==================================================== */
+
+/* Osvajamo glavne Tremor kartice */
+.tremor-Card-root {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  box-shadow: var(--border-glow) !important;
+  border-radius: var(--radius-box) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Tekst i Naslovi unutar Tremora */
+.tremor-Text-root, .tremor-Title-root, .tremor-Metric-root {
+  color: var(--text-primary) !important;
+}
+
+/* Tooltipovi unutar grafika (da ne budu jarko bijeli dok se prelazi mišem preko grafa) */
+body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: var(--bg-panel) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 0.75rem !important;
+  backdrop-filter: blur(8px) !important;
+  color: var(--text-primary) !important;
+}
+
+body:not([data-theme="light"]) .recharts-tooltip-item {
+  color: var(--text-primary) !important;
 }

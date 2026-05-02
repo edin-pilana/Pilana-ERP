@@ -206,7 +206,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
         <div className="space-y-6 bg-white print:bg-white print:text-black text-slate-200 w-full max-w-[210mm] mx-auto print:max-w-none">
             
             {/* PRINT HEADER */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-slate-800 pb-4 mb-6 pt-4">
+            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
                 <div className="flex items-center gap-4">
                     {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
                     <div className="border-l-2 border-slate-300 pl-4 ml-2">
@@ -221,7 +221,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             </div>
 
             {/* EKRAN KONTROLE */}
-            <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg print:hidden">
+            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
                 <div>
                     <h3 className="text-indigo-400 font-black uppercase text-sm tracking-widest">Direktorski Dashboard (Sveukupno)</h3>
                     <p className="text-xs text-slate-400">Zbirni bilans materijala i novca na nivou cijele fabrike.</p>
@@ -233,25 +233,25 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
 
             {/* 1. TOP KPI KARTICE */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:gap-2">
-                <Card decoration="top" decorationColor="blue" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
+                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Ulaz Sirovine (Trupci)</Text>
                     <Metric className="text-white print:text-black mt-1 text-lg font-mono">{data.kpi.ulazTrupci} m³</Metric>
                     <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Prorezano u periodu</Text>
                 </Card>
                 
-                <Card decoration="top" decorationColor="emerald" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
+                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Ukupno Proizvedeno</Text>
                     <Metric className="text-emerald-400 print:text-emerald-600 mt-1 text-lg font-mono">{data.kpi.izlazGotoveRobe} m³</Metric>
                     <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Pilana: {data.kpi.pilanaUcesce} | Dorada: {data.kpi.doradaUcesce}</Text>
                 </Card>
 
-                <Card decoration="top" decorationColor="amber" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
+                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Ukupna Vrijednost Robe</Text>
                     <Metric className="text-amber-400 print:text-amber-600 mt-1 text-lg font-mono">{parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA')} KM</Metric>
                     <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Tržišna procjena</Text>
                 </Card>
 
-                <Card decoration="top" decorationColor="indigo" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
+                <Card decoration="top" decorationColor="indigo" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Bruto Profit Fabrike</Text>
                     <Metric className={`${marzaBoja} mt-1 text-lg font-mono`}>{parseFloat(data.kpi.brutoProfit).toLocaleString('bs-BA')} KM</Metric>
                     <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Vrijednost - (Mašine + Ljudi)</Text>
@@ -259,12 +259,12 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             </div>
 
             {/* 2. ZBIRNA TABELA PROIZVODNJE PO KATEGORIJAMA */}
-            <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl p-0 overflow-hidden page-break-avoid mt-6">
+            <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl p-0 overflow-hidden page-break-avoid mt-6">
                 <div className="p-4 border-b border-slate-700 print:border-slate-300">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase">Struktura Proizvodnje po Kategorijama (Zbirno)</Title>
                 </div>
                 <table className="w-full text-left text-[10px]">
-                    <thead className="bg-slate-900 print:bg-slate-100 text-slate-400 print:text-slate-600 uppercase font-black border-b border-slate-700 print:border-slate-300">
+                    <thead className="bg-theme-card print:bg-slate-100 text-slate-400 print:text-slate-600 uppercase font-black border-b border-slate-700 print:border-slate-300">
                         <tr>
                             <th className="w-[50%] p-3">Kategorija Proizvoda</th>
                             <th className="w-[25%] p-3 text-center whitespace-nowrap">Volumen (m³)</th>
@@ -274,7 +274,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                     <tbody className="text-white print:text-black font-bold">
                         {data.tabelaKategorija.length === 0 && <tr><td colSpan="3" className="p-4 text-center italic text-slate-500">Nema evidentirane proizvodnje.</td></tr>}
                         {data.tabelaKategorija.map((k, i) => (
-                            <tr key={i} className="border-b border-slate-800/50 print:border-slate-200">
+                            <tr key={i} className="border-b border-theme-border/50 print:border-slate-200">
                                 <td className="p-3 text-blue-400 print:text-blue-800 uppercase">{k.ime}</td>
                                 <td className="p-3 text-center">{k.m3.toFixed(3)}</td>
                                 <td className="p-3 text-right text-emerald-400 print:text-black font-black whitespace-nowrap">{k.vrijednost.toLocaleString('bs-BA')}</td>
@@ -288,7 +288,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 mt-6 print:mt-8 page-break-avoid">
                 
                 {/* Tok Materijala */}
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Bilans Materijala (Ulaz / Izlaz / Kalo)</Title>
                     <div className="flex-1 flex justify-center items-center w-full">
                         <BarChart width={350} height={220} data={data.grafikonTokMaterijala} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -306,7 +306,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 </Card>
 
                 {/* Finansijski Zbir */}
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Sveukupni Finansijski Rezultat (KM)</Title>
                     <div className="flex-1 flex justify-center items-center w-full">
                         <BarChart width={350} height={220} data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -325,7 +325,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             </div>
 
             {/* PRINT FOOTER */}
-            <div className="hidden print:flex justify-between items-end border-t-2 border-slate-800 pt-4 mt-10 page-break-avoid">
+            <div className="hidden print:flex justify-between items-end border-t-2 border-theme-border pt-4 mt-10 page-break-avoid">
                 <div className="text-[8px] text-slate-500">
                     Sveukupni izvještaj generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}
                 </div>

@@ -288,10 +288,10 @@ export default function DashboardModule({ user, onExit }) {
         {/* GLAVNI HEADER */}
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border transition-colors duration-500 print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? saas.ui.boja_akcenta_pilana : '#1e293b' }}>
           <div className="flex items-center gap-6 overflow-x-auto">
-            <h1 className="text-white font-black text-2xl tracking-tighter hidden md:block">TTM<span style={{ color: saas.ui.boja_akcenta_pilana }}>.ERP</span></h1>
+            <h1 className="text-theme-text font-black text-2xl tracking-tighter hidden md:block">TTM<span style={{ color: saas.ui.boja_akcenta_pilana }}>.ERP</span></h1>
             <nav className="flex gap-2 bg-black/20 p-1.5 rounded-xl border border-white/5 overflow-x-auto whitespace-nowrap shadow-inner">
               {['pilana', 'dorada', 'finansije'].map(t => (
-                <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase transition-all ${activeTab === t ? 'text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`} style={{ backgroundColor: activeTab === t ? (t === 'pilana' ? saas.ui.boja_akcenta_pilana : t === 'dorada' ? saas.ui.boja_akcenta_dorada : saas.ui.boja_akcenta_finansije) : 'transparent' }}>
+                <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase transition-all ${activeTab === t ? 'text-theme-text shadow-lg' : 'text-slate-500 hover:text-theme-text hover:bg-white/5'}`} style={{ backgroundColor: activeTab === t ? (t === 'pilana' ? saas.ui.boja_akcenta_pilana : t === 'dorada' ? saas.ui.boja_akcenta_dorada : saas.ui.boja_akcenta_finansije) : 'transparent' }}>
                     {t}
                 </button>
               ))}
@@ -301,31 +301,31 @@ export default function DashboardModule({ user, onExit }) {
           <div className="flex flex-col md:flex-row items-center gap-4">
             {/* KONTROLA DATUMA I FILTERA - Netaknuta stara moćna logika */}
             <Flex className="bg-black/20 p-1.5 rounded-xl border border-white/5 gap-1 w-full md:w-auto justify-center shadow-inner">
-              <button onClick={() => { setTipDatuma('dan'); setIsPeriodic(false); setDatumDo(datumOd); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!isPeriodic?'bg-slate-700 text-white':'text-slate-500 hover:text-white'}`}>Dnevni</button>
-              <button onClick={() => { setTipDatuma('period'); setIsPeriodic(true); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${isPeriodic?'bg-slate-700 text-white':'text-slate-500 hover:text-white'}`}>Period</button>
+              <button onClick={() => { setTipDatuma('dan'); setIsPeriodic(false); setDatumDo(datumOd); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!isPeriodic?'bg-slate-700 text-theme-text':'text-slate-500 hover:text-theme-text'}`}>Dnevni</button>
+              <button onClick={() => { setTipDatuma('period'); setIsPeriodic(true); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${isPeriodic?'bg-slate-700 text-theme-text':'text-slate-500 hover:text-theme-text'}`}>Period</button>
             </Flex>
   
             <Flex className="bg-black/20 p-1.5 rounded-xl border border-white/5 gap-2 w-full md:w-auto justify-center flex-wrap shadow-inner">
               {!isPeriodic ? (
                 <>
-                  <button onClick={()=>shiftDate(-1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-slate-600 font-black text-white flex items-center justify-center transition-all"><ChevronLeft size={16}/></button>
-                  <div className="flex items-center justify-center bg-slate-900 px-3 py-1.5 rounded border border-slate-700 h-8 hover:border-slate-500 transition-all">
+                  <button onClick={()=>shiftDate(-1)} className="w-8 h-8 bg-theme-panel rounded hover:bg-slate-600 font-black text-theme-text flex items-center justify-center transition-all"><ChevronLeft size={16}/></button>
+                  <div className="flex items-center justify-center bg-theme-card px-3 py-1.5 rounded border border-theme-border h-8 hover:border-slate-500 transition-all">
                     <input type="date" value={datumOd} onChange={e=>{setDatumOd(e.target.value); setDatumDo(e.target.value);}} className="bg-transparent text-slate-300 font-bold text-sm tracking-widest outline-none cursor-pointer uppercase [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert" />
                   </div>
-                  <button onClick={()=>shiftDate(1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-slate-600 font-black text-white flex items-center justify-center transition-all"><ChevronRight size={16}/></button>
+                  <button onClick={()=>shiftDate(1)} className="w-8 h-8 bg-theme-panel rounded hover:bg-slate-600 font-black text-theme-text flex items-center justify-center transition-all"><ChevronRight size={16}/></button>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center bg-slate-900 rounded border border-slate-700 px-2 hover:border-slate-500 transition-all">
+                  <div className="flex items-center bg-theme-card rounded border border-theme-border px-2 hover:border-slate-500 transition-all">
                     <input type="date" value={datumOd} onChange={e=>setDatumOd(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs tracking-widest outline-none cursor-pointer h-8 uppercase [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert" />
                   </div>
                   <span className="text-slate-600 font-black">-</span>
-                  <div className="flex items-center bg-slate-900 rounded border border-slate-700 px-2 hover:border-slate-500 transition-all">
+                  <div className="flex items-center bg-theme-card rounded border border-theme-border px-2 hover:border-slate-500 transition-all">
                     <input type="date" value={datumDo} onChange={e=>setDatumDo(e.target.value)} className="bg-transparent text-slate-300 font-bold text-xs tracking-widest outline-none cursor-pointer h-8 uppercase [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert" />
                   </div>
-                  <div className="flex gap-1 ml-2 border-l border-slate-800 pl-2 items-center">
-                    <button onClick={()=>setBrziDatum('7d')} className="px-2 py-1.5 h-8 bg-slate-800 hover:bg-slate-600 hover:text-white rounded text-[9px] font-black uppercase text-slate-300 transition-colors shadow">7 Dana</button>
-                    <button onClick={()=>setBrziDatum('mjesec')} className="px-2 py-1.5 h-8 bg-slate-800 hover:bg-slate-600 hover:text-white rounded text-[9px] font-black uppercase text-slate-300 transition-colors shadow">Ovaj Mj</button>
+                  <div className="flex gap-1 ml-2 border-l border-theme-border pl-2 items-center">
+                    <button onClick={()=>setBrziDatum('7d')} className="px-2 py-1.5 h-8 bg-theme-panel hover:bg-slate-600 hover:text-theme-text rounded text-[9px] font-black uppercase text-slate-300 transition-colors shadow">7 Dana</button>
+                    <button onClick={()=>setBrziDatum('mjesec')} className="px-2 py-1.5 h-8 bg-theme-panel hover:bg-slate-600 hover:text-theme-text rounded text-[9px] font-black uppercase text-slate-300 transition-colors shadow">Ovaj Mj</button>
                   </div>
                 </>
               )}
@@ -335,16 +335,16 @@ export default function DashboardModule({ user, onExit }) {
             {user?.uloga === 'superadmin' && (
                 saas.isEditMode ? (
                     <div className="flex gap-2">
-                        <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition-all shadow-md">✕ Odustani</button>
-                        <button onClick={saas.spasiDizajn} className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
+                        <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-theme-text transition-all shadow-md">✕ Odustani</button>
+                        <button onClick={saas.spasiDizajn} className="px-3 py-2 bg-emerald-600 text-theme-text rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
                     </div>
                 ) : (
-                    <button onClick={saas.pokreniEdit} className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-white transition-all shadow-md">
+                    <button onClick={saas.pokreniEdit} className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-theme-text transition-all shadow-md">
                         <Settings size={14} /> Uredi Izgled
                     </button>
                 )
             )}
-            <button onClick={onExit} className="bg-slate-800 text-slate-400 hover:bg-red-500 hover:text-white px-5 h-10 rounded-xl text-[10px] font-black uppercase border border-slate-700 transition-all shadow-md">Izlaz</button>
+            <button onClick={onExit} className="bg-theme-panel text-slate-400 hover:bg-red-500 hover:text-theme-text px-5 h-10 rounded-xl text-[10px] font-black uppercase border border-theme-border transition-all shadow-md">Izlaz</button>
           </div>
         </div>
 
@@ -364,14 +364,14 @@ export default function DashboardModule({ user, onExit }) {
             <div className="max-w-[1600px] mx-auto flex gap-4 mb-6 print:hidden">
                <div className="flex flex-col">
                    <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Lokacija / Mjesto</span>
-                   <select value={filterMjesto} onChange={e => setFilterMjesto(e.target.value)} className="text-white p-3 rounded-xl text-xs font-bold border border-slate-700 outline-none shadow-inner" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                   <select value={filterMjesto} onChange={e => setFilterMjesto(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner" >
                        <option value="SVE">Sva Mjesta</option>
                        {dostupnaMjesta.map(m => <option key={m} value={m}>{m}</option>)}
                    </select>
                </div>
                <div className="flex flex-col">
                    <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Smjena (Vrijeme)</span>
-                   <select value={filterSmjena} onChange={e => setFilterSmjena(e.target.value)} className="text-white p-3 rounded-xl text-xs font-bold border border-slate-700 outline-none shadow-inner" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                   <select value={filterSmjena} onChange={e => setFilterSmjena(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner" >
                        <option value="SVE">Sve Smjene (00-24h)</option>
                        <option value="1">1. Smjena (07-15h)</option>
                        <option value="2">2. Smjena (15-23h)</option>
@@ -381,7 +381,7 @@ export default function DashboardModule({ user, onExit }) {
             </div>
         )}
   
-        {loading ? ( <div className="text-center p-20 animate-pulse text-white font-black tracking-widest uppercase text-xl">Dekodiranje Baze Podataka...</div> ) : (
+        {loading ? ( <div className="text-center p-20 animate-pulse text-theme-text font-black tracking-widest uppercase text-xl">Dekodiranje Baze Podataka...</div> ) : (
           <div className="max-w-[1600px] mx-auto space-y-6">
             
             {/* ==================================== */}
@@ -403,30 +403,30 @@ export default function DashboardModule({ user, onExit }) {
             {activeTab === 'dorada' && (
                 <div className="animate-in fade-in space-y-6">
                     <Grid numItemsMd={2} numItemsLg={4} className="gap-6">
-                        <Card decoration="top" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
+                        <Card decoration="top" className="border-theme-border shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Ulaz Sirovina</Text>
-                            <Metric className="text-white">{doradaData.kpi.ulaz_m3} m³</Metric>
+                            <Metric className="text-theme-text">{doradaData.kpi.ulaz_m3} m³</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Zapremina primljenih paketa</Text>
                         </Card>
-                        <Card decoration="top" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
+                        <Card decoration="top" className="border-theme-border shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Izlaz Gotove Robe</Text>
-                            <Metric className="text-white">{doradaData.kpi.izlaz_m3} m³</Metric>
+                            <Metric className="text-theme-text">{doradaData.kpi.izlaz_m3} m³</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Novi paketi nakon dorade</Text>
                         </Card>
-                        <Card decoration="top" decorationColor="red" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card decoration="top" decorationColor="red" className="border-theme-border shadow-xl" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Stvarni Kalo (Otpad)</Text>
                             <Metric className="text-red-400">{doradaData.kpi.kalo_m3} m³</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Gubitak pri obradi</Text>
                         </Card>
-                        <Card decoration="top" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
+                        <Card decoration="top" className="border-theme-border shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_dorada }}>
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Efikasnost Konverzije (Yield)</Text>
-                            <Metric className="text-white">{doradaData.kpi.yield_proc} %</Metric>
+                            <Metric className="text-theme-text">{doradaData.kpi.yield_proc} %</Metric>
                             <Badge color="blue" className="mt-2">Evidentirano operacija: {doradaData.kpi.operacije_count}</Badge>
                         </Card>
                     </Grid>
 
                     <Grid numItemsMd={1} numItemsLg={2} className="gap-6">
-                        <Card className="border-slate-800 shadow-xl h-[400px]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-6">Prinos (Yield %) po proizvedenom artiklu</Text>
                             <ResponsiveContainer width="100%" height="85%">
                                 <BarChart data={doradaData.yieldChart} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
@@ -439,7 +439,7 @@ export default function DashboardModule({ user, onExit }) {
                             </ResponsiveContainer>
                         </Card>
 
-                        <Card className="border-slate-800 shadow-xl h-[400px]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-2">Raspodjela Operacija (m³ prerađeno kroz oznake)</Text>
                             {doradaData.operacije.length === 0 ? (
                                 <div className="h-full flex items-center justify-center text-slate-500 text-sm">Nema zabilježenih specifičnih operacija (okrajčivanje, kraćenje...)</div>
@@ -458,7 +458,7 @@ export default function DashboardModule({ user, onExit }) {
                     </Grid>
 
                     {/* SLJEDIVOST TABELA */}
-                    <Card className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <Card className="border-theme-border shadow-xl" >
                         <Text className="text-slate-400 uppercase text-[10px] font-black mb-4">Forenzička Sljedivost (Traceability) - Odakle je proizvod nastao</Text>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-[11px]">
@@ -466,9 +466,9 @@ export default function DashboardModule({ user, onExit }) {
                                     <tr>
                                         <th className="p-3 rounded-tl-lg">Novi Paket (Izlaz)</th>
                                         <th className="p-3 text-center">Final m³</th>
-                                        <th className="p-3 text-center border-l border-slate-700">Ulaz m³</th>
+                                        <th className="p-3 text-center border-l border-theme-border">Ulaz m³</th>
                                         <th className="p-3">Korištena Sirovina (Paketi ulaza)</th>
-                                        <th className="p-3 text-center border-l border-slate-700">Yield</th>
+                                        <th className="p-3 text-center border-l border-theme-border">Yield</th>
                                         <th className="p-3">Operacije</th>
                                         <th className="p-3 rounded-tr-lg">Radnik / Vrijeme</th>
                                     </tr>
@@ -476,15 +476,15 @@ export default function DashboardModule({ user, onExit }) {
                                 <tbody className="text-slate-200">
                                     {doradaData.trace_blokovi.length === 0 && <tr><td colSpan="7" className="p-4 text-center italic text-slate-500">Nema podataka o doradi.</td></tr>}
                                     {doradaData.trace_blokovi.map((tb, i) => (
-                                        <tr key={i} className="border-b border-slate-800/50 hover:bg-white/5 transition-colors">
+                                        <tr key={i} className="border-b border-theme-border/50 hover:bg-white/5 transition-colors">
                                             <td className="p-3">
-                                                <div className="font-black text-white">{tb.out_id}</div>
-                                                <div className="text-blue-400 mt-1">{tb.out_naziv} <span className="text-slate-500 ml-1">({tb.out_dim})</span></div>
+                                                <div className="font-black text-theme-text">{tb.out_id}</div>
+                                                <div className="text-theme-accent mt-1">{tb.out_naziv} <span className="text-slate-500 ml-1">({tb.out_dim})</span></div>
                                             </td>
                                             <td className="p-3 text-center font-black text-emerald-400 text-sm bg-emerald-900/10">{tb.out_m3}</td>
-                                            <td className="p-3 text-center font-bold text-red-400 bg-red-900/10 border-l border-slate-800/50">{tb.in_m3}</td>
+                                            <td className="p-3 text-center font-bold text-red-400 bg-red-900/10 border-l border-theme-border/50">{tb.in_m3}</td>
                                             <td className="p-3 whitespace-pre-line text-[9px] text-slate-400 font-mono leading-relaxed">{tb.in_ids}</td>
-                                            <td className="p-3 text-center font-black border-l border-slate-800/50" style={{ color: saas.ui.boja_akcenta_dorada }}>{tb.yield}%</td>
+                                            <td className="p-3 text-center font-black border-l border-theme-border/50" style={{ color: saas.ui.boja_akcenta_dorada }}>{tb.yield}%</td>
                                             <td className="p-3 text-[9px] uppercase font-bold text-slate-300">{tb.operacije}</td>
                                             <td className="p-3 text-[9px] text-slate-400">{tb.radnik}<br/>{tb.vrijeme}</td>
                                         </tr>
@@ -502,31 +502,31 @@ export default function DashboardModule({ user, onExit }) {
             {activeTab === 'finansije' && (
                 <div className="animate-in fade-in space-y-6">
                     <Grid numItemsMd={2} numItemsLg={4} className="gap-6">
-                        <Card decoration="top" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_finansije }}>
+                        <Card decoration="top" className="border-theme-border shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice, decorationColor: saas.ui.boja_akcenta_finansije }}>
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Ukupno Fakturisano</Text>
-                            <Metric className="text-white">{parseFloat(finansijeKPI.ukupnoFakturisano).toLocaleString('bs-BA')} KM</Metric>
+                            <Metric className="text-theme-text">{parseFloat(finansijeKPI.ukupnoFakturisano).toLocaleString('bs-BA')} KM</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Izdati računi u periodu</Text>
                         </Card>
-                        <Card decoration="top" decorationColor="emerald" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card decoration="top" decorationColor="emerald" className="border-theme-border shadow-xl" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Naplaćeno (Gotovina + Virman)</Text>
                             <Metric className="text-emerald-400">{(parseFloat(finansijeKPI.naplacenoGotovina) + parseFloat(finansijeKPI.naplacenoVirman)).toLocaleString('bs-BA')} KM</Metric>
                             <Text className="text-slate-500 text-[10px] mt-2 uppercase font-bold">Gotovina: {finansijeKPI.naplacenoGotovina} | Virman: {finansijeKPI.naplacenoVirman}</Text>
                         </Card>
-                        <Card decoration="top" decorationColor="red" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card decoration="top" decorationColor="red" className="border-theme-border shadow-xl" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Nenaplaćena Potraživanja</Text>
                             <Metric className="text-red-400">{parseFloat(finansijeKPI.nenaplacenoDug).toLocaleString('bs-BA')} KM</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Otvoreni dug kupaca</Text>
                         </Card>
-                        <Card decoration="top" decorationColor="purple" className="border-slate-800 shadow-xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card decoration="top" decorationColor="purple" className="border-theme-border shadow-xl" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black">Obračunati PDV (17%)</Text>
-                            <Metric className="text-purple-400">{parseFloat(finansijeKPI.ocekivaniPDV).toLocaleString('bs-BA')} KM</Metric>
+                            <Metric className="text-theme-accent">{parseFloat(finansijeKPI.ocekivaniPDV).toLocaleString('bs-BA')} KM</Metric>
                             <Text className="text-slate-500 text-xs mt-2">Obaveza prema državi</Text>
                         </Card>
                     </Grid>
 
                     <Grid numItemsMd={1} numItemsLg={2} className="gap-6">
                         {/* STRUKTURA NAPLATE */}
-                        <Card className="border-slate-800 shadow-xl h-[400px]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-2">Struktura realizacije i potraživanja</Text>
                             <ResponsiveContainer width="100%" height="90%">
                                 <PieChart>
@@ -542,7 +542,7 @@ export default function DashboardModule({ user, onExit }) {
                         </Card>
 
                         {/* TOP DUŽNICI */}
-                        <Card className="border-slate-800 shadow-xl h-[400px]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-6">Top 5 Dužnika (Otvoreni Saldo)</Text>
                             {topDuznici.length === 0 ? (
                                 <div className="h-full flex items-center justify-center text-emerald-500 font-bold text-sm">Nema otvorenih dugovanja u ovom periodu ✅</div>

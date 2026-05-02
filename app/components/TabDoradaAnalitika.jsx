@@ -200,7 +200,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
         <div className="space-y-6 bg-white print:bg-white print:text-black text-slate-200">
             
             {/* PRINT HEADER */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-slate-800 pb-4 mb-6 pt-4">
+            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
                 <div className="flex items-center gap-4">
                     {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
                     <div className="border-l-2 border-slate-300 pl-4 ml-2">
@@ -215,10 +215,10 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             </div>
 
             {/* EKRAN KONTROLE */}
-            <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg print:hidden">
+            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
                 <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-400 font-black uppercase">Filtriraj po Operateru:</span>
-                    <select value={radnikFilter} onChange={e => setRadnikFilter(e.target.value)} className="bg-slate-800 text-blue-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-slate-900 [&>option]:text-white cursor-pointer">
+                    <select value={radnikFilter} onChange={e => setRadnikFilter(e.target.value)} className="bg-theme-panel text-blue-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-theme-card [&>option]:text-white cursor-pointer">
                         <option value="SVI">SVI ZAPOSLENI</option>
                         {data.smjenaInfo.sviRadnici.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
@@ -230,23 +230,23 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             {/* 1. TOP KPI KARTICE (5 u redu) */}
             <div className="grid grid-cols-5 gap-3">
-                <Card decoration="top" decorationColor="blue" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
+                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Ulaz Sirovina</Text>
                     <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="emerald" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
+                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Izlaz Gotove Robe</Text>
                     <Metric className="text-emerald-400 print:text-black text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="amber" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
+                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Efikasnost Konverzije</Text>
                     <Metric className="text-amber-400 print:text-black text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="rose" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
+                <Card decoration="top" decorationColor="rose" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Stvarni Kalo (Otpad)</Text>
                     <Metric className="text-rose-400 print:text-black text-xl mt-1">{data.kpi.kaloM3} <span className="text-sm">m³</span></Metric>
                 </Card>
-                <Card decoration="top" decorationColor="red" className="bg-[#1e293b] print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
+                <Card decoration="top" decorationColor="red" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
                     <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
                     <Metric className="text-red-400 print:text-black text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
                 </Card>
@@ -254,7 +254,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             {/* 2. GRAFIKONI (Sa page-break-avoid za print) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 page-break-avoid print:mt-6">
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Prinos (Yield %) po obrađenom artiklu</Title>
                     {data.yieldChart.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500 text-xs">Nema podataka</div> : (
                     <ResponsiveContainer width="100%" height="85%">
@@ -269,7 +269,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                     )}
                 </Card>
 
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-2 text-center">Raspodjela Operacija (m³ prerađeno kroz oznake)</Title>
                     {data.grafikonOperacija.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500 text-xs">Nema specifičnih operacija (Hoblano, Sušara...)</div> : (
                     <ResponsiveContainer width="100%" height="85%">
@@ -287,7 +287,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             {/* 3. TREND I SLJEDIVOST */}
             <div className="grid grid-cols-1 gap-6 page-break-avoid">
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
                     <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Dinamika rada (30 Dana): Volumen dorade (m³)</Title>
                     <ResponsiveContainer width="100%" height="85%">
                         <AreaChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -307,7 +307,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                 </Card>
 
                 {/* DETALJNA TABELA SLJEDIVOSTI */}
-                <Card className="bg-[#1e293b] print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
+                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
                     <Title className="text-blue-400 print:text-slate-800 font-black text-[10px] uppercase mb-4 border-b border-slate-700 print:border-slate-300 pb-2">Forenzička Sljedivost (Traceability) - Odakle je proizvod nastao</Title>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-[10px]">
@@ -325,7 +325,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                             <tbody className="text-slate-200 print:text-slate-800 font-bold">
                             {data.trace_blokovi?.length === 0 && <tr><td colSpan="7" className="p-4 text-center italic text-slate-500">Nema podataka o doradi.</td></tr>}
                                          {(data.trace_blokovi || []).map((tb, i) => (
-                                    <tr key={i} className="border-b border-slate-800/50 print:border-slate-200 hover:bg-slate-800/30">
+                                    <tr key={i} className="border-b border-theme-border/50 print:border-slate-200 hover:bg-theme-panel/30">
                                         <td className="py-2">
                                             <div className="font-black text-white print:text-black text-xs">{tb.out_id}</div>
                                             <div className="text-blue-400 print:text-slate-700 mt-1">{tb.out_naziv} <span className="text-slate-500 ml-1">({tb.out_dim})</span></div>
@@ -347,7 +347,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             </div>
 
             {/* ZASTOJI I FOOTER */}
-            <div className="border-t-4 border-slate-800 print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
+            <div className="border-t-4 border-theme-border print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
                 <div className="w-[60%]">
                     <h3 className="text-xs font-black uppercase text-slate-400 print:text-slate-800 mb-2">Dnevnik Zastoja i Napomene</h3>
                     {data.zastoji.length === 0 ? (
