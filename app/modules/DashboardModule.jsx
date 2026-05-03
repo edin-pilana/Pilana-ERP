@@ -12,13 +12,6 @@ const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Pomoćne funkcije (Neprobojne)
-const fmtBS = (iso) => {
-    if(!iso) return '';
-    const [y, m, d] = iso.split('-');
-    return `${d}.${m}.${y}.`;
-};
-  
 const imaSirovinu = (val) => {
     if (!val) return false;
     if (Array.isArray(val) && val.length > 0) return true;
@@ -28,23 +21,27 @@ const imaSirovinu = (val) => {
     }
     return false;
 };
-  
-const getSirovineNiz = (val) => {
-    if (!val) return [];
-    if (Array.isArray(val)) return val;
-    if (typeof val === 'string') return val.replace(/[{}"[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean);
-    return [];
-};
 
 export default function DashboardModule({ user, onExit }) {
-    // === SaaS KONTROLE ===
+    
     const saas = useSaaS('dashboard_analitika', {
         boja_pozadine: '#090e17',
         boja_kartice: '#111827',
-        boja_akcenta_pilana: '#10b981', // Emerald
-        boja_akcenta_dorada: '#3b82f6', // Blue
-        boja_akcenta_finansije: '#f59e0b', // Amber
+        boja_akcenta_pilana: '#10b981', 
+        boja_akcenta_dorada: '#3b82f6', 
+        boja_akcenta_finansije: '#f59e0b', 
     });
+
+    // OVA FUNKCIJA SPREMA TEKST TEK KADA KLIKNEŠ VAN POLJA ILI PRITISNEŠ ENTER
+    const spremiIzmjenu = (storageKey, novaVrijednost) => {
+        localStorage.setItem(storageKey, novaVrijednost);
+        window.dispatchEvent(new Event('saas_updated')); // Osvježi AppShell meni i logo odmah
+    };
+
+    const customSpasiDizajn = () => {
+        saas.spasiDizajn();
+        setTimeout(() => alert("✅ Postavke dizajna su uspješno spremljene!"), 300);
+    };
 
     const danasnjiDatum = new Date().toISOString().split('T')[0];
     const [activeTab, setActiveTab] = useState('pilana');
@@ -59,13 +56,12 @@ export default function DashboardModule({ user, onExit }) {
   
     const [loading, setLoading] = useState(true);
   
-    // FULL STATE OBJEKTI
     const [pilanaData, setPilanaData] = useState({ kpi: { ulaz_m3: 0, ulaz_kom: 0, avg_d: 0, izlaz_m3: 0, yield_proc: 0, trend_7d_proc: 0, trend_30d_proc: 0 }, trupci_duzine: [], izlaz_struktura: [], ucinak_brentista: [], trend_7d: [], trend_30d: [], glavna_tabela: [], zastoji: [], posada: '', trend_godisnji: [] });
     const [doradaData, setDoradaData] = useState({ kpi: { ulaz_m3: 0, izlaz_m3: 0, kalo_m3: 0, yield_proc: 0, trend_7d_proc: 0, operacije_count: 0 }, operacije: [], trend_7d: [], trace_blokovi: [], yieldChart: [] });
     const [finansijeKPI, setFinansijeKPI] = useState({ ukupnoFakturisano: 0, naplacenoGotovina: 0, naplacenoVirman: 0, nenaplacenoDug: 0, ocekivaniPDV: 0 });
     const [strukturaNaplate, setStrukturaNaplate] = useState([]);
     const [topDuznici, setTopDuznici] = useState([]);
-  
+
     useEffect(() => { ucitajAnalitiku(); }, [datumOd, datumDo, isPeriodic, filterMjesto, filterSmjena]);
   
     const setBrziDatum = (tip) => {
@@ -93,25 +89,19 @@ export default function DashboardModule({ user, onExit }) {
         const d60 = new Date(new Date(datumOd).getTime() - 60*24*60*60*1000).toISOString().split('T')[0];
         const d395 = new Date(new Date(datumOd).getTime() - 395*24*60*60*1000).toISOString().split('T')[0];
         
-        const [tRes, pRes, plRes, dnRes, p395Res, ponRes, rnRes, otpRes, racRes, blaRes] = await Promise.all([
+        const [tRes, pRes, plRes, dnRes, p395Res, racRes] = await Promise.all([
           supabase.from('trupci').select('*').gte('datum_prijema', d60).lte('datum_prijema', datumDo),
           supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60).lte('datum_yyyy_mm', datumDo),
           supabase.from('prorez_log').select('*').gte('datum', d60).lte('datum', datumDo),
           supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo),
           supabase.from('paketi').select('datum_yyyy_mm, kolicina_final, ai_sirovina_ids, brentista').gte('datum_yyyy_mm', d395).lte('datum_yyyy_mm', datumDo),
-          supabase.from('ponude').select('*').gte('datum', datumOd).lte('datum', datumDo),
-          supabase.from('radni_nalozi').select('*').gte('datum', datumOd).lte('datum', datumDo),
-          supabase.from('otpremnice').select('*').gte('datum', datumOd).lte('datum', datumDo),
           supabase.from('racuni').select('*').gte('datum', datumOd).lte('datum', datumDo),
-          supabase.from('blagajna').select('*').gte('datum', datumOd).lte('datum', datumDo)
         ]);
 
         const svaMjesta = [...new Set([...(plRes.data || []).map(x => x.mjesto), ...(pRes.data || []).map(x => x.mjesto)])].filter(Boolean);
         if (svaMjesta.length > 0) setDostupnaMjesta(svaMjesta);
 
-        // ==========================================
-        // 1. PILANA (Zadržana sva duboka logika)
-        // ==========================================
+        // 1. PILANA
         const logSve = plRes.data?.filter(pl => pl.datum >= datumOd && pl.datum <= datumDo && (filterMjesto === 'SVE' || pl.mjesto === filterMjesto) && provjeriSmjenu(pl.vrijeme_unosa)) || [];
         const paketiSvi = pRes.data?.filter(p => p.datum_yyyy_mm >= datumOd && p.datum_yyyy_mm <= datumDo && !imaSirovinu(p.ai_sirovina_ids) && (filterMjesto === 'SVE' || p.mjesto === filterMjesto) && provjeriSmjenu(p.vrijeme_tekst)) || [];
 
@@ -196,9 +186,7 @@ export default function DashboardModule({ user, onExit }) {
             posada: leaderboard.map(l => l.ime).join(', '), trend_godisnji: trend_godisnji, glavni_brentista: glavniBrentista
         });
 
-        // ==========================================
-        // 2. DORADA (Detaljan obračun i Kalo)
-        // ==========================================
+        // 2. DORADA 
         const paketiDoradaTrenutno = pRes.data?.filter(p => {
           if (p.datum_yyyy_mm < datumOd || p.datum_yyyy_mm > datumDo) return false;
           if (!imaSirovinu(p.ai_sirovina_ids)) return false; 
@@ -225,7 +213,10 @@ export default function DashboardModule({ user, onExit }) {
             d_izlaz_m3 += izlaz; d_ulaz_m3 += ulaz;
             if(p.oznake && Array.isArray(p.oznake)) p.oznake.forEach(o => { operacijeMap[o] = (operacijeMap[o] || 0) + izlaz; });
   
-            let sirovineTekst = []; const idsSirovine = getSirovineNiz(p.ai_sirovina_ids);
+            let sirovineTekst = []; 
+            const stringIds = typeof p.ai_sirovina_ids === 'string' ? p.ai_sirovina_ids : '';
+            const idsSirovine = stringIds.replace(/[{}"[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean);
+            
             if (idsSirovine.length > 0) {
                 idsSirovine.forEach(id => {
                     const orig = pRes.data?.find(r => r.paket_id === id);
@@ -240,11 +231,10 @@ export default function DashboardModule({ user, onExit }) {
             traceBlokovi.push({ out_id: p.paket_id, out_naziv: p.naziv_proizvoda, out_dim: `${p.debljina}x${p.sirina}x${p.duzina}`, out_m3: izlaz.toFixed(2), in_m3: ulaz.toFixed(2), in_ids: sirovineTekst.join(' \n '), operacije: p.oznake ? p.oznake.join(', ') : 'Prerada', yield: currYield, avg_60d: avg60d, brzina: brzinaM3h, radnik: p.snimio_korisnik, vrijeme: p.vrijeme_tekst, masina: p.masina || '-' });
         });
 
-        // Novi grafikon specifičan za Dorada Yield
         const chartDoradaYield = Object.keys(globalProductYieldMap).map(naziv => ({
             name: naziv,
             Yield: ((globalProductYieldMap[naziv].i / globalProductYieldMap[naziv].u) * 100).toFixed(1)
-        })).filter(x => x.Yield > 0).sort((a,b) => b.Yield - a.Yield).slice(0, 10); // Top 10
+        })).filter(x => x.Yield > 0).sort((a,b) => b.Yield - a.Yield).slice(0, 10);
   
         setDoradaData({ 
             kpi: { ulaz_m3: d_ulaz_m3.toFixed(2), izlaz_m3: d_izlaz_m3.toFixed(2), kalo_m3: (d_ulaz_m3 - d_izlaz_m3).toFixed(2), yield_proc: d_ulaz_m3 > 0 ? ((d_izlaz_m3 / d_ulaz_m3) * 100).toFixed(1) : 0, operacije_count: paketiDoradaTrenutno.length }, 
@@ -253,9 +243,7 @@ export default function DashboardModule({ user, onExit }) {
             trace_blokovi: traceBlokovi.sort((a,b) => b.out_m3 - a.out_m3) 
         });
 
-        // ==========================================
         // 3. FINANSIJE
-        // ==========================================
         const racuni = racRes.data || [];
         let fGotovina = 0; let fVirman = 0; let fDug = 0; let fPdv = 0;
         let kupciDugovanja = {};
@@ -279,7 +267,6 @@ export default function DashboardModule({ user, onExit }) {
       setLoading(false);
     };
 
-    // Paleta za PieCharts
     const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
   
     return (
@@ -288,7 +275,7 @@ export default function DashboardModule({ user, onExit }) {
         {/* GLAVNI HEADER */}
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border transition-colors duration-500 print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? saas.ui.boja_akcenta_pilana : '#1e293b' }}>
           <div className="flex items-center gap-6 overflow-x-auto">
-            <h1 className="text-theme-text font-black text-2xl tracking-tighter hidden md:block">TTM<span style={{ color: saas.ui.boja_akcenta_pilana }}>.ERP</span></h1>
+            <h1 className="text-theme-text font-black text-2xl tracking-tighter hidden md:block">Analitika<span style={{ color: saas.ui.boja_akcenta_pilana }}>.Pro</span></h1>
             <nav className="flex gap-2 bg-black/20 p-1.5 rounded-xl border border-white/5 overflow-x-auto whitespace-nowrap shadow-inner">
               {['pilana', 'dorada', 'finansije'].map(t => (
                 <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 rounded-lg text-[11px] font-bold uppercase transition-all ${activeTab === t ? 'text-theme-text shadow-lg' : 'text-slate-500 hover:text-theme-text hover:bg-white/5'}`} style={{ backgroundColor: activeTab === t ? (t === 'pilana' ? saas.ui.boja_akcenta_pilana : t === 'dorada' ? saas.ui.boja_akcenta_dorada : saas.ui.boja_akcenta_finansije) : 'transparent' }}>
@@ -299,7 +286,6 @@ export default function DashboardModule({ user, onExit }) {
           </div>
   
           <div className="flex flex-col md:flex-row items-center gap-4">
-            {/* KONTROLA DATUMA I FILTERA - Netaknuta stara moćna logika */}
             <Flex className="bg-black/20 p-1.5 rounded-xl border border-white/5 gap-1 w-full md:w-auto justify-center shadow-inner">
               <button onClick={() => { setTipDatuma('dan'); setIsPeriodic(false); setDatumDo(datumOd); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${!isPeriodic?'bg-slate-700 text-theme-text':'text-slate-500 hover:text-theme-text'}`}>Dnevni</button>
               <button onClick={() => { setTipDatuma('period'); setIsPeriodic(true); }} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${isPeriodic?'bg-slate-700 text-theme-text':'text-slate-500 hover:text-theme-text'}`}>Period</button>
@@ -331,12 +317,11 @@ export default function DashboardModule({ user, onExit }) {
               )}
             </Flex>
 
-            {/* SAAS KONTROLE */}
             {user?.uloga === 'superadmin' && (
                 saas.isEditMode ? (
                     <div className="flex gap-2">
                         <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-theme-text transition-all shadow-md">✕ Odustani</button>
-                        <button onClick={saas.spasiDizajn} className="px-3 py-2 bg-emerald-600 text-theme-text rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
+                        <button onClick={customSpasiDizajn} className="px-3 py-2 bg-emerald-600 text-theme-text rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
                     </div>
                 ) : (
                     <button onClick={saas.pokreniEdit} className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-theme-text transition-all shadow-md">
@@ -348,30 +333,83 @@ export default function DashboardModule({ user, onExit }) {
           </div>
         </div>
 
-        {/* SAAS EDITOR OVERLAY */}
+        {/* --- SAAS EDITOR OVERLAY (DODAT LOGO + POPRAVLJEN FOKUS ZA IMENA MODULA) --- */}
         {saas.isEditMode && (
-            <div className="max-w-[1600px] mx-auto mb-6 bg-black/40 p-4 rounded-2xl flex flex-wrap gap-4 items-center border border-amber-500/30 shadow-2xl">
-                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Pozadine: <input type="color" value={saas.ui.boja_pozadine} onChange={e => saas.setUi({...saas.ui, boja_pozadine: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
-                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Kartica: <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
-                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Pilana: <input type="color" value={saas.ui.boja_akcenta_pilana} onChange={e => saas.setUi({...saas.ui, boja_akcenta_pilana: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
-                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Dorada: <input type="color" value={saas.ui.boja_akcenta_dorada} onChange={e => saas.setUi({...saas.ui, boja_akcenta_dorada: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
-                <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Finansije: <input type="color" value={saas.ui.boja_akcenta_finansije} onChange={e => saas.setUi({...saas.ui, boja_akcenta_finansije: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+            <div className="max-w-[1600px] mx-auto mb-6 bg-black/40 p-6 rounded-2xl flex flex-col gap-6 border border-amber-500/30 shadow-2xl">
+                
+                <div className="flex gap-4">
+                    <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Pozadine: <input type="color" value={saas.ui.boja_pozadine} onChange={e => saas.setUi({...saas.ui, boja_pozadine: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                    <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Kartica: <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                    <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Pilana: <input type="color" value={saas.ui.boja_akcenta_pilana} onChange={e => saas.setUi({...saas.ui, boja_akcenta_pilana: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                    <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Dorada: <input type="color" value={saas.ui.boja_akcenta_dorada} onChange={e => saas.setUi({...saas.ui, boja_akcenta_dorada: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                    <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Akcent Finansije: <input type="color" value={saas.ui.boja_akcenta_finansije} onChange={e => saas.setUi({...saas.ui, boja_akcenta_finansije: e.target.value})} className="w-8 h-8 cursor-pointer rounded border-none bg-transparent" /></label>
+                </div>
+
+                {/* NOVO: OPĆE POSTAVKE APLIKACIJE (LOGO I IME) */}
+                <div className="border-t border-amber-500/20 pt-4">
+                    <h4 className="text-xs text-amber-500 font-black mb-4">BRENDIRANJE APLIKACIJE (HEADER / MENI)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Naziv Aplikacije (Tekst Logo)
+                            <input 
+                                defaultValue={localStorage.getItem('saas_app_name') || 'SmartERP'} 
+                                onBlur={e => spremiIzmjenu('saas_app_name', e.target.value)} 
+                                onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_app_name', e.target.value)}}
+                                className="p-3 rounded-lg bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500 transition-colors shadow-inner" 
+                            />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">URL Logotipa (Slika) - Ostaviti prazno za tekst
+                            <input 
+                                defaultValue={localStorage.getItem('saas_app_logo') || ''} 
+                                onBlur={e => spremiIzmjenu('saas_app_logo', e.target.value)} 
+                                onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_app_logo', e.target.value)}}
+                                placeholder="https://..."
+                                className="p-3 rounded-lg bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500 transition-colors shadow-inner" 
+                            />
+                        </label>
+                    </div>
+                </div>
+
+                <div className="border-t border-amber-500/20 pt-4">
+                    <h4 className="text-xs text-amber-500 font-black mb-4">IZMJENA NAZIVA MODULA U BOČNOM MENIJU</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Početna (Analitika)
+                            <input defaultValue={localStorage.getItem('saas_dashboard_analitika_naslov') || 'Početna'} onBlur={e => spremiIzmjenu('saas_dashboard_analitika_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_dashboard_analitika_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Prijem Trupaca
+                            <input defaultValue={localStorage.getItem('saas_prijem_trupaca_naslov') || 'Prijem'} onBlur={e => spremiIzmjenu('saas_prijem_trupaca_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_prijem_trupaca_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Prorez
+                            <input defaultValue={localStorage.getItem('saas_prorez_trupaca_naslov') || 'Prorez'} onBlur={e => spremiIzmjenu('saas_prorez_trupaca_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_prorez_trupaca_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Pilana (Izlaz)
+                            <input defaultValue={localStorage.getItem('saas_pilana_izlaz_naslov') || 'Pilana'} onBlur={e => spremiIzmjenu('saas_pilana_izlaz_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_pilana_izlaz_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Dorada
+                            <input defaultValue={localStorage.getItem('saas_dorada_modul_naslov') || 'Dorada'} onBlur={e => spremiIzmjenu('saas_dorada_modul_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_dorada_modul_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Lager
+                            <input defaultValue={localStorage.getItem('saas_lager_paketa_naslov') || 'Lager'} onBlur={e => spremiIzmjenu('saas_lager_paketa_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_lager_paketa_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] text-slate-400 font-black uppercase">Kontrolni Toranj
+                            <input defaultValue={localStorage.getItem('saas_kontrolni_toranj_naslov') || 'Kontrola'} onBlur={e => spremiIzmjenu('saas_kontrolni_toranj_naslov', e.target.value)} onKeyDown={e => {if(e.key === 'Enter') spremiIzmjenu('saas_kontrolni_toranj_naslov', e.target.value)}} className="p-2 rounded bg-theme-panel border border-theme-border text-theme-text outline-none focus:border-amber-500" />
+                        </label>
+                    </div>
+                </div>
             </div>
         )}
 
-        {/* LOKACIJA I SMJENA FILTERI ZA PROIZVODNJU */}
         {(activeTab === 'pilana' || activeTab === 'dorada') && (
             <div className="max-w-[1600px] mx-auto flex gap-4 mb-6 print:hidden">
                <div className="flex flex-col">
                    <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Lokacija / Mjesto</span>
-                   <select value={filterMjesto} onChange={e => setFilterMjesto(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner" >
+                   <select value={filterMjesto} onChange={e => setFilterMjesto(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner bg-theme-panel" >
                        <option value="SVE">Sva Mjesta</option>
                        {dostupnaMjesta.map(m => <option key={m} value={m}>{m}</option>)}
                    </select>
                </div>
                <div className="flex flex-col">
                    <span className="text-[10px] text-slate-500 uppercase font-bold ml-1 mb-1">Smjena (Vrijeme)</span>
-                   <select value={filterSmjena} onChange={e => setFilterSmjena(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner" >
+                   <select value={filterSmjena} onChange={e => setFilterSmjena(e.target.value)} className="text-theme-text p-3 rounded-xl text-xs font-bold border border-theme-border outline-none shadow-inner bg-theme-panel" >
                        <option value="SVE">Sve Smjene (00-24h)</option>
                        <option value="1">1. Smjena (07-15h)</option>
                        <option value="2">2. Smjena (15-23h)</option>
@@ -384,9 +422,6 @@ export default function DashboardModule({ user, onExit }) {
         {loading ? ( <div className="text-center p-20 animate-pulse text-theme-text font-black tracking-widest uppercase text-xl">Dekodiranje Baze Podataka...</div> ) : (
           <div className="max-w-[1600px] mx-auto space-y-6">
             
-            {/* ==================================== */}
-            {/* 1. PILANA TAB                        */}
-            {/* ==================================== */}
             {activeTab === 'pilana' && (
               <div className="animate-in fade-in space-y-6">
                  {isPeriodic ? (
@@ -397,9 +432,6 @@ export default function DashboardModule({ user, onExit }) {
               </div>
             )}
 
-            {/* ==================================== */}
-            {/* 2. DORADA TAB (NOVO I MOĆNO)         */}
-            {/* ==================================== */}
             {activeTab === 'dorada' && (
                 <div className="animate-in fade-in space-y-6">
                     <Grid numItemsMd={2} numItemsLg={4} className="gap-6">
@@ -457,7 +489,6 @@ export default function DashboardModule({ user, onExit }) {
                         </Card>
                     </Grid>
 
-                    {/* SLJEDIVOST TABELA */}
                     <Card className="border-theme-border shadow-xl" >
                         <Text className="text-slate-400 uppercase text-[10px] font-black mb-4">Forenzička Sljedivost (Traceability) - Odakle je proizvod nastao</Text>
                         <div className="overflow-x-auto">
@@ -496,9 +527,6 @@ export default function DashboardModule({ user, onExit }) {
                 </div>
             )}
 
-            {/* ==================================== */}
-            {/* 3. FINANSIJE TAB (NOVO I MOĆNO)      */}
-            {/* ==================================== */}
             {activeTab === 'finansije' && (
                 <div className="animate-in fade-in space-y-6">
                     <Grid numItemsMd={2} numItemsLg={4} className="gap-6">
@@ -525,15 +553,14 @@ export default function DashboardModule({ user, onExit }) {
                     </Grid>
 
                     <Grid numItemsMd={1} numItemsLg={2} className="gap-6">
-                        {/* STRUKTURA NAPLATE */}
                         <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-2">Struktura realizacije i potraživanja</Text>
                             <ResponsiveContainer width="100%" height="90%">
                                 <PieChart>
                                     <Pie data={strukturaNaplate} innerRadius={70} outerRadius={110} paddingAngle={5} dataKey="value" stroke="none">
-                                        <Cell fill="#10b981" /> {/* Gotovina */}
-                                        <Cell fill="#3b82f6" /> {/* Virman */}
-                                        <Cell fill="#ef4444" /> {/* Dug */}
+                                        <Cell fill="#10b981" /> 
+                                        <Cell fill="#3b82f6" /> 
+                                        <Cell fill="#ef4444" /> 
                                     </Pie>
                                     <RechartsTooltip contentStyle={{backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '10px'}} formatter={(value) => `${value.toLocaleString('bs-BA')} KM`} />
                                     <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '20px', fontWeight: 'bold' }} />
@@ -541,7 +568,6 @@ export default function DashboardModule({ user, onExit }) {
                             </ResponsiveContainer>
                         </Card>
 
-                        {/* TOP DUŽNICI */}
                         <Card className="border-theme-border shadow-xl h-[400px]" >
                             <Text className="text-slate-400 uppercase text-[10px] font-black mb-6">Top 5 Dužnika (Otvoreni Saldo)</Text>
                             {topDuznici.length === 0 ? (
