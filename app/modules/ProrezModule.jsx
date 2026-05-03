@@ -102,6 +102,12 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 }
 
 export default function ProrezModule({ user, header, setHeader, onExit }) {
+    // AUTOMATSKI ODABIR MAŠINE
+    useEffect(() => {
+        if (!header?.masina) {
+            setHeader(prev => ({ ...prev, masina: 'PILANA' })); // Ovdje upiši TAČAN naziv mašine iz baze
+        }
+    }, [header?.masina]);
     const saas = useSaaS('prorez_trupaca', {
         boja_kartice: '#1e293b',
         naslov_skenera: 'SKENIRAJ TRUPAC (Ulaz u brentu)',

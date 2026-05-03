@@ -210,6 +210,12 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 }
 
 export default function PilanaModule({ user, header, setHeader, onExit }) {
+    // AUTOMATSKI ODABIR MAŠINE
+    useEffect(() => {
+        if (!header?.masina) {
+            setHeader(prev => ({ ...prev, masina: 'PILANA' })); // Ovdje upiši TAČAN naziv mašine iz baze
+        }
+    }, [header?.masina]);
     const saas = useSaaS('pilana_izlaz', {
         boja_kartice: '#1e293b',
         naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET',
