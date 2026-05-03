@@ -162,7 +162,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
     const renderBentoLayout = () => (
         <div className="flex flex-col w-full min-h-screen relative pb-24">
             <main className="flex-1 p-4 md:p-8 relative z-10 w-full max-w-7xl mx-auto">{children}</main>
-            <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-theme-card border border-theme-border p-2 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 flex items-center gap-2 backdrop-blur-2xl">
+            <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[95vw] max-w-4xl overflow-x-auto custom-scrollbar bg-theme-card border border-theme-accent/50 p-2 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 flex items-center gap-2 backdrop-blur-2xl">
                 {menuItems.map(item => {
                     const Icon = item.icon;
                     const isActive = activeModule === item.id;
