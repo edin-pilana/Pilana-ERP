@@ -1,51 +1,28 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
 import { Card, Metric, Text, Title } from '@tremor/react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
-
-const PALETA = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
-
-const formatDatum = (iso) => {
-    if(!iso) return '';
-    const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`;
-};
-
-const imaSirovinu = (val) => {
-    if (!val) return false;
-    if (Array.isArray(val) && val.length > 0) return true;
-    if (typeof val === 'string') return val.replace(/[{}"[\]\s]/g, '').length > 0;
-    return false;
-};
+const formatDatum = (iso) => { if(!iso) return ''; const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
 
 export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }) {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
-    
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     const [logoUrl, setLogoUrl] = useState('');
     const [imeFirme, setImeFirme] = useState('SMART TIMBER');
 
-    useEffect(() => {
-        try {
-            const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
-            const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || 
-                            brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-            if (logoObj && logoObj.url_slike) setLogoUrl(logoObj.url_slike);
-            if (logoObj && logoObj.naziv) setImeFirme(logoObj.naziv);
-        } catch (e) {}
-    }, []);
-
-    useEffect(() => {
-        ucitajObrazacProizvodnje();
-    }, [datumOd, datumDo]);
+    useEffect(() => { const logo = localStorage.getItem('saas_app_logo'); if(logo) setLogoUrl(logo); }, []);
+    useEffect(() => { ucitajObrazacProizvodnje(); }, [datumOd, datumDo]);
 
     const ucitajObrazacProizvodnje = async () => {
         setLoading(true);
         try {
-            const [trupciRes, prorezRes, paketiRes, masineRes, radniciRes, katalogRes] = await Promise.all([
-                supabase.from('trupci').select('*').gte('datum_prijema', '2020-01-01'), 
+            const [prorezRes, paketiRes, masineRes, radniciRes, katalogRes] = await Promise.all([
                 supabase.from('prorez_log').select('*').gte('datum', datumOd).lte('datum', datumDo),
                 supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo),
                 supabase.from('masine').select('*'),
@@ -58,67 +35,61 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             const masineDB = masineRes.data || [];
             const radniciDB = radniciRes.data || [];
             const katalogDB = katalogRes.data || [];
-            const trupciDB = trupciRes.data || [];
 
-            // --- 1. KALKULACIJA MATERIJALA ---
-            let ulazM3 = 0;
-            const iskoristeniTrupci = new Set();
-            logovi.forEach(l => {
-                if(!iskoristeniTrupci.has(l.trupac_id)) {
-                    iskoristeniTrupci.add(l.trupac_id);
-                    const t = trupciDB.find(tr => tr.id === l.trupac_id);
-                    if(t) ulazM3 += parseFloat(t.zapremina || 0);
-                }
-            });
-            paketi.filter(p => imaSirovinu(p.ai_sirovina_ids)).forEach(p => {
-                ulazM3 += parseFloat(p.kolicina_ulaz || p.kolicina_final || 0);
-            });
-
-            let izlazM3 = 0;
             let ukupnaVrijednostRobe = 0;
             const proizvodnjaTabelaMap = {};
 
             paketi.forEach(p => {
                 const m3 = parseFloat(p.kolicina_final || 0);
-                izlazM3 += m3;
-
                 const kat = katalogDB.find(k => k.sifra === p.naziv_proizvoda || k.naziv === p.naziv_proizvoda);
                 let cijenaBaza = kat ? parseFloat(kat.cijena || 0) : 0;
-                let jedCijenaTabela = `${cijenaBaza} KM/${kat?.default_jedinica || 'm³'}`;
                 
                 let izracunataVr = 0;
                 if(kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
                     const v = parseFloat(p.debljina)||1; const s = parseFloat(p.sirina)||1; const d = parseFloat(p.duzina)||1;
                     const vol1kom = (v/100) * (s/100) * (d/100);
-                    const komada = vol1kom > 0 ? (m3 / vol1kom) : 0;
-                    izracunataVr = komada * cijenaBaza;
+                    izracunataVr = vol1kom > 0 ? (m3 / vol1kom) * cijenaBaza : 0;
                 } else {
                     izracunataVr = m3 * cijenaBaza;
                 }
                 ukupnaVrijednostRobe += izracunataVr;
 
                 const kljuc = p.naziv_proizvoda || 'Nepoznato';
-                if(!proizvodnjaTabelaMap[kljuc]) proizvodnjaTabelaMap[kljuc] = { naziv: kljuc, m3: 0, vrijednost: 0, cijenaPrikaz: jedCijenaTabela };
+                if(!proizvodnjaTabelaMap[kljuc]) proizvodnjaTabelaMap[kljuc] = { naziv: kljuc, m3: 0, vrijednost: 0, cijenaPrikaz: `${cijenaBaza} KM/${kat?.default_jedinica || 'm³'}` };
                 proizvodnjaTabelaMap[kljuc].m3 += m3;
                 proizvodnjaTabelaMap[kljuc].vrijednost += izracunataVr;
             });
 
-            const kaloM3 = Math.max(0, ulazM3 - izlazM3);
-            const tabelaProizvodnje = Object.values(proizvodnjaTabelaMap).sort((a,b) => b.vrijednost - a.vrijednost);
-            const grafikonVrijednosti = tabelaProizvodnje.map(p => ({ name: p.naziv, value: parseFloat(p.vrijednost.toFixed(2)) })).slice(0, 10); 
-
-            // --- 2. TROŠKOVI PRERADE ---
             let ukupniTrosakPrerade = 0;
             const tabelaTroskova = [];
 
-            // A) Mašine (odvojeno po mašini)
+            // --- NOVO: TROŠAK SIROVINE (NABAVNA CIJENA TRUPACA) ---
+            const trupacIds = logovi.map(l => l.trupac_id);
+            let trosakSirovine = 0;
+            let zapreminaSirovine = 0;
+
+            if (trupacIds.length > 0) {
+                const { data: trupciData } = await supabase.from('trupci').select('id, zapremina, kontrolna_zapremina, nabavna_vrijednost').in('id', trupacIds);
+                if (trupciData) {
+                    trupciData.forEach(t => {
+                        trosakSirovine += parseFloat(t.nabavna_vrijednost || 0);
+                        zapreminaSirovine += parseFloat(t.kontrolna_zapremina || t.zapremina || 0);
+                    });
+                }
+            }
+
+            if (trosakSirovine > 0) {
+                ukupniTrosakPrerade += trosakSirovine;
+                tabelaTroskova.push({ tip: '1_Sirovina', naziv: 'Sirovina (Zaduženje trupaca)', kolicina: `${zapreminaSirovine.toFixed(2)} m³`, cijena: '-', ukupno: trosakSirovine });
+            }
+            // --------------------------------------------------------
+
             const masineTrosakMap = {};
             paketi.forEach(p => {
                 const masinaNaziv = p.masina;
                 if(!masinaNaziv) return;
-                const m3 = parseFloat(p.kolicina_final || 0);
                 if(!masineTrosakMap[masinaNaziv]) masineTrosakMap[masinaNaziv] = 0;
-                masineTrosakMap[masinaNaziv] += m3;
+                masineTrosakMap[masinaNaziv] += parseFloat(p.kolicina_final || 0);
             });
 
             Object.keys(masineTrosakMap).forEach(mNaziv => {
@@ -129,276 +100,273 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 
                 ukupniTrosakPrerade += trosak;
                 if(trosak > 0 || m3Ucinak > 0) {
-                    tabelaTroskova.push({ tip: 'Mašina', naziv: mNaziv, kolicina: `${m3Ucinak.toFixed(2)} m³`, cijena: `${cijenaM3} KM/m³`, ukupno: trosak });
+                    tabelaTroskova.push({ tip: '2_Mašina', naziv: mNaziv, kolicina: `${m3Ucinak.toFixed(2)} m³`, cijena: `${cijenaM3} KM/m³`, ukupno: trosak });
                 }
             });
 
-            // B) ZBIRNI Radnici
             const radniciDnevniceMap = {}; 
-            
             logovi.forEach(l => {
-                if(l.brentista) { if(!radniciDnevniceMap[l.brentista]) radniciDnevniceMap[l.brentista] = new Set(); radniciDnevniceMap[l.brentista].add(l.datum); }
-                if(l.viljuskarista) { if(!radniciDnevniceMap[l.viljuskarista]) radniciDnevniceMap[l.viljuskarista] = new Set(); radniciDnevniceMap[l.viljuskarista].add(l.datum); }
+                if(l.brentista) radniciDnevniceMap[l.brentista] = (radniciDnevniceMap[l.brentista]||new Set()).add(l.datum);
+                if(l.viljuskarista) radniciDnevniceMap[l.viljuskarista] = (radniciDnevniceMap[l.viljuskarista]||new Set()).add(l.datum);
             });
-
             paketi.forEach(p => {
-                if(p.snimio_korisnik) { if(!radniciDnevniceMap[p.snimio_korisnik]) radniciDnevniceMap[p.snimio_korisnik] = new Set(); radniciDnevniceMap[p.snimio_korisnik].add(p.datum_yyyy_mm); }
-                if(p.brentista) { if(!radniciDnevniceMap[p.brentista]) radniciDnevniceMap[p.brentista] = new Set(); radniciDnevniceMap[p.brentista].add(p.datum_yyyy_mm); }
-                if(p.radnici_pilana) {
-                    p.radnici_pilana.split(',').forEach(r => {
-                        const ime = r.trim();
-                        if(ime) { if(!radniciDnevniceMap[ime]) radniciDnevniceMap[ime] = new Set(); radniciDnevniceMap[ime].add(p.datum_yyyy_mm); }
-                    });
-                }
+                if(p.snimio_korisnik) radniciDnevniceMap[p.snimio_korisnik] = (radniciDnevniceMap[p.snimio_korisnik]||new Set()).add(p.datum_yyyy_mm);
             });
 
-            let ukupnoSatiRadnika = 0;
-            let ukupnoTrosakRadnika = 0;
-            let brojRadnika = Object.keys(radniciDnevniceMap).length;
-
+            let ukupnoSatiRadnika = 0; let ukupnoTrosakRadnika = 0;
             Object.keys(radniciDnevniceMap).forEach(rIme => {
                 const radnik = radniciDB.find(r => r.ime_prezime === rIme);
-                const satnica = radnik ? parseFloat(radnik.bruto_satnica || 0) : 0;
-                const brojDana = radniciDnevniceMap[rIme].size;
-                const sati = brojDana * 8; // Pretpostavka 8h radnog vremena
+                const sati = radniciDnevniceMap[rIme].size * 8; 
                 ukupnoSatiRadnika += sati;
-                ukupnoTrosakRadnika += (sati * satnica);
+                ukupnoTrosakRadnika += (sati * (radnik ? parseFloat(radnik.bruto_satnica || 0) : 0));
             });
 
-            if (brojRadnika > 0) {
+            if (ukupnoTrosakRadnika > 0) {
                 ukupniTrosakPrerade += ukupnoTrosakRadnika;
-                const prosjecnaSatnica = ukupnoSatiRadnika > 0 ? (ukupnoTrosakRadnika / ukupnoSatiRadnika).toFixed(2) : "0.00";
-                
-                // Samo JEDAN zbirni red za sve radnike
-                tabelaTroskova.push({ 
-                    tip: 'Radnici', 
-                    naziv: `Zaposleni (Ukupno: ${brojRadnika})`, 
-                    kolicina: `${ukupnoSatiRadnika} sati`, 
-                    cijena: `Prosjek: ${prosjecnaSatnica} KM/h`, 
-                    ukupno: ukupnoTrosakRadnika 
-                });
+                tabelaTroskova.push({ tip: '3_Radnici', naziv: `Zaposleni (${Object.keys(radniciDnevniceMap).length})`, kolicina: `${ukupnoSatiRadnika} sati`, cijena: `-`, ukupno: ukupnoTrosakRadnika });
             }
 
-            tabelaTroskova.sort((a, b) => a.tip.localeCompare(b.tip));
-
-            const dodataVrijednost = ukupnaVrijednostRobe - ukupniTrosakPrerade;
-
-            const grafikonTroskovi = [
-                { name: 'Vrijednost Robe', Iznos: parseFloat(ukupnaVrijednostRobe.toFixed(2)) },
-                { name: 'Trošak Prerade', Iznos: parseFloat(ukupniTrosakPrerade.toFixed(2)) },
-                { name: 'Bruto Marža', Iznos: Math.max(0, parseFloat(dodataVrijednost.toFixed(2))) }
-            ];
+            const brutoProfit = ukupnaVrijednostRobe - ukupniTrosakPrerade;
 
             setData({
                 kpi: { 
-                    ulazM3: ulazM3.toFixed(2), 
-                    izlazM3: izlazM3.toFixed(2), 
-                    kaloM3: kaloM3.toFixed(2), 
-                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2), 
-                    trosakPrerade: ukupniTrosakPrerade.toFixed(2),
-                    dodataVrijednost: dodataVrijednost.toFixed(2)
+                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2), trosakPrerade: ukupniTrosakPrerade.toFixed(2), dodataVrijednost: brutoProfit.toFixed(2)
                 },
-                tabelaProizvodnje,
-                tabelaTroskova,
-                grafikonVrijednosti,
-                grafikonTroskovi
+                tabelaProizvodnje: Object.values(proizvodnjaTabelaMap).sort((a,b) => b.vrijednost - a.vrijednost),
+                tabelaTroskova: tabelaTroskova.sort((a, b) => a.tip.localeCompare(b.tip)),
+                grafikonFinansija: [
+                    { name: 'Vrijednost Robe', Iznos: parseFloat(ukupnaVrijednostRobe.toFixed(2)) },
+                    { name: 'Totalni Trošak', Iznos: parseFloat(ukupniTrosakPrerade.toFixed(2)) },
+                    { name: 'Čisti Profit', Iznos: parseFloat(brutoProfit.toFixed(2)) }
+                ]
             });
             setLoading(false);
+        } catch (error) { setLoading(false); }
+    };
 
+    const generisiUltimativniPDF = async (nazivModula, nazivKoloneFolder) => {
+        setIsGeneratingPDF(true);
+        try {
+            const pdfElement = document.getElementById('savrseni-pdf-dokument');
+            pdfElement.style.opacity = '1';
+            pdfElement.style.zIndex = '9999';
+            pdfElement.style.left = '0px';
+            const canvas = await html2canvas(pdfElement, { scale: 2, useCORS: true, logging: false });
+            pdfElement.style.opacity = '0';
+            pdfElement.style.zIndex = '-1';
+            pdfElement.style.left = '-10000px';
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdfBlob = pdf.output('blob');
+
+            const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
+            const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
+            const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
+            
+            const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
+            const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
+            const timestamp = new Date().getTime();
+            
+            const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
+
+            pdf.save(`${nazivModula}_${periodStr}.pdf`);
+            window.open(URL.createObjectURL(pdfBlob), '_blank');
+            
+            const { error: uploadError } = await supabase.storage.from('izvjestaji_buffer').upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
+            if (uploadError) console.error("Greška pri slanju u Cloud:", uploadError);
+            
         } catch (error) {
-            console.error("Greška u proizvodnoj analitici:", error);
-            setLoading(false);
+            alert("Greška prilikom generisanja PDF-a.");
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
-    const pokreniPrint = () => {
-        const title = `${datumOd}_finansije`;
-        document.title = title;
-        window.print();
-        setTimeout(() => document.title = "TTM ERP", 2000);
-    };
-
-    if (loading) return <div className="p-20 text-center text-emerald-500 animate-pulse font-black text-xl uppercase tracking-widest">Slažem proizvodni obračun...</div>;
+    if (loading) return <div className="p-20 text-center text-emerald-500 animate-pulse font-black text-xl uppercase tracking-widest">Slažem finansije...</div>;
     if (!data) return <div className="p-20 text-center text-slate-500 font-bold">Nema podataka.</div>;
 
-    const marzaBoja = parseFloat(data.kpi.dodataVrijednost) >= 0 ? 'text-emerald-400 print:text-emerald-700' : 'text-red-500 print:text-red-600';
+    const marzaBojaText = parseFloat(data.kpi.dodataVrijednost) >= 0 ? 'text-emerald-400' : 'text-red-500';
+    const marzaBojaPDF = parseFloat(data.kpi.dodataVrijednost) >= 0 ? '#10b981' : '#ef4444';
 
     return (
-        <div className="space-y-6 bg-white print:bg-white print:text-black text-slate-200 w-full max-w-[210mm] mx-auto print:max-w-none">
-            
-            {/* ======================================================== */}
-            {/* PRINT HEADER */}
-            {/* ======================================================== */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
-                <div className="flex items-center gap-4">
-                    {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
-                    <div className="border-l-2 border-slate-300 pl-4 ml-2">
-                        <h2 className="text-xl font-black uppercase text-slate-800 tracking-widest">Proizvodni Obračun</h2>
-                        <p className="text-sm text-slate-500 font-bold">Vrijednost robe, troškovi i kalo</p>
+        <div className="w-full relative text-slate-200">
+            <div className="space-y-6">
+                <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg">
+                    <div>
+                        <h3 className="text-emerald-500 font-black uppercase text-sm tracking-widest">Finansijska Analitika</h3>
+                        <p className="text-xs text-slate-400">Pregled prodajne vrijednosti i svih troškova (uključujući nabavku trupaca).</p>
+                    </div>
+                    <button onClick={() => generisiUltimativniPDF('Izvjestaj_Finansije', 'folder_finansije')} disabled={isGeneratingPDF} className={`${isGeneratingPDF ? 'bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase shadow-lg transition-all`}>
+                        {isGeneratingPDF ? '⌛ Generisanje...' : '🖨️ Isprintaj PDF'}
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card decoration="top" decorationColor="blue" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Tržišna Vrijednost Robe</Text>
+                        <Metric className="text-white mt-1 text-2xl">{parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="rose" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Trošak (Sirovina + Prerada)</Text>
+                        <Metric className="text-rose-400 mt-1 text-2xl">- {parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="emerald" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Čisti Profit</Text>
+                        <Metric className={`${marzaBojaText} mt-1 text-2xl`}>{parseFloat(data.kpi.dodataVrijednost).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
+                    </Card>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6">
+                    <Card className="bg-theme-card border-none p-0 overflow-hidden">
+                        <div className="p-4 border-b border-slate-700">
+                            <Title className="text-slate-300 font-black text-[10px] uppercase">1. Vrijednost Proizvedene Robe</Title>
+                        </div>
+                        <table className="w-full text-left text-[10px]">
+                            <thead className="bg-theme-card text-slate-500 uppercase font-black border-b border-slate-700">
+                                <tr><th className="w-[45%] py-2 pl-4">Proizvod / Vrsta</th><th className="w-[15%] py-2 text-center">m³</th><th className="w-[20%] py-2 text-center">Cijena (Baza)</th><th className="w-[20%] py-2 pr-4 text-right">Ukupno (KM)</th></tr>
+                            </thead>
+                            <tbody className="text-white font-bold">
+                                {data.tabelaProizvodnje.map((p, i) => (
+                                    <tr key={i} className="border-b border-theme-border/50">
+                                        <td className="py-2 pl-4 text-blue-400 uppercase">{p.naziv}</td><td className="py-2 text-center">{p.m3.toFixed(3)}</td><td className="py-2 text-center text-slate-400">{p.cijenaPrikaz}</td><td className="py-2 pr-4 text-right text-emerald-400 font-black text-[11px]">{p.vrijednost.toLocaleString('bs-BA')}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </Card>
+
+                    <Card className="bg-theme-card border-none p-0 overflow-hidden">
+                        <div className="p-4 border-b border-slate-700">
+                            <Title className="text-slate-300 font-black text-[10px] uppercase">2. Troškovi (Sirovina + Rad + Mašine)</Title>
+                        </div>
+                        <table className="w-full text-left text-[10px]">
+                            <thead className="bg-theme-card text-slate-500 uppercase font-black border-b border-slate-700">
+                                <tr><th className="w-[45%] py-2 pl-4">Resurs</th><th className="w-[15%] py-2 text-center">Učinak</th><th className="w-[20%] py-2 text-center">Jed. Cijena</th><th className="w-[20%] py-2 pr-4 text-right">Trošak (KM)</th></tr>
+                            </thead>
+                            <tbody className="text-white font-bold">
+                                {data.tabelaTroskova.map((t, i) => (
+                                    <tr key={i} className="border-b border-theme-border/50">
+                                        <td className="py-2 pl-4 uppercase">{t.naziv}</td><td className="py-2 text-center text-slate-300">{t.kolicina}</td><td className="py-2 text-center text-slate-400">{t.cijena}</td><td className="py-2 pr-4 text-right text-rose-400 font-black text-[11px]">- {t.ukupno.toLocaleString('bs-BA')}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </Card>
+
+                    <Card className="bg-theme-card h-[300px] flex flex-col">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-4 text-center">Sveukupni Finansijski Rezultat (KM)</Title>
+                        <div className="flex-1 flex justify-center items-center w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                    <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
+                                    <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
+                                    <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={40}>
+                                        {data.grafikonFinansija.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.name === 'Totalni Trošak' ? '#ef4444' : (entry.name === 'Čisti Profit' ? '#10b981' : '#f59e0b')} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            <div id="savrseni-pdf-dokument" style={{ position: 'absolute', top: '-10000px', left: 0, width: '210mm', minHeight: '297mm', backgroundColor: 'white', color: '#0f172a', padding: '12mm', boxSizing: 'border-box', fontFamily: 'sans-serif' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        {logoUrl ? <img src={logoUrl} style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} alt="Logo" crossOrigin="anonymous" /> : <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#0f172a' }}>{imeFirme}</h1>}
+                        <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '15px' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '1px', color: '#0f172a' }}>Finansijski Obračun</h2>
+                            <p style={{ fontSize: '10px', color: '#475569', margin: '4px 0 0 0', fontWeight: 'bold' }}>Vrijednost robe, troškovi i profit</p>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a' }}>
+                        <p style={{ margin: '0 0 4px 0' }}>Mjesto: <span style={{ fontWeight: 'normal' }}>{header?.mjesto || 'Fabrika'}</span></p>
+                        <p style={{ margin: 0 }}>Period: <span style={{ fontWeight: 'normal' }}>{formatDatum(datumOd)} {datumOd !== datumDo ? `- ${formatDatum(datumDo)}` : ''}</span></p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <p className="text-sm font-black text-slate-800 uppercase">Mjesto: <span className="font-normal">{header?.mjesto || 'Fabrika'}</span></p>
-                    <p className="text-sm font-black text-slate-800 uppercase">Period: <span className="font-normal">{formatDatum(datumOd)} {datumOd !== datumDo ? `- ${formatDatum(datumDo)}` : ''}</span></p>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    {[
+                        { title: 'Tržišna Vrijednost Robe', val: parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA'), unit: 'KM', color: '#3b82f6' },
+                        { title: 'Trošak (Sirovina + Prerada)', val: `- ${parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')}`, unit: 'KM', color: '#ef4444' },
+                        { title: 'Čisti Profit', val: parseFloat(data.kpi.dodataVrijednost).toLocaleString('bs-BA'), unit: 'KM', color: marzaBojaPDF }
+                    ].map((kpi, i) => (
+                        <div key={i} style={{ width: '31%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', borderTop: `4px solid ${kpi.color}` }}>
+                            <div style={{ fontSize: '9px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>{kpi.title}</div>
+                            <div style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
+                        </div>
+                    ))}
                 </div>
-            </div>
 
-            {/* EKRAN KONTROLE */}
-            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
-                <div>
-                    <h3 className="text-emerald-500 font-black uppercase text-sm tracking-widest">Proizvodni Obračun (Cijena Koštanja)</h3>
-                    <p className="text-xs text-slate-400">Puni pregled prerađenog materijala, utrošenih mašina, radnika i tržišne vrijednosti robe.</p>
-                </div>
-                <button onClick={pokreniPrint} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-                    🖨️ Isprintaj PDF
-                </button>
-            </div>
-
-            {/* 1. TOP KPI KARTICE */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:gap-2">
-                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Tržišna Vrijednost Robe</Text>
-                    <Metric className="text-white print:text-black mt-1 text-lg font-mono">{parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA')} KM</Metric>
-                    <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Proizvedeno: {data.kpi.izlazM3} m³</Text>
-                </Card>
-                
-                <Card decoration="top" decorationColor="rose" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Trošak Prerade (COGS)</Text>
-                    <Metric className="text-rose-400 print:text-rose-600 mt-1 text-lg font-mono">- {parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')} KM</Metric>
-                    <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Mašine + Radnici</Text>
-                </Card>
-
-                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Generisani Otpad (Kalo)</Text>
-                    <Metric className="text-amber-400 print:text-amber-600 mt-1 text-lg font-mono">{data.kpi.kaloM3} m³</Metric>
-                    <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Ulaz: {data.kpi.ulazM3} m³</Text>
-                </Card>
-
-                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 print:p-3 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Neto Dodata Vrijednost</Text>
-                    <Metric className={`${marzaBoja} mt-1 text-lg font-mono`}>{parseFloat(data.kpi.dodataVrijednost).toLocaleString('bs-BA')} KM</Metric>
-                    <Text className="text-slate-500 text-[9px] mt-1 font-bold uppercase">Vrijednost - Trošak</Text>
-                </Card>
-            </div>
-
-            {/* 2. TABELE: VRIJEDNOST ROBE I TROŠKOVI (Zagreban CSS problem riješen!) */}
-            <div className="grid grid-cols-1 gap-6 print:gap-4 page-break-avoid">
-                
-                {/* Tabela Proizvedene Robe */}
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl p-0 overflow-hidden">
-                    <div className="p-4 border-b border-slate-700 print:border-slate-300">
-                        <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase">1. Vrijednost Proizvedene Robe</Title>
-                    </div>
-                    <table className="w-full text-left text-[10px]">
-                        <thead className="bg-theme-card print:bg-slate-100 text-slate-400 print:text-slate-600 uppercase font-black border-b border-slate-700 print:border-slate-300">
-                            <tr>
-                                <th className="w-[45%] p-3">Proizvod / Vrsta</th>
-                                <th className="w-[15%] p-3 text-center whitespace-nowrap">Proizvedeno (m³)</th>
-                                <th className="w-[20%] p-3 text-center whitespace-nowrap">Cijena (Baza)</th>
-                                <th className="w-[20%] p-3 text-right whitespace-nowrap">Ukupno (KM)</th>
+                <div style={{ width: '100%', marginBottom: '20px', border: '1px solid #cbd5e1', borderRadius: '6px', overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontWeight: '900', fontSize: '10px', textTransform: 'uppercase', color: '#0f172a' }}>1. Vrijednost Proizvedene Robe</div>
+                    <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse', color: '#0f172a' }}>
+                        <thead style={{ backgroundColor: '#f1f5f9' }}>
+                            <tr style={{ color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
+                                <th style={{ textAlign: 'left', padding: '6px 12px' }}>Proizvod / Vrsta</th><th style={{ textAlign: 'center', padding: '6px 12px' }}>m³</th><th style={{ textAlign: 'right', padding: '6px 12px' }}>Ukupno (KM)</th>
                             </tr>
                         </thead>
-                        <tbody className="text-white print:text-black font-bold">
-                            {data.tabelaProizvodnje.length === 0 && <tr><td colSpan="4" className="p-4 text-center italic text-slate-500">Nema proizvedene robe u periodu.</td></tr>}
-                            {data.tabelaProizvodnje.map((p, i) => (
-                                <tr key={i} className="border-b border-theme-border/50 print:border-slate-200">
-                                    <td className="p-3 text-blue-400 print:text-blue-800 uppercase">{p.naziv}</td>
-                                    <td className="p-3 text-center">{p.m3.toFixed(3)}</td>
-                                    <td className="p-3 text-center text-slate-400 print:text-slate-600">{p.cijenaPrikaz}</td>
-                                    <td className="p-3 text-right text-emerald-400 print:text-black font-black text-[11px] whitespace-nowrap">{p.vrijednost.toLocaleString('bs-BA')}</td>
+                        <tbody>
+                            {data.tabelaProizvodnje.map((k, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                    <td style={{ padding: '6px 12px', fontWeight: 'bold', textTransform: 'uppercase' }}>{k.naziv}</td>
+                                    <td style={{ padding: '6px 12px', textAlign: 'center', fontWeight: 'bold' }}>{k.m3.toFixed(3)}</td>
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '900' }}>{k.vrijednost.toLocaleString('bs-BA')}</td>
                                 </tr>
                             ))}
-                            <tr className="border-t-2 border-slate-600 print:border-slate-400 bg-theme-card/50 print:bg-transparent text-[11px]">
-                                <td colSpan="3" className="p-3 text-right text-slate-400 print:text-slate-700 uppercase font-black">UKUPNA VRIJEDNOST:</td>
-                                <td className="p-3 text-right text-white print:text-black font-black whitespace-nowrap">{parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA')}</td>
-                            </tr>
                         </tbody>
                     </table>
-                </Card>
+                </div>
 
-                {/* Tabela Troškova Prerade */}
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl p-0 overflow-hidden">
-                    <div className="p-4 border-b border-slate-700 print:border-slate-300">
-                        <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase">2. Troškovi Prerade (Zbirno Radnici i Mašine)</Title>
-                    </div>
-                    <table className="w-full text-left text-[10px]">
-                        <thead className="bg-theme-card print:bg-slate-100 text-slate-400 print:text-slate-600 uppercase font-black border-b border-slate-700 print:border-slate-300">
-                            <tr>
-                                <th className="w-[45%] p-3">Resurs</th>
-                                <th className="w-[15%] p-3 text-center whitespace-nowrap">Učinak / Vrijeme</th>
-                                <th className="w-[20%] p-3 text-center whitespace-nowrap">Jed. Cijena</th>
-                                <th className="w-[20%] p-3 text-right whitespace-nowrap">Trošak (KM)</th>
+                <div style={{ width: '100%', marginBottom: '20px', border: '1px solid #cbd5e1', borderRadius: '6px', overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #cbd5e1', backgroundColor: '#f8fafc', fontWeight: '900', fontSize: '10px', textTransform: 'uppercase', color: '#0f172a' }}>2. Troškovi (Sirovina + Radnici + Mašine)</div>
+                    <table style={{ width: '100%', fontSize: '10px', borderCollapse: 'collapse', color: '#0f172a' }}>
+                        <thead style={{ backgroundColor: '#f1f5f9' }}>
+                            <tr style={{ color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
+                                <th style={{ textAlign: 'left', padding: '6px 12px' }}>Resurs</th><th style={{ textAlign: 'center', padding: '6px 12px' }}>Učinak</th><th style={{ textAlign: 'right', padding: '6px 12px' }}>Trošak (KM)</th>
                             </tr>
                         </thead>
-                        <tbody className="text-white print:text-black font-bold">
-                            {data.tabelaTroskova.length === 0 && <tr><td colSpan="4" className="p-4 text-center italic text-slate-500">Nema zabilježenih troškova.</td></tr>}
+                        <tbody>
                             {data.tabelaTroskova.map((t, i) => (
-                                <tr key={i} className="border-b border-theme-border/50 print:border-slate-200">
-                                    <td className="p-3 uppercase">
-                                        <span className={`px-1.5 py-0.5 rounded text-[8px] mr-2 print:border ${t.tip==='Mašina' ? 'bg-amber-900/30 text-amber-400 border-amber-500/30 print:border-amber-600 print:text-amber-800' : 'bg-indigo-900/30 text-indigo-400 border-indigo-500/30 print:border-indigo-600 print:text-indigo-800'}`}>{t.tip}</span>
-                                        {t.naziv}
-                                    </td>
-                                    <td className="p-3 text-center text-slate-300 print:text-slate-700 whitespace-nowrap">{t.kolicina}</td>
-                                    <td className="p-3 text-center text-slate-400 print:text-slate-600 whitespace-nowrap">{t.cijena}</td>
-                                    <td className="p-3 text-right text-rose-400 print:text-rose-600 font-black text-[11px] whitespace-nowrap">- {t.ukupno.toLocaleString('bs-BA')}</td>
+                                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                    <td style={{ padding: '6px 12px', fontWeight: 'bold', textTransform: 'uppercase' }}>{t.naziv}</td>
+                                    <td style={{ padding: '6px 12px', textAlign: 'center', fontWeight: 'bold', color: '#475569' }}>{t.kolicina}</td>
+                                    <td style={{ padding: '6px 12px', textAlign: 'right', fontWeight: '900', color: '#ef4444' }}>- {t.ukupno.toLocaleString('bs-BA')}</td>
                                 </tr>
                             ))}
-                            <tr className="border-t-2 border-slate-600 print:border-slate-400 bg-theme-card/50 print:bg-transparent text-[11px]">
-                                <td colSpan="3" className="p-3 text-right text-slate-400 print:text-slate-700 uppercase font-black">UKUPNI TROŠAK:</td>
-                                <td className="p-3 text-right text-rose-400 print:text-black font-black whitespace-nowrap">- {parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')}</td>
-                            </tr>
                         </tbody>
                     </table>
-                </Card>
+                </div>
 
-            </div>
-
-            {/* 3. GRAFIKONI NA DNU - SIGURNOSNO FIKSIRANI ZA PRINT DA NE PUKNU */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 mt-8 print:mt-8 page-break-avoid">
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-2 text-center">Učešće Proizvoda u Vrijednosti (Top 10)</Title>
-                    {data.grafikonVrijednosti.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500 text-xs">Nema podataka</div> : (
-                    <div className="flex-1 flex justify-center items-center w-full">
-                        <PieChart width={350} height={220}>
-                            <Pie isAnimationActive={false} animationDuration={0} data={data.grafikonVrijednosti} cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                {data.grafikonVrijednosti.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                            </Pie>
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
-                            <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#000'}} />
-                        </PieChart>
-                    </div>
-                    )}
-                </Card>
-
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[260px] flex flex-col">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Finansijski Bilans Proizvodnje (KM)</Title>
-                    <div className="flex-1 flex justify-center items-center w-full">
-                        <BarChart width={350} height={220} data={data.grafikonTroskovi} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(v) => `${v/1000}k`} />
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
-                            <Bar isAnimationActive={false} animationDuration={0} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={40}>
-                                {data.grafikonTroskovi.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.name === 'Trošak Prerade' ? '#ef4444' : (entry.name === 'Bruto Marža' ? '#10b981' : '#3b82f6')} />
+                <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Sveukupni Finansijski Rezultat (KM)</div>
+                    <div style={{ display: 'flex', justifyItems: 'center' }}>
+                        <BarChart width={600} height={200} data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                            <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
+                            <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={50}>
+                                {data.grafikonFinansija.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.name === 'Totalni Trošak' ? '#ef4444' : (entry.name === 'Čisti Profit' ? '#10b981' : '#f59e0b')} />
                                 ))}
                             </Bar>
                         </BarChart>
                     </div>
-                </Card>
-            </div>
-
-            {/* PRINT FOOTER */}
-            <div className="hidden print:flex justify-between items-end border-t-2 border-theme-border pt-4 mt-10 page-break-avoid">
-                <div className="text-[8px] text-slate-500">
-                    Dokument generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}
                 </div>
-                <div className="w-[30%] text-center">
-                    <div className="border-b border-black mb-1 h-8"></div>
-                    <p className="text-xs font-bold text-black uppercase">Potpis Finansijskog Rukovodioca</p>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #1e293b', paddingTop: '15px', marginTop: '20px', pageBreakInside: 'avoid' }}>
+                    <div style={{ width: '60%', fontSize: '8px', color: '#475569' }}>Dokument generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}</div>
+                    <div style={{ width: '35%', textAlign: 'center', fontSize: '9px', color: '#475569' }}><div style={{ paddingTop: '10px', borderTop: '1px solid #1e293b', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' }}>Direktor / Vlasnik</div></div>
                 </div>
             </div>
-            
         </div>
     );
 }

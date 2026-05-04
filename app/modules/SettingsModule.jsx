@@ -83,165 +83,257 @@ function TabSumarije() {
     const [podruznice, setPodruznice] = useState([]);
     const [formSum, setFormSum] = useState({ id: null, naziv: '' });
     const [isEditingSum, setIsEditingSum] = useState(false);
-    const [warningSum, setWarningSum] = useState(null);
-    const timerSum = useRef(null);
-
-    const [formPodr, setFormPodr] = useState({ id: null, sumarija_naziv: '', naziv: '' });
+    
+    const [formPodr, setFormPodr] = useState({ id: null, sumarija_naziv: '', naziv: '', cijena_prevoza_po_m3: '' });
     const [isEditingPodr, setIsEditingPodr] = useState(false);
-    const [warningPodr, setWarningPodr] = useState(null);
-    const timerPodr = useRef(null);
+
+    const [vrste, setVrste] = useState([]);
+    const [klase, setKlase] = useState([]);
+    const [novaVrsta, setNovaVrsta] = useState('');
+    const [novaKlasa, setNovaKlasa] = useState('');
+    
+    const [cjenovnik, setCjenovnik] = useState([]);
+    const [formCjenovnik, setFormCjenovnik] = useState({ sumarija_id: '', vrsta_id: '', klasa_id: '', cijena_po_m3: '' });
 
     useEffect(() => { load(); }, []);
     
     const load = async () => {
-        const {data: s} = await supabase.from('sumarije').select('*').order('naziv'); setSumarije(s||[]);
-        const {data: p} = await supabase.from('podruznice').select('*').order('naziv'); setPodruznice(p||[]);
+        try {
+            const [resS, resP, resV, resK, resC] = await Promise.all([
+                supabase.from('sumarije').select('*').order('naziv'),
+                supabase.from('podruznice').select('*').order('naziv'),
+                supabase.from('vrste_drveta').select('*').order('naziv'),
+                supabase.from('klase_trupaca').select('*').order('naziv'),
+                supabase.from('cjenovnik_trupaca').select(`id, cijena_po_m3, sumarija_id, vrsta_id, klasa_id, sumarije(naziv), vrste_drveta(naziv), klase_trupaca(naziv)`)
+            ]);
+            
+            setSumarije(resS.data || []);
+            setPodruznice(resP.data || []);
+            setVrste(resV.data || []);
+            setKlase(resK.data || []);
+            setCjenovnik(resC.data || []);
+        } catch (e) {
+            console.error("Greška pri učitavanju baze:", e);
+        }
     };
 
     const zapisiU_Log = async (akcija, detalji) => { await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]); };
 
-    const handleSumChange = (val) => {
-        const upperVal = val.toUpperCase();
-        setFormSum({...formSum, naziv: upperVal});
-        setWarningSum(null);
-        if(timerSum.current) clearTimeout(timerSum.current);
-        if(upperVal.length >= 2 && !isEditingSum) {
-            timerSum.current = setTimeout(() => { const postoji = sumarije.find(s => s.naziv === upperVal); if(postoji) setWarningSum(postoji); }, 2000);
-        }
-    };
-
-    const pokreniIzmjenuSum = (item) => { setFormSum({ id: item.id, naziv: item.naziv }); setIsEditingSum(true); setWarningSum(null); };
-    const ponistiIzmjenuSum = () => { setFormSum({ id: null, naziv: '' }); setIsEditingSum(false); setWarningSum(null); };
-
+    // --- ŠUMARIJE ---
+    const pokreniIzmjenuSum = (item) => { setFormSum({ id: item.id, naziv: item.naziv }); setIsEditingSum(true); };
+    const ponistiIzmjenuSum = () => { setFormSum({ id: null, naziv: '' }); setIsEditingSum(false); };
     const saveSumarija = async () => {
         if(!formSum.naziv) return alert("Unesite naziv šumarije!");
         if(isEditingSum) {
-            const {error} = await supabase.from('sumarije').update({ naziv: formSum.naziv }).eq('id', formSum.id);
-            if(error) return alert("Greška: " + error.message);
-            await zapisiU_Log('IZMJENA_SUMARIJE', `Ažurirana šumarija: ${formSum.naziv}`); alert("✅ Šumarija uspješno ažurirana!");
+            await supabase.from('sumarije').update({ naziv: formSum.naziv.toUpperCase() }).eq('id', formSum.id);
         } else {
-            const postoji = sumarije.find(s => s.naziv === formSum.naziv);
-            if(postoji) return alert("❌ Šumarija već postoji!");
-            const {error} = await supabase.from('sumarije').insert([{ naziv: formSum.naziv }]);
+            const {error} = await supabase.from('sumarije').insert([{ naziv: formSum.naziv.toUpperCase() }]);
             if(error) return alert("Greška: " + error.message);
-            await zapisiU_Log('DODAVANJE_SUMARIJE', `Dodana šumarija: ${formSum.naziv}`); alert("✅ Šumarija uspješno dodana!");
         }
         ponistiIzmjenuSum(); load();
     };
+    const obrisiSumariju = async (id, naziv) => { if(window.confirm(`Brisati šumariju: ${naziv}?`)) { await supabase.from('sumarije').delete().eq('id', id); load(); } };
 
-    const obrisiSumariju = async (id, naziv) => {
-        if(window.confirm(`Brisati šumariju: ${naziv}?\nPAŽNJA: Obrisaće se i njene podružnice!`)) {
-            await supabase.from('sumarije').delete().eq('id', id); await zapisiU_Log('BRISANJE_SUMARIJE', `Obrisana šumarija: ${naziv}`); load();
-        }
-    };
-
-    const handlePodrChange = (val) => {
-        const upperVal = val.toUpperCase();
-        setFormPodr({...formPodr, naziv: upperVal});
-        setWarningPodr(null);
-        if(timerPodr.current) clearTimeout(timerPodr.current);
-        if(upperVal.length >= 2 && formPodr.sumarija_naziv && !isEditingPodr) {
-            timerPodr.current = setTimeout(() => { const postoji = podruznice.find(p => p.naziv === upperVal && p.sumarija_naziv === formPodr.sumarija_naziv); if(postoji) setWarningPodr(postoji); }, 2000);
-        }
-    };
-
-    const pokreniIzmjenuPodr = (item) => { setFormPodr({ id: item.id, sumarija_naziv: item.sumarija_naziv, naziv: item.naziv }); setIsEditingPodr(true); setWarningPodr(null); };
-    const ponistiIzmjenuPodr = () => { setFormPodr({ id: null, sumarija_naziv: '', naziv: '' }); setIsEditingPodr(false); setWarningPodr(null); };
-
+    // --- PODRUŽNICE (SA PREVOZOM) ---
+    const pokreniIzmjenuPodr = (item) => { setFormPodr({ id: item.id, sumarija_naziv: item.sumarija_naziv, naziv: item.naziv, cijena_prevoza_po_m3: item.cijena_prevoza_po_m3 || '' }); setIsEditingPodr(true); };
+    const ponistiIzmjenuPodr = () => { setFormPodr({ id: null, sumarija_naziv: '', naziv: '', cijena_prevoza_po_m3: '' }); setIsEditingPodr(false); };
     const savePodruznica = async () => {
-        if(!formPodr.sumarija_naziv || !formPodr.naziv) return alert("Odaberite šumariju i unesite naziv podružnice!");
-        if(isEditingPodr) {
-            const {error} = await supabase.from('podruznice').update({ sumarija_naziv: formPodr.sumarija_naziv, naziv: formPodr.naziv }).eq('id', formPodr.id);
-            if(error) return alert("Greška: " + error.message);
-            await zapisiU_Log('IZMJENA_PODRUZNICE', `Ažurirana podružnica: ${formPodr.naziv} (${formPodr.sumarija_naziv})`); alert("✅ Podružnica uspješno ažurirana!");
-        } else {
-            const postoji = podruznice.find(p => p.naziv === formPodr.naziv && p.sumarija_naziv === formPodr.sumarija_naziv);
-            if(postoji) return alert("❌ Podružnica već postoji u toj šumariji!");
-            const {error} = await supabase.from('podruznice').insert([{ sumarija_naziv: formPodr.sumarija_naziv, naziv: formPodr.naziv }]);
-            if(error) return alert("Greška: " + error.message);
-            await zapisiU_Log('DODAVANJE_PODRUZNICE', `Dodana podružnica: ${formPodr.naziv} (${formPodr.sumarija_naziv})`); alert("✅ Podružnica uspješno dodana!");
-        }
+        if(!formPodr.sumarija_naziv || !formPodr.naziv) return alert("Odaberite šumariju i unesite naziv!");
+        const payload = { sumarija_naziv: formPodr.sumarija_naziv, naziv: formPodr.naziv.toUpperCase(), cijena_prevoza_po_m3: parseFloat(formPodr.cijena_prevoza_po_m3) || 0 };
+        if(isEditingPodr) { await supabase.from('podruznice').update(payload).eq('id', formPodr.id); } 
+        else { await supabase.from('podruznice').insert([payload]); }
         ponistiIzmjenuPodr(); load();
     };
+    const obrisiPodruznicu = async (id, naziv) => { if(window.confirm(`Brisati podružnicu: ${naziv}?`)) { await supabase.from('podruznice').delete().eq('id', id); load(); } };
 
-    const obrisiPodruznicu = async (id, naziv) => {
-        if(window.confirm(`Brisati podružnicu: ${naziv}?`)) { await supabase.from('podruznice').delete().eq('id', id); await zapisiU_Log('BRISANJE_PODRUZNICE', `Obrisana podružnica: ${naziv}`); load(); }
+    // --- VRSTE I KLASE (SA ERROR ALERTOM) ---
+    const dodajVrstu = async () => { 
+        if(!novaVrsta.trim()) return;
+        const { error } = await supabase.from('vrste_drveta').insert([{ naziv: novaVrsta.trim().toUpperCase() }]); 
+        if(error) return alert("❌ Greška pri snimanju vrste: " + error.message);
+        setNovaVrsta(''); 
+        load(); 
+    };
+    const obrisiVrstu = async (id) => { 
+        if(window.confirm("Brisati vrstu?")) { 
+            const { error } = await supabase.from('vrste_drveta').delete().eq('id', id); 
+            if(error) alert("Greška: " + error.message);
+            load(); 
+        } 
     };
 
+    const dodajKlasu = async () => { 
+        if(!novaKlasa.trim()) return;
+        const { error } = await supabase.from('klase_trupaca').insert([{ naziv: novaKlasa.trim().toUpperCase() }]); 
+        if(error) return alert("❌ Greška pri snimanju klase: " + error.message);
+        setNovaKlasa(''); 
+        load(); 
+    };
+    const obrisiKlasu = async (id) => { 
+        if(window.confirm("Brisati klasu?")) { 
+            const { error } = await supabase.from('klase_trupaca').delete().eq('id', id); 
+            if(error) alert("Greška: " + error.message);
+            load(); 
+        } 
+    };
+
+    // --- CJENOVNIK ---
+    const snimiCjenovnik = async () => {
+        if(!formCjenovnik.sumarija_id || !formCjenovnik.vrsta_id || !formCjenovnik.klasa_id || !formCjenovnik.cijena_po_m3) return alert("Popuni sva polja za cjenovnik!");
+        const payload = { sumarija_id: formCjenovnik.sumarija_id, vrsta_id: formCjenovnik.vrsta_id, klasa_id: formCjenovnik.klasa_id, cijena_po_m3: parseFloat(formCjenovnik.cijena_po_m3) };
+        const { error } = await supabase.from('cjenovnik_trupaca').upsert(payload, { onConflict: 'sumarija_id, vrsta_id, klasa_id' });
+        if(error) alert("❌ Greška cjenovnika: " + error.message); else { alert("Cijena snimljena!"); setFormCjenovnik({...formCjenovnik, cijena_po_m3: ''}); load(); }
+    };
+    const obrisiCjenovnik = async (id) => { if(window.confirm("Brisati cijenu?")) { await supabase.from('cjenovnik_trupaca').delete().eq('id', id); load(); } };
+
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in">
-            <div className="space-y-6">
-                <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border shadow-2xl space-y-4 transition-all ${isEditingSum ? 'border-amber-500/50' : 'border-theme-border'}`}>
-                    <div className="flex justify-between items-center">
-                        <h3 className={`${isEditingSum ? 'text-amber-500' : 'text-emerald-500'} font-black uppercase text-xs`}>{isEditingSum ? '✏️ Ažuriranje Šumarije' : '🌲 Dodaj Novu Šumariju'}</h3>
-                        {isEditingSum && <button onClick={ponistiIzmjenuSum} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl hover:bg-red-500 hover:text-theme-text transition-all">Odustani ✕</button>}
+        <div className="space-y-6 animate-in fade-in">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* ŠUMARIJE */}
+                <div className="space-y-6">
+                    <div className={`bg-theme-card p-6 rounded-box border shadow-2xl transition-all ${isEditingSum ? 'border-amber-500/50' : 'border-theme-border'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className={`${isEditingSum ? 'text-amber-500' : 'text-emerald-500'} font-black uppercase text-xs`}>{isEditingSum ? '✏️ Ažuriraj Šumariju' : '🌲 Nova Šumarija'}</h3>
+                            {isEditingSum && <button onClick={ponistiIzmjenuSum} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl">✕</button>}
+                        </div>
+                        <input value={formSum.naziv} onChange={e=>setFormSum({...formSum, naziv: e.target.value})} className="w-full p-4 mb-4 bg-theme-panel border border-theme-border rounded-xl text-sm uppercase font-black outline-none" placeholder="Naziv šumarije..." />
+                        <button onClick={saveSumarija} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs uppercase ${isEditingSum ? 'bg-amber-600' : 'bg-emerald-600'}`}>{isEditingSum ? 'Ažuriraj' : 'Snimi'}</button>
                     </div>
-                    {warningSum && (
-                        <div className="bg-amber-900/30 border border-amber-500/50 p-4 rounded-2xl space-y-2 animate-in zoom-in-95">
-                            <h4 className="text-amber-500 font-black uppercase text-[10px]">⚠️ Šumarija već postoji!</h4>
-                            <div className="flex gap-2 mt-2">
-                                <button onClick={() => pokreniIzmjenuSum(warningSum)} className="flex-1 bg-amber-600 text-theme-text py-2 rounded-xl font-black text-[10px] uppercase hover:bg-amber-500">✏️ Ažuriraj</button>
-                                <button onClick={() => { setFormSum({...formSum, naziv: ''}); setWarningSum(null); }} className="flex-1 bg-slate-700 text-theme-text py-2 rounded-xl font-black text-[10px] uppercase hover:bg-slate-600">✕ Otkaži</button>
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-xl">
+                        <h3 className="text-slate-400 font-black uppercase text-[10px] mb-3">Lista Šumarija</h3>
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                            {sumarije.length === 0 && <p className="text-[10px] text-slate-500 italic p-2">Nema unesenih šumarija.</p>}
+                            {sumarije.map(s => (
+                                <div key={s.id} onClick={() => pokreniIzmjenuSum(s)} className="flex justify-between items-center p-3 bg-theme-panel border border-theme-border rounded-xl cursor-pointer hover:border-emerald-500/50">
+                                    <p className="text-theme-text text-xs font-black">{s.naziv}</p>
+                                    <button onClick={(e)=>{e.stopPropagation(); obrisiSumariju(s.id, s.naziv);}} className="text-red-500 font-black px-3 py-1 bg-red-900/20 rounded-xl">✕</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* PODRUŽNICE SA PREVOZOM */}
+                <div className="space-y-6">
+                    <div className={`bg-theme-card p-6 rounded-box border shadow-2xl transition-all ${isEditingPodr ? 'border-amber-500/50' : 'border-theme-border'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className={`${isEditingPodr ? 'text-amber-500' : 'text-emerald-400'} font-black uppercase text-xs`}>{isEditingPodr ? '✏️ Ažuriraj Podružnicu' : '🍃 Nova Podružnica'}</h3>
+                            {isEditingPodr && <button onClick={ponistiIzmjenuPodr} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl">✕</button>}
+                        </div>
+                        <div className="space-y-3 mb-4">
+                            <select value={formPodr.sumarija_naziv} onChange={e=>setFormPodr({...formPodr, sumarija_naziv: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xs uppercase font-black outline-none cursor-pointer">
+                                <option value="">-- Odaberi Šumariju --</option>{sumarije.map(s=><option key={s.id} value={s.naziv}>{s.naziv}</option>)}
+                            </select>
+                            <input value={formPodr.naziv} onChange={e=>setFormPodr({...formPodr, naziv: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xs uppercase font-black outline-none" placeholder="Naziv Podružnice..." />
+                            <div>
+                                <label className="text-[8px] text-amber-500 font-black uppercase ml-2 block mb-1">Cijena Prevoza (KM/m³) iz ove podružnice</label>
+                                <input type="number" value={formPodr.cijena_prevoza_po_m3} onChange={e=>setFormPodr({...formPodr, cijena_prevoza_po_m3: e.target.value})} className="w-full p-3 bg-amber-900/10 border border-amber-500/30 text-amber-400 font-black rounded-xl outline-none" placeholder="0.00" />
                             </div>
                         </div>
-                    )}
-                    <div>
-                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* Pretraži ili unesi naziv šumarije</label>
-                        <SettingsSearchable value={formSum.naziv} onChange={handleSumChange} list={sumarije.map(s=>s.naziv)} placeholder="Unesi naziv..." />
+                        <button onClick={savePodruznica} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs uppercase ${isEditingPodr ? 'bg-amber-600' : 'bg-emerald-600'}`}>{isEditingPodr ? 'Ažuriraj' : 'Snimi'}</button>
                     </div>
-                    <button onClick={saveSumarija} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase transition-all ${isEditingSum ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>{isEditingSum ? '✅ Ažuriraj Šumariju' : '➕ Snimi Šumariju'}</button>
-                </div>
-                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-xl">
-                    <h3 className="text-slate-400 font-black uppercase text-[10px] mb-3">Lista Šumarija - Klikni za izmjenu</h3>
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                        {sumarije.map(s => (
-                            <div key={s.id} onClick={() => pokreniIzmjenuSum(s)} className="flex justify-between items-center p-3 bg-theme-panel border border-theme-border rounded-xl cursor-pointer hover:border-emerald-500/50 transition-all">
-                                <span className="text-theme-text text-xs font-black">{s.naziv}</span>
-                                <button onClick={(e)=>{e.stopPropagation(); obrisiSumariju(s.id, s.naziv);}} className="text-red-500 font-black px-4 py-2 bg-red-900/20 hover:bg-red-500 hover:text-theme-text rounded-xl transition-all">✕</button>
-                            </div>
-                        ))}
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-xl">
+                        <h3 className="text-slate-400 font-black uppercase text-[10px] mb-3">Lista Podružnica</h3>
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                            {podruznice.length === 0 && <p className="text-[10px] text-slate-500 italic p-2">Nema unesenih podružnica.</p>}
+                            {podruznice.map(p => (
+                                <div key={p.id} onClick={() => pokreniIzmjenuPodr(p)} className="flex justify-between items-center p-3 bg-theme-panel border border-theme-border rounded-xl cursor-pointer hover:border-emerald-500/50">
+                                    <div><p className="font-black text-theme-text text-xs">{p.naziv}</p><p className="text-[9px] text-emerald-500 uppercase mt-1">Šumarija: {p.sumarija_naziv} | Prevoz: <span className="text-amber-400">{p.cijena_prevoza_po_m3||0} KM/m³</span></p></div>
+                                    <button onClick={(e)=>{e.stopPropagation(); obrisiPodruznicu(p.id, p.naziv);}} className="text-red-500 font-black px-3 py-1 bg-red-900/20 rounded-xl">✕</button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="space-y-6">
-                <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border shadow-2xl space-y-4 transition-all ${isEditingPodr ? 'border-amber-500/50' : 'border-theme-border'}`}>
-                    <div className="flex justify-between items-center">
-                        <h3 className={`${isEditingPodr ? 'text-amber-500' : 'text-emerald-400'} font-black uppercase text-xs`}>{isEditingPodr ? '✏️ Ažuriranje Podružnice' : '🍃 Dodaj Podružnicu'}</h3>
-                        {isEditingPodr && <button onClick={ponistiIzmjenuPodr} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl hover:bg-red-500 hover:text-theme-text transition-all">Odustani ✕</button>}
+            {/* VRSTE, KLASE I CJENOVNIK */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 border-t border-theme-border pt-6">
+                
+                <div className="lg:col-span-4 space-y-6">
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-xl">
+                        <h3 className="text-blue-400 font-black uppercase text-xs mb-4">🌳 Vrste Drveta</h3>
+                        <div className="flex gap-2 mb-4">
+                            <input value={novaVrsta} onChange={e=>setNovaVrsta(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')dodajVrstu()}} placeholder="Nova vrsta..." className="flex-1 p-3 bg-theme-panel border border-theme-border rounded-xl text-xs uppercase font-black outline-none" />
+                            <button onClick={dodajVrstu} className="bg-blue-600 px-4 rounded-xl font-black text-white hover:bg-blue-500">+</button>
+                        </div>
+                        <div className="flex flex-col gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                            {vrste.length === 0 && <p className="text-[10px] text-slate-500 italic p-2">Nema unesenih vrsta drveta.</p>}
+                            {vrste.map(v => (
+                                <div key={v.id} className="flex justify-between items-center bg-theme-panel border border-theme-border p-2 rounded-lg shadow-sm">
+                                    <span className="text-xs font-black uppercase ml-2 text-slate-300">{v.naziv}</span>
+                                    <button onClick={()=>obrisiVrstu(v.id)} className="px-3 py-1.5 bg-red-900/30 text-red-500 font-black rounded hover:bg-red-500 hover:text-white transition-colors">✕</button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    {warningPodr && (
-                        <div className="bg-amber-900/30 border border-amber-500/50 p-4 rounded-2xl space-y-2 animate-in zoom-in-95">
-                            <h4 className="text-amber-500 font-black uppercase text-[10px]">⚠️ Podružnica već postoji u ovoj šumariji!</h4>
-                            <div className="flex gap-2 mt-2">
-                                <button onClick={() => pokreniIzmjenuPodr(warningPodr)} className="flex-1 bg-amber-600 text-theme-text py-2 rounded-xl font-black text-[10px] uppercase hover:bg-amber-500">✏️ Ažuriraj</button>
-                                <button onClick={() => { setFormPodr({...formPodr, naziv: ''}); setWarningPodr(null); }} className="flex-1 bg-slate-700 text-theme-text py-2 rounded-xl font-black text-[10px] uppercase hover:bg-slate-600">✕ Otkaži</button>
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-xl">
+                        <h3 className="text-purple-400 font-black uppercase text-xs mb-4">📏 Klase Trupaca</h3>
+                        <div className="flex gap-2 mb-4">
+                            <input value={novaKlasa} onChange={e=>setNovaKlasa(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')dodajKlasu()}} placeholder="Nova klasa..." className="flex-1 p-3 bg-theme-panel border border-theme-border rounded-xl text-xs uppercase font-black outline-none" />
+                            <button onClick={dodajKlasu} className="bg-purple-600 px-4 rounded-xl font-black text-white hover:bg-purple-500">+</button>
+                        </div>
+                        <div className="flex flex-col gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                            {klase.length === 0 && <p className="text-[10px] text-slate-500 italic p-2">Nema unesenih klasa.</p>}
+                            {klase.map(k => (
+                                <div key={k.id} className="flex justify-between items-center bg-theme-panel border border-theme-border p-2 rounded-lg shadow-sm">
+                                    <span className="text-xs font-black uppercase ml-2 text-slate-300">{k.naziv}</span>
+                                    <button onClick={()=>obrisiKlasu(k.id)} className="px-3 py-1.5 bg-red-900/30 text-red-500 font-black rounded hover:bg-red-500 hover:text-white transition-colors">✕</button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="lg:col-span-8 bg-theme-card p-6 rounded-box border border-emerald-500/30 shadow-2xl">
+                    <h3 className="text-emerald-500 font-black uppercase text-xs mb-2">💰 Centralni Cjenovnik Trupaca</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-emerald-900/10 p-4 rounded-2xl border border-emerald-500/30 mb-6">
+                        <div>
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Šumarija</label>
+                            <select value={formCjenovnik.sumarija_id} onChange={e=>setFormCjenovnik({...formCjenovnik, sumarija_id: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-[10px] font-black uppercase border border-theme-border outline-none cursor-pointer">
+                                <option value="">-- Odaberi --</option>{sumarije.map(s => <option key={s.id} value={s.id}>{s.naziv}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Vrsta</label>
+                            <select value={formCjenovnik.vrsta_id} onChange={e=>setFormCjenovnik({...formCjenovnik, vrsta_id: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-[10px] font-black uppercase border border-theme-border outline-none cursor-pointer">
+                                <option value="">-- Odaberi --</option>{vrste.map(v => <option key={v.id} value={v.id}>{v.naziv}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Klasa</label>
+                            <select value={formCjenovnik.klasa_id} onChange={e=>setFormCjenovnik({...formCjenovnik, klasa_id: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-[10px] font-black uppercase border border-theme-border outline-none cursor-pointer">
+                                <option value="">-- Odaberi --</option>{klase.map(k => <option key={k.id} value={k.id}>{k.naziv}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[8px] text-emerald-400 uppercase ml-2 block mb-1 font-black">Cijena (KM/m³)</label>
+                            <div className="flex gap-2">
+                                <input type="number" value={formCjenovnik.cijena_po_m3} onChange={e=>setFormCjenovnik({...formCjenovnik, cijena_po_m3: e.target.value})} placeholder="0.00" className="w-full p-3 bg-theme-panel rounded-xl text-sm text-emerald-400 font-black border border-emerald-500/50 outline-none shadow-inner" />
+                                <button onClick={snimiCjenovnik} className="bg-emerald-600 px-4 rounded-xl font-black text-white hover:bg-emerald-500">✓</button>
                             </div>
                         </div>
-                    )}
-                    <div className="space-y-3">
-                        <div className="relative z-50">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* Pripada Šumariji (Odaberi iz baze)</label>
-                            <SettingsSearchable value={formPodr.sumarija_naziv} onChange={v=>setFormPodr({...formPodr, sumarija_naziv: v})} list={sumarije.map(s=>s.naziv)} placeholder="Pronađi šumariju..." />
-                        </div>
-                        <div className="relative z-40">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* Naziv Podružnice</label>
-                            <SettingsSearchable value={formPodr.naziv} onChange={handlePodrChange} list={podruznice.filter(p=>p.sumarija_naziv===formPodr.sumarija_naziv).map(p=>p.naziv)} placeholder="Unesi naziv podružnice..." />
-                        </div>
                     </div>
-                    <button onClick={savePodruznica} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase transition-all ${isEditingPodr ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>{isEditingPodr ? '✅ Ažuriraj Podružnicu' : '➕ Snimi Podružnicu'}</button>
-                </div>
-                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-xl">
-                    <h3 className="text-slate-400 font-black uppercase text-[10px] mb-3">Lista Podružnica - Klikni za izmjenu</h3>
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                        {podruznice.map(p => (
-                            <div key={p.id} onClick={() => pokreniIzmjenuPodr(p)} className="flex justify-between items-center p-3 bg-theme-panel border border-theme-border rounded-xl cursor-pointer hover:border-emerald-500/50 transition-all">
-                                <div><p className="font-black text-theme-text text-xs">{p.naziv}</p><p className="text-[9px] text-emerald-500 uppercase mt-1">Šumarija: {p.sumarija_naziv}</p></div>
-                                <button onClick={(e)=>{e.stopPropagation(); obrisiPodruznicu(p.id, p.naziv);}} className="text-red-500 font-black px-4 py-2 bg-red-900/20 hover:bg-red-500 hover:text-theme-text rounded-xl transition-all">✕</button>
+
+                    <div className="max-h-[350px] overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                        {cjenovnik.length === 0 && <p className="text-center text-slate-500 text-xs py-4 italic">Cjenovnik je prazan.</p>}
+                        {cjenovnik.map(c => (
+                            <div key={c.id} className="flex justify-between items-center bg-theme-panel p-3 border border-theme-border rounded-xl shadow-sm hover:border-emerald-500/50">
+                                <div className="flex flex-col md:flex-row gap-2 md:items-center">
+                                    <span className="text-xs font-black uppercase text-theme-text w-40 truncate">{c.sumarije?.naziv}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 bg-black/20 px-2 py-1 rounded uppercase">Vrsta: {c.vrste_drveta?.naziv}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 bg-black/20 px-2 py-1 rounded uppercase">Klasa: {c.klase_trupaca?.naziv}</span>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span className="text-sm font-black text-emerald-400 drop-shadow-md">{c.cijena_po_m3} <span className="text-[10px]">KM/m³</span></span>
+                                    <button onClick={()=>obrisiCjenovnik(c.id)} className="text-red-500 px-3 py-1 bg-red-900/20 rounded-lg font-black hover:bg-red-500 hover:text-white">✕</button>
+                                </div>
                             </div>
                         ))}
                     </div>
                 </div>
+
             </div>
         </div>
     );
@@ -1094,10 +1186,14 @@ function TabBrending() {
     const [firmaInfo, setFirmaInfo] = useState({ 
         adresa: '', telefon: '', email: '', 
         footer_tekst: '', footer_boja: '#64748b', footer_velicina: '12',
-        app_name: 'SmartERP' // NOVO ZA IME APP
+        app_name: 'SmartERP'
     });
 
-    // OVDJE JE DODANA OPCIJA ZA SIDEBAR
+    // NOVO: STATE ZA CLOUD FOLDERE
+    const [cloudPostavke, setCloudPostavke] = useState({
+        folder_prorez: '', folder_dorada: '', folder_ukupno: '', folder_finansije: '', webhook_url: ''
+    });
+
     const opcijeLokacija = ['Ikona u pregledniku (Favicon)', 'GLAVNI MENI / SIDEBAR (GORE LIJEVO)', 'Svi PDF Dokumenti', 'PDF Ponuda', 'PDF Radni Nalog', 'PDF Otpremnica', 'PDF Račun', 'PDF Blagajna'];
 
     useEffect(() => { load(); }, []);
@@ -1115,24 +1211,30 @@ function TabBrending() {
                 footer_tekst: fData.footer_tekst || '', 
                 footer_boja: fData.footer_boja || '#64748b', 
                 footer_velicina: fData.footer_velicina || '12',
-                app_name: localStorage.getItem('saas_app_name') || 'SmartERP' // Ime je uvijek iz lokala kao prioritet
+                app_name: localStorage.getItem('saas_app_name') || 'SmartERP'
             });
         } else {
             setFirmaInfo(prev => ({...prev, app_name: localStorage.getItem('saas_app_name') || 'SmartERP'}));
         }
+
+        // NOVO: UČITAVANJE CLOUD POSTAVKI
+        const { data: cData } = await supabase.from('postavke_izvjestaja').select('*').eq('id', 1).maybeSingle();
+        if (cData) setCloudPostavke(cData);
     };
 
     const spasiFirmuInfo = async () => {
-        // Ime aplikacije (Sidebar tekst) spašavamo direktno u memoriju i opaljujemo signal!
         localStorage.setItem('saas_app_name', firmaInfo.app_name);
         window.dispatchEvent(new Event('saas_updated'));
-
         const { error } = await supabase.from('postavke_firme').upsert({ id: 1, adresa: firmaInfo.adresa, telefon: firmaInfo.telefon, email: firmaInfo.email, footer_tekst: firmaInfo.footer_tekst, footer_boja: firmaInfo.footer_boja, footer_velicina: firmaInfo.footer_velicina });
-        if (error) {
-            alert("Greška pri spašavanju baze: " + error.message);
-        } else {
-            alert("✅ Podaci o firmi i Naziv Aplikacije uspješno spašeni!\n(Sidebar se automatski osvježio)");
-        }
+        if (error) alert("Greška pri spašavanju baze: " + error.message);
+        else alert("✅ Podaci o firmi i Naziv Aplikacije uspješno spašeni!");
+    };
+
+    // NOVO: SPAŠAVANJE CLOUD POSTAVKI
+    const spasiCloudPostavke = async () => {
+        const { error } = await supabase.from('postavke_izvjestaja').upsert({ id: 1, ...cloudPostavke });
+        if (error) alert("Greška pri spašavanju cloud postavki: " + error.message);
+        else alert("☁️ Cloud postavke za štampanje uspješno spašene!");
     };
 
     const toggleLokacija = (lok) => { setForm(prev => ({...prev, lokacije_jsonb: prev.lokacije_jsonb.includes(lok) ? prev.lokacije_jsonb.filter(l => l !== lok) : [...prev.lokacije_jsonb, lok] })); };
@@ -1158,7 +1260,6 @@ function TabBrending() {
         if(isEditing) await supabase.from('brending').update(payload).eq('id', form.id);
         else await supabase.from('brending').insert([payload]);
         
-        // AKO JE ODABRAN SIDEBAR, ODMAH SPASI U LOKALNU MEMORIJU I OSVJEZI EKRAN!
         if (form.lokacije_jsonb.includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)')) {
             localStorage.setItem('saas_app_logo', finalUrl);
         } else {
@@ -1176,7 +1277,6 @@ function TabBrending() {
         e.stopPropagation(); 
         if(window.confirm(`Trajno obrisati logo: ${naziv}?`)) { 
             await supabase.from('brending').delete().eq('id', id); 
-            // Ako je obrisan sidebar logo, skloni ga sa ekrana
             if (localStorage.getItem('saas_app_logo') === slikaUrl) {
                 localStorage.setItem('saas_app_logo', '');
                 window.dispatchEvent(new Event('saas_updated'));
@@ -1235,6 +1335,39 @@ function TabBrending() {
                     </div>
 
                     <button onClick={spasiFirmuInfo} className="w-full py-4 bg-theme-accent text-theme-text font-black rounded-xl text-xs uppercase shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:opacity-80 transition-all mt-6 tracking-widest">💾 Spasi i Sinhronizuj Aplikaciju</button>
+                </div>
+
+                {/* NOVO: KARTICA ZA CLOUD FOLDERE */}
+                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl space-y-6">
+                    <div>
+                        <h3 className="text-emerald-500 font-black uppercase text-xs border-b border-theme-border pb-2 mb-4">☁️ Cloud Print (Google Drive / Webhook)</h3>
+                        <p className="text-[10px] text-slate-400 font-bold mb-4">Ovdje upiši tačne nazive foldera u koje želiš da se izvještaji spašavaju kada klikneš Print.</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Folder za Prorez</label>
+                                <input type="text" value={cloudPostavke.folder_prorez} onChange={e => setCloudPostavke({...cloudPostavke, folder_prorez: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-emerald-500" placeholder="npr. Izvjestaji/Prorez" />
+                            </div>
+                            <div>
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Folder za Doradu</label>
+                                <input type="text" value={cloudPostavke.folder_dorada} onChange={e => setCloudPostavke({...cloudPostavke, folder_dorada: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-emerald-500" placeholder="npr. Izvjestaji/Dorada" />
+                            </div>
+                            <div>
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Folder za Materijalno</label>
+                                <input type="text" value={cloudPostavke.folder_ukupno} onChange={e => setCloudPostavke({...cloudPostavke, folder_ukupno: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-emerald-500" placeholder="npr. Izvjestaji/Materijal" />
+                            </div>
+                            <div>
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Folder za Finansije</label>
+                                <input type="text" value={cloudPostavke.folder_finansije} onChange={e => setCloudPostavke({...cloudPostavke, folder_finansije: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-emerald-500" placeholder="npr. Izvjestaji/Finansije" />
+                            </div>
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-theme-border">
+                            <label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black">Webhook URL (Ovdje se šalju fajlovi)</label>
+                            <input type="text" value={cloudPostavke.webhook_url} onChange={e => setCloudPostavke({...cloudPostavke, webhook_url: e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-amber-400 outline-none border border-theme-border focus:border-amber-500 font-mono shadow-inner" placeholder="https://hook.eu1.make.com/..." />
+                        </div>
+                    </div>
+                    <button onClick={spasiCloudPostavke} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-theme-text font-black rounded-xl text-xs uppercase shadow-lg transition-all tracking-widest">💾 Spasi Cloud Postavke</button>
                 </div>
             </div>
 
@@ -1346,7 +1479,7 @@ function TabBrending() {
 export default function SettingsModule({ onExit, lockedTab }) {
     const [tab, setTab] = useState(lockedTab || 'sumarije');
     const tabs = ['sumarije', 'prevoznici', 'masine', 'katalog', 'kupci', 'radnici', 'blagajna', 'brending'];
-    const labels = { sumarije: '🌲 Šumarije', prevoznici: '🚚 Prevoznici', masine: '⚙️ Mašine', katalog: '📦 Katalog', kupci: '🤝 Kupci', radnici: '👷 Radnici', blagajna: '🗂️ Kase / Kat.', brending: '🎨 Brending (SaaS)' };
+    const labels = { sumarije: '🌲 Šumarije', prevoznici: '🚚 Prevoznici', masine: '⚙️ Mašine', katalog: '📦 Katalog', kupci: '🤝 Kupci', radnici: '👷 Radnici', blagajna: '🗂️ Kase / Kat.', brending: '🎨 Brending / Print' };
 
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6">

@@ -1,14 +1,15 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
-import { Card, Metric, Text, Grid, Flex, Badge, Title } from '@tremor/react';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import { Card, Metric, Text, Title } from '@tremor/react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
 const PALETA = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
-// Pomoćne funkcije
 const imaSirovinu = (val) => {
     if (!val) return false;
     if (Array.isArray(val) && val.length > 0) return true;
@@ -32,57 +33,41 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [radnikFilter, setRadnikFilter] = useState('SVI');
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     
-    // Podaci za Print
     const [logoUrl, setLogoUrl] = useState('');
     const [imeFirme, setImeFirme] = useState('SMART TIMBER');
 
     useEffect(() => {
-        try {
-            const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
-            const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || 
-                            brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-            if (logoObj && logoObj.url_slike) setLogoUrl(logoObj.url_slike);
-            if (logoObj && logoObj.naziv) setImeFirme(logoObj.naziv);
-        } catch (e) {}
+        const logo = localStorage.getItem('saas_app_logo');
+        if(logo) setLogoUrl(logo);
     }, []);
 
-    useEffect(() => {
-        ucitajDoradaAnalitiku();
-    }, [datumOd, datumDo, masinaFilter, radnikFilter]);
+    useEffect(() => { ucitajDoradaAnalitiku(); }, [datumOd, datumDo, masinaFilter, radnikFilter]);
 
     const ucitajDoradaAnalitiku = async () => {
         setLoading(true);
         try {
-            // Povlačimo podatke zadnjih 60 dana da bismo našli "izvorne" pakete od kojih je dorada nastala
             const d60 = new Date(new Date(datumOd).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             const d30 = new Date(new Date(datumOd).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
             const [paketiRes, zastojiRes] = await Promise.all([
-                supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60), // Ne limitiramo datumDo za izvorne
+                supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60), 
                 supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo).eq('modul', 'Dorada')
             ]);
 
             const sviPaketiBaza = paketiRes.data || [];
-            
-            // --- FILTRIRANJE PAKETA DORADE ZA ODABRANI PERIOD ---
             const sviDanDorada = sviPaketiBaza.filter(p => p.datum_yyyy_mm >= datumOd && p.datum_yyyy_mm <= datumDo && imaSirovinu(p.ai_sirovina_ids) && (masinaFilter === 'SVE' || p.masina === masinaFilter));
-            
-            // Izdvajamo sve radnike koji su knjižili doradu taj dan
             const dostupniRadnici = [...new Set(sviDanDorada.map(p => p.snimio_korisnik).filter(Boolean))];
 
-            // Primjena filtera radnika
             const danDorada = sviDanDorada.filter(p => radnikFilter === 'SVI' || p.snimio_korisnik === radnikFilter);
             const danZastoji = (zastojiRes.data || []).filter(z => (masinaFilter === 'SVE' || z.masina === masinaFilter) && (radnikFilter === 'SVI' || z.snimio?.includes(radnikFilter)));
 
-            // --- KALKULACIJA ULAZA, IZLAZA I KALA ---
             let totalUlazM3 = 0; let totalIzlazM3 = 0;
             const operacijeMap = {}; const yieldPoProizvodu = {}; const traceBlokovi = [];
 
             danDorada.forEach(p => {
                 const izlaz = parseFloat(p.kolicina_final || 0);
-                
-                // PAMETNO TRAŽENJE ULAZA (Tražimo originalne pakete iz baze da dobijemo tačnu kubikažu sirovine)
                 let stvarniUlazM3 = 0;
                 const idsSirovine = getSirovineNiz(p.ai_sirovina_ids);
                 let sirovineTekst = [];
@@ -91,60 +76,37 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                     idsSirovine.forEach(id => {
                         const orig = sviPaketiBaza.find(r => r.paket_id === id);
                         if (orig) {
-                            // Ako nismo potrošili cijeli paket, onda je ulaz bio jednak onome što je izračunato u izlazu + neki procijenjeni kalo
-                            // Za filigransku tačnost, Dorada modul bi trebao knjižiti koliko je tačno M3 uzeo sa ulaznog paketa.
-                            // Ovdje koristimo ukupni finalni iznos starog paketa kao worst-case (pretpostavka da je cijeli utrošen).
-                            const vol = parseFloat(orig.kolicina_final || 0);
-                            stvarniUlazM3 += vol;
-                            sirovineTekst.push(`Paket ${orig.paket_id} (${orig.naziv_proizvoda})`);
+                            stvarniUlazM3 += parseFloat(orig.kolicina_final || 0);
+                            sirovineTekst.push(`P. ${orig.paket_id}`);
                         } else {
-                            sirovineTekst.push(`Paket ${id} (Arhiviran)`);
+                            sirovineTekst.push(`P. ${id}`);
                         }
                     });
                 }
                 
-                // Ako nismo uspjeli naći originalni M3 u bazi, radimo sigurnosnu aproksimaciju
-                if (stvarniUlazM3 === 0) stvarniUlazM3 = izlaz * 1.05; // Pretpostavka 5% kala
+                if (stvarniUlazM3 === 0) stvarniUlazM3 = izlaz * 1.05; 
+                totalUlazM3 += stvarniUlazM3; totalIzlazM3 += izlaz;
 
-                totalUlazM3 += stvarniUlazM3;
-                totalIzlazM3 += izlaz;
-
-                // Grupisanje po operacijama (Oznake)
-                const operacije = p.oznake && Array.isArray(p.oznake) && p.oznake.length > 0 ? p.oznake : ['Standardna Dorada'];
+                const operacije = p.oznake && Array.isArray(p.oznake) && p.oznake.length > 0 ? p.oznake : ['Dorada'];
                 operacije.forEach(o => { operacijeMap[o] = (operacijeMap[o] || 0) + izlaz; });
 
-                // Grupisanje prinosa po proizvodu
                 const naziv = p.naziv_proizvoda || 'Nepoznato';
                 if (!yieldPoProizvodu[naziv]) yieldPoProizvodu[naziv] = { u: 0, i: 0 };
-                yieldPoProizvodu[naziv].u += stvarniUlazM3;
-                yieldPoProizvodu[naziv].i += izlaz;
+                yieldPoProizvodu[naziv].u += stvarniUlazM3; yieldPoProizvodu[naziv].i += izlaz;
 
-                // Traceability Tabela
                 traceBlokovi.push({
-                    out_id: p.paket_id,
-                    out_naziv: naziv,
-                    out_dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
-                    out_m3: izlaz.toFixed(3),
-                    in_m3: stvarniUlazM3.toFixed(3),
-                    kalo_m3: Math.max(0, stvarniUlazM3 - izlaz).toFixed(3),
-                    in_ids: sirovineTekst.join(', '),
-                    operacije: operacije.join(', '),
-                    radnik: p.snimio_korisnik,
-                    rn: p.broj_veze || '-',
-                    vrijeme: p.vrijeme_tekst
+                    out_id: p.paket_id, out_naziv: naziv, out_dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
+                    out_m3: izlaz.toFixed(3), in_m3: stvarniUlazM3.toFixed(3), kalo_m3: Math.max(0, stvarniUlazM3 - izlaz).toFixed(3),
+                    in_ids: sirovineTekst.join(', '), operacije: operacije.join(', '), radnik: p.snimio_korisnik, rn: p.broj_veze || '-'
                 });
             });
 
-            // Formatiranje za grafikone
             const chartDoradaYield = Object.keys(yieldPoProizvodu).map(naziv => ({
-                name: naziv,
-                Yield: yieldPoProizvodu[naziv].u > 0 ? parseFloat(((yieldPoProizvodu[naziv].i / yieldPoProizvodu[naziv].u) * 100).toFixed(1)) : 0,
-                IzlazM3: parseFloat(yieldPoProizvodu[naziv].i.toFixed(2))
-            })).sort((a,b) => b.Yield - a.Yield).slice(0, 10); // Top 10
+                name: naziv, Yield: yieldPoProizvodu[naziv].u > 0 ? parseFloat(((yieldPoProizvodu[naziv].i / yieldPoProizvodu[naziv].u) * 100).toFixed(1)) : 0,
+            })).sort((a,b) => b.Yield - a.Yield).slice(0, 8);
 
             const grafikonOperacija = Object.keys(operacijeMap).map(k => ({ name: k, value: parseFloat(operacijeMap[k].toFixed(2)) })).sort((a,b)=>b.value-a.value);
 
-            // --- 30 DNEVNI TREND ---
             const trendDaniMap = {};
             const dDanas = new Date(datumDo);
             for (let i = 29; i >= 0; i--) {
@@ -163,219 +125,322 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             });
 
             const trendChartData = Object.values(trendDaniMap).map(d => ({ dan: d.dan, M3: parseFloat(d.doradaM3.toFixed(2)) }));
-
             const ukupnoZastojMin = danZastoji.reduce((sum, z) => sum + (parseInt(z.zastoj_min) || 0), 0);
 
             setData({
                 kpi: { 
-                    ulazM3: totalUlazM3.toFixed(2), 
-                    izlazM3: totalIzlazM3.toFixed(2), 
-                    kaloM3: Math.max(0, totalUlazM3 - totalIzlazM3).toFixed(2), 
-                    yieldProcenat: totalUlazM3 > 0 ? ((totalIzlazM3 / totalUlazM3) * 100).toFixed(1) : "0.0", 
-                    ukupnoZastojMin,
-                    brojOperacija: traceBlokovi.length
+                    ulazM3: totalUlazM3.toFixed(2), izlazM3: totalIzlazM3.toFixed(2), kaloM3: Math.max(0, totalUlazM3 - totalIzlazM3).toFixed(2), 
+                    yieldProcenat: totalUlazM3 > 0 ? ((totalIzlazM3 / totalUlazM3) * 100).toFixed(1) : "0.0", ukupnoZastojMin
                 },
                 grafikonOperacija, yieldChart: chartDoradaYield, trendChartData, trace_blokovi: traceBlokovi.sort((a,b) => b.out_m3 - a.out_m3), zastoji: danZastoji,
                 smjenaInfo: { sviRadnici: dostupniRadnici, glavniRadnik: radnikZaTrend }
             });
             setLoading(false);
+        } catch (error) { setLoading(false); }
+    };
 
+    const generisiUltimativniPDF = async (nazivModula, nazivKoloneFolder) => {
+        setIsGeneratingPDF(true);
+        try {
+            // 1. RENDERIRANJE (Slikanje ekrana)
+            const pdfElement = document.getElementById('savrseni-pdf-dokument');
+            pdfElement.style.opacity = '1';
+            pdfElement.style.zIndex = '9999';
+            pdfElement.style.left = '0px';
+            const canvas = await html2canvas(pdfElement, { scale: 2, useCORS: true, logging: false });
+            pdfElement.style.opacity = '0';
+            pdfElement.style.zIndex = '-1';
+            pdfElement.style.left = '-10000px';
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdfBlob = pdf.output('blob');
+
+            // 2. LOGIKA ZA PERIOD (Ime fajla)
+            // Ako su datumi isti, piše jedan datum, ako su različiti piše OD-DO
+            const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
+            const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
+            const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
+            
+            // 3. DOHVATANJE PUTANJE IZ POSTAVKI
+            const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
+            const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
+            const timestamp = new Date().getTime();
+            
+            // Finalno ime za Make.com: FOLDER___MODUL_PERIOD_ID.pdf
+            const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
+
+            // =========================================================
+            // UBRZANJE: PRVO DAJEMO FAJL KORISNIKU
+            // =========================================================
+            pdf.save(`${nazivModula}_${periodStr}.pdf`);
+            window.open(URL.createObjectURL(pdfBlob), '_blank');
+            
+            // =========================================================
+            // ONDA ŠALJEMO U POZADINI U SUPABASE
+            // =========================================================
+            const { error: uploadError } = await supabase.storage
+                .from('izvjestaji_buffer')
+                .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+            if (uploadError) {
+                console.error("Greška pri slanju u Cloud:", uploadError);
+            } else {
+                console.log("🚀 Poslano u arhivu u pozadini.");
+            }
+            
         } catch (error) {
-            console.error("Kritična greška u analitici dorade:", error);
-            setLoading(false);
+            console.error("Greška:", error);
+            alert("Greška prilikom generisanja PDF-a.");
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
-    if (loading) return <div className="p-20 text-center text-blue-500 animate-pulse font-black text-xl uppercase tracking-widest">Analiziram doradu i zastoje...</div>;
+    if (loading) return <div className="p-20 text-center text-blue-500 animate-pulse font-black text-xl uppercase tracking-widest">Analiziram doradu...</div>;
     if (!data) return <div className="p-20 text-center text-slate-500 font-bold">Nema podataka.</div>;
 
-    const pokreniPrint = () => {
-        const title = `${datumOd}_${radnikFilter === 'SVI' ? 'SviRadnici' : radnikFilter.replace(/\s+/g, '')}_Dorada`;
-        document.title = title;
-        window.print();
-        setTimeout(() => document.title = "TTM ERP", 2000);
-    };
-
     return (
-        <div className="space-y-6 bg-white print:bg-white print:text-black text-slate-200">
-            
-            {/* PRINT HEADER */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
-                <div className="flex items-center gap-4">
-                    {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
-                    <div className="border-l-2 border-slate-300 pl-4 ml-2">
-                        <h2 className="text-xl font-black uppercase text-slate-800 tracking-widest">Izvještaj Dorade (Prerada)</h2>
-                        <p className="text-sm text-slate-500 font-bold">{masinaFilter === 'SVE' ? 'Sve mašine' : masinaFilter} | Operater: {radnikFilter}</p>
+        <div className="w-full relative">
+            <div className="space-y-6 text-slate-200">
+                <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg">
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-400 font-black uppercase">Filtriraj po Operateru:</span>
+                        <select value={radnikFilter} onChange={e => setRadnikFilter(e.target.value)} className="bg-theme-panel text-blue-400 px-4 py-2 rounded-lg text-sm font-black outline-none border border-slate-700 uppercase tracking-widest cursor-pointer">
+                            <option value="SVI">SVI ZAPOSLENI</option>
+                            {data.smjenaInfo.sviRadnici.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
                     </div>
+                    {/* OVDJE JE NOVI ONCLICK */}
+                    <button onClick={() => generisiUltimativniPDF('Izvjestaj_Dorade', 'folder_dorada')} disabled={isGeneratingPDF} className={`${isGeneratingPDF ? 'bg-slate-600' : 'bg-blue-600 hover:bg-blue-500'} text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase shadow-lg transition-all`}>
+                        {isGeneratingPDF ? '⌛ Generisanje...' : '🖨️ Isprintaj PDF'}
+                    </button>
                 </div>
-                <div className="text-right">
-                    <p className="text-sm font-black text-slate-800 uppercase">Mjesto: <span className="font-normal">{header?.mjesto || 'N/A'}</span></p>
-                    <p className="text-sm font-black text-slate-800 uppercase">Datum: <span className="font-normal">{formatDatum(datumOd)}</span></p>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <Card decoration="top" decorationColor="blue" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Ulaz Sirovina</Text>
+                        <Metric className="text-white text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="emerald" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Izlaz Gotove Robe</Text>
+                        <Metric className="text-emerald-400 text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="amber" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Efikasnost Konverzije</Text>
+                        <Metric className="text-amber-400 text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="rose" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Stvarni Kalo</Text>
+                        <Metric className="text-rose-400 text-xl mt-1">{data.kpi.kaloM3} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="red" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
+                        <Metric className="text-red-400 text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
+                    </Card>
                 </div>
-            </div>
 
-            {/* EKRAN KONTROLE */}
-            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
-                <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-slate-400 font-black uppercase">Filtriraj po Operateru:</span>
-                    <select value={radnikFilter} onChange={e => setRadnikFilter(e.target.value)} className="bg-theme-panel text-blue-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-theme-card [&>option]:text-white cursor-pointer">
-                        <option value="SVI">SVI ZAPOSLENI</option>
-                        {data.smjenaInfo.sviRadnici.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="bg-theme-card h-[300px]">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Prinos (Yield %) po obrađenom artiklu</Title>
+                        <ResponsiveContainer width="100%" height="85%">
+                            <BarChart data={data.yieldChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
+                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} unit="%" />
+                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: '#1e293b'}} />
+                                <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </Card>
+
+                    <Card className="bg-theme-card h-[300px]">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Raspodjela Operacija (m³)</Title>
+                        <ResponsiveContainer width="100%" height="85%">
+                            <PieChart>
+                                <Pie isAnimationActive={false} data={data.grafikonOperacija} innerRadius="40%" outerRadius="80%" paddingAngle={2} dataKey="value" stroke="none">
+                                    {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
+                                </Pie>
+                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
+                                <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#fff'}} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </Card>
                 </div>
-                <button onClick={pokreniPrint} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all shadow-[0_0_15px_rgba(59,130,246,0.4)]">
-                    🖨️ Isprintaj PDF
-                </button>
-            </div>
 
-            {/* 1. TOP KPI KARTICE (5 u redu) */}
-            <div className="grid grid-cols-5 gap-3">
-                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Ulaz Sirovina</Text>
-                    <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Izlaz Gotove Robe</Text>
-                    <Metric className="text-emerald-400 print:text-black text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Efikasnost Konverzije</Text>
-                    <Metric className="text-amber-400 print:text-black text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="rose" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Stvarni Kalo (Otpad)</Text>
-                    <Metric className="text-rose-400 print:text-black text-xl mt-1">{data.kpi.kaloM3} <span className="text-sm">m³</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="red" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4 shadow-xl">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
-                    <Metric className="text-red-400 print:text-black text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
-                </Card>
-            </div>
+                <div className="grid grid-cols-1 gap-6">
+                    <Card className="bg-theme-card h-[250px]">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Dinamika rada (30 Dana): Volumen dorade (m³)</Title>
+                        <ResponsiveContainer width="100%" height="85%">
+                            <AreaChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} />
+                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} />
+                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} />
+                                <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </Card>
 
-            {/* 2. GRAFIKONI (Sa page-break-avoid za print) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 page-break-avoid print:mt-6">
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Prinos (Yield %) po obrađenom artiklu</Title>
-                    {data.yieldChart.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500 text-xs">Nema podataka</div> : (
-                    <ResponsiveContainer width="100%" height="85%">
-                        <BarChart data={data.yieldChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} unit="%" />
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: '#1e293b'}} />
-                            <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                    )}
-                </Card>
-
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-2 text-center">Raspodjela Operacija (m³ prerađeno kroz oznake)</Title>
-                    {data.grafikonOperacija.length === 0 ? <div className="flex h-full items-center justify-center text-slate-500 text-xs">Nema specifičnih operacija (Hoblano, Sušara...)</div> : (
-                    <ResponsiveContainer width="100%" height="85%">
-                        <PieChart>
-                            <Pie isAnimationActive={false} data={data.grafikonOperacija} innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                            </Pie>
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
-                            <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#000'}} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    )}
-                </Card>
-            </div>
-
-            {/* 3. TREND I SLJEDIVOST */}
-            <div className="grid grid-cols-1 gap-6 page-break-avoid">
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl h-[300px] print:h-[250px]">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Dinamika rada (30 Dana): Volumen dorade (m³)</Title>
-                    <ResponsiveContainer width="100%" height="85%">
-                        <AreaChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorDorada" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                            <XAxis dataKey="dan" stroke="#94a3b8" fontSize={9} tickLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} />
-                            <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} fill="url(#colorDorada)" strokeWidth={2} />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </Card>
-
-                {/* DETALJNA TABELA SLJEDIVOSTI */}
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
-                    <Title className="text-blue-400 print:text-slate-800 font-black text-[10px] uppercase mb-4 border-b border-slate-700 print:border-slate-300 pb-2">Forenzička Sljedivost (Traceability) - Odakle je proizvod nastao</Title>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[10px]">
-                            <thead className="text-slate-500 print:text-slate-600 uppercase border-b border-slate-700 print:border-slate-300">
+                    <Card className="bg-theme-card border-none">
+                        <Title className="text-blue-400 font-black text-[10px] uppercase mb-2 border-b border-slate-700 pb-1">Forenzička Sljedivost (Odakle je proizvod nastao)</Title>
+                        <table className="w-full text-left text-[9px]">
+                            <thead className="text-slate-500 uppercase border-b border-slate-700">
                                 <tr>
-                                    <th className="py-2">Novi Paket (Izlaz)</th>
-                                    <th className="py-2 text-center">Final m³</th>
-                                    <th className="py-2 text-center print:border-slate-300">Ulaz m³ / Kalo</th>
-                                    <th className="py-2">Korištena Sirovina</th>
-                                    <th className="py-2 text-center">Yield</th>
-                                    <th className="py-2">Operacije</th>
-                                    <th className="py-2">Radnik / RN</th>
+                                    <th className="py-1.5">Novi Paket (Izlaz)</th>
+                                    <th className="py-1.5 text-center">Final m³</th>
+                                    <th className="py-1.5 text-center">Ulaz m³ / Kalo</th>
+                                    <th className="py-1.5">Sirovina</th>
+                                    <th className="py-1.5">Operacije</th>
                                 </tr>
                             </thead>
-                            <tbody className="text-slate-200 print:text-slate-800 font-bold">
-                            {data.trace_blokovi?.length === 0 && <tr><td colSpan="7" className="p-4 text-center italic text-slate-500">Nema podataka o doradi.</td></tr>}
-                                         {(data.trace_blokovi || []).map((tb, i) => (
-                                    <tr key={i} className="border-b border-theme-border/50 print:border-slate-200 hover:bg-theme-panel/30">
-                                        <td className="py-2">
-                                            <div className="font-black text-white print:text-black text-xs">{tb.out_id}</div>
-                                            <div className="text-blue-400 print:text-slate-700 mt-1">{tb.out_naziv} <span className="text-slate-500 ml-1">({tb.out_dim})</span></div>
-                                        </td>
-                                        <td className="py-2 text-center font-black text-emerald-400 print:text-black text-sm">{tb.out_m3}</td>
-                                        <td className="py-2 text-center text-slate-300 print:text-slate-800">
-                                            {tb.in_m3} <span className="text-rose-400 text-[8px] block mt-1">Kalo: {tb.kalo_m3}</span>
-                                        </td>
-                                        <td className="py-2 whitespace-pre-line text-[9px] text-slate-400 print:text-slate-600 font-mono">{tb.in_ids}</td>
-                                        <td className="py-2 text-center font-black text-blue-400 print:text-black">{tb.yield}%</td>
-                                        <td className="py-2 text-[8px] uppercase">{tb.operacije}</td>
-                                        <td className="py-2 text-[9px] text-slate-400 print:text-slate-600">{tb.radnik}<br/>{tb.rn !== '-' && <span className="text-purple-400 font-black">RN: {tb.rn}</span>}</td>
-                                    </tr>
-                                ))}
+                            <tbody className="text-slate-200">
+                            {data.trace_blokovi?.length === 0 && <tr><td colSpan="5" className="py-4 text-center italic text-slate-500">Nema evidentirane dorade.</td></tr>}
+                            {(data.trace_blokovi || []).map((tb, i) => (
+                                <tr key={i} className="border-b border-theme-border/50">
+                                    <td className="py-1.5"><span className="font-black text-white">{tb.out_id}</span><span className="text-blue-400 ml-1">{tb.out_naziv} ({tb.out_dim})</span></td>
+                                    <td className="py-1.5 text-center font-black text-emerald-400">{tb.out_m3}</td>
+                                    <td className="py-1.5 text-center text-slate-300">{tb.in_m3} <span className="text-rose-400 text-[8px] ml-1">Kalo: {tb.kalo_m3}</span></td>
+                                    <td className="py-1.5 text-[8px] text-slate-400 truncate max-w-[120px]">{tb.in_ids}</td>
+                                    <td className="py-1.5 text-[8px] uppercase truncate max-w-[120px]">{tb.operacije}</td>
+                                </tr>
+                            ))}
                             </tbody>
                         </table>
-                    </div>
-                </Card>
+                    </Card>
+                </div>
             </div>
 
-            {/* ZASTOJI I FOOTER */}
-            <div className="border-t-4 border-theme-border print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
-                <div className="w-[60%]">
-                    <h3 className="text-xs font-black uppercase text-slate-400 print:text-slate-800 mb-2">Dnevnik Zastoja i Napomene</h3>
-                    {data.zastoji.length === 0 ? (
-                        <p className="text-[10px] text-slate-500 italic">Smjena je protekla bez zabilježenih zastoja.</p>
-                    ) : (
-                        <ul className="space-y-1">
-                            {data.zastoji.map(z => (
-                                <li key={z.id} className="text-[10px] text-slate-300 print:text-black">
-                                    <span className="font-bold">{z.vrijeme_od} - {z.vrijeme_do || '...'}</span>
-                                    {z.zastoj_min > 0 && <span className="font-black text-red-500 mx-2">({z.zastoj_min} min)</span>}
-                                    <span className="italic">{z.napomena || 'Nema opisa'}</span>
-                                </li>
+            {/* NEVIDLJIVI PDF KONTEJNER */}
+            <div id="savrseni-pdf-dokument" style={{
+                position: 'absolute', top: 0, left: '-9999px',
+                width: '210mm', minHeight: '297mm',
+                backgroundColor: 'white', color: '#0f172a',
+                padding: '12mm', boxSizing: 'border-box',
+                opacity: 0, zIndex: -1, fontFamily: 'sans-serif'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        {logoUrl ? <img src={logoUrl} style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} alt="Logo" crossOrigin="anonymous" /> : <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#0f172a' }}>{imeFirme}</h1>}
+                        <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '15px' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '1px', color: '#0f172a' }}>Izvještaj Dorade</h2>
+                            <p style={{ fontSize: '10px', color: '#475569', margin: '4px 0 0 0', fontWeight: 'bold' }}>{masinaFilter === 'SVE' ? 'Sve mašine' : masinaFilter} | Operater: {radnikFilter}</p>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a' }}>
+                        <p style={{ margin: '0 0 4px 0' }}>Mjesto: <span style={{ fontWeight: 'normal' }}>{header?.mjesto || 'N/A'}</span></p>
+                        <p style={{ margin: 0 }}>Datum: <span style={{ fontWeight: 'normal' }}>{formatDatum(datumOd)}</span></p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    {[
+                        { title: 'Ulaz Sirovina', val: data.kpi.ulazM3, unit: 'm³', color: '#3b82f6' },
+                        { title: 'Izlaz Gotove Robe', val: data.kpi.izlazM3, unit: 'm³', color: '#10b981' },
+                        { title: 'Efikasnost Konverzije', val: data.kpi.yieldProcenat, unit: '%', color: '#f59e0b' },
+                        { title: 'Stvarni Kalo', val: data.kpi.kaloM3, unit: 'm³', color: '#f43f5e' },
+                        { title: 'Zastoji u smjeni', val: data.kpi.ukupnoZastojMin, unit: 'min', color: '#ef4444' }
+                    ].map((kpi, i) => (
+                        <div key={i} style={{ width: '19%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', borderTop: `4px solid ${kpi.color}` }}>
+                            <div style={{ fontSize: '8px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>{kpi.title}</div>
+                            <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Prinos (Yield %) po obrađenom artiklu</div>
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <BarChart width={320} height={160} data={data.yieldChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                <XAxis dataKey="name" stroke="#64748b" fontSize={7} tickLine={false} axisLine={false} />
+                                <YAxis stroke="#64748b" fontSize={7} tickLine={false} axisLine={false} unit="%" />
+                                <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </div>
+                    </div>
+
+                    <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Raspodjela Operacija (m³)</div>
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <PieChart width={320} height={160}>
+                                <Pie isAnimationActive={false} data={data.grafikonOperacija} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                                    {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
+                                </Pie>
+                                <Legend wrapperStyle={{fontSize:'8px', fontWeight:'bold', color: '#000'}} />
+                            </PieChart>
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', marginBottom: '15px', pageBreakInside: 'avoid' }}>
+                    <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Dinamika rada (30 Dana): Volumen dorade (m³)</div>
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <AreaChart width={680} height={150} data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                            <XAxis dataKey="dan" stroke="#64748b" fontSize={7} tickLine={false} />
+                            <YAxis stroke="#64748b" fontSize={7} tickLine={false} />
+                            <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
+                        </AreaChart>
+                    </div>
+                </div>
+
+                <div style={{ width: '100%', marginBottom: '15px', pageBreakInside: 'auto' }}>
+                    <div style={{ fontSize: '9px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', borderBottom: '1px solid #0f172a', paddingBottom: '4px', marginBottom: '4px' }}>Forenzička Sljedivost (Traceability)</div>
+                    <table style={{ width: '100%', fontSize: '8px', borderCollapse: 'collapse', color: '#0f172a' }}>
+                        <thead>
+                            <tr style={{ color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
+                                <th style={{ textAlign: 'left', padding: '4px 0' }}>Novi Paket (Izlaz)</th><th style={{ textAlign: 'center', padding: '4px 0' }}>Final m³</th><th style={{ textAlign: 'center', padding: '4px 0' }}>Ulaz m³ / Kalo</th><th style={{ textAlign: 'left', padding: '4px 0' }}>Korištena Sirovina</th><th style={{ textAlign: 'left', padding: '4px 0' }}>Operacije</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.trace_blokovi.length === 0 && <tr><td colSpan="5" style={{ padding: '4px', textAlign: 'center', color: '#475569' }}>Nema evidentirane dorade.</td></tr>}
+                            {data.trace_blokovi.map((tb, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                    <td style={{ padding: '4px 0', fontWeight: 'bold' }}>{tb.out_id} <span style={{ color: '#475569' }}>({tb.out_dim})</span></td>
+                                    <td style={{ padding: '4px 0', textAlign: 'center', fontWeight: '900' }}>{tb.out_m3}</td>
+                                    <td style={{ padding: '4px 0', textAlign: 'center' }}>{tb.in_m3} <span style={{ color: '#f43f5e', fontSize: '7px' }}>Kalo: {tb.kalo_m3}</span></td>
+                                    <td style={{ padding: '4px 0', color: '#475569' }}>{tb.in_ids}</td>
+                                    <td style={{ padding: '4px 0', textTransform: 'uppercase' }}>{tb.operacije}</td>
+                                </tr>
                             ))}
-                        </ul>
-                    )}
+                        </tbody>
+                    </table>
                 </div>
-                <div className="w-[35%] text-right text-[10px] text-slate-400 print:text-black space-y-1">
-                    <div className="mt-8 pt-8 border-t border-slate-700 print:border-slate-400 text-center font-bold">
-                        Potpis operatera / rukovodioca
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #1e293b', paddingTop: '15px', pageBreakInside: 'avoid' }}>
+                    <div style={{ width: '60%' }}>
+                        <div style={{ fontSize: '10px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', marginBottom: '6px' }}>Dnevnik Zastoja i Napomene</div>
+                        {data.zastoji.length === 0 ? (
+                            <p style={{ fontSize: '9px', color: '#64748b', fontStyle: 'italic', margin: 0 }}>Smjena je protekla bez zastoja.</p>
+                        ) : (
+                            <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '9px', color: '#0f172a' }}>
+                                {data.zastoji.map(z => (
+                                    <li key={z.id} style={{ marginBottom: '4px' }}>
+                                        <strong>{z.vrijeme_od} - {z.vrijeme_do || '...'}</strong> 
+                                        {z.zastoj_min > 0 && <span style={{ color: '#ef4444', fontWeight: '900', margin: '0 6px' }}>({z.zastoj_min}m)</span>}
+                                        <span>{z.napomena || 'Nema opisa'}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                    
+                    <div style={{ width: '35%', textAlign: 'right', fontSize: '9px', color: '#475569' }}>
+                        <div style={{ textTransform: 'uppercase', color: '#0f172a', fontWeight: '900', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '6px' }}>Detalji Smjene</div>
+                        <p style={{ margin: '0 0 4px 0' }}>Vrijeme rada: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.start} - {data.smjenaInfo.end}</strong></p>
+                        <p style={{ margin: '0 0 4px 0' }}>Operateri: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.sviRadnici.join(', ') || 'Nema'}</strong></p>
+                        
+                        <div style={{ marginTop: '30px', paddingTop: '10px', borderTop: '1px solid #0f172a', textAlign: 'center', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' }}>
+                            Potpis Rukovodioca
+                        </div>
                     </div>
                 </div>
             </div>
-
-            {/* PRINT FOOTER */}
-            <div className="hidden print:block mt-4 text-center text-[8px] text-slate-500 pt-2 border-t border-slate-300">
-                Dokument generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}
-            </div>
-            
         </div>
     );
 }

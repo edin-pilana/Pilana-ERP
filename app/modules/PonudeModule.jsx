@@ -387,32 +387,55 @@ export default function PonudeModule({ onExit }) {
         const depozit = parseFloat(form.depozit) || 0; 
         const preostaloZaNaplatu = (ukupnoSaPDV - depozit).toFixed(2);
         
-        let redovi = stavke.map((s, i) => `<tr><td style="font-weight: bold; color: #64748b;">${i+1}.</td><td><b style="color: #0f172a; font-size: 11px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 10px;">${s.naziv}</span></td><td style="text-align: center; font-weight: 800; color: #0f172a; font-size: 11px;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 9px; font-weight: 600;">${s.jm_obracun}</span></td><td style="text-align: right; font-weight: 600; font-size: 11px;">${s.cijena_baza.toFixed(2)}</td><td style="text-align: right; color: #ec4899; font-weight: 800; font-size: 11px;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td><td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 12px;">${s.ukupno.toFixed(2)}</td></tr>`).join('');
+       // 1. GENERISANJE REDOVA STAVKI (SADA KORISTI KLASE IZ HELPERA)
+       let redovi = stavke.map((s, i) => {
+        // Pametno izvlačenje dimenzija ako su spremljene pod .dimenzije ili kao .debljina x .sirina x .duzina
+        let dimenzijeTekst = '';
+        if (s.dimenzije) {
+            dimenzijeTekst = `<span class="prod-dim">Dimenzije: ${s.dimenzije}</span>`;
+        } else if (s.debljina && s.sirina && s.duzina) {
+            dimenzijeTekst = `<span class="prod-dim">Dimenzije: ${s.debljina} x ${s.sirina} x ${s.duzina}</span>`;
+        }
+
+        return `
+        <tr>
+            <td style="font-weight: bold; color: #64748b; vertical-align: top; padding-top: 8px;">${i+1}.</td>
+            <td style="vertical-align: top; padding-top: 8px;">
+                <span class="prod-sifra">ŠIFRA: ${s.sifra}</span>
+                <span class="prod-naziv">${s.naziv}</span>
+                ${dimenzijeTekst}
+            </td>
+            <td class="num" style="color: #0f172a; text-align: center; vertical-align: top; padding-top: 8px;">
+                ${s.kolicina_obracun} <span style="color: #64748b; font-size: 9px; font-weight: 600;">${s.jm_obracun}</span>
+            </td>
+            <td class="num" style="font-weight: 600; vertical-align: top; padding-top: 8px;">${s.cijena_baza.toFixed(2)}</td>
+            <td class="num" style="color: #ec4899; font-weight: 800; vertical-align: top; padding-top: 8px;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td>
+            <td class="num" style="font-weight: 900; color: #0f172a; font-size: 13px; vertical-align: top; padding-top: 8px;">${s.ukupno.toFixed(2)}</td>
+        </tr>
+        `;
+    }).join('');
         
+        // 2. GLAVNI HTML SADRŽAJ (INFO I TABELA)
         const htmlSadrzajTabela = `
             <style>
-                /* OVO KOMPRESUJE TABELU DA STANE 20 STAVKI, A NE RUŠI GLOBALNI LOGO I HEADER */
                 table th, table td { padding: 4px 6px !important; }
-                .info-grid { margin-bottom: 15px !important; }
-                .summary-box { padding: 10px !important; margin-top: 15px !important; font-size: 11px !important; width: 50% !important; margin-left: auto !important; }
-                .summary-row { margin-bottom: 4px !important; }
-                .summary-total { padding-top: 6px !important; font-size: 13px !important; border-top: 2px solid #cbd5e1 !important; }
-                .footer { margin-top: 20px !important; font-size: 11px !important; }
+                .footer { margin-top: 25px !important; font-size: 11px !important; display: flex; justify-content: space-between; }
+                .napomena { width: 60%; color: #475569; line-height: 1.4; }
+                .potpis { width: 30%; text-align: center; color: #64748b; }
             </style>
             
             <div class="info-grid">
-                <div class="info-col">
+                <div class="info-col-left">
                     <h4>Kupac / Klijent</h4>
-                    <p style="font-size: 16px; font-weight: 900; margin-bottom: 3px;">${form.kupac_naziv}</p>
-                    <p style="font-weight: 400; color: #475569; font-size: 11px;">${odabraniKupac?.adresa || 'Adresa nije unesena'}</p>
-                    <p style="font-weight: 600; color: #0f172a; font-size: 11px; margin-top: 4px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
+                    <h2>${form.kupac_naziv}</h2>
+                    <p>${odabraniKupac?.adresa || 'Adresa nije unesena'}</p>
+                    <p style="margin-top: 3px;">PDV / ID: <b style="color: #0f172a;">${odabraniKupac?.pdv_broj || 'N/A'}</b></p>
                 </div>
-                <div class="info-col" style="text-align: right;">
-                    <h4>Detalji Ponude</h4>
-                    <p style="font-size: 11px;">Paritet: <span style="font-weight: 400; color: #475569;">${form.paritet}</span></p>
-                    <p style="font-size: 11px;">Plaćanje: <span style="font-weight: 400; color: #475569;">${form.nacin_placanja}</span></p>
-                    <p style="font-size: 11px;">Valuta: <span style="font-weight: 400; color: #475569;">${form.valuta}</span></p>
-                    <p style="color: #ec4899; margin-top: 6px; font-weight: 800; font-size: 11px;">Važi do: ${formatirajDatum(form.rok_vazenja)}</p>
+                <div class="info-col-right">
+                    <p>Paritet: <b>${form.paritet}</b></p>
+                    <p style="margin-top: 2px;">Plaćanje: <b>${form.nacin_placanja}</b></p>
+                    <p style="margin-top: 2px;">Valuta: <b>${form.valuta}</b></p>
+                    <p style="color: #ec4899; margin-top: 8px;">Važi do: <b>${formatirajDatum(form.rok_vazenja)}</b></p>
                 </div>
             </div>
             
@@ -420,39 +443,43 @@ export default function PonudeModule({ onExit }) {
                 <thead>
                     <tr>
                         <th style="width: 5%;">R.B.</th>
-                        <th>Šifra i Naziv Proizvoda</th>
+                        <th>Naziv Proizvoda i Šifra</th>
                         <th style="text-align:center;">Količina</th>
-                        <th style="text-align:right;">Cijena</th>
-                        <th style="text-align:right;">Rabat</th>
-                        <th style="text-align:right;">Ukupno (${form.valuta})</th>
+                        <th class="num">Cijena</th>
+                        <th class="num">Rabat</th>
+                        <th class="num">Ukupno (${form.valuta})</th>
                     </tr>
                 </thead>
                 <tbody>${redovi}</tbody>
             </table>
             
-            <div class="summary-box">
-                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${totals.bez_rabata}</b></div>
-                <div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${totals.rabat}</b></div>
-                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${totals.osnovica}</b></div>
-                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${totals.pdv}</b></div>
-                <div class="summary-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #cbd5e1;"><span>UKUPNO SA PDV:</span> <b>${ukupnoSaPDV.toFixed(2)}</b></div>
-                ${depozit > 0 ? `<div class="summary-row" style="color: #10b981;"><span>Uplaćen depozit / Avans:</span> <b style="font-size:12px;">- ${depozit.toFixed(2)}</b></div>` : ''}
-                <div class="summary-total"><span style="font-size: 13px; letter-spacing: 1px; padding-top:4px;">ZA NAPLATU:</span><span>${preostaloZaNaplatu} ${form.valuta}</span></div>
-            </div>
-            
             <div class="footer">
-                <div style="width: 60%;">
-                    <b style="color: #0f172a;">Napomena uz ponudu:</b><br/>
+                <div class="napomena">
+                    <b style="color: #0f172a; text-transform: uppercase;">Napomena uz ponudu:</b><br/>
                     ${form.napomena || 'Nema dodatnih napomena.'}
                 </div>
-                <div style="text-align: right; width: 30%;">
-                    <div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 30px;"></div>
+                <div class="potpis">
+                    <div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>
                     Potpis ovlaštenog lica
                 </div>
             </div>
         `;
         
-        printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899');
+        // 3. HTML ZA TOTAL KOJI SE ŠALJE HELPERU ZA DESNO PORAVNANJE
+        const donjiTotaliHtml = `
+            <table class="totals-table">
+                <tr><td class="lbl">Iznos bez rabata:</td><td class="val">${totals.bez_rabata}</td></tr>
+                <tr><td class="lbl" style="color: #ec4899;">Uračunati rabat:</td><td class="val" style="color: #ec4899;">- ${totals.rabat}</td></tr>
+                <tr><td class="lbl">Osnovica za PDV:</td><td class="val">${totals.osnovica}</td></tr>
+                <tr><td class="lbl">PDV iznos (17%):</td><td class="val">${totals.pdv}</td></tr>
+                <tr><td class="lbl" style="padding-top: 6px; border-top: 1px solid #cbd5e1;">UKUPNO SA PDV:</td><td class="val" style="padding-top: 6px; border-top: 1px solid #cbd5e1;">${ukupnoSaPDV.toFixed(2)}</td></tr>
+                ${depozit > 0 ? `<tr><td class="lbl" style="color: #10b981;">Uplaćen depozit:</td><td class="val" style="color: #10b981;">- ${depozit.toFixed(2)}</td></tr>` : ''}
+                <tr class="grand-total"><td class="lbl">ZA NAPLATU:</td><td class="val">${preostaloZaNaplatu} ${form.valuta}</td></tr>
+            </table>
+        `;
+        
+        // PAZI NA OVO - sada šaljemo i donjiTotaliHtml kao 6. parametar!
+        printDokument('PONUDA', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ec4899', donjiTotaliHtml);
         setTimeout(() => { document.title = stariNaslov; }, 2000);
     };
 

@@ -30,9 +30,9 @@ const fetchPrintSettings = async () => {
 };
 
 // ==========================================
-// 1. STANDARDNI DOKUMENTI (NALOZI, PONUDE...)
+// 1. STANDARDNI DOKUMENTI (NALOZI, PONUDE, RAČUNI...)
 // ==========================================
-export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6') => {
+export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6', totaliHtml = null) => {
     const originalTitle = document.title;
     const nazivFajla = `${datum} ${tipDokumenta} ${brojDokumenta}`;
     document.title = nazivFajla; 
@@ -47,7 +47,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     const { brending, firmaInfo } = await fetchPrintSettings();
 
     let topBannerHtml = '';
-    let leftLogoHtml = '<div class="company-name">SmartTimber ERP</div>';
+    let leftLogoHtml = `<div class="company-name">${POSTAVKE.imeFirme}</div>`;
 
     const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes(trazenaLokacija)) || 
                     brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti'));
@@ -55,12 +55,12 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     if (logoObj && logoObj.url_slike) {
         if (logoObj.full_width) {
             topBannerHtml = `
-                <div style="width: 100%; margin-bottom: 10px; text-align: center;">
-                    <img src="${logoObj.url_slike}" style="width: 100%; max-height: 120px; object-fit: contain; display: block;" alt="Banner Firme" />
+                <div class="full-width-banner">
+                    <img src="${logoObj.url_slike}" alt="Banner Firme" />
                 </div>`;
             leftLogoHtml = ''; 
         } else {
-            leftLogoHtml = `<img src="${logoObj.url_slike}" style="max-height: 50px; max-width: 200px; object-fit: contain; margin-bottom: 4px;" alt="Logo Firme" />`;
+            leftLogoHtml = `<img src="${logoObj.url_slike}" class="left-logo" alt="Logo Firme" />`;
         }
     }
 
@@ -68,9 +68,15 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     iframe.style.display = 'none';
     document.body.appendChild(iframe);
 
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${brojDokumenta}`;
-    // Skripta zadužena da sačeka grafiku prije printa
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${brojDokumenta}`;
     const printSkripta = decodeURIComponent('%3Cscript%3Ewindow.onload%3Dfunction()%7BsetTimeout(function()%7Bwindow.print()%3B%7D%2C2000)%3B%7D%3B%3C%2Fscript%3E');
+
+    // UBACENA LOGIKA ZA TOTAL NA DNU
+    const donjiDioHtml = totaliHtml ? `
+        <div class="totals-section">
+            ${totaliHtml}
+        </div>
+    ` : '';
 
     const html = `
         <html>
@@ -78,6 +84,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
             <title>${nazivFajla}</title>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+                @page { size: A4; margin: 0; }
                 body { 
                     font-family: 'Inter', sans-serif; 
                     padding: 0; 
@@ -87,43 +94,87 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                     print-color-adjust: exact; 
                 }
                 .page-container { 
-                    padding: 15px 20px; 
-                    min-height: 95vh; 
+                    /* Ujednacene margine za header i sadrzaj ispod */
+                    padding: 20mm; 
+                    min-height: 297mm; 
+                    box-sizing: border-box;
                     display: flex; 
                     flex-direction: column; 
+                    position: relative;
                 }
                 .top-bar { 
-                    height: 8px; 
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    height: 12px; 
                     background-color: ${themeColor}; 
                     width: 100%; 
+                }
+                .full-width-banner {
+                    width: 100%;
+                    margin-bottom: 8mm;
+                    text-align: center;
+                }
+                .full-width-banner img {
+                    width: 100%;
+                    max-height: 120px;
+                    object-fit: contain;
                 }
                 .header { 
                     display: flex; 
                     justify-content: space-between; 
-                    align-items: flex-end; 
-                    padding-bottom: 10px; 
+                    align-items: flex-start; /* Poravnano na vrh umjesto dno */
+                    padding-bottom: 5mm; 
                     border-bottom: 2px solid #e2e8f0; 
-                    margin-bottom: 15px; 
+                    margin-bottom: 6mm; 
                 }
-                .logo-area { display: flex; flex-direction: column; }
-                .company-name { font-size: 16px; font-weight: 900; color: #0f172a; }
+                .logo-area { display: flex; flex-direction: column; max-width: 70%; }
+                .company-name { font-size: 20px; font-weight: 900; color: #0f172a; }
+                .left-logo { 
+                    /* Povecan logo */
+                    max-height: 70px; 
+                    max-width: 300px; 
+                    object-fit: contain; 
+                    margin-bottom: 5px; 
+                }
+                
+                .doc-title-area { margin-top: 15px; }
                 .doc-title { 
-                    font-size: 28px; 
+                    font-size: 32px; 
                     font-weight: 900; 
                     color: ${themeColor}; 
                     text-transform: uppercase; 
-                    margin: 2px 0 0 0; 
+                    margin: 0; 
                     line-height: 1; 
                 }
+                .doc-subtitle { color: #64748b; font-size: 11px; font-weight: 600; margin-top: 4px; }
+                
                 .qr-wrapper { 
-                    text-align: center; 
-                    background: #f8fafc; 
-                    padding: 6px; 
-                    border-radius: 8px; 
-                    border: 1px solid #e2e8f0; 
+                    text-align: right; 
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-end;
                 }
-                .qr-wrapper img { width: 55px; height: 55px; }
-                .qr-text { font-family: monospace; font-size: 8px; font-weight: 800; margin-top: 4px; color: #475569; }
+                .qr-wrapper img { width: 75px; height: 75px; margin-bottom: 3px; }
+                .qr-text { font-family: monospace; font-size: 9px; font-weight: 800; color: #475569; }
+                
+                /* KUTIJA ZA INFO O KUPCU (Sa slike) */
+                .info-grid { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    background: #f8fafc; 
+                    padding: 4mm; 
+                    border-radius: 8px; 
+                    border: 1px solid #cbd5e1;
+                    border-left: 5px solid ${themeColor}; 
+                    margin-bottom: 6mm; 
+                }
+                .info-col-left h4 { margin: 0 0 2px 0; font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 800; }
+                .info-col-left h2 { margin: 0 0 2px 0; font-size: 16px; color: #0f172a; font-weight: 900; text-transform: uppercase; }
+                .info-col-left p { margin: 0; font-size: 10px; color: #475569; line-height: 1.4; }
+                
+                .info-col-right { text-align: right; font-size: 10px; color: #475569; display: flex; flex-direction: column; justify-content: center;}
+                .info-col-right b { color: #0f172a; font-weight: 800;}
                 
                 table { 
                     width: 100%; 
@@ -136,58 +187,96 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 th { 
                     background-color: ${themeColor}; 
                     color: white; 
-                    padding: 6px 4px; 
+                    padding: 8px 6px; 
                     text-transform: uppercase; 
                     font-size: 9px; 
+                    font-weight: 800;
                     text-align: left; 
                 }
-                td { padding: 6px 4px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-                tr:nth-child(even) td { background-color: #f8fafc; }
+                th.num { text-align: right; }
+                td { padding: 8px 6px; border-bottom: 1px solid #cbd5e1; color: #334155; vertical-align: top;}
+                td.num { text-align: right; font-weight: 800; font-size: 11px; color: #0f172a;}
                 
-                .info-grid { 
-                    display: flex; 
-                    justify-content: space-between; 
-                    background: #f1f5f9; 
-                    padding: 15px; 
-                    border-radius: 12px; 
-                    border-left: 4px solid ${themeColor}; 
-                    margin-bottom: 15px; 
+                /* IZGLED ZA REDOVE PROIZVODA (Dominira naziv, sifra blijeda) */
+                .prod-sifra { font-size: 9px; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 2px;}
+                .prod-naziv { font-size: 12px; color: #0f172a; font-weight: 900; text-transform: uppercase; display: block;}
+                .prod-dim { font-size: 10px; color: #475569; font-weight: 600; display: block; margin-top: 2px;}
+                
+                /* ZAKUCANI TOTALI UZ DESNU MARGINU */
+                .totals-section {
+                    display: flex;
+                    justify-content: flex-end;
+                    margin-top: 6mm;
+                    padding-right: 6px;
                 }
-                .info-col h4 { margin: 0 0 5px 0; font-size: 9px; text-transform: uppercase; color: #64748b; }
-                .info-col p { margin: 0; font-size: 12px; font-weight: 600; color: #0f172a; line-height: 1.3; }
-                
+                .totals-table {
+                    width: auto;
+                    min-width: 250px;
+                    border-collapse: collapse;
+                }
+                .totals-table td {
+                    padding: 4px 0 4px 15px;
+                    border-bottom: none;
+                    font-size: 11px;
+                }
+                .totals-table td.lbl {
+                    text-align: right;
+                    color: #475569;
+                    font-weight: 600;
+                }
+                .totals-table td.val {
+                    text-align: right;
+                    color: #0f172a;
+                    font-weight: 800;
+                }
+                .totals-table tr.grand-total td {
+                    padding-top: 8px;
+                    border-top: 2px solid ${themeColor};
+                    font-size: 14px;
+                    font-weight: 900;
+                    text-transform: uppercase;
+                }
+                .totals-table tr.grand-total td.val {
+                    color: ${themeColor};
+                }
+
                 .global-footer-custom { 
                     text-align: center; 
-                    margin-top: auto; 
+                    margin-top: auto; /* Gura ga na dno stranice */
                     padding-top: 10px; 
                     border-top: 1px solid #e2e8f0; 
                     color: ${firmaInfo.footer_boja}; 
                     font-size: ${firmaInfo.footer_velicina}px; 
                     font-weight: 600; 
                 }
-                canvas, svg { max-width: 100% !important; height: auto !important; }
             </style>
         </head>
         <body>
             <div class="top-bar"></div>
             <div class="page-container">
-                <div>
-                    ${topBannerHtml}
-                    <div class="header">
-                        <div class="logo-area">
-                            ${leftLogoHtml}
+                
+                ${topBannerHtml}
+                
+                <div class="header">
+                    <div class="logo-area">
+                        ${leftLogoHtml}
+                        <div class="doc-title-area">
                             <div class="doc-title">${tipDokumenta}</div>
-                            <div style="color: #64748b; font-size: 11px; font-weight: 600; margin-top: 4px;">
-                                Broj: <span style="color: #0f172a;">${brojDokumenta}</span> | Datum: ${datum}
+                            <div class="doc-subtitle">
+                                Broj: <span style="color: #0f172a; font-weight: 800;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datum}
                             </div>
                         </div>
-                        <div class="qr-wrapper">
-                            <img src="${qrCodeUrl}" alt="QR" />
-                            <div class="qr-text">${brojDokumenta}</div>
-                        </div>
                     </div>
-                    ${htmlSadrzajTabela}
+                    <div class="qr-wrapper">
+                        <img src="${qrCodeUrl}" alt="QR" />
+                        <div class="qr-text">${brojDokumenta}</div>
+                    </div>
                 </div>
+                
+                ${htmlSadrzajTabela}
+                
+                ${donjiDioHtml}
+
                 ${firmaInfo.footer_tekst ? `<div class="global-footer-custom">${firmaInfo.footer_tekst}</div>` : ''}
             </div>
             ${printSkripta}
@@ -364,7 +453,7 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
 };
 
 // ==========================================
-// 3. FAZNA (WIP) A5 DEKLARACIJA PAKETA (NARANDŽASTA)
+// 3. FAZNA (WIP) A5 DEKLARACIJA PAKETA
 // ==========================================
 export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, tehnologija) => {
     const stariNaslov = document.title;
@@ -493,11 +582,17 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
         if (!faza) return null;
         return `
             <tr>
-                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1;">${i+1}.</td>
-                <td style="border-bottom: 1px solid #cbd5e1;"><b style="font-size: 11px;">${s.sifra}</b><br/><span style="font-size: 9px; color: #475569;">${s.naziv}</span></td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 12px; color: #d97706;">${faza.dimenzija}</td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 12px;">${faza.kolicina} <span style="font-size: 9px;">${faza.jm}</span></td>
-                <td style="border-bottom: 1px solid #cbd5e1; font-size: 9px;">${faza.oznake?.join(', ') || ''} <br/> <i>${faza.napomena || ''}</i></td>
+                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; vertical-align: top;">${i+1}.</td>
+                <td style="border-bottom: 1px solid #cbd5e1; vertical-align: top;">
+                    <span class="prod-sifra">${s.sifra}</span>
+                    <span class="prod-naziv">${s.naziv}</span>
+                </td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #d97706; vertical-align: top;">${faza.dimenzija}</td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; vertical-align: top;">${faza.kolicina} <span style="font-size: 10px; color: #64748b;">${faza.jm}</span></td>
+                <td style="border-bottom: 1px solid #cbd5e1; font-size: 10px; vertical-align: top; color: #475569;">
+                    <b>${faza.oznake?.join(', ') || ''}</b><br/> 
+                    <i>${faza.napomena || ''}</i>
+                </td>
             </tr>
         `;
     }).filter(s => s !== null).join('');
@@ -505,31 +600,32 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
     if (!stavkeZaMasinu) return alert(`Nema definisanih zadataka za mašinu: ${masina}`);
     
     const htmlSadrzaj = `
-        <div style="border-bottom: 3px solid #0f172a; padding-bottom: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
-            <div>
-                <h2 style="margin: 0; color: #0f172a; font-size: 18px; text-transform: uppercase;">PROIZVODNI NALOG: <span style="color: #d97706;">${masina}</span></h2>
-                <p style="margin: 5px 0 0 0; font-size: 10px; color: #475569;">Samo obaveze za odabranu mašinu</p>
+        <div class="info-grid">
+            <div class="info-col-left">
+                <h4>Kupac / Klijent</h4>
+                <h2>${rn.kupac_naziv}</h2>
+                <p>Detalji nisu uneseni</p>
             </div>
-            <div style="text-align: right;">
-                <p style="margin: 0; font-size: 9px;">Kupac: <b style="font-size: 12px;">${rn.kupac_naziv}</b></p>
-                <p style="margin: 2px 0 0 0; font-size: 9px; color: #ec4899;">Rok: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
+            <div class="info-col-right">
+                <p>Rok Isporuke: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
             </div>
         </div>
+
         <table style="width: 100%; border-collapse: collapse;">
             <thead>
-                <tr style="background: #f8fafc; font-size: 9px; text-align: left; color: #475569;">
-                    <th style="padding: 4px; width: 5%;">#</th>
-                    <th style="padding: 4px;">Konačni Proizvod</th>
-                    <th style="padding: 4px; text-align: center;">Radna Dimenzija</th>
-                    <th style="padding: 4px; text-align: center;">Zadatak</th>
-                    <th style="padding: 4px;">Obrada / Napomena</th>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 45%;">Proizvod za Obradu</th>
+                    <th style="text-align: center;">Radna Dimenzija</th>
+                    <th style="text-align: center;">Količina</th>
+                    <th>Zadatak / Oznake</th>
                 </tr>
             </thead>
             <tbody>${stavkeZaMasinu}</tbody>
         </table>
     `;
     
-    await printDokument(`NALOG - ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
+    await printDokument(`PROIZVODNI NALOG: ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
     setTimeout(() => { document.title = stariNaslov; }, 2000);
 };
 
@@ -543,49 +639,53 @@ export const printRadniNalogSveFaze = async (rn) => {
     let redovi = rn.stavke_jsonb.map((s, i) => {
         const faze = rn.tehnologija_jsonb[s.id] || [];
         const fazeHtml = faze.map((f, fi) => `
-            <div style="font-size: 8px; border-left: 2px solid #d97706; padding-left: 4px; margin-bottom: 2px;">
-                <b>Faza ${fi+1}: ${f.masina}</b> | Dim: ${f.dimenzija} | Kol: ${f.kolicina} ${f.jm}
+            <div style="font-size: 9px; border-left: 2px solid #d97706; padding-left: 5px; margin-bottom: 3px; color: #475569;">
+                <b style="color: #0f172a;">${fi+1}. ${f.masina}</b> &mdash; Dimenzija: <b>${f.dimenzija}</b> | Target: <b>${f.kolicina} ${f.jm}</b>
             </div>
         `).join('');
         
         return `
             <tr>
-                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 4px; vertical-align: top;">${i+1}.</td>
-                <td style="border-bottom: 1px solid #cbd5e1; padding: 4px; vertical-align: top;">
-                    <b style="font-size: 11px;">${s.sifra}</b><br/>
-                    <span style="font-size: 9px; color: #475569;">${s.naziv}</span>
-                    <div style="margin-top: 4px;">${fazeHtml}</div>
+                <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 6px; vertical-align: top;">${i+1}.</td>
+                <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; vertical-align: top;">
+                    <span class="prod-sifra">${s.sifra}</span>
+                    <span class="prod-naziv">${s.naziv}</span>
+                    <div style="margin-top: 6px; background: #f8fafc; padding: 6px; border-radius: 4px;">
+                        <span style="display: block; font-size: 8px; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; font-weight: 800;">Tehnološki proces (BOM):</span>
+                        ${fazeHtml}
+                    </div>
                 </td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; vertical-align: top; font-weight: 800; font-size: 12px; color: #a855f7; padding: 4px;">
-                    ${s.kolicina_obracun} <span style="font-size: 9px;">${s.jm_obracun}</span>
+                <td class="num" style="border-bottom: 1px solid #cbd5e1; vertical-align: top; font-weight: 900; font-size: 14px; color: #a855f7; padding: 6px;">
+                    ${s.kolicina_obracun} <span style="font-size: 10px; color: #64748b;">${s.jm_obracun}</span>
                 </td>
             </tr>
         `;
     }).join('');
     
     const htmlSadrzaj = `
-        <div style="margin-bottom: 10px; display: flex; justify-content: space-between;">
-            <div>
-                <h4 style="margin: 0; color: #64748b; font-size: 10px;">Naručilac</h4>
-                <p style="font-size: 16px; font-weight: 900; margin: 0;">${rn.kupac_naziv}</p>
+        <div class="info-grid" style="border-left-color: #a855f7;">
+            <div class="info-col-left">
+                <h4>Naručilac Projekta</h4>
+                <h2>${rn.kupac_naziv}</h2>
             </div>
-            <div style="text-align: right;">
-                <h4 style="margin: 0; color: #64748b; font-size: 10px;">Detalji</h4>
-                <p style="margin: 0; font-size: 12px; color: #a855f7; font-weight: bold;">Rok: ${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</p>
+            <div class="info-col-right">
+                <p>Tip naloga: <b>FAZNI (VIŠE MAŠINA)</b></p>
+                <p>Rok Isporuke: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
             </div>
         </div>
+
         <table style="width: 100%; border-collapse: collapse;">
             <thead>
-                <tr style="background: #f8fafc; font-size: 9px; text-align: left;">
-                    <th style="padding: 4px; width: 5%;">#</th>
-                    <th style="padding: 4px;">Proizvod i Procesi (BOM)</th>
-                    <th style="padding: 4px; text-align: center;">Ciljna Količina</th>
+                <tr>
+                    <th style="background: #a855f7; width: 5%;">#</th>
+                    <th style="background: #a855f7; width: 70%;">Proizvod i Planirani Procesi (BOM)</th>
+                    <th class="num" style="background: #a855f7;">Ukupna Ciljna Količina</th>
                 </tr>
             </thead>
             <tbody>${redovi}</tbody>
         </table>
     `;
     
-    await printDokument('KOMPLETAN RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
+    await printDokument('GLAVNI RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
     setTimeout(() => { document.title = stariNaslov; }, 2000);
 };

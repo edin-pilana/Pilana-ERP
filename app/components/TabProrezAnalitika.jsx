@@ -1,8 +1,10 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
-import { Card, Metric, Text, Grid, Flex, Badge, Title } from '@tremor/react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import { Card, Metric, Text, Title } from '@tremor/react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
@@ -24,23 +26,18 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [brentistaFilter, setBrentistaFilter] = useState('SVI');
+    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
     
     const [logoUrl, setLogoUrl] = useState('');
     const [imeFirme, setImeFirme] = useState('SMART TIMBER');
 
     useEffect(() => {
-        try {
-            const brending = JSON.parse(localStorage.getItem('erp_brending') || '[]');
-            const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || 
-                            brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-            if (logoObj && logoObj.url_slike) setLogoUrl(logoObj.url_slike);
-            if (logoObj && logoObj.naziv) setImeFirme(logoObj.naziv);
-        } catch (e) {}
+        // Pouzdano povlačenje logotipa
+        const logo = localStorage.getItem('saas_app_logo');
+        if(logo) setLogoUrl(logo);
     }, []);
 
-    useEffect(() => {
-        ucitajDubokuAnalitiku();
-    }, [datumOd, datumDo, masinaFilter, brentistaFilter]);
+    useEffect(() => { ucitajDubokuAnalitiku(); }, [datumOd, datumDo, masinaFilter, brentistaFilter]);
 
     const ucitajDubokuAnalitiku = async () => {
         setLoading(true);
@@ -67,129 +64,80 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
             const paketiResData = paketiRes.data || [];
             const zastojiResData = zastojiRes.data || [];
 
-            // --- EKSTRAKCIJA RADNIKA (I iz Proreza i iz Pilane) ---
             const sviDanLogovi = (logResData || []).filter(l => l.datum >= datumOd && l.datum <= datumDo && (masinaFilter === 'SVE' || l.masina === masinaFilter));
             const sviDanPaketi = paketiResData.filter(p => p.datum_yyyy_mm >= datumOd && p.datum_yyyy_mm <= datumDo && (masinaFilter === 'SVE' || p.masina === masinaFilter) && !imaSirovinu(p.ai_sirovina_ids));
             
-            const dostupniBrentiste = [...new Set([
-                ...sviDanLogovi.map(l => l.brentista),
-                ...sviDanPaketi.map(p => p.brentista)
-            ].filter(Boolean))];
-
+            const dostupniBrentiste = [...new Set([...sviDanLogovi.map(l => l.brentista), ...sviDanPaketi.map(p => p.brentista)].filter(Boolean))];
             const danLogovi = sviDanLogovi.filter(l => brentistaFilter === 'SVI' || l.brentista === brentistaFilter);
             const danPaketi = sviDanPaketi.filter(p => brentistaFilter === 'SVI' || p.brentista === brentistaFilter);
             const danZastoji = zastojiResData.filter(z => (masinaFilter === 'SVE' || z.masina === masinaFilter) && (brentistaFilter === 'SVI' || z.snimio?.includes(brentistaFilter)));
 
-            // --- KALKULACIJA ULAZA ---
             let ulazM3 = 0; let ulazKom = 0; let sumTotalPrecnik = 0;
             const trupciMap = {};
 
             danLogovi.forEach(l => {
                 const t = trupciResData.find(tr => tr.id === l.trupac_id);
                 if (t) {
-                    const m3 = parseFloat(t.zapremina || 0);
-                    const precnik = parseFloat(t.promjer || 0);
-                    const duzina = parseFloat(t.duzina || 0).toFixed(1);
-
+                    const m3 = parseFloat(t.zapremina || 0); const precnik = parseFloat(t.promjer || 0); const duzina = parseFloat(t.duzina || 0).toFixed(1);
                     ulazM3 += m3; ulazKom += 1; sumTotalPrecnik += precnik;
-                    
                     if(!trupciMap[duzina]) trupciMap[duzina] = { duzina, kom: 0, m3: 0, sumPrecnik: 0 };
-                    trupciMap[duzina].kom += 1;
-                    trupciMap[duzina].m3 += m3;
-                    trupciMap[duzina].sumPrecnik += precnik;
+                    trupciMap[duzina].kom += 1; trupciMap[duzina].m3 += m3; trupciMap[duzina].sumPrecnik += precnik;
                 }
             });
 
-            const trupciStruktura = Object.values(trupciMap).map(t => ({
-                ...t, avgPrecnik: (t.sumPrecnik / t.kom).toFixed(1)
-            })).sort((a,b) => parseFloat(b.duzina) - parseFloat(a.duzina));
-
+            const trupciStruktura = Object.values(trupciMap).map(t => ({ ...t, avgPrecnik: (t.sumPrecnik / t.kom).toFixed(1) })).sort((a,b) => parseFloat(b.duzina) - parseFloat(a.duzina));
             const prosjecanPrecnikGlavni = ulazKom > 0 ? (sumTotalPrecnik / ulazKom).toFixed(1) : 0;
 
-            // --- KALKULACIJA IZLAZA ---
-            let izlazM3 = 0;
-            const proizvodiMap = {};
+            let izlazM3 = 0; const proizvodiMap = {};
 
             danPaketi.forEach(p => {
                 const vol = parseFloat(p.kolicina_final || 0);
                 izlazM3 += vol;
-                
                 const kljuc = p.naziv_proizvoda || 'Nepoznato';
-                if(!proizvodiMap[kljuc]) proizvodiMap[kljuc] = { naziv: kljuc, m3: 0, kom: 0, m2: 0, m1: 0, paketi: [] };
-                
+                if(!proizvodiMap[kljuc]) proizvodiMap[kljuc] = { naziv: kljuc, m3: 0, kom: 0, paketi: [] };
                 proizvodiMap[kljuc].m3 += vol;
-                
-                const jm = (p.jm || 'kom').toLowerCase();
-                const u = parseFloat(p.kolicina_ulaz || 0);
-                if (jm === 'kom') proizvodiMap[kljuc].kom += u;
-                if (jm === 'm2') proizvodiMap[kljuc].m2 += u;
-                if (jm === 'm1') proizvodiMap[kljuc].m1 += u;
-
+                if ((p.jm || 'kom').toLowerCase() === 'kom') proizvodiMap[kljuc].kom += parseFloat(p.kolicina_ulaz || 0);
                 proizvodiMap[kljuc].paketi.push(p);
             });
 
             const proizvodiStruktura = Object.values(proizvodiMap).sort((a,b) => b.m3 - a.m3);
             const grafikonProizvoda = proizvodiStruktura.map(p => ({ name: p.naziv, value: parseFloat(p.m3.toFixed(2)) }));
-
-            // --- YIELD I ZASTOJI ---
             const yieldProcenat = ulazM3 > 0 ? ((izlazM3 / ulazM3) * 100).toFixed(1) : 0;
-            const grafikonYield = ulazM3 > 0 || izlazM3 > 0 ? [
-                ...grafikonProizvoda,
-                { name: 'Kalo / Piljevina', value: Math.max(0, ulazM3 - izlazM3), isWaste: true }
-            ] : [];
 
-            // --- RADNICI I VRIJEME ---
-            const svaVremena = [
-                ...danLogovi.map(l => l.vrijeme_unosa),
-                ...danPaketi.map(p => p.vrijeme_tekst)
-            ].filter(Boolean).sort();
-
+            const svaVremena = [...danLogovi.map(l => l.vrijeme_unosa), ...danPaketi.map(p => p.vrijeme_tekst)].filter(Boolean).sort();
             let smjenaStart = 'N/A'; let smjenaEnd = 'N/A';
-            if (svaVremena.length > 0) {
-                smjenaStart = svaVremena[0].substring(0, 5); 
-                smjenaEnd = svaVremena[svaVremena.length - 1].substring(0, 5); 
-            }
+            if (svaVremena.length > 0) { smjenaStart = svaVremena[0].substring(0, 5); smjenaEnd = svaVremena[svaVremena.length - 1].substring(0, 5); }
 
-            const sviViljuskaristi = [...new Set([
-                ...danLogovi.map(l => l.viljuskarista),
-                ...danPaketi.map(p => p.viljuskarista)
-            ].filter(Boolean))].join(', ');
-
+            const sviViljuskaristi = [...new Set([...danLogovi.map(l => l.viljuskarista), ...danPaketi.map(p => p.viljuskarista)].filter(Boolean))].join(', ');
             const sviPomocni = [...new Set(danPaketi.map(p => p.radnici_pilana).filter(Boolean))].join(', ');
-
             const ukupnoZastojMin = danZastoji.reduce((sum, z) => sum + (parseInt(z.zastoj_min) || 0), 0);
             const efektivnoSati = Math.max(0.1, 8 - (ukupnoZastojMin / 60)); 
             const m3PoSatu = ulazM3 > 0 ? (ulazM3 / efektivnoSati).toFixed(2) : "0.00";
 
-            // --- TRENDOVI (ZADNJIH 30 DANA) ---
-            const trendDaniMap = {};
-            const dDanas = new Date(datumDo);
+            const trendDaniMap = {}; const dDanas = new Date(datumDo);
             for (let i = 29; i >= 0; i--) {
                 const d = new Date(dDanas.getTime() - i * 24 * 60 * 60 * 1000);
                 const iso = d.toISOString().split('T')[0];
                 trendDaniMap[iso] = { dan: `${d.getDate()}.${d.getMonth()+1}`, pilanaUlaz: 0, pilanaIzlaz: 0, brentistaUlaz: 0, brentistaIzlaz: 0 };
             }
-
             const targetBrentista = brentistaFilter !== 'SVI' ? brentistaFilter : (dostupniBrentiste[0] || 'Svi radnici');
 
             (logResData || []).forEach(l => {
-                const iso = l.datum;
-                if(trendDaniMap[iso]) {
+                if(trendDaniMap[l.datum]) {
                     const t = trupciResData.find(tr => tr.id === l.trupac_id);
                     if(t) {
                         const m3 = parseFloat(t.zapremina || 0);
-                        trendDaniMap[iso].pilanaUlaz += m3;
-                        if(l.brentista === targetBrentista || brentistaFilter === 'SVI') trendDaniMap[iso].brentistaUlaz += m3;
+                        trendDaniMap[l.datum].pilanaUlaz += m3;
+                        if(l.brentista === targetBrentista || brentistaFilter === 'SVI') trendDaniMap[l.datum].brentistaUlaz += m3;
                     }
                 }
             });
 
             paketiResData.filter(p => !imaSirovinu(p.ai_sirovina_ids)).forEach(p => {
-                const iso = p.datum_yyyy_mm;
-                if(trendDaniMap[iso]) {
+                if(trendDaniMap[p.datum_yyyy_mm]) {
                     const m3 = parseFloat(p.kolicina_final || 0);
-                    trendDaniMap[iso].pilanaIzlaz += m3;
-                    if(p.brentista === targetBrentista || brentistaFilter === 'SVI') trendDaniMap[iso].brentistaIzlaz += m3;
+                    trendDaniMap[p.datum_yyyy_mm].pilanaIzlaz += m3;
+                    if(p.brentista === targetBrentista || brentistaFilter === 'SVI') trendDaniMap[p.datum_yyyy_mm].brentistaIzlaz += m3;
                 }
             });
 
@@ -197,236 +145,359 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                 dan: d.dan,
                 PilanaYield: d.pilanaUlaz > 0 ? parseFloat(((d.pilanaIzlaz / d.pilanaUlaz) * 100).toFixed(1)) : 0,
                 BrentistaYield: d.brentistaUlaz > 0 ? parseFloat(((d.brentistaIzlaz / d.brentistaUlaz) * 100).toFixed(1)) : 0,
-                PilanaM3: parseFloat(d.pilanaUlaz.toFixed(1)),
-                BrentistaM3: parseFloat(d.brentistaUlaz.toFixed(1)),
             }));
 
             setData({
                 kpi: { ulazM3: ulazM3.toFixed(2), ulazKom, prosjecanPrecnik: prosjecanPrecnikGlavni, izlazM3: izlazM3.toFixed(2), yieldProcenat, m3PoSatu, ukupnoZastojMin },
-                trupciStruktura, proizvodiStruktura, grafikonProizvoda, grafikonYield, trendChartData, zastoji: danZastoji,
-                smjenaInfo: { 
-                    sviBrentiste: dostupniBrentiste, 
-                    viljuskaristi: sviViljuskaristi,
-                    pomocniRadnici: sviPomocni,
-                    start: smjenaStart, end: smjenaEnd,
-                    glavniBrentista: targetBrentista
-                }
+                trupciStruktura, proizvodiStruktura, grafikonProizvoda, trendChartData, zastoji: danZastoji,
+                smjenaInfo: { sviBrentiste: dostupniBrentiste, viljuskaristi: sviViljuskaristi, pomocniRadnici: sviPomocni, start: smjenaStart, end: smjenaEnd, glavniBrentista: targetBrentista }
             });
             setLoading(false);
+        } catch (error) { setLoading(false); }
+    };
 
+    const generisiUltimativniPDF = async (nazivModula, nazivKoloneFolder) => {
+        setIsGeneratingPDF(true);
+        try {
+            // 1. RENDERIRANJE (Slikanje ekrana)
+            const pdfElement = document.getElementById('savrseni-pdf-dokument');
+            pdfElement.style.opacity = '1';
+            pdfElement.style.zIndex = '9999';
+            pdfElement.style.left = '0px';
+            const canvas = await html2canvas(pdfElement, { scale: 2, useCORS: true, logging: false });
+            pdfElement.style.opacity = '0';
+            pdfElement.style.zIndex = '-1';
+            pdfElement.style.left = '-10000px';
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            const pdfBlob = pdf.output('blob');
+
+            // 2. LOGIKA ZA PERIOD (Ime fajla)
+            // Ako su datumi isti, piše jedan datum, ako su različiti piše OD-DO
+            const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
+            const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
+            const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
+            
+            // 3. DOHVATANJE PUTANJE IZ POSTAVKI
+            const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
+            const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
+            const timestamp = new Date().getTime();
+            
+            // Finalno ime za Make.com: FOLDER___MODUL_PERIOD_ID.pdf
+            const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
+
+            // =========================================================
+            // UBRZANJE: PRVO DAJEMO FAJL KORISNIKU
+            // =========================================================
+            pdf.save(`${nazivModula}_${periodStr}.pdf`);
+            window.open(URL.createObjectURL(pdfBlob), '_blank');
+            
+            // =========================================================
+            // ONDA ŠALJEMO U POZADINI U SUPABASE
+            // =========================================================
+            const { error: uploadError } = await supabase.storage
+                .from('izvjestaji_buffer')
+                .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
+
+            if (uploadError) {
+                console.error("Greška pri slanju u Cloud:", uploadError);
+            } else {
+                console.log("🚀 Poslano u arhivu u pozadini.");
+            }
+            
         } catch (error) {
-            console.error("Kritična greška u analitici:", error);
-            setData({
-                kpi: { ulazM3: "0.00", ulazKom: 0, prosjecanPrecnik: 0, izlazM3: "0.00", yieldProcenat: 0, m3PoSatu: "0.00", ukupnoZastojMin: 0 },
-                trupciStruktura: [], proizvodiStruktura: [], grafikonProizvoda: [], grafikonYield: [], trendChartData: [], zastoji: [], smjenaInfo: { sviBrentiste: [], viljuskaristi: '', pomocniRadnici: '', start: 'N/A', end: 'N/A', glavniBrentista: '' }
-            });
-            setLoading(false);
+            console.error("Greška:", error);
+            alert("Greška prilikom generisanja PDF-a.");
+        } finally {
+            setIsGeneratingPDF(false);
         }
     };
 
-    const pokreniPrint = () => {
-        const title = `${datumOd}_${brentistaFilter === 'SVI' ? 'SviRadnici' : brentistaFilter.replace(/\s+/g, '')}_Prorez`;
-        document.title = title;
-        window.print();
-        setTimeout(() => document.title = "TTM ERP", 2000);
-    };
-
-    const renderKaloCell = (entry, index) => <Cell key={`cell-${index}`} fill={entry.isWaste ? '#334155' : PALETA[index % PALETA.length]} />;
-    
     if (loading) return <div className="p-20 text-center text-emerald-500 animate-pulse font-black text-xl uppercase tracking-widest">Slažem podatke...</div>;
     if (!data) return <div className="p-20 text-center text-slate-500 font-bold">Nema podataka.</div>;
 
     return (
-        <div className="space-y-6 bg-white print:bg-white print:text-black text-slate-200">
-            
-            {/* ======================================================== */}
-            {/* PRINT HEADER (Vidljiv samo na papiru - sakriven na ekranu) */}
-            {/* ======================================================== */}
-            <div className="hidden print:flex justify-between items-end border-b-2 border-theme-border pb-4 mb-6 pt-4">
-                <div className="flex items-center gap-4">
-                    {logoUrl ? <img src={logoUrl} alt="Logo" className="max-h-16 object-contain" /> : <h1 className="text-3xl font-black text-slate-900">{imeFirme}</h1>}
-                    <div className="border-l-2 border-slate-300 pl-4 ml-2">
-                        <h2 className="text-xl font-black uppercase text-slate-800 tracking-widest">Izvještaj Proreza (Pilana)</h2>
-                        <p className="text-sm text-slate-500 font-bold">{masinaFilter === 'SVE' ? 'Sve mašine' : masinaFilter} | Brentista: {brentistaFilter}</p>
+        <div className="w-full relative text-slate-200">
+            <div className="space-y-6">
+                <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg">
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-400 font-black uppercase">Filtriraj po Brentisti:</span>
+                        <select value={brentistaFilter} onChange={e => setBrentistaFilter(e.target.value)} className="bg-theme-panel text-emerald-400 px-4 py-2 rounded-lg text-sm font-black outline-none border border-slate-700 uppercase tracking-widest cursor-pointer">
+                            <option value="SVI">SVI ZAPOSLENI</option>
+                            {data.smjenaInfo.sviBrentiste.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
                     </div>
+                    {/* OVDJE JE NOVI ONCLICK */}
+                    <button onClick={() => generisiUltimativniPDF('Izvjestaj_Proreza', 'folder_prorez')} disabled={isGeneratingPDF} className={`${isGeneratingPDF ? 'bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase shadow-lg transition-all`}>
+                        {isGeneratingPDF ? '⌛ Generisanje...' : '🖨️ Isprintaj PDF'}
+                    </button>
                 </div>
-                <div className="text-right">
-                    <p className="text-sm font-black text-slate-800 uppercase">Mjesto: <span className="font-normal">{header?.mjesto || 'N/A'}</span></p>
-                    <p className="text-sm font-black text-slate-800 uppercase">Datum: <span className="font-normal">{formatDatum(datumOd)}</span></p>
+
+                {/* SVE OSTALO OSTAJE ISTO ZA EKRAN */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <Card decoration="top" decorationColor="emerald" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Izrezano Trupaca</Text>
+                        <Metric className="text-white text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="blue" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Proizvedeno (Izlaz)</Text>
+                        <Metric className="text-white text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="amber" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Iskorištenost (Yield)</Text>
+                        <Metric className="text-amber-400 text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="purple" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Brzina Rezanja</Text>
+                        <Metric className="text-purple-400 text-xl mt-1">{data.kpi.m3PoSatu} <span className="text-sm">m³/h</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="red" className="bg-theme-card">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
+                        <Metric className="text-red-400 text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
+                    </Card>
                 </div>
-            </div>
 
-            {/* EKRAN KONTROLE (Skrivene na printu) */}
-            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg print:hidden">
-                <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-slate-400 font-black uppercase">Filtriraj po Brentisti:</span>
-                    <select value={brentistaFilter} onChange={e => setBrentistaFilter(e.target.value)} className="bg-theme-panel text-emerald-400 px-4 py-2 rounded-lg text-xs font-black outline-none border border-slate-700 uppercase tracking-widest [&>option]:bg-theme-card [&>option]:text-white cursor-pointer">
-                        <option value="SVI">SVI ZAPOSLENI</option>
-                        {data.smjenaInfo.sviBrentiste.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
-                </div>
-                <button onClick={pokreniPrint} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase transition-all shadow-[0_0_15px_rgba(16,185,129,0.4)]">
-                    🖨️ Isprintaj PDF
-                </button>
-            </div>
-
-            {/* 1. TOP KPI KARTICE (5 u redu) */}
-            <div className="grid grid-cols-5 gap-3">
-                <Card decoration="top" decorationColor="emerald" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Izrezano Trupaca (Ulaz)</Text>
-                    <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.ulazM3} <span className="text-sm">m³</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="blue" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Proizvedeno (Izlaz)</Text>
-                    <Metric className="text-white print:text-black text-xl mt-1">{data.kpi.izlazM3} <span className="text-sm">m³</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="amber" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Iskorištenost (Yield)</Text>
-                    <Metric className="text-amber-400 print:text-black text-xl mt-1">{data.kpi.yieldProcenat} <span className="text-sm">%</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="purple" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Brzina Rezanja</Text>
-                    <Metric className="text-purple-400 print:text-black text-xl mt-1">{data.kpi.m3PoSatu} <span className="text-sm">m³/h</span></Metric>
-                </Card>
-                <Card decoration="top" decorationColor="red" className="bg-theme-card print:bg-white print:border-slate-300 border-slate-700 p-4">
-                    <Text className="text-slate-400 print:text-slate-500 font-bold text-[9px] uppercase">Zastoji u smjeni</Text>
-                    <Metric className="text-red-400 print:text-black text-xl mt-1">{data.kpi.ukupnoZastojMin} <span className="text-sm">min</span></Metric>
-                </Card>
-            </div>
-
-            {/* 2. TABELE PODATAKA */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 print:gap-4 page-break-avoid">
-                {/* ULAZ TRUPACA */}
-                <div className="md:col-span-5 bg-theme-card print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-3 border-b border-slate-700 print:border-slate-300 pb-2">Trupci po dužinama (Sirovina)</Title>
-                    <table className="w-full text-left text-xs">
-                        <thead className="text-slate-500 print:text-slate-600 uppercase border-b border-slate-700 print:border-slate-300">
-                            <tr><th className="py-2">L (m)</th><th className="py-2 text-center">Kom</th><th className="py-2 text-center">Ø Prosjek</th><th className="py-2 text-right">m³</th></tr>
-                        </thead>
-                        <tbody className="text-slate-200 print:text-slate-800 font-bold">
-                            {data.trupciStruktura.length === 0 && <tr><td colSpan="4" className="py-4 text-center italic text-slate-500">Nema evidentiranih trupaca.</td></tr>}
-                            {data.trupciStruktura.map(t => (
-                                <tr key={t.duzina} className="border-b border-theme-border/50 print:border-slate-200">
-                                    <td className="py-2 text-emerald-400 print:text-black">{t.duzina} m</td>
-                                    <td className="py-2 text-center">{t.kom}</td>
-                                    <td className="py-2 text-center text-slate-400 print:text-slate-600">Ø {t.avgPrecnik} cm</td>
-                                    <td className="py-2 text-right font-black">{t.m3.toFixed(2)}</td>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    <div className="md:col-span-5 bg-theme-card border border-slate-700 rounded-2xl p-5">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 border-b border-slate-700 pb-1">Trupci po dužinama (Sirovina)</Title>
+                        <table className="w-full text-left text-[10px]">
+                            <thead className="text-slate-500 uppercase border-b border-slate-700">
+                                <tr><th className="py-1.5">L (m)</th><th className="py-1.5 text-center">Kom</th><th className="py-1.5 text-center">Ø Prosjek</th><th className="py-1.5 text-right">m³</th></tr>
+                            </thead>
+                            <tbody className="text-slate-200 font-bold">
+                                {data.trupciStruktura.length === 0 && <tr><td colSpan="4" className="py-2 text-center italic text-slate-500">Nema evidentiranih trupaca.</td></tr>}
+                                {data.trupciStruktura.map(t => (
+                                    <tr key={t.duzina} className="border-b border-theme-border/50">
+                                        <td className="py-1.5 text-emerald-400">{t.duzina} m</td>
+                                        <td className="py-1.5 text-center">{t.kom}</td>
+                                        <td className="py-1.5 text-center text-slate-400">Ø {t.avgPrecnik} cm</td>
+                                        <td className="py-1.5 text-right font-black">{t.m3.toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                                <tr className="border-t-2 border-slate-600 font-black text-xs">
+                                    <td className="py-2 text-white">UKUPNO:</td>
+                                    <td className="py-2 text-center text-white">{data.kpi.ulazKom}</td>
+                                    <td className="py-2 text-center text-slate-400">Ø {data.kpi.prosjecanPrecnik}</td>
+                                    <td className="py-2 text-right text-emerald-400">{data.kpi.ulazM3}</td>
                                 </tr>
-                            ))}
-                            <tr className="border-t-2 border-slate-600 print:border-slate-400 font-black text-sm">
-                                <td className="py-3 text-white print:text-black">UKUPNO:</td>
-                                <td className="py-3 text-center text-white print:text-black">{data.kpi.ulazKom}</td>
-                                <td className="py-3 text-center text-slate-400 print:text-slate-600">Ø {data.kpi.prosjecanPrecnik} cm</td>
-                                <td className="py-3 text-right text-emerald-400 print:text-black">{data.kpi.ulazM3}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                            </tbody>
+                        </table>
+                    </div>
 
-                {/* IZLAZ GOTOVE ROBE */}
-                <div className="md:col-span-7 bg-theme-card print:bg-transparent print:border-none border border-slate-700 rounded-2xl p-5">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-3 border-b border-slate-700 print:border-slate-300 pb-2">Proizvedeno (Gotova Roba)</Title>
-                    <table className="w-full text-left text-[10px]">
-                        <thead className="text-slate-500 print:text-slate-600 uppercase border-b border-slate-700 print:border-slate-300">
-                            <tr><th className="py-2">Artikal (Vrsta)</th><th className="py-2 text-center">Kom / m1 / m2</th><th className="py-2 text-right">m³ (Volumen)</th></tr>
-                        </thead>
-                        <tbody className="text-slate-200 print:text-slate-800">
-                            {data.proizvodiStruktura.length === 0 && <tr><td colSpan="3" className="py-4 text-center italic text-slate-500">Nema proizvedene građe.</td></tr>}
-                            {data.proizvodiStruktura.map((p, i) => (
-                                <React.Fragment key={i}>
-                                    <tr className="bg-theme-panel/30 print:bg-slate-100 border-y border-slate-700/50 print:border-slate-300">
-                                        <td className="py-2 font-black text-blue-400 print:text-black text-xs uppercase" colSpan="3">{p.naziv}</td>
-                                    </tr>
-                                    {(p.paketi || []).map(paket => (
-                                        <tr key={paket.id} className="border-b border-theme-border/30 print:border-slate-200">
-                                            <td className="py-1.5 pl-2 font-bold">{paket.paket_id} <span className="text-slate-500 print:text-slate-600 ml-1">({paket.debljina}x{paket.sirina}x{paket.duzina})</span>
-                                                {paket.broj_veze && <span className="ml-2 text-[8px] bg-theme-panel print:bg-slate-200 px-1 rounded">RN: {paket.broj_veze}</span>}
-                                            </td>
-                                            <td className="py-1.5 text-center font-bold">{paket.kolicina_ulaz} {paket.jm}</td>
-                                            <td className="py-1.5 text-right font-black text-sm">{paket.kolicina_final}</td>
+                    <div className="md:col-span-7 bg-theme-card border border-slate-700 rounded-2xl p-5">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 border-b border-slate-700 pb-1">Proizvedeno (Gotova Roba)</Title>
+                        <table className="w-full text-left text-[10px]">
+                            <thead className="text-slate-500 uppercase border-b border-slate-700">
+                                <tr><th className="py-1.5">Artikal (Vrsta)</th><th className="py-1.5 text-center">Kom / m1 / m2</th><th className="py-1.5 text-right">m³ (Volumen)</th></tr>
+                            </thead>
+                            <tbody className="text-slate-200">
+                                {data.proizvodiStruktura.length === 0 && <tr><td colSpan="3" className="py-2 text-center italic text-slate-500">Nema proizvedene građe.</td></tr>}
+                                {data.proizvodiStruktura.map((p, i) => (
+                                    <React.Fragment key={i}>
+                                        <tr className="bg-theme-panel/30 border-y border-slate-700/50">
+                                            <td className="py-1.5 font-black text-blue-400 text-[10px] uppercase" colSpan="3">{p.naziv}</td>
                                         </tr>
-                                    ))}
-                                    <tr className="border-b-2 border-slate-700/50 print:border-slate-400 font-black">
-                                        <td className="py-2 text-slate-400 print:text-slate-600 text-right pr-4" colSpan="2">Ukupno za vrstu:</td>
-                                        <td className="py-2 text-right text-blue-400 print:text-black text-sm">{p.m3.toFixed(3)}</td>
+                                        {(p.paketi || []).map(paket => (
+                                            <tr key={paket.id} className="border-b border-theme-border/30">
+                                                <td className="py-1 pl-2 font-bold">{paket.paket_id} <span className="text-slate-500 ml-1">({paket.debljina}x{paket.sirina}x{paket.duzina})</span></td>
+                                                <td className="py-1 text-center font-bold">{paket.kolicina_ulaz} {paket.jm}</td>
+                                                <td className="py-1 text-right font-black text-xs">{paket.kolicina_final}</td>
+                                            </tr>
+                                        ))}
+                                        <tr className="border-b-2 border-slate-700/50 font-black">
+                                            <td className="py-1.5 text-slate-400 text-right pr-4" colSpan="2">Ukupno:</td>
+                                            <td className="py-1.5 text-right text-blue-500 text-[11px]">{p.m3.toFixed(3)}</td>
+                                        </tr>
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="bg-theme-card h-[300px]">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Učešće proizvoda u prorezu</Title>
+                        <ResponsiveContainer width="100%" height="85%">
+                            <PieChart>
+                                <Pie isAnimationActive={false} data={data.grafikonProizvoda} innerRadius="40%" outerRadius="80%" paddingAngle={2} dataKey="value" stroke="none">
+                                    {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
+                                </Pie>
+                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
+                                <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#fff'}} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </Card>
+
+                    <Card className="bg-theme-card h-[300px]">
+                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Trend Iskorištenja (30 Dana)</Title>
+                        <ResponsiveContainer width="100%" height="85%">
+                            <LineChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} />
+                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} unit="%" />
+                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} />
+                                <Legend wrapperStyle={{fontSize:'9px'}} />
+                                <Line isAnimationActive={false} type="monotone" dataKey="PilanaYield" name="Prosjek Pilane" stroke="#94a3b8" strokeWidth={2} dot={false} />
+                                <Line isAnimationActive={false} type="monotone" dataKey="BrentistaYield" name={brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter} stroke="#10b981" strokeWidth={3} dot={{r:2}} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </Card>
+                </div>
+            </div>
+
+            {/* NEVIDLJIVI PDF KONTEJNER */}
+            <div id="savrseni-pdf-dokument" style={{
+                position: 'absolute', top: 0, left: '-9999px',
+                width: '210mm', minHeight: '297mm',
+                backgroundColor: 'white', color: '#0f172a',
+                padding: '12mm', boxSizing: 'border-box',
+                opacity: 0, zIndex: -1, fontFamily: 'sans-serif'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        {logoUrl ? <img src={logoUrl} style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} alt="Logo" crossOrigin="anonymous" /> : <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#0f172a' }}>{imeFirme}</h1>}
+                        <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '15px' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: '900', margin: 0, textTransform: 'uppercase', letterSpacing: '1px', color: '#0f172a' }}>Izvještaj Proreza</h2>
+                            <p style={{ fontSize: '10px', color: '#475569', margin: '4px 0 0 0', fontWeight: 'bold' }}>{masinaFilter === 'SVE' ? 'Sve mašine' : masinaFilter} | Brentista: {brentistaFilter}</p>
+                        </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', color: '#0f172a' }}>
+                        <p style={{ margin: '0 0 4px 0' }}>Mjesto: <span style={{ fontWeight: 'normal' }}>{header?.mjesto || 'N/A'}</span></p>
+                        <p style={{ margin: 0 }}>Datum: <span style={{ fontWeight: 'normal' }}>{formatDatum(datumOd)}</span></p>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    {[
+                        { title: 'Izrezano Trupaca', val: data.kpi.ulazM3, unit: 'm³', color: '#10b981' },
+                        { title: 'Proizvedeno (Izlaz)', val: data.kpi.izlazM3, unit: 'm³', color: '#3b82f6' },
+                        { title: 'Iskorištenost (Yield)', val: data.kpi.yieldProcenat, unit: '%', color: '#f59e0b' },
+                        { title: 'Brzina Rezanja', val: data.kpi.m3PoSatu, unit: 'm³/h', color: '#8b5cf6' },
+                        { title: 'Zastoji u smjeni', val: data.kpi.ukupnoZastojMin, unit: 'min', color: '#ef4444' }
+                    ].map((kpi, i) => (
+                        <div key={i} style={{ width: '19%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', borderTop: `4px solid ${kpi.color}` }}>
+                            <div style={{ fontSize: '8px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>{kpi.title}</div>
+                            <div style={{ fontSize: '16px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    <div style={{ width: '38%' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', borderBottom: '1px solid #0f172a', paddingBottom: '4px', marginBottom: '4px' }}>Trupci po dužinama (Sirovina)</div>
+                        <table style={{ width: '100%', fontSize: '9px', borderCollapse: 'collapse', color: '#0f172a' }}>
+                            <thead>
+                                <tr style={{ color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
+                                    <th style={{ textAlign: 'left', padding: '4px 0' }}>L (m)</th><th style={{ padding: '4px 0' }}>Kom</th><th style={{ padding: '4px 0' }}>Ø Prosjek</th><th style={{ textAlign: 'right', padding: '4px 0' }}>m³</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.trupciStruktura.map(t => (
+                                    <tr key={t.duzina} style={{ borderBottom: '1px solid #e2e8f0', fontWeight: 'bold' }}>
+                                        <td style={{ padding: '4px 0' }}>{t.duzina}</td><td style={{ textAlign: 'center', padding: '4px 0' }}>{t.kom}</td><td style={{ textAlign: 'center', padding: '4px 0', color: '#475569' }}>Ø {t.avgPrecnik}</td><td style={{ textAlign: 'right', padding: '4px 0' }}>{t.m3.toFixed(2)}</td>
                                     </tr>
-                                </React.Fragment>
-                            ))}
-                        </tbody>
-                    </table>
+                                ))}
+                                <tr style={{ fontWeight: '900', borderTop: '2px solid #0f172a' }}>
+                                    <td style={{ padding: '6px 0' }}>UKUPNO:</td><td style={{ textAlign: 'center', padding: '6px 0' }}>{data.kpi.ulazKom}</td><td style={{ textAlign: 'center', padding: '6px 0' }}>Ø {data.kpi.prosjecanPrecnik}</td><td style={{ textAlign: 'right', padding: '6px 0' }}>{data.kpi.ulazM3}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style={{ width: '58%' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', borderBottom: '1px solid #0f172a', paddingBottom: '4px', marginBottom: '4px' }}>Proizvedeno (Gotova Roba)</div>
+                        <table style={{ width: '100%', fontSize: '9px', borderCollapse: 'collapse', color: '#0f172a' }}>
+                            <thead>
+                                <tr style={{ color: '#475569', borderBottom: '1px solid #cbd5e1' }}>
+                                    <th style={{ textAlign: 'left', padding: '4px 0' }}>Artikal (Vrsta)</th><th style={{ textAlign: 'center', padding: '4px 0' }}>Kom / m1 / m2</th><th style={{ textAlign: 'right', padding: '4px 0' }}>m³ (Volumen)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.proizvodiStruktura.map((p, i) => (
+                                    <React.Fragment key={i}>
+                                        <tr style={{ backgroundColor: '#f1f5f9' }}><td colSpan="3" style={{ padding: '4px', fontWeight: '900', fontSize: '9px', textTransform: 'uppercase' }}>{p.naziv}</td></tr>
+                                        {(p.paketi || []).map(paket => (
+                                            <tr key={paket.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                <td style={{ padding: '4px', fontWeight: 'bold' }}>{paket.paket_id} <span style={{ color: '#475569', marginLeft: '4px' }}>({paket.debljina}x{paket.sirina}x{paket.duzina})</span></td>
+                                                <td style={{ textAlign: 'center', padding: '4px', fontWeight: 'bold' }}>{paket.kolicina_ulaz} {paket.jm}</td>
+                                                <td style={{ textAlign: 'right', padding: '4px', fontWeight: '900' }}>{paket.kolicina_final}</td>
+                                            </tr>
+                                        ))}
+                                        <tr style={{ borderBottom: '2px solid #0f172a', fontWeight: '900' }}>
+                                            <td colSpan="2" style={{ textAlign: 'right', padding: '4px', color: '#475569' }}>Ukupno:</td>
+                                            <td style={{ textAlign: 'right', padding: '4px' }}>{p.m3.toFixed(3)}</td>
+                                        </tr>
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
 
-            {/* 3. GRAFIKONI (Sa isAnimationActive={false} zbog Printa i fiksnim height) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 page-break-avoid print:mt-6">
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-2 text-center">Učešće proizvoda u prorezu</Title>
-                    {data.grafikonProizvoda.length === 0 ? <div className="flex h-[220px] items-center justify-center text-slate-500 text-xs">Nema podataka</div> : (
-                    <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                            <Pie isAnimationActive={false} data={data.grafikonProizvoda} innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                            </Pie>
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
-                            <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#000'}} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    )}
-                </Card>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                    <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                        <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Učešće proizvoda u prorezu</div>
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <PieChart width={320} height={180}>
+                                <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                                    {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
+                                </Pie>
+                                <Legend wrapperStyle={{fontSize:'8px', fontWeight:'bold', color: '#000'}} />
+                            </PieChart>
+                        </div>
+                    </div>
 
-                <Card className="bg-theme-card print:bg-transparent print:border-slate-300 border-slate-700 shadow-xl">
-                    <Title className="text-slate-300 print:text-slate-800 font-black text-[10px] uppercase mb-4 text-center">Trend Iskorištenja (30 Dana): {brentistaFilter} vs Pilana</Title>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <LineChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                            <XAxis dataKey="dan" stroke="#94a3b8" fontSize={8} tickLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={8} tickLine={false} unit="%" />
-                            <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} />
-                            <Legend wrapperStyle={{fontSize:'9px'}} />
-                            <Line isAnimationActive={false} type="monotone" dataKey="PilanaYield" name="Prosjek Pilane" stroke="#64748b" strokeWidth={2} dot={false} />
-                            <Line isAnimationActive={false} type="monotone" dataKey="BrentistaYield" name={brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter} stroke="#10b981" strokeWidth={3} dot={{r:2}} />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </Card>
-            </div>
-
-            {/* 4. ZASTOJI I SMJENA (FOOTER) */}
-            <div className="border-t-4 border-theme-border print:border-slate-300 pt-4 mt-6 page-break-avoid flex justify-between items-start">
-                <div className="w-[60%]">
-                    <h3 className="text-xs font-black uppercase text-slate-400 print:text-slate-800 mb-2">Dnevnik Zastoja i Napomene</h3>
-                    {data.zastoji.length === 0 ? (
-                        <p className="text-[10px] text-slate-500 italic">Smjena je protekla bez zabilježenih zastoja.</p>
-                    ) : (
-                        <ul className="space-y-1">
-                            {data.zastoji.map(z => (
-                                <li key={z.id} className="text-[10px] text-slate-300 print:text-black">
-                                    <span className="font-bold">{z.vrijeme_od} - {z.vrijeme_do || '...'}</span>
-                                    {z.zastoj_min > 0 && <span className="font-black text-red-500 mx-2">({z.zastoj_min} min)</span>}
-                                    <span className="italic">{z.napomena || 'Nema opisa'}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                    <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
+                        <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Trend Iskorištenja (30 Dana)</div>
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <LineChart width={320} height={180} data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                <XAxis dataKey="dan" stroke="#64748b" fontSize={8} tickLine={false} />
+                                <YAxis stroke="#64748b" fontSize={8} tickLine={false} unit="%" />
+                                <Legend wrapperStyle={{fontSize:'8px'}} />
+                                <Line isAnimationActive={false} type="monotone" dataKey="PilanaYield" name="Prosjek Pilane" stroke="#94a3b8" strokeWidth={2} dot={false} />
+                                <Line isAnimationActive={false} type="monotone" dataKey="BrentistaYield" name={brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter} stroke="#10b981" strokeWidth={3} dot={{r:2}} />
+                            </LineChart>
+                        </div>
+                    </div>
                 </div>
-                
-                <div className="w-[35%] text-right text-[10px] text-slate-400 print:text-black space-y-1">
-                    <p className="uppercase font-black mb-1 text-slate-500 print:text-slate-700 border-b border-slate-700 print:border-slate-300 pb-1">Detalji Smjene</p>
-                    <p>Vrijeme rada (Od - Do): <b className="text-white print:text-black">{data.smjenaInfo.start} - {data.smjenaInfo.end}</b></p>
-                    <p>Prijavljeni Brentisti: <b className="text-white print:text-black">{data.smjenaInfo.sviBrentiste.join(', ') || 'Nisu evidentirani'}</b></p>
-                    <p>Viljuškaristi: <b className="text-white print:text-black">{data.smjenaInfo.viljuskaristi || 'Nisu evidentirani'}</b></p>
-                    <p>Pomoćni radnici: <b className="text-white print:text-black">{data.smjenaInfo.pomocniRadnici || 'Nisu evidentirani'}</b></p>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #0f172a', paddingTop: '15px', pageBreakInside: 'avoid' }}>
+                    <div style={{ width: '60%' }}>
+                        <div style={{ fontSize: '10px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', marginBottom: '6px' }}>Dnevnik Zastoja i Napomene</div>
+                        {data.zastoji.length === 0 ? (
+                            <p style={{ fontSize: '9px', color: '#64748b', fontStyle: 'italic', margin: 0 }}>Smjena je protekla bez zastoja.</p>
+                        ) : (
+                            <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '9px', color: '#0f172a' }}>
+                                {data.zastoji.map(z => (
+                                    <li key={z.id} style={{ marginBottom: '4px' }}>
+                                        <strong>{z.vrijeme_od} - {z.vrijeme_do || '...'}</strong> 
+                                        {z.zastoj_min > 0 && <span style={{ color: '#ef4444', fontWeight: '900', margin: '0 6px' }}>({z.zastoj_min}m)</span>}
+                                        <span>{z.napomena || 'Nema opisa'}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                     
-                    <div className="mt-8 pt-8 border-t border-slate-700 print:border-slate-400 text-center font-bold">
-                        Potpis rukovodioca
+                    <div style={{ width: '35%', textAlign: 'right', fontSize: '9px', color: '#475569' }}>
+                        <div style={{ textTransform: 'uppercase', color: '#0f172a', fontWeight: '900', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '6px' }}>Detalji Smjene</div>
+                        <p style={{ margin: '0 0 4px 0' }}>Vrijeme rada: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.start} - {data.smjenaInfo.end}</strong></p>
+                        <p style={{ margin: '0 0 4px 0' }}>Brentisti: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.sviBrentiste.join(', ') || 'Nema'}</strong></p>
+                        <p style={{ margin: '0 0 4px 0' }}>Viljuškaristi: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.viljuskaristi || 'Nema'}</strong></p>
+                        <p style={{ margin: '0 0 4px 0' }}>Pomoćni: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.pomocniRadnici || 'Nema'}</strong></p>
+                        
+                        <div style={{ marginTop: '30px', paddingTop: '10px', borderTop: '1px solid #0f172a', textAlign: 'center', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' }}>
+                            Potpis Rukovodioca
+                        </div>
                     </div>
                 </div>
             </div>
-
-            {/* PRINT FOOTER */}
-            <div className="hidden print:block mt-4 text-center text-[8px] text-slate-500 pt-2 border-t border-slate-300">
-                Dokument generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}
-            </div>
-            
         </div>
     );
 }

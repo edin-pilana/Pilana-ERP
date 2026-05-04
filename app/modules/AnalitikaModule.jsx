@@ -75,7 +75,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         <div className="min-h-screen p-4 md:p-8 pb-24 font-sans transition-colors duration-500" style={{ backgroundColor: saas.ui.boja_pozadine }}>
             
             {/* 1. GLOBALNI HEADER (Navigacija, Datumi, Filteri) */}
-<div className="max-w-[1600px] mx-auto flex flex-col lg:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: '#1e293b' }}>
+            <div className="max-w-[1600px] mx-auto flex flex-col lg:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: '#1e293b' }}>
                 
                 <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6 w-full lg:w-auto overflow-x-auto">
                     <div className="flex items-center gap-4">
@@ -111,15 +111,15 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                             <>
                                 <button onClick={()=>shiftDate(-1)} className="w-8 h-8 bg-theme-panel rounded hover:bg-slate-600 font-black text-theme-text flex items-center justify-center transition-all"><ChevronLeft size={16}/></button>
                                 <div className="flex items-center justify-center bg-theme-card px-3 py-1.5 rounded border border-theme-border h-8">
-                                    <input type="date" value={datumOd} onChange={e=>{setDatumOd(e.target.value); setDatumDo(e.target.value);}} className="bg-transparent text-slate-300 font-bold text-sm tracking-widest outline-none cursor-pointer uppercase [&::-webkit-calendar-picker-indicator]:invert" />
+                                    <input type="date" value={datumOd} onChange={e=>{setDatumOd(e.target.value); setDatumDo(e.target.value);}} style={{ colorScheme: 'dark' }} className="bg-transparent text-slate-300 font-bold text-xs md:text-sm tracking-widest outline-none cursor-pointer uppercase" />
                                 </div>
                                 <button onClick={()=>shiftDate(1)} className="w-8 h-8 bg-theme-panel rounded hover:bg-slate-600 font-black text-theme-text flex items-center justify-center transition-all"><ChevronRight size={16}/></button>
                             </>
                         ) : (
                             <>
-                                <input type="date" value={datumOd} onChange={e=>setDatumOd(e.target.value)} className="bg-theme-card border border-theme-border text-slate-300 font-bold text-xs p-1.5 rounded h-8 outline-none [&::-webkit-calendar-picker-indicator]:invert" />
+                                <input type="date" value={datumOd} onChange={e=>setDatumOd(e.target.value)} style={{ colorScheme: 'dark' }} className="bg-theme-card border border-theme-border text-slate-300 font-bold text-xs p-1.5 rounded h-8 outline-none" />
                                 <span className="text-slate-600 font-black">-</span>
-                                <input type="date" value={datumDo} onChange={e=>setDatumDo(e.target.value)} className="bg-theme-card border border-theme-border text-slate-300 font-bold text-xs p-1.5 rounded h-8 outline-none [&::-webkit-calendar-picker-indicator]:invert" />
+                                <input type="date" value={datumDo} onChange={e=>setDatumDo(e.target.value)} style={{ colorScheme: 'dark' }} className="bg-theme-card border border-theme-border text-slate-300 font-bold text-xs p-1.5 rounded h-8 outline-none" />
                                 <div className="flex gap-1 ml-2 border-l border-theme-border pl-2">
                                     <button onClick={()=>setBrziDatum('7d')} className="px-2 py-1.5 bg-theme-panel hover:bg-theme-accent hover:text-theme-text rounded text-[9px] font-black uppercase text-slate-300 transition-colors">7 Dana</button>
                                     <button onClick={()=>setBrziDatum('mjesec')} className="px-2 py-1.5 bg-theme-panel hover:bg-theme-accent hover:text-theme-text rounded text-[9px] font-black uppercase text-slate-300 transition-colors">Ovaj Mj</button>
@@ -155,7 +155,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             )}
 
             {/* 2. SADRŽAJ TABOVA */}
-                     <div className="max-w-[1600px] mx-auto">
+            <div className="max-w-[1600px] mx-auto">
                 {activeTab === 'prorez' && (
                 <TabProrezAnalitika datumOd={datumOd} datumDo={datumDo} masinaFilter={masinaFilter} saas={saas} header={header} />
                  )}

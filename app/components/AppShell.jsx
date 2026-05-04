@@ -45,6 +45,26 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
         initSettings(userName);
     }, [userName, initSettings]);
 
+    // --- NOVO: HVATANJE "BACK" DUGMETA (SWIPE) NA MOBITELU ---
+    useEffect(() => {
+        const handlePopState = (e) => {
+            if (activeModule !== 'home') {
+                onModuleChange('home');
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [activeModule, onModuleChange]);
+
+    useEffect(() => {
+        if (activeModule !== 'home') {
+            if (!window.history.state?.modulOtvoren) {
+                window.history.pushState({ modulOtvoren: true }, '');
+            }
+        }
+    }, [activeModule]);
+    // ----------------------------------------------------------
+
     const menuItems = [
         { id: 'home', label: menuLabels.home, icon: LayoutDashboard },
         { id: 'prijem', label: menuLabels.prijem, icon: TreePine },
