@@ -71,6 +71,12 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [katalog, setKatalog] = useState([]);
     const [racuni, setRacuni] = useState([]);
     
+    // --- NOVI STATEOVI ZA PAMETNE DIJALOGE ---
+    const [duplikatDialog, setDuplikatDialog] = useState(null);
+    const [upozorenjeDialog, setUpozorenjeDialog] = useState(null);
+    const [uspjesnoDialog, setUspjesnoDialog] = useState(null);
+    // -----------------------------------------
+
     const generisiID = () => `RAC-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
     const formatirajDatum = (isoString) => { if(!isoString) return ''; if(isoString.includes('.')) return isoString; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
 
@@ -143,23 +149,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         return cijena_komad / (faktor_cilj || 1);
     };
 
-    const skenirajVezu = async (trazeniBroj) => {
-        const broj = trazeniBroj.toUpperCase().trim(); if(!broj) return;
-        let dokument = null; let baznaPonuda = null; let napomenaTekst = `Povezano sa: ${broj}`;
-        let { data: otp } = await supabase.from('otpremnice').select('*').eq('id', broj).maybeSingle();
-        if (otp) {
-            if (otp.status !== 'ISPORUČENO') { const proceed = window.confirm(`⚠️ UPOZORENJE:\nOtpremnica ${broj} je u statusu "${otp.status}".\nRoba još nije fizički isporučena!\n\nKreirati račun svejedno?`); if (!proceed) { setSkenerInput(''); return; } }
-            dokument = otp;
-            if (otp.broj_veze) {
-                let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', otp.broj_veze).maybeSingle();
-                if (rn) { napomenaTekst += ` -> ${otp.broj_veze}`; if (rn.broj_ponude) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`; } } 
-                else { let { data: pon } = await supabase.from('ponude').select('*').eq('id', otp.broj_veze).maybeSingle(); if(pon) { baznaPonuda = pon; napomenaTekst += ` -> ${otp.broj_veze}`; } }
-            }
-        }
-        if (!dokument) { let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle(); if (rn) { dokument = rn; if (rn.broj_ponude) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`; } } }
-        if (!dokument) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle(); if (pon) { dokument = pon; baznaPonuda = pon; } }
-        if(!dokument) return alert(`❌ Dokument ${broj} nije pronađen!`);
-        
+    const izvrsiUcitavanjeDokumenta = async (dokument, broj, baznaPonuda, napomenaTekst) => {
         const kupacIzBaze = kupci.find(k => k.naziv === dokument.kupac_naziv); setOdabraniKupac(kupacIzBaze || null);
         const stavkeKolicine = dokument.stavke_jsonb || []; const stavkeFinansije = baznaPonuda ? (baznaPonuda.stavke_jsonb || []) : [];
         const konacneStavke = stavkeKolicine.map(sk => {
@@ -174,7 +164,59 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             const ukupno = kolicina * fiksna_cijena;
             return { id: Math.random().toString(), sifra: sk.sifra, naziv: sk.naziv, kolicina_unos: sk.kolicina_unos || kolicina, jm_unos: sk.jm_unos || sk.jm_obracun || 'kom', kolicina_obracun: kolicina, jm_obracun: sk.jm_obracun || sk.jm || 'kom', cijena_baza, rabat_procenat, fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: ukupno_bez_rabata - ukupno, ukupno };
         });
-        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null }); setStavke(konacneStavke); setSkenerInput(''); alert(`✅ Učitano iz: ${broj}`);
+        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null }); setStavke(konacneStavke); setSkenerInput(''); 
+    };
+
+    const skenirajVezu = async (trazeniBroj) => {
+        const broj = trazeniBroj.toUpperCase().trim(); if(!broj) return;
+
+        // --- BLOKADA DUPLIKATA ZA RAČUNE ---
+        const { data: postojeciRacun } = await supabase.from('racuni').select('*').eq('broj_veze', broj).limit(1);
+        if (postojeciRacun && postojeciRacun.length > 0) {
+            setDuplikatDialog({ racun: postojeciRacun[0] });
+            setSkenerInput('');
+            return;
+        }
+
+        let dokument = null; let baznaPonuda = null; let napomenaTekst = `Povezano sa: ${broj}`;
+        let { data: otp } = await supabase.from('otpremnice').select('*').eq('id', broj).maybeSingle();
+        
+        if (otp) {
+            if (otp.status !== 'ISPORUČENO') { 
+                // UMJESTO window.confirm KORISTIMO CUSTOM DIJALOG
+                setUpozorenjeDialog({
+                    dokument: otp,
+                    broj: broj,
+                    poruka: `Otpremnica ${broj} je u statusu "${otp.status}". Roba još uvijek nije fizički isporučena kupcu!`,
+                    onConfirm: async () => {
+                        setUpozorenjeDialog(null);
+                        await obradiPovezaniDokument(otp, broj, true);
+                    },
+                    onCancel: () => { setUpozorenjeDialog(null); setSkenerInput(''); }
+                });
+                return;
+            } else {
+                await obradiPovezaniDokument(otp, broj, true);
+                return;
+            }
+        }
+        
+        if (!dokument) { let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle(); if (rn) { await obradiPovezaniDokument(rn, broj, false); return; } }
+        if (!dokument) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle(); if (pon) { dokument = pon; baznaPonuda = pon; await izvrsiUcitavanjeDokumenta(dokument, broj, baznaPonuda, napomenaTekst); return; } }
+        
+        if(!dokument) return alert(`❌ Dokument ${broj} nije pronađen nigdje u bazi!`);
+    };
+
+    const obradiPovezaniDokument = async (dok, broj, isOtp) => {
+        let baznaPonuda = null; let napomenaTekst = `Povezano sa: ${broj}`;
+        if (isOtp && dok.broj_veze) {
+            let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', dok.broj_veze).maybeSingle();
+            if (rn) { napomenaTekst += ` -> ${dok.broj_veze}`; if (rn.broj_ponude) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', rn.broj_ponude).maybeSingle(); baznaPonuda = pon; napomenaTekst += ` -> ${rn.broj_ponude}`; } } 
+            else { let { data: pon } = await supabase.from('ponude').select('*').eq('id', dok.broj_veze).maybeSingle(); if(pon) { baznaPonuda = pon; napomenaTekst += ` -> ${dok.broj_veze}`; } }
+        } else if (!isOtp && dok.broj_ponude) {
+            let { data: pon } = await supabase.from('ponude').select('*').eq('id', dok.broj_ponude).maybeSingle(); baznaPonuda = pon; napomenaTekst += ` -> ${dok.broj_ponude}`;
+        }
+        await izvrsiUcitavanjeDokumenta(dok, broj, baznaPonuda, napomenaTekst);
     };
 
     const handleSkenUnos = (e) => { const val = e.target.value.toUpperCase(); setSkenerInput(val); setPrikaziDrop(true); if (kucanjeTimer) clearTimeout(kucanjeTimer); if (val) { setKucanjeTimer(setTimeout(() => { setPrikaziDrop(false); skenirajVezu(val); }, 2000)); } };
@@ -247,26 +289,45 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
 
     const snimiRacun = async () => {
         if(!form.kupac_naziv) return alert("Kupac je obavezan!"); if(stavke.length === 0) return alert("Račun mora imati stavke!");
+
+        // --- BLOKADA DUPLIKATA PRI SNIMANJU ---
+        if (!isEditing && form.broj_veze) {
+            const { data: postojece } = await supabase.from('racuni').select('id').eq('broj_veze', form.broj_veze).limit(1);
+            if (postojece && postojece.length > 0) {
+                return alert(`⛔ STOP: Za dokument ${form.broj_veze} je VEĆ KREIRAN RAČUN (${postojece[0].id})!\nNije dozvoljeno kreiranje duplih računa.`);
+            }
+        }
+        // ----------------------------------------
+
         const payload = {
             id: form.id.toUpperCase(), broj_veze: form.broj_veze, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_placanja: form.rok_placanja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, napomena: form.napomena, stavke_jsonb: stavke, status: form.status,
             ukupno_bez_pdv: parseFloat(totals.osnovica), ukupno_rabat: parseFloat(totals.rabat), ukupno_sa_pdv: parseFloat(totals.za_naplatu), snimio_korisnik: currentUser.ime_prezime
         };
         if (isEditing) {
             const { error } = await supabase.from('racuni').update(payload).eq('id', form.id);
-            if(error) return alert("Greška: " + error.message); await zapisiU_Log('IZMJENA_RACUNA', `Ažuriran račun ${form.id}`); alert("✅ Račun uspješno ažuriran!");
+            if(error) return alert("Greška: " + error.message); await zapisiU_Log('IZMJENA_RACUNA', `Ažuriran račun ${form.id}`); 
         } else {
             const { error } = await supabase.from('racuni').insert([payload]);
             if(error) return alert("Greška pri snimanju: " + error.message);
             if (form.originalna_ponuda) { await supabase.from('ponude').update({ status: 'REALIZOVANA ✅' }).eq('id', form.originalna_ponuda); await zapisiU_Log('ZATVARANJE_PONUDE', `Ponuda ${form.originalna_ponuda} zatvorena kreiranjem računa ${form.id}`); }
-            await zapisiU_Log('KREIRAN_RACUN', `Račun ${form.id} za ${form.kupac_naziv}`); alert("✅ Račun uspješno kreiran!");
+            await zapisiU_Log('KREIRAN_RACUN', `Račun ${form.id} za ${form.kupac_naziv}`); 
         }
         await sinhronizujKasu(form.id, form.status, form.nacin_placanja, form.kupac_naziv, parseFloat(totals.za_naplatu));
+        
+        // UMJESTO ALERT I CONFIRM, IDE CUSTOM DIJALOG ZA USPJEH I PRINT
+        setUspjesnoDialog({
+            racun: payload,
+            poruka: isEditing ? "Račun uspješno ažuriran!" : "Račun uspješno kreiran!"
+        });
+
         resetFormu(); load(); setTab('otvoreni');
     };
 
-    const kreirajPDF = () => {
-        const odabraniKupac = kupci.find(k => k.naziv === form.kupac_naziv) || null;
-        let redovi = stavke.map((s, i) => `
+    const kreirajPDF = () => { kreirajPDFPrivremeni(form, stavke, form.ukljuciPDV); };
+
+    const kreirajPDFPrivremeni = (podaci, stavkeZaPrint, imaPDV) => {
+        const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
+        let redovi = stavkeZaPrint.map((s, i) => `
             <tr>
                 <td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td>
                 <td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td>
@@ -281,36 +342,36 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             <div class="info-grid">
                 <div class="info-col">
                     <h4>Kupac / Primalac usluge</h4>
-                    <p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${form.kupac_naziv}</p>
+                    <p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${podaci.kupac_naziv}</p>
                     <p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p>
                     <p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p>
                 </div>
                 <div class="info-col" style="text-align: right;">
                     <h4>Detalji Računa</h4>
-                    <p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${form.broj_veze || '-'}</span></p>
-                    <p>Plaćanje: <span style="font-weight: 600; color: #0f172a;">${form.nacin_placanja}</span></p>
-                    <p style="color: #ef4444; margin-top: 8px; font-weight: 800;">Rok plaćanja: ${formatirajDatum(form.rok_placanja)}</p>
+                    <p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${podaci.broj_veze || '-'}</span></p>
+                    <p>Plaćanje: <span style="font-weight: 600; color: #0f172a;">${podaci.nacin_placanja}</span></p>
+                    <p style="color: #ef4444; margin-top: 8px; font-weight: 800;">Rok plaćanja: ${formatirajDatum(podaci.rok_placanja)}</p>
                 </div>
             </div>
             <table>
-                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${form.valuta})</th></tr></thead>
+                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${podaci.valuta})</th></tr></thead>
                 <tbody>${redovi}</tbody>
             </table>
             <div class="summary-box">
-                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${totals.bez_rabata}</b></div>
-                ${parseFloat(totals.rabat) > 0 ? `<div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${totals.rabat}</b></div>` : ''}
-                ${form.ukljuciPDV ? `
-                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${totals.osnovica}</b></div>
-                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${totals.pdv}</b></div>
+                <div class="summary-row"><span>Iznos bez rabata:</span> <b>${podaci.ukupno_bez_pdv}</b></div>
+                ${parseFloat(podaci.ukupno_rabat) > 0 ? `<div class="summary-row"><span style="color: #ec4899; font-weight: bold;">Uračunati rabat:</span> <b style="color: #ec4899;">- ${podaci.ukupno_rabat}</b></div>` : ''}
+                ${imaPDV ? `
+                <div class="summary-row"><span>Osnovica za PDV:</span> <b>${podaci.ukupno_bez_pdv}</b></div>
+                <div class="summary-row"><span>PDV iznos (17%):</span> <b>${(parseFloat(podaci.ukupno_sa_pdv) - parseFloat(podaci.ukupno_bez_pdv)).toFixed(2)}</b></div>
                 ` : ''}
                 <div class="summary-total">
                     <span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">ZA NAPLATU:</span>
-                    <span>${totals.za_naplatu} ${form.valuta}</span>
+                    <span>${podaci.ukupno_sa_pdv} ${podaci.valuta}</span>
                 </div>
             </div>
-            <div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz račun:</b><br/>${form.napomena || 'Zahvaljujemo se na povjerenju.'}</div></div>
+            <div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz račun:</b><br/>${podaci.napomena || 'Zahvaljujemo se na povjerenju.'}</div></div>
         `;
-        printDokument('RAČUN', form.id, formatirajDatum(form.datum), htmlSadrzajTabela, '#ef4444');
+        printDokument('RAČUN', podaci.id, formatirajDatum(podaci.datum), htmlSadrzajTabela, '#ef4444');
     };
 
     const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null, ukljuciPDV: true }); setStavke([]); setSkenerInput(''); setIsEditing(false); setOdabraniKupac(null); setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); };
@@ -335,8 +396,8 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none"><option value="NENAPLAĆENO">Nenaplaćeno</option><option value="NAPLAĆENO">NAPLAĆENO</option></select>;
         if (polje.id === 'placanje') return (
             <div className="flex flex-col gap-2 h-full">
-                <select value={form.nacin_placanja} onChange={e => { const val = e.target.value; setForm({...form, nacin_placanja: val, ukljuciPDV: val === 'Virmanski'}); }} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-red-500 shadow-inner">
-                    <option value="Virmanski">Virmanski (Sa PDV)</option><option value="Gotovina">Gotovina (Bez PDV)</option><option value="Kartica">Kartica</option>
+                <select value={form.nacin_placanja} onChange={e => { const val = e.target.value; setForm({...form, nacin_placanja: val, ukljuciPDV: val === 'Virmanski'}); }} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border">
+                    <option value="Virmanski">Virmanski (Uključuje PDV)</option><option value="Gotovina">Gotovina (Cijena Konačna)</option><option value="Kartica">Kartica</option>
                 </select>
                 <div className="flex items-center gap-4 text-[10px] uppercase font-black text-slate-400 pl-1">
                     <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="radio" name="pdv_racun" checked={form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: true})} /> + Obračunaj PDV</label>
@@ -350,6 +411,53 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="računi" saas={saas} />
+
+            {/* PAMETNI DIJALOZI */}
+            {duplikatDialog && (
+                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-theme-card border-2 border-red-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(239,68,68,0.3)] max-w-lg w-full text-center">
+                        <span className="text-6xl mb-4 block animate-bounce">⚠️</span>
+                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Račun već postoji!</h2>
+                        <p className="text-slate-400 text-sm mb-8">Za ovaj dokument je već izdat račun <b className="text-red-500">{duplikatDialog.racun.id}</b>. Šta želite uraditi?</p>
+                        
+                        <div className="flex flex-col gap-3">
+                            <button onClick={() => { setForm(duplikatDialog.racun); setStavke(duplikatDialog.racun.stavke_jsonb); setTimeout(() => kreirajPDFPrivremeni(duplikatDialog.racun, duplikatDialog.racun.stavke_jsonb, parseFloat(duplikatDialog.racun.ukupno_sa_pdv) > parseFloat(duplikatDialog.racun.ukupno_bez_pdv)), 300); setDuplikatDialog(null); }} className="w-full py-4 bg-theme-panel border border-slate-600 text-white rounded-xl uppercase font-black hover:bg-white hover:text-black transition-all">🖨️ Isprintaj Kopiju PDF-a</button>
+                            <button onClick={() => { pokreniIzmjenu(duplikatDialog.racun); setDuplikatDialog(null); }} className="w-full py-4 bg-red-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-red-500 transition-all">✏️ Uredi (Otvori račun)</button>
+                            <button onClick={() => setDuplikatDialog(null)} className="w-full py-4 bg-red-900/30 text-red-400 border border-red-500/30 rounded-xl uppercase font-black hover:bg-red-500 hover:text-white transition-all mt-4">✕ Otkaži i zatvori</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {upozorenjeDialog && (
+                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-theme-card border-2 border-orange-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(249,115,22,0.3)] max-w-lg w-full text-center">
+                        <span className="text-6xl mb-4 block animate-pulse">🚚</span>
+                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Roba nije isporučena!</h2>
+                        <p className="text-slate-400 text-sm mb-8">{upozorenjeDialog.poruka}<br/><br/>Da li ste sigurni da želite unaprijed napraviti račun?</p>
+                        <div className="flex gap-4">
+                            <button onClick={upozorenjeDialog.onCancel} className="flex-1 py-4 bg-theme-panel text-slate-300 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">✕ Prekini</button>
+                            <button onClick={upozorenjeDialog.onConfirm} className="flex-1 py-4 bg-orange-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-orange-500 transition-all">✅ Da, napravi račun</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {uspjesnoDialog && (
+                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-theme-card border-2 border-emerald-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(16,185,129,0.3)] max-w-md w-full text-center">
+                        <span className="text-6xl mb-4 block">✅</span>
+                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Uspješno!</h2>
+                        <p className="text-slate-400 text-sm mb-8">{uspjesnoDialog.poruka}<br/>Da li želite odmah isprintati PDF?</p>
+                        <div className="flex flex-col gap-3">
+                            <button onClick={() => { kreirajPDFPrivremeni(uspjesnoDialog.racun, uspjesnoDialog.racun.stavke_jsonb, parseFloat(uspjesnoDialog.racun.ukupno_sa_pdv) > parseFloat(uspjesnoDialog.racun.ukupno_bez_pdv)); setUspjesnoDialog(null); }} className="w-full py-4 bg-emerald-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-emerald-500 transition-all">🖨️ Da, Isprintaj PDF</button>
+                            <button onClick={() => setUspjesnoDialog(null)} className="w-full py-4 bg-theme-panel text-slate-400 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">✕ Ne, zatvori</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ------------------------------------- */}
+
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
                 <button onClick={() => {setTab('novi'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'novi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>{isEditing ? '✏️ Ažuriranje Računa' : '➕ Kreiraj Račun'}</button>
                 <button onClick={() => setTab('otvoreni')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-2 ${tab === 'otvoreni' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>⏳ Otvoreni Računi <span className="bg-black/30 text-white px-2 rounded-box">{neplaceni.length}</span></button>
