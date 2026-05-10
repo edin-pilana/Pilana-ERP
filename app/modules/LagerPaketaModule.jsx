@@ -2,65 +2,26 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
+import MasterSearch from '../components/MasterSearch';
+import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa } from '../utils/printHelpers';
+import { useSaaS } from '../utils/useSaaS';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// PAMETNI DROPDOWN ZA RADNE NALOGE (Sa 2s zadrškom)
-function Lager_SearchableRN({ nalozi, value, onChange }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState(value || '');
-    const timerRef = useRef(null);
-
-    useEffect(() => { setSearch(value || ''); }, [value]);
-
-    const handleInputChange = (val) => {
-        setSearch(val);
-        setOpen(true);
-        if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => { onChange(val); setOpen(false); }, 2000);
-    };
-
-    const handleSelect = (val) => {
-        setSearch(val);
-        setOpen(false);
-        if (timerRef.current) clearTimeout(timerRef.current);
-        onChange(val);
-    };
-
-    const safeSearch = (search || '').toString().toUpperCase();
-    const filtered = nalozi.filter(n => n.id.toUpperCase().includes(safeSearch) || n.kupac_naziv.toUpperCase().includes(safeSearch));
-
-    return (
-        <div className="relative font-black w-full">
-            <input
-                value={search}
-                onFocus={() => setOpen(true)}
-                onChange={e => handleInputChange(e.target.value)}
-                onKeyDown={e => { if(e.key === 'Enter') handleSelect(search); }}
-                placeholder="Pretraži ili skeniraj RN-..."
-                className="w-full p-3 bg-theme-panel border border-blue-500/50 rounded-xl text-xs text-theme-text outline-none focus:border-blue-400 uppercase font-black tracking-widest shadow-inner"
-            />
-            {open && search && (
-                <div className="absolute top-full left-0 z-[100] w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left">
-                    {filtered.length === 0 && <div className="p-3 text-xs text-slate-500 text-center">Nema rezultata...</div>}
-                    {filtered.map(n => (
-                        <div key={n.id} onClick={() => handleSelect(n.id)} className="p-3 border-b border-theme-border hover:bg-theme-accent cursor-pointer transition-colors">
-                            <div className="text-theme-text text-xs font-black">{n.id}</div>
-                            <div className="text-[10px] text-slate-400 mt-1">{n.kupac_naziv} | Status: <span className="text-amber-400">{n.status}</span></div>
-                        </div>
-                    ))}
-                    <div onClick={() => setOpen(false)} className="p-2 text-center text-[9px] text-slate-500 cursor-pointer hover:text-theme-text bg-theme-card rounded-b-xl uppercase font-bold">Zatvori</div>
-                </div>
-            )}
-        </div>
-    );
-}
-
 export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
+    
+    // SaaS God Mode Integracija
+    const saas = useSaaS('lager_modul', {
+        boja_kartice: '#1e293b',
+        boja_slova: '#ffffff',
+        velicina_naslova: '16',
+        boja_teksta: '#3b82f6'
+    });
+
     const [glavniTab, setGlavniTab] = useState('paketi'); 
     const [subTabPaketi, setSubTabPaketi] = useState('NA STANJU'); 
     
@@ -80,6 +41,11 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
     const [fPaket, setFPaket] = useState({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' });
     const [fTrupac, setFTrupac] = useState({ sumarija: '', klasa: '', precnikOd: '', precnikDo: '', duzinaOd: '', duzinaDo: '', vrsta: '' });
+
+    // PAMETNI DIJALOZI
+    const [dialog, setDialog] = useState({ isOpen: false });
+    const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
+    const zatvoriDialog = () => setDialog({ isOpen: false });
 
     const formatirajDatum = (isoString) => {
         if(!isoString) return ''; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`;
@@ -114,9 +80,8 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         setLoading(false);
     };
 
-    // IZVLAČENJE JEDINSTVENIH VRIJEDNOSTI ZA PADAJUĆE MENIJE (Samo ono što je stvarno na placu)
-    const sumarijeList = useMemo(() => [...new Set(trupci.map(t => t.sumarija).filter(Boolean))].sort(), [trupci]);
-    const vrsteDrvetaList = useMemo(() => [...new Set(trupci.map(t => t.vrsta_drveta).filter(Boolean))].sort(), [trupci]);
+    const sumarijeList = useMemo(() => [...new Set(trupci.map(t => t.sumarija).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
+    const vrsteDrvetaList = useMemo(() => [...new Set(trupci.map(t => t.vrsta_drveta).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
 
     const ucitajRnDetalje = async (rnId) => {
         if (!rnId) { setRnDetalji(null); return; }
@@ -146,7 +111,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         const cistId = paketId.trim();
         const { data } = await supabase.from('paketi').select('*').eq('paket_id', cistId).maybeSingle();
         if (data) ucitajHistoriju(data);
-        else alert(`Paket ${cistId} nije pronađen u bazi (možda je arhiviran).`);
+        else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Paket ${cistId} nije pronađen u bazi (možda je arhiviran).`, onCancel: zatvoriDialog });
     };
 
     const ucitajHistoriju = async (paket) => {
@@ -223,28 +188,39 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     }, [filtriraniPaketi, filtriraniTrupci, glavniTab]);
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in">
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="lager" />
+        <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ color: saas.ui.boja_slova }}>
+            <PametniDialog {...dialog} />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="lager" saas={saas} />
+
+            {saas.isEditMode && (
+                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
+                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                    </div>
+                </div>
+            )}
 
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
-    <button onClick={() => setGlavniTab('paketi')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'paketi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-        📦 Lager Gotovih Paketa
-    </button>
-    <button onClick={() => setGlavniTab('trupci')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'trupci' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-        🪵 Lager Trupaca na Placu
-    </button>
-</div>
+                <button onClick={() => setGlavniTab('paketi')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'paketi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+                    📦 Lager Gotovih Paketa
+                </button>
+                <button onClick={() => setGlavniTab('trupci')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'trupci' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+                    🪵 Lager Trupaca na Placu
+                </button>
+            </div>
 
-            <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-5 relative z-40">
+            <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-5 relative z-40" style={{ backgroundColor: saas.ui.boja_kartice }}>
                 <div className="flex flex-col md:flex-row gap-4">
                     <div className="flex-1 relative">
-                        <input value={pretraga} onChange={e => setPretraga(e.target.value)} placeholder="Brza pretraga po ID-u ili Nazivu..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-2xl text-theme-text outline-none focus:border-blue-500 font-black uppercase shadow-inner" />
-                        <button onClick={() => setIsScanning(true)} className="absolute right-2 top-2 bottom-2 px-4 bg-theme-accent rounded-xl text-theme-text font-bold hover:opacity-80 transition-all shadow-lg text-xl">📷</button>
+                        <input value={pretraga} onChange={e => setPretraga(e.target.value.toUpperCase())} placeholder="Brza pretraga po ID-u ili Nazivu..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-2xl text-theme-text outline-none focus:border-blue-500 font-black uppercase shadow-inner" />
+                        <button onClick={() => setIsScanning(true)} className="absolute right-2 top-2 bottom-2 px-4 bg-theme-accent rounded-xl text-white font-bold hover:opacity-80 transition-all shadow-lg text-xl">📷</button>
                     </div>
                     {glavniTab === 'paketi' && (
                         <div className="flex bg-theme-card p-1 rounded-2xl border border-theme-border shrink-0 overflow-x-auto">
                             {['U PROIZVODNJI', 'NA STANJU', 'OTPREMLJENO'].map(t => (
-                                <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-theme-text shadow-md' : 'text-slate-500 hover:text-theme-text hover:bg-theme-panel'}`}>{t}</button>
+                                <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-white shadow-md' : 'text-slate-500 hover:text-theme-text hover:bg-theme-panel'}`}>{t}</button>
                             ))}
                         </div>
                     )}
@@ -253,7 +229,12 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-theme-border">
                     {glavniTab === 'paketi' ? (
                         <>
-                            <div className="col-span-2 md:col-span-1"><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Radni Nalog</label><Lager_SearchableRN nalozi={aktivniNalozi} value={fPaket.rn} onChange={val => setFPaket({...fPaket, rn: val})} /></div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Radni Nalog</label>
+                                <div className="h-[45px]">
+                                    <MasterSearch data={aktivniNalozi} poljaZaPretragu={['id', 'kupac_naziv']} value={fPaket.rn} onSelect={n => setFPaket({...fPaket, rn: n.id})} placeholder="Odaberi RN..." />
+                                </div>
+                            </div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Debljina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.debljinaOd} onChange={e=>setFPaket({...fPaket, debljinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.debljinaDo} onChange={e=>setFPaket({...fPaket, debljinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Širina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.sirinaOd} onChange={e=>setFPaket({...fPaket, sirinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.sirinaDo} onChange={e=>setFPaket({...fPaket, sirinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.duzinaOd} onChange={e=>setFPaket({...fPaket, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.duzinaDo} onChange={e=>setFPaket({...fPaket, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
@@ -262,17 +243,15 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         <>
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Šumarija / Izvor</label>
-                                <select value={fTrupac.sumarija} onChange={e=>setFTrupac({...fTrupac, sumarija: e.target.value})} className="w-full p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-amber-500 uppercase font-black cursor-pointer">
-                                    <option value="">SVE ŠUMARIJE...</option>
-                                    {sumarijeList.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
+                                <div className="h-[45px]">
+                                    <MasterSearch data={sumarijeList} poljaZaPretragu={['naziv']} value={fTrupac.sumarija} onSelect={s => setFTrupac({...fTrupac, sumarija: s.naziv})} placeholder="Sve šumarije..." />
+                                </div>
                             </div>
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Vrsta Drveta</label>
-                                <select value={fTrupac.vrsta} onChange={e=>setFTrupac({...fTrupac, vrsta: e.target.value})} className="w-full p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-amber-500 uppercase font-black cursor-pointer">
-                                    <option value="">SVE VRSTE...</option>
-                                    {vrsteDrvetaList.map(v => <option key={v} value={v}>{v}</option>)}
-                                </select>
+                                <div className="h-[45px]">
+                                    <MasterSearch data={vrsteDrvetaList} poljaZaPretragu={['naziv']} value={fTrupac.vrsta} onSelect={v => setFTrupac({...fTrupac, vrsta: v.naziv})} placeholder="Sve vrste..." />
+                                </div>
                             </div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Prečnik (od-do)</label><div className="flex gap-1"><input type="number" value={fTrupac.precnikOd} onChange={e=>setFTrupac({...fTrupac, precnikOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /><input type="number" value={fTrupac.precnikDo} onChange={e=>setFTrupac({...fTrupac, precnikDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /></div></div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (od-do)</label><div className="flex gap-1"><input type="number" value={fTrupac.duzinaOd} onChange={e=>setFTrupac({...fTrupac, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /><input type="number" value={fTrupac.duzinaDo} onChange={e=>setFTrupac({...fTrupac, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /></div></div>
@@ -308,7 +287,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                 </div>
             )}
 
-            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-inner">
+            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-inner" style={{ backgroundColor: saas.ui.boja_kartice }}>
                 <p className="text-slate-500 text-xs uppercase">Prikazano rezultata: <span className="text-theme-text font-black ml-1">{stats.count}</span></p>
                 <p className="text-emerald-500 text-sm font-black uppercase">Ukupna zapremina: <span className="text-2xl ml-2">{stats.m3} m³</span></p>
             </div>
@@ -323,7 +302,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className={`p-5 rounded-box border transition-all shadow-xl group relative overflow-hidden ${glavniTab === 'paketi' ? 'bg-[#111827] border-theme-border hover:border-blue-500 hover:-translate-y-1 cursor-pointer' : 'bg-[#1e1e1e] border-theme-border'}`}>
                             {glavniTab === 'paketi' ? (
                                 <>
-                                    {item.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-theme-text text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>}
+                                    {item.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>}
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex-1 pr-2">
                                             <p className="text-theme-accent font-black text-lg">{item.paket_id}</p>
@@ -331,7 +310,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                             <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest">{item.debljina}x{item.sirina}x{item.duzina} <span className="text-[9px] lowercase text-slate-500">cm</span></p>
                                             
                                             <div className="flex flex-wrap gap-1 mt-2">
-                                                {item.broj_veze && <button onClick={(e) => { e.stopPropagation(); setFPaket({...fPaket, rn: item.broj_veze}); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded inline-block font-black border border-blue-500/20 hover:bg-theme-accent hover:text-theme-text transition-all cursor-pointer">RN: {item.broj_veze}</button>}
+                                                {item.broj_veze && <button onClick={(e) => { e.stopPropagation(); setFPaket({...fPaket, rn: item.broj_veze}); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded inline-block font-black border border-blue-500/20 hover:bg-theme-accent hover:text-white transition-all cursor-pointer">RN: {item.broj_veze}</button>}
                                                 {item.oznake && item.oznake.length > 0 && item.oznake.map((oznaka, idx) => (
                                                     <span key={idx} className="text-[8px] bg-theme-panel text-slate-300 px-2 py-0.5 rounded uppercase font-bold border border-theme-border">{oznaka}</span>
                                                 ))}
@@ -378,7 +357,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             {selektovaniPaket && (
                 <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
                     <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] border-2 border-blue-500 p-8 rounded-[3rem] shadow-2xl max-w-2xl w-full relative max-h-[90vh] overflow-y-auto">
-                        <button onClick={() => setSelektovaniPaket(null)} className="absolute top-6 right-6 text-slate-400 hover:text-theme-text text-2xl font-black transition-all hover:scale-110">✕</button>
+                        <button onClick={() => setSelektovaniPaket(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white text-2xl font-black transition-all hover:scale-110">✕</button>
                         
                         <div className="mb-6 flex justify-between items-start">
                             <div>
@@ -413,7 +392,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                 <p className="text-xs text-slate-300 mb-2">Ovaj paket je napravljen preradom sljedećih paketa. Klikni za detalje:</p>
                                 <div className="flex flex-wrap gap-2">
                                     {(Array.isArray(selektovaniPaket.ai_sirovina_ids) ? selektovaniPaket.ai_sirovina_ids : [selektovaniPaket.ai_sirovina_ids]).map(srcId => (
-                                        <button key={srcId} onClick={() => otvoriPaketDirektno(srcId)} className="bg-theme-accent text-theme-text px-4 py-2 rounded-xl text-xs font-black shadow-lg hover:opacity-80 transition-all cursor-pointer hover:scale-105 border border-blue-400">
+                                        <button key={srcId} onClick={() => otvoriPaketDirektno(srcId)} className="bg-theme-accent text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg hover:opacity-80 transition-all cursor-pointer hover:scale-105 border border-blue-400">
                                             {srcId}
                                         </button>
                                     ))}
@@ -427,7 +406,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                 <p className="text-xs text-slate-300 mb-2">Ovaj paket je potrošen da bi se u doradi napravili sljedeći paketi:</p>
                                 <div className="flex flex-wrap gap-2">
                                     {izvedeniPaketi.map(izv => (
-                                        <button key={izv.paket_id} onClick={() => otvoriPaketDirektno(izv.paket_id)} className="bg-theme-card border-b border-theme-border text-theme-text px-4 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-purple-500 transition-all cursor-pointer hover:scale-105 flex flex-col items-start border border-purple-400">
+                                        <button key={izv.paket_id} onClick={() => otvoriPaketDirektno(izv.paket_id)} className="bg-theme-card border-b border-theme-border text-white px-4 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-purple-500 transition-all cursor-pointer hover:scale-105 flex flex-col items-start border border-purple-400">
                                             <span className="text-xs">{izv.paket_id}</span>
                                             <span className="text-[8px] text-purple-200">{izv.naziv_proizvoda} ({izv.kolicina_final}m³)</span>
                                         </button>
@@ -458,7 +437,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         <button 
                             onClick={() => isprintajAutomatski(selektovaniPaket)}
                             disabled={isPrinting}
-                            className={`w-full py-5 text-theme-text font-black rounded-2xl uppercase shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 ${isPrinting ? 'bg-slate-600' : 'bg-theme-accent hover:opacity-80'}`}
+                            className={`w-full py-5 text-white font-black rounded-2xl uppercase shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 ${isPrinting ? 'bg-slate-600' : 'bg-theme-accent hover:opacity-80'}`}
                         >
                             {isPrinting ? '⏳ Tražim vezu i generišem...' : '🖨️ Isprintaj deklaraciju (Auto QR)'}
                         </button>

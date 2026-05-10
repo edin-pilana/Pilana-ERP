@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
-import SearchableInput from '../components/SearchableInput';
+import MasterSearch from '../components/MasterSearch'; // NOVO: Univerzalna pretraga
+import PametniDialog from '../components/PametniDialog'; // NOVO: Pametni kameleon dijalozi
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
@@ -10,36 +11,6 @@ import { useSaaS } from '../utils/useSaaS';
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-function OTP_SmartSearchableProizvod({ katalog, value, onChange }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState(value);
-    const wrapperRef = useRef(null);
-    useEffect(() => { setSearch(value); }, [value]);
-    useEffect(() => {
-        function handleClickOutside(event) { if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false); }
-        document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-    const filtered = katalog.filter(k => k.sifra.toUpperCase().includes(search.toUpperCase()) || k.naziv.toUpperCase().includes(search.toUpperCase()));
-    return (
-        <div ref={wrapperRef} className="relative font-black w-full z-50">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-orange-500 shadow-inner" />
-            {open && filtered.length > 0 && (
-                <div className="absolute left-0 right-0 mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] max-h-60 overflow-y-auto z-[9999]">
-                    {filtered.map(k => {
-                        const tekstZaPolje = `${k.sifra} | ${k.naziv}`;
-                        return (
-                            <div key={k.sifra} onClick={() => { onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} className="p-3 border-b border-slate-700 hover:bg-theme-card cursor-pointer transition-all">
-                                <div className="text-theme-text text-xs font-black">{k.sifra} <span className="text-orange-400 ml-2">{k.naziv}</span></div>
-                                <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Dim: {k.visina}x{k.sirina}x{k.duzina}</div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
 
 export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     const currentUser = user?.ime_prezime ? user : JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
@@ -77,14 +48,15 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     const [isEditing, setIsEditing] = useState(false);
     
     const [dostupniDokumenti, setDostupniDokumenti] = useState([]);
-    const [prikaziDrop, setPrikaziDrop] = useState(false);
-    const [kucanjeTimer, setKucanjeTimer] = useState(null);
     const [isScanningOverlay, setIsScanningOverlay] = useState(false);
-    const [duplikatDialog, setDuplikatDialog] = useState(null); 
     
+    // PAMETNI DIJALOG STATE
+    const [dialog, setDialog] = useState({ isOpen: false });
+    const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
+    const zatvoriDialog = () => setDialog({ isOpen: false });
+
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_obracun: '', jm_obracun: 'm3' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
-    const [skenerInput, setSkenerInput] = useState('');
     const [prosirenaIzdatnicaId, setProsirenaIzdatnicaId] = useState(null);
     const [ucitaneStavkeIzdatnice, setUcitaneStavkeIzdatnice] = useState([]);
     const [wmsIzdatnica, setWmsIzdatnica] = useState(null); 
@@ -118,71 +90,76 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
     const zapisiU_Log = async (akcija, detalji) => { await supabase.from('sistem_audit_log').insert([{ korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji }]); };
 
-    const skenirajVezu = async (e, forcedVal = null) => {
-        if (e?.key === 'Enter' || e?.type === 'click' || forcedVal) {
-            const broj = (forcedVal || skenerInput).toUpperCase().trim();
-            if(!broj) return;
+    const skenirajVezu = async (brojRaw) => {
+        const broj = (brojRaw || '').toUpperCase().trim();
+        if(!broj) return;
+        
+        // --- BLOKADA 1: Da li OTPREMNICA već postoji? ---
+        const { data: postojeceOtpData } = await supabase.from('otpremnice').select('*').eq('broj_veze', broj).limit(1);
+        if (postojeceOtpData && postojeceOtpData.length > 0) {
+            const otp = postojeceOtpData[0];
+            const { data: racun } = await supabase.from('racuni').select('id').eq('broj_veze', otp.id).limit(1);
+            const hasRacun = racun && racun.length > 0;
             
-            // --- BLOKADA 1: Da li OTPREMNICA već postoji? ---
-            const { data: postojeceOtpData } = await supabase.from('otpremnice').select('*').eq('broj_veze', broj).limit(1);
-            if (postojeceOtpData && postojeceOtpData.length > 0) {
-                const otp = postojeceOtpData[0];
-                const { data: racun } = await supabase.from('racuni').select('id').eq('broj_veze', otp.id).limit(1);
-                setDuplikatDialog({ otpremnica: otp, hasRacun: racun && racun.length > 0 });
-                setSkenerInput('');
-                return;
-            }
-
-            // --- BLOKADA 2: Da li IZDATNICA već postoji (Zabrana preskakanja toka posla) ---
-            if (broj.startsWith('PON-') || broj.startsWith('RN-')) {
-                const { data: postojeceIzdData } = await supabase.from('izdatnice').select('*').eq('izvor_id', broj).limit(1);
-                if (postojeceIzdData && postojeceIzdData.length > 0) {
-                    setSkenerInput('');
-                    return alert(`⛔ STOP: Za ovaj dokument već postoji nalog za utovar (${postojeceIzdData[0].broj_izdatnice})!\nPrebacite se na tab "Izdatnice (WMS)" da ga završite, a zatim od njega napravite otpremnicu.`);
+            prikaziDialog({
+                tip: 'upozorenje',
+                naslov: 'Otpremnica već postoji!',
+                poruka: `Za ovaj nalog je već izdata otpremnica ${otp.id}.\nŠta želite uraditi?`,
+                confirmText: '🖨️ Isprintaj PDF Kopiju',
+                cancelText: '✏️ Uredi',
+                onConfirm: () => { setForm(otp); setStavke(otp.stavke_jsonb); setTimeout(() => kreirajPDFPrivremeni(otp), 300); zatvoriDialog(); },
+                onCancel: () => {
+                    if (hasRacun) prikaziDialog({ tip: 'greska', naslov: 'Zabranjeno', poruka: 'Za ovu otpremnicu je izdat račun. Mijenjanje nije dozvoljeno.', onCancel: zatvoriDialog });
+                    else { pokreniIzmjenu(otp); zatvoriDialog(); }
                 }
-            }
-            // -----------------------------------------------------------------------------------
-
-            let dokument = null; let prepravljeneStavke = [];
-
-            if (broj.startsWith('PON-')) {
-                const { data: ponuda } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle();
-                if(!ponuda) return alert(`❌ Ponuda ${broj} nije pronađena!`);
-                dokument = ponuda;
-                prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
-            } 
-            else if (broj.startsWith('RN-')) {
-                const { data: nalog } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle();
-                if(!nalog) return alert(`❌ Radni nalog ${broj} nije pronađen!`);
-                if (nalog.status !== 'ZAVRŠENO' && nalog.status !== 'ISPORUČENO') { setSkenerInput(''); return alert(`⛔ STOP: Radni nalog ${broj} je u statusu "${nalog.status}".\nNe možete isporučiti robu dok se proizvodnja ne označi kao ZAVRŠENO!`); }
-                dokument = nalog;
-                prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
-            } 
-            else if (broj.startsWith('IZD-')) {
-                const { data: izdatnica } = await supabase.from('izdatnice').select('*').eq('broj_izdatnice', broj).maybeSingle();
-                if(!izdatnica) return alert(`❌ Izdatnica ${broj} nije pronađena!`);
-                if (izdatnica.status !== 'utovareno') { setSkenerInput(''); return alert(`⚠️ PAŽNJA: Izdatnica ${broj} je u statusu "${izdatnica.status}".\nSačekajte da skladište potvrdi utovar prije kreiranja Otpremnice!`); }
-                const { data: izdStavke } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izdatnica.id);
-                dokument = izdatnica;
-                prepravljeneStavke = (izdStavke || []).map(s => ({ id: Math.random().toString(), sifra: s.proizvod_sifra, naziv: s.proizvod_naziv, kolicina_obracun: s.izdata_kolicina > 0 ? s.izdata_kolicina : s.planirana_kolicina, jm_obracun: s.mjerna_jedinica }));
-            } 
-            else { return alert("❌ Nepoznat format! Mora početi sa PON-, RN- ili IZD-"); }
-
-            setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: dokument.napomena || '' });
-            setStavke(prepravljeneStavke); setSkenerInput(''); alert(`✅ Uspješno preuzeti podaci iz: ${broj}`);
+            });
+            return;
         }
-    };
 
-    const handleSkenUnos = (e) => { const val = e.target.value.toUpperCase(); setSkenerInput(val); setPrikaziDrop(true); if (kucanjeTimer) clearTimeout(kucanjeTimer); if (val) { setKucanjeTimer(setTimeout(() => { setPrikaziDrop(false); skenirajVezu(null, val); }, 2000)); } };
-    const odaberiIzDropdowna = (id) => { setSkenerInput(id); setPrikaziDrop(false); if (kucanjeTimer) clearTimeout(kucanjeTimer); skenirajVezu(null, id); };
+        // --- BLOKADA 2: Da li IZDATNICA već postoji ---
+        if (broj.startsWith('PON-') || broj.startsWith('RN-')) {
+            const { data: postojeceIzdData } = await supabase.from('izdatnice').select('*').eq('izvor_id', broj).limit(1);
+            if (postojeceIzdData && postojeceIzdData.length > 0) {
+                return prikaziDialog({ tip: 'greska', naslov: 'Zaustavite rad!', poruka: `Za ovaj dokument već postoji nalog za utovar (${postojeceIzdData[0].broj_izdatnice})!\nPrebacite se na tab "Izdatnice (WMS)" da ga završite.`, onCancel: zatvoriDialog });
+            }
+        }
 
-    const handleProizvodSelect = (sifraVal, tekstZaPolje) => {
-        const nadjeni = katalog.find(k => k.sifra === sifraVal); setTrenutniProizvod(nadjeni || null);
-        if (nadjeni) setStavkaForm({ ...stavkaForm, id: null, sifra_unos: tekstZaPolje, jm_obracun: nadjeni.default_jedinica || 'm3' });
+        let dokument = null; let prepravljeneStavke = [];
+
+        if (broj.startsWith('PON-')) {
+            const { data: ponuda } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle();
+            if(!ponuda) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Ponuda ${broj} nije pronađena!`, onCancel: zatvoriDialog });
+            dokument = ponuda;
+            prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
+        } 
+        else if (broj.startsWith('RN-')) {
+            const { data: nalog } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle();
+            if(!nalog) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Radni nalog ${broj} nije pronađen!`, onCancel: zatvoriDialog });
+            if (nalog.status !== 'ZAVRŠENO' && nalog.status !== 'ISPORUČENO') { 
+                return prikaziDialog({ tip: 'greska', naslov: 'Nalog Nije Završen', poruka: `Radni nalog ${broj} je u statusu "${nalog.status}".\nNe možete isporučiti robu dok se proizvodnja ne označi kao ZAVRŠENO!`, onCancel: zatvoriDialog }); 
+            }
+            dokument = nalog;
+            prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
+        } 
+        else if (broj.startsWith('IZD-')) {
+            const { data: izdatnica } = await supabase.from('izdatnice').select('*').eq('broj_izdatnice', broj).maybeSingle();
+            if(!izdatnica) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Izdatnica ${broj} nije pronađena!`, onCancel: zatvoriDialog });
+            if (izdatnica.status !== 'utovareno') { 
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Utovar Nije Završen', poruka: `Izdatnica ${broj} je u statusu "${izdatnica.status}".\nSačekajte da skladište potvrdi utovar prije kreiranja Otpremnice!`, onCancel: zatvoriDialog }); 
+            }
+            const { data: izdStavke } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izdatnica.id);
+            dokument = izdatnica;
+            prepravljeneStavke = (izdStavke || []).map(s => ({ id: Math.random().toString(), sifra: s.proizvod_sifra, naziv: s.proizvod_naziv, kolicina_obracun: s.izdata_kolicina > 0 ? s.izdata_kolicina : s.planirana_kolicina, jm_obracun: s.mjerna_jedinica }));
+        } 
+        else { return prikaziDialog({ tip: 'greska', naslov: 'Nepoznat Format', poruka: "Format mora početi sa PON-, RN- ili IZD-", onCancel: zatvoriDialog }); }
+
+        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: dokument.napomena || '' });
+        setStavke(prepravljeneStavke); 
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Učitano', poruka: `✅ Uspješno preuzeti podaci iz: ${broj}`, onCancel: zatvoriDialog });
     };
 
     const dodajStavku = () => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return alert("Odaberite proizvod i unesite količinu!");
+        if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i unesite količinu!", onCancel: zatvoriDialog });
         const novaStavka = { id: stavkaForm.id || Math.random().toString(), sifra: trenutniProizvod.sifra, naziv: trenutniProizvod.naziv, kolicina_obracun: parseFloat(stavkaForm.kolicina_obracun), jm_obracun: stavkaForm.jm_obracun };
         if (stavkaForm.id) setStavke(stavke.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
         setStavkaForm({ id: null, sifra_unos: '', kolicina_obracun: '', jm_obracun: 'm3' }); setTrenutniProizvod(null);
@@ -190,8 +167,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
     const urediStavku = (stavka) => {
         const nadjeni = katalog.find(k => k.sifra === stavka.sifra); setTrenutniProizvod(nadjeni || null);
-        const tekstZaPolje = nadjeni ? `${nadjeni.sifra} | ${nadjeni.naziv}` : stavka.sifra;
-        setStavkaForm({ id: stavka.id, sifra_unos: tekstZaPolje, kolicina_obracun: stavka.kolicina_obracun, jm_obracun: stavka.jm_obracun });
+        setStavkaForm({ id: stavka.id, sifra_unos: nadjeni ? nadjeni.naziv : stavka.sifra, kolicina_obracun: stavka.kolicina_obracun, jm_obracun: stavka.jm_obracun });
     };
 
     const ukloniStavku = (id) => setStavke(stavke.filter(s => s.id !== id));
@@ -204,20 +180,21 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
             const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : 'N/A';
             return `<tr><td style="font-weight: bold; color: #64748b; text-align: center; font-size:16px;">${i+1}.</td><td style="padding: 10px 5px;"><b style="color: #0f172a; font-size: 18px;">${s.proizvod_sifra || s.sifra}</b><br/><span style="color: #475569; font-size: 14px;">${s.proizvod_naziv || s.naziv}</span><br/><span style="color: #dc2626; font-size: 16px; font-weight: 900; display: inline-block; margin-top: 4px; border: 1px solid #fca5a5; background-color: #fef2f2; padding: 2px 8px; border-radius: 4px;">DIM: ${dimenzije}</span></td><td style="text-align: center; font-size: 22px; font-weight: 900; color: #f59e0b; background-color:#fffbeb;">${s.planirana_kolicina || s.kolicina_obracun} <span style="color: #64748b; font-size: 14px; font-weight: 600;">${s.mjerna_jedinica || s.jm_obracun}</span></td><td style="text-align: center; font-size: 14px; font-weight: bold; color: #cbd5e1; border-left: 2px dashed #cbd5e1; vertical-align: middle;">________________</td></tr>`
         }).join('');
-        const htmlSadrzajTabela = `<div class="info-grid" style="margin-bottom: 30px; border-bottom: 2px solid #f59e0b; padding-bottom: 20px;"><div class="info-col"><h4 style="color:#f59e0b; font-size: 14px; margin-bottom:10px; letter-spacing:1px;">NALOG ZA UTOVAR</h4><p style="font-size: 16px; font-weight: 900; margin-bottom: 5px; color:#0f172a;">Kupac: <span style="font-size: 20px;">${kupacNaziv}</span></p><p style="font-size: 12px; font-weight: 400; color: #475569;">Adresa: ${odabraniKupac?.adresa || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><p style="font-size: 12px; margin-bottom:5px;">Izvor naloga: <span style="font-weight: 600; color: #0f172a;">${izvorId || 'RUČNI UNOS'}</span></p><p style="font-size: 12px;">Status: <span style="font-weight: 900; color: #f59e0b; padding: 4px 8px; background-color: #fffbeb; border-radius: 4px;">ČEKA UTOVAR</span></p></div></div><div style="text-align: right; margin-top: -80px; margin-bottom: 20px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${izdId}" alt="QR Kod" style="border: 2px solid #f8fafc; border-radius: 4px;" /></div><table style="width: 100%; border-collapse: collapse;"><thead><tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;"><th style="width: 5%; text-align: center; padding: 10px;">R.B.</th><th style="text-align: left; padding: 10px; font-size: 12px;">ŠIFRA, NAZIV I DIMENZIJA</th><th style="text-align:center; padding: 10px; font-size: 12px; background-color:#fef3c7;">PLANIRANO</th><th style="text-align:center; width:25%; padding: 10px; font-size: 12px;">STVARNO UTOVARENO</th></tr></thead><tbody>${redovi}</tbody></table><div style="margin-top: 40px; padding: 15px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px;"><b style="color: #0f172a; font-size:12px;">Napomena / Instrukcija za viljuškaristu:</b><br/><span style="font-size: 12px; color: #475569;">${napomena || 'Pažljivo provjeriti količine i pakete prilikom utovara.'}</span></div><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 35%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Odgovorno lice (Prodaja)</div><div style="width: 35%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Potpisuje radnik (Skladište)</div></div>`;
+        const htmlSadrzajTabela = `<div class="info-grid" style="margin-bottom: 30px; border-bottom: 2px solid #f59e0b; padding-bottom: 20px;"><div class="info-col"><h4 style="color:#f59e0b; font-size: 14px; margin-bottom:10px; letter-spacing:1px;">NALOG ZA UTOVAR</h4><p style="font-size: 16px; font-weight: 900; margin-bottom: 5px; color:#0f172a;">Kupac: <span style="font-size: 20px;">${kupacNaziv}</span></p><p style="font-size: 12px; font-weight: 400; color: #475569;">Adresa: ${odabraniKupac?.adresa || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><p style="font-size: 12px; margin-bottom:5px;">Izvor naloga: <span style="font-weight: 600; color: #0f172a;">${izvorId || 'RUČNI UNOS'}</span></p><p style="font-size: 12px;">Status: <span style="font-weight: 900; color: #f59e0b; padding: 4px 8px; background-color: #fffbeb; border-radius: 4px;">ČEKA UTOVAR</span></p></div></div><div style="text-align: right; margin-top: -80px; margin-bottom: 20px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${izdId}" alt="QR Kod" style="border: 2px solid #f8fafc; border-radius: 4px;" /></div><table style="width: 100%; border-collapse: collapse;"><thead><tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;"><th style="width: 5%; text-align: center; padding: 10px;">R.B.</th><th style="text-align: left; padding: 10px; font-size: 12px;">ŠIFRA I NAZIV PROIZVODA</th><th style="text-align:center; padding: 10px; font-size: 12px; background-color:#fef3c7;">PLANIRANO</th><th style="text-align:center; width:25%; padding: 10px; font-size: 12px;">STVARNO UTOVARENO</th></tr></thead><tbody>${redovi}</tbody></table><div style="margin-top: 40px; padding: 15px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px;"><b style="color: #0f172a; font-size:12px;">Napomena / Instrukcija za viljuškaristu:</b><br/><span style="font-size: 12px; color: #475569;">${napomena || 'Pažljivo provjeriti količine i pakete prilikom utovara.'}</span></div><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 35%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Odgovorno lice (Prodaja)</div><div style="width: 35%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Potpisuje radnik (Skladište)</div></div>`;
         printDokument('IZDATNICA', izdId, formatirajDatum(datumIzd), htmlSadrzajTabela, '#f59e0b');
     };
 
     const kreirajIzdatnicu = async () => {
-        if(!form.kupac_naziv) return alert("Kupac je obavezan!");
-        if(stavke.length === 0) return alert("Izdatnica mora imati stavke!");
+        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Kupac je obavezan da biste poslali nalog za utovar!", onCancel: zatvoriDialog });
+        if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Izdatnica mora imati stavke!", onCancel: zatvoriDialog });
+        
         const brojIzd = `IZD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
         const { data: izdData, error: izdErr } = await supabase.from('izdatnice').insert([{ broj_izdatnice: brojIzd, kupac_naziv: form.kupac_naziv, status: 'u_pripremi', izvor_tip: form.broj_veze ? (form.broj_veze.startsWith('PON') ? 'ponuda' : 'radni_nalog') : 'rucno', izvor_id: form.broj_veze, napomena: form.napomena, kreirao_korisnik: currentUser.ime_prezime || 'Nepoznat' }]).select().single();
-        if(izdErr) return alert("Greška pri kreiranju izdatnice: " + izdErr.message);
+        if(izdErr) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: "Greška pri kreiranju izdatnice: " + izdErr.message, onCancel: zatvoriDialog });
 
         const stavkePayload = stavke.map(s => ({ izdatnica_id: izdData.id, proizvod_sifra: s.sifra, proizvod_naziv: s.naziv, planirana_kolicina: s.kolicina_obracun, mjerna_jedinica: s.jm_obracun }));
         const { error: stavkeErr } = await supabase.from('izdatnice_stavke').insert(stavkePayload);
-        if(stavkeErr) return alert("Greška kod stavki: " + stavkeErr.message);
+        if(stavkeErr) return prikaziDialog({ tip: 'greska', naslov: 'Greška kod stavki', poruka: stavkeErr.message, onCancel: zatvoriDialog });
 
         stampajIzdatnicu(brojIzd, form.kupac_naziv, form.broj_veze, new Date().toISOString(), form.napomena, stavkePayload);
         resetFormu(); load(); setTab('izdatnice');
@@ -226,7 +203,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     const printIzdatnicaFromList = async (e, izd) => {
         e.stopPropagation();
         const { data: st } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izd.id);
-        if(st) stampajIzdatnicu(izd.broj_izdatnice, izd.kupac_naziv, izd.izvor_id, izd.datum, izd.napomena, st); else alert("Nije moguće učitati stavke.");
+        if(st) stampajIzdatnicu(izd.broj_izdatnice, izd.kupac_naziv, izd.izvor_id, izd.datum, izd.napomena, st); else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: "Nije moguće učitati stavke izdatnice.", onCancel: zatvoriDialog });
     };
 
     const otvoriZatvoriIzdatnicu = async (izdId) => {
@@ -242,31 +219,44 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
     const zatvoriWmsUtovar = () => { setWmsIzdatnica(null); setWmsStavke([]); };
     const handleWmsKolicina = (id, val) => { setWmsStavke(wmsStavke.map(s => s.id === id ? { ...s, izdata_kolicina: val } : s)); };
-    const dodajWmsStavkuNovu = () => {
-        const katItem = katalog.find(k => k.sifra === wmsNovaSifra.split(' |')[0].trim());
-        if(!katItem || !wmsNovaKol) return alert("Odaberite proizvod i količinu!");
-        const novaStavka = { id: `novo_${Date.now()}`, izdatnica_id: wmsIzdatnica.id, proizvod_sifra: katItem.sifra, proizvod_naziv: katItem.naziv, planirana_kolicina: 0, izdata_kolicina: parseFloat(wmsNovaKol), mjerna_jedinica: katItem.default_jedinica || 'm3' };
-        setWmsStavke([...wmsStavke, novaStavka]); setWmsNovaSifra(''); setWmsNovaKol('');
-    };
+    
     const obrisiWmsStavku = (id) => { setWmsStavke(wmsStavke.filter(s => s.id !== id)); };
 
     const zavrsiIPotvrdiUtovar = async () => {
-        if(!window.confirm("Da li ste sigurni da želite potvrditi količine i završiti utovar?")) return;
-        const zaInsert = []; const zaUpdate = [];
-        wmsStavke.forEach(s => {
-            const payload = { izdatnica_id: wmsIzdatnica.id, proizvod_sifra: s.proizvod_sifra, proizvod_naziv: s.proizvod_naziv, planirana_kolicina: s.planirana_kolicina || 0, izdata_kolicina: parseFloat(s.izdata_kolicina) || 0, mjerna_jedinica: s.mjerna_jedinica };
-            if(String(s.id).startsWith('novo_')) zaInsert.push(payload); else zaUpdate.push({ ...payload, id: s.id });
+        prikaziDialog({
+            tip: 'info',
+            naslov: 'Potvrda Utovara',
+            poruka: 'Da li ste sigurni da želite potvrditi unesene količine i završiti utovar?',
+            onConfirm: async () => {
+                const zaInsert = []; const zaUpdate = [];
+                wmsStavke.forEach(s => {
+                    const payload = { izdatnica_id: wmsIzdatnica.id, proizvod_sifra: s.proizvod_sifra, proizvod_naziv: s.proizvod_naziv, planirana_kolicina: s.planirana_kolicina || 0, izdata_kolicina: parseFloat(s.izdata_kolicina) || 0, mjerna_jedinica: s.mjerna_jedinica };
+                    if(String(s.id).startsWith('novo_')) zaInsert.push(payload); else zaUpdate.push({ ...payload, id: s.id });
+                });
+                if(zaInsert.length > 0) await supabase.from('izdatnice_stavke').insert(zaInsert);
+                if(zaUpdate.length > 0) await supabase.from('izdatnice_stavke').upsert(zaUpdate);
+                await supabase.from('izdatnice').update({ status: 'utovareno' }).eq('id', wmsIzdatnica.id);
+                await zapisiU_Log('UTOVAR_ZAVRSEN', `Nalog ${wmsIzdatnica.broj_izdatnice} potvrdio: ${currentUser.ime_prezime}`);
+                
+                zatvoriWmsUtovar(); load();
+                prikaziDialog({ tip: 'uspjeh', naslov: 'Utovareno!', poruka: "✅ UTOVAR POTVRĐEN! Spreman za fakturisanje i otpremu.", onCancel: zatvoriDialog });
+            },
+            onCancel: zatvoriDialog
         });
-        if(zaInsert.length > 0) await supabase.from('izdatnice_stavke').insert(zaInsert);
-        if(zaUpdate.length > 0) await supabase.from('izdatnice_stavke').upsert(zaUpdate);
-        await supabase.from('izdatnice').update({ status: 'utovareno' }).eq('id', wmsIzdatnica.id);
-        await zapisiU_Log('UTOVAR_ZAVRSEN', `Nalog ${wmsIzdatnica.broj_izdatnice} potvrdio: ${currentUser.ime_prezime}`);
-        alert("✅ UTOVAR POTVRĐEN! Spreman za fakturisanje."); zatvoriWmsUtovar(); load();
     };
 
     const snimiOtpremnicu = async () => {
-        if(!form.kupac_naziv) return alert("Kupac je obavezan!");
-        if(stavke.length === 0) return alert("Otpremnica mora imati stavke!");
+        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac je obavezan', poruka: "Morate odabrati kupca da biste snimili otpremnicu.", onCancel: zatvoriDialog });
+        if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema stavki', poruka: "Otpremnica mora imati barem jednu stavku!", onCancel: zatvoriDialog });
+
+        // --- BLOKADA DUPLIKATA PRI SNIMANJU ---
+        if (!isEditing && form.broj_veze) {
+            const { data: postojeceOtp } = await supabase.from('otpremnice').select('id').eq('broj_veze', form.broj_veze).maybeSingle();
+            if (postojeceOtp) {
+                return prikaziDialog({ tip: 'greska', naslov: 'Duplikat', poruka: `Za dokument ${form.broj_veze} je VEĆ KREIRANA OTPREMNICA (${postojeceOtp.id})! Nije dozvoljeno kreiranje duplih otpremnica.`, onCancel: zatvoriDialog });
+            }
+        }
+        // ----------------------------------------------------------------------
 
         let needsApproval = false; let diffDetails = [];
 
@@ -288,72 +278,84 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         
         if (isEditing) {
             const { error } = await supabase.from('otpremnice').update(payload).eq('id', form.id);
-            if(error) return alert("Greška: " + error.message); 
-            if(needsApproval) { await zapisiU_Log('ZAHTJEV_IZMJENA_OTPREMNICE', `Korisnik traži smanjenje na otpremnici ${form.id}. Razlog: ${diffDetails.join(' | ')}`); alert("⚠️ Količina je manja od fizički utovarene! Otpremnica je snimljena, ali stavljena na 'ČEKA ODOBRENJE' kod Superadmina."); } 
-            else { await zapisiU_Log('IZMJENA_OTPREMNICE', `Ažurirana otpremnica ${form.id}`); }
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            if(needsApproval) { 
+                await zapisiU_Log('ZAHTJEV_IZMJENA_OTPREMNICE', `Korisnik traži smanjenje na otpremnici ${form.id}. Razlog: ${diffDetails.join(' | ')}`); 
+            } else { 
+                await zapisiU_Log('IZMJENA_OTPREMNICE', `Ažurirana otpremnica ${form.id}`); 
+            }
         } else {
             const { error } = await supabase.from('otpremnice').insert([payload]);
-            if(error) return alert("Greška pri snimanju: " + error.message);
-            if(needsApproval) { await zapisiU_Log('ZAHTJEV_IZMJENA_OTPREMNICE', `Korisnik traži kreiranje sa manjom količinom na OTP ${form.id}. Razlog: ${diffDetails.join(' | ')}`); alert("⚠️ Količina je manja od fizički utovarene! Otpremnica je stavljena na 'ČEKA ODOBRENJE' kod Superadmina."); } 
-            else { await zapisiU_Log('KREIRANA_OTPREMNICA', `Otpremnica ${form.id} za ${form.kupac_naziv}`); }
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            if(needsApproval) { 
+                await zapisiU_Log('ZAHTJEV_IZMJENA_OTPREMNICE', `Korisnik traži kreiranje sa manjom količinom na OTP ${form.id}. Razlog: ${diffDetails.join(' | ')}`); 
+            } else { 
+                await zapisiU_Log('KREIRANA_OTPREMNICA', `Otpremnica ${form.id} za ${form.kupac_naziv}`); 
+            }
         }
 
-        if (!needsApproval && window.confirm(`✅ Uspješno snimljeno!\nDa li želite odmah isprintati PDF ove Otpremnice?`)) kreirajPDFPrivremeni(payload);
         resetFormu(); load(); setTab('lista');
+
+        prikaziDialog({
+            tip: needsApproval ? 'upozorenje' : 'uspjeh',
+            naslov: needsApproval ? 'Snimljeno (Čeka Odobrenje)' : 'Uspješno Snimljeno!',
+            poruka: needsApproval 
+                ? "⚠️ Količina je manja od fizički utovarene! Otpremnica je snimljena, ali je stavljena na 'ČEKA ODOBRENJE' kod Superadmina." 
+                : "Otpremnica je uspješno pohranjena u bazu. Želite li isprintati PDF?",
+            confirmText: needsApproval ? null : '🖨️ DA, ŠTAMPAJ PDF',
+            onConfirm: needsApproval ? null : () => { kreirajPDFPrivremeni(payload); zatvoriDialog(); },
+            onCancel: zatvoriDialog
+        });
     };
 
     const odobriOtpremnicu = async (logId, text) => {
         const otpMatch = text.match(/OTP-\d{4}-\d+/);
         if (otpMatch) { await supabase.from('otpremnice').update({ status: 'KREIRANA' }).eq('id', otpMatch[0]); await zapisiU_Log('OTPREMNICA_ODOBRENA', `Superadmin odobrio izmjenu za: ${otpMatch[0]}`); }
-        await supabase.from('sistem_audit_log').delete().eq('id', logId); alert("✅ Odobreno!"); load();
+        await supabase.from('sistem_audit_log').delete().eq('id', logId); 
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: 'Zabrana je skinuta.', onCancel: zatvoriDialog });
+        load();
     };
 
     const kreirajPDF = () => { kreirajPDFPrivremeni(form); };
 
     const kreirajPDFPrivremeni = (podaci) => {
         const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
-        let redovi = (podaci.stavke_jsonb || stavke).map((s, i) => `<tr><td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td><td><b style="color: #0f172a; font-size: 14px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td><td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td></tr>`).join('');
-        const htmlSadrzajTabela = `<div class="info-grid"><div class="info-col"><h4>Kupac / Primalac robe</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${podaci.kupac_naziv}</p><p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p><p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><h4>Detalji Transporta</h4><p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${podaci.broj_veze || '-'}</span></p><p>Ime Vozača: <span style="font-weight: 600; color: #0f172a;">${podaci.vozac || '-'}</span></p><p>Vozilo (Reg): <span style="font-weight: 900; color: #f97316;">${podaci.registracija || '-'}</span></p></div></div><table><thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Isporučena Količina</th></tr></thead><tbody>${redovi}</tbody></table><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Isporučio (Vozač)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Izdao (Magacin)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Primio (Kupac)</div></div><div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz isporuku:</b><br/>${podaci.napomena || 'Roba isporučena bez oštećenja.'}</div></div>`;
+        let redovi = (podaci.stavke_jsonb || stavke).map((s, i) => {
+            const kat = katalog.find(k => k.sifra === s.sifra);
+            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
+            return `<tr><td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td><td><b style="color: #0f172a; font-size: 14px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span></td><td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td></tr>`
+        }).join('');
+        const htmlSadrzajTabela = `<div class="info-grid"><div class="info-col"><h4>Kupac / Primalac robe</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${podaci.kupac_naziv}</p><p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p><p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><h4>Detalji Transporta</h4><p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${podaci.broj_veze || '-'}</span></p><p>Ime Vozača: <span style="font-weight: 600; color: #0f172a;">${podaci.vozac || '-'}</span></p><p>Vozilo (Reg): <span style="font-weight: 900; color: #f97316;">${podaci.registracija || '-'}</span></p></div></div><table><thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija i Naziv Proizvoda</th><th style="text-align:center;">Isporučena Količina</th></tr></thead><tbody>${redovi}</tbody></table><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Isporučio (Vozač)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Izdao (Magacin)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Primio (Kupac)</div></div><div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz isporuku:</b><br/>${podaci.napomena || 'Roba isporučena bez oštećenja.'}</div></div>`;
         printDokument('OTPREMNICA', podaci.id, formatirajDatum(podaci.datum), htmlSadrzajTabela, '#f97316');
     };
 
     const pokreniIzmjenu = (o) => { setForm({ id: o.id, broj_veze: o.broj_veze || '', kupac_naziv: o.kupac_naziv, datum: o.datum, vozac: o.vozac || '', registracija: o.registracija || '', napomena: o.napomena || '', status: o.status || 'KREIRANA' }); setStavke(o.stavke_jsonb || []); setIsEditing(true); setTab('nova'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
     const renderPoljeHeader = (polje) => {
-        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border uppercase focus:border-orange-500" placeholder="Nema veznog dokumenta" />;
+        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border focus:border-orange-500" placeholder="Nema veznog dokumenta" />;
         if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border font-black disabled:opacity-50" />;
-        if (polje.id === 'kupac') return <div className="h-full min-h-[45px]"><SearchableInput value={form.kupac_naziv} onChange={v=>setForm({...form, kupac_naziv:v})} list={kupci.map(k=>k.naziv)} /></div>;
+        
+        // ZAMJENA: SearchableInput je postao MasterSearch
+        if (polje.id === 'kupac') return (
+            <div className="h-full min-h-[45px]">
+                <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => setForm({...form, kupac_naziv: k.naziv})} placeholder="Odaberi kupca..." />
+            </div>
+        );
+
         if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none" />;
-        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-accent font-black border border-orange-500/50 outline-none uppercase"><option value="KREIRANA">Kreirana</option><option value="ISPORUČENO">Isporučeno</option><option value="ČEKA ODOBRENJE">Čeka Odobrenje</option></select>;
-        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e=>setForm({...form, vozac:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="npr. Marko Marković" />;
-        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e=>setForm({...form, registracija:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none uppercase focus:border-orange-500" placeholder="npr. A12-B-345" />;
+        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-accent font-black border border-orange-500/50 outline-none"><option value="KREIRANA">Kreirana</option><option value="ISPORUČENO">Isporučeno</option><option value="ČEKA ODOBRENJE">Čeka Odobrenje</option></select>;
+        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e=>setForm({...form, vozac:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="Ime vozača..." />;
+        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e=>setForm({...form, registracija:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="npr. A12-B-345" />;
         return null;
     };
 
-    const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], vozac: '', registracija: '', napomena: '', status: 'KREIRANA' }); setStavke([]); setSkenerInput(''); setIsEditing(false); };
+    const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], vozac: '', registracija: '', napomena: '', status: 'KREIRANA' }); setStavke([]); setIsEditing(false); };
 
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in pb-20">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-orange-500" user={user} modulIme="otpremnice" saas={saas} />
 
-            {duplikatDialog && (
-                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-orange-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(249,115,22,0.3)] max-w-lg w-full text-center">
-                        <span className="text-6xl mb-4 block animate-bounce">⚠️</span>
-                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Otpremnica već postoji!</h2>
-                        <p className="text-slate-400 text-sm mb-8">Za ovaj nalog je već izdata otpremnica <b className="text-orange-500">{duplikatDialog.otpremnica.id}</b>. Šta želite uraditi?</p>
-                        
-                        <div className="flex flex-col gap-3">
-                            <button onClick={() => { setForm(duplikatDialog.otpremnica); setStavke(duplikatDialog.otpremnica.stavke_jsonb); setTimeout(() => kreirajPDFPrivremeni(duplikatDialog.otpremnica), 300); setDuplikatDialog(null); }} className="w-full py-4 bg-theme-panel border border-slate-600 text-white rounded-xl uppercase font-black hover:bg-white hover:text-black transition-all">🖨️ Isprintaj PDF</button>
-                            <button onClick={() => {
-                                if(duplikatDialog.hasRacun) { alert("⛔ ZABRANJENO: Za ovu otpremnicu je već izdat račun! Sve izmjene morate praviti direktno na računu."); setDuplikatDialog(null); }
-                                else { pokreniIzmjenu(duplikatDialog.otpremnica); setDuplikatDialog(null); }
-                            }} className="w-full py-4 bg-orange-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-orange-500 transition-all">✏️ Uredi (Otvori u formi)</button>
-                            <button onClick={() => setDuplikatDialog(null)} className="w-full py-4 bg-red-900/30 text-red-400 border border-red-500/30 rounded-xl uppercase font-black hover:bg-red-500 hover:text-white transition-all mt-4">✕ Otkaži i zatvori</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <PametniDialog {...dialog} />
 
             {isSuperadmin && zahtjeviOdobrenja.length > 0 && (
                 <div className="bg-red-950/50 border-2 border-red-500 p-6 rounded-[2rem] shadow-lg animate-pulse w-full">
@@ -383,21 +385,21 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     {!isEditing && (
                         <div className="bg-theme-card border border-orange-500/50 p-6 rounded-box shadow-2xl relative z-[60]">
                             <label className="text-[10px] text-theme-accent uppercase font-black block mb-2 ml-2">Pametni unos (Skeniraj Nalog za utovar, Ponudu ili Radni Nalog)</label>
-                            <div className="flex bg-theme-panel border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner">
-                                <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10" />
-                                <button onClick={() => setIsScanningOverlay(true)} className="px-6 bg-theme-card border-b border-theme-border text-theme-text text-xl hover:opacity-80 transition-all border-l border-orange-500/50 relative z-10">📷</button>
-                                {prikaziDrop && skenerInput && (
-                                    <div className="absolute top-full left-0 right-0 mt-1 bg-theme-panel border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
-                                        {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).length === 0 && <div className="p-3 text-xs text-slate-500 text-center">Nema rezultata...</div>}
-                                        {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).map(p => (
-                                            <div key={p.id} onClick={() => odaberiIzDropdowna(p.id)} className="p-3 border-b border-theme-border hover:bg-theme-card cursor-pointer flex justify-between items-center transition-colors">
-                                                <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-orange-300 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                                <div className="text-slate-300 text-[10px] font-bold">{p.kupac} | <span className={p.status === 'ZAVRŠENO' || p.status === 'utovareno' ? 'text-emerald-400' : 'text-amber-400'}>{p.status}</span></div>
-                                            </div>
-                                        ))}
+                            
+                            {/* ZAMJENA: Pametni unos koristi MasterSearch */}
+                            <MasterSearch 
+                                data={dostupniDokumenti} 
+                                poljaZaPretragu={['id', 'kupac']} 
+                                onSelect={(d) => skenirajVezu(d.id)} 
+                                placeholder="Skeniraj ili ukucaj broj (npr. PON-123)..."
+                                onScanClick={() => setIsScanningOverlay(true)}
+                                renderItem={(item) => (
+                                    <div className="flex justify-between items-center w-full">
+                                        <div><span className="text-theme-text font-black">{item.id}</span> <span className="text-[10px] text-orange-300 ml-2 font-bold">{item.tip}</span></div>
+                                        <div className="text-slate-300 text-[10px] font-bold">{item.kupac} | <span className={item.status === 'ZAVRŠENO' || item.status === 'utovareno' ? 'text-emerald-400' : 'text-amber-400'}>{item.status}</span></div>
                                     </div>
                                 )}
-                            </div>
+                            />
                         </div>
                     )}
 
@@ -420,10 +422,27 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
                     <div className="bg-theme-card p-6 rounded-box border border-theme-border space-y-4 shadow-xl relative z-[30]">
                         <h3 className="text-theme-accent uppercase text-xs">2. Dodaj stavke</h3>
-                        <div className="relative mb-3"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod</label><OTP_SmartSearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} /></div>
+                        <div className="relative mb-3">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod (Ili unesi ručno pakete bez naloga)</label>
+                            
+                            {/* ZAMJENA: Pretraga proizvoda koristi MasterSearch */}
+                            <MasterSearch 
+                                data={katalog} 
+                                poljaZaPretragu={['sifra', 'naziv']} 
+                                value={stavkaForm.sifra_unos}
+                                onSelect={(k) => { setTrenutniProizvod(k); setStavkaForm({ ...stavkaForm, id: null, sifra_unos: `${k.sifra} | ${k.naziv}`, jm_obracun: k.default_jedinica || 'm3' }); }} 
+                                placeholder="Pronađi proizvod..."
+                                renderItem={(k) => (
+                                    <div>
+                                        <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-orange-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
+                                    </div>
+                                )}
+                            />
+                        </div>
                         {trenutniProizvod && (
                             <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4 shadow-inner">
-                                <div className="border-b border-theme-border pb-3"><p className="text-theme-text text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400 mt-1">Dimenzije: <span className="text-theme-text">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</span></p></div>
+                                <div className="border-b border-theme-border pb-3"><p className="text-theme-text text-sm font-black">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} | {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400 mt-1">Šifra: <span className="text-theme-text">{trenutniProizvod.sifra}</span></p></div>
                                 <div className="flex gap-4">
                                     <div className="flex-1"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina za isporuku</label><input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} placeholder="0.00" className="w-full p-4 bg-black rounded-xl text-lg text-theme-text font-black text-center outline-none border border-theme-border focus:border-blue-500" /></div>
                                     <div className="w-32"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Jedinica</label><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text font-black outline-none border border-theme-border uppercase"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div>
@@ -439,18 +458,21 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                 <h3 className="text-theme-accent font-black uppercase text-xs">3. Pregled Dokumenta</h3>
                             </div>
                             <div className="space-y-3 mb-6">
-                                {stavke.map((s, i) => (
+                                {stavke.map((s, i) => {
+                                    const katItem = katalog.find(k => k.sifra === s.sifra);
+                                    const dim = katItem ? `${katItem.visina}x${katItem.sirina}x${katItem.duzina}` : '';
+                                    return (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-theme-card border border-theme-border rounded-xl cursor-pointer hover:border-orange-500 transition-all group shadow-md">
-                                        <div className="flex items-center gap-4"><span className="text-slate-500 text-sm font-black">{i+1}.</span><div><p className="text-theme-text text-sm font-black">{s.naziv}</p><p className="text-[9px] text-slate-500 mt-1 uppercase tracking-widest">{s.sifra}</p></div></div>
+                                        <div className="flex items-center gap-4"><span className="text-slate-500 text-sm font-black">{i+1}.</span><div><p className="text-theme-text text-sm font-black">{dim ? `${dim} | ` : ''}{s.naziv}</p><p className="text-[9px] text-slate-500 mt-1 uppercase tracking-widest">{s.sifra}</p></div></div>
                                         <div className="flex items-center gap-6 text-right"><p className="text-orange-500 font-black text-xl">{s.kolicina_obracun} <span className="text-xs text-slate-400">{s.jm_obracun}</span></p><button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button></div>
                                     </div>
-                                ))}
+                                )})}
                             </div>
                             <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na isporuci (opciono)..." className="w-full mt-4 p-4 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-orange-500 shadow-inner" rows="3"></textarea>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                                 <button onClick={kreirajIzdatnicu} className="w-full py-5 bg-amber-600 text-white font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(245,158,11,0.5)] hover:bg-amber-500 transition-all text-[11px] tracking-widest flex items-center justify-center gap-2">
-                                    <span className="text-lg">📦</span> POŠALJI NALOG ZA UTOVAR
+                                    <span className="text-lg">📦</span> POŠALJI NALOG ZA UTOVAR (IZDATNICA)
                                 </button>
                                 <button onClick={snimiOtpremnicu} className={`w-full py-5 text-theme-text font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all text-[11px] tracking-widest flex items-center justify-center gap-2 ${isEditing ? 'bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.4)]' : 'bg-theme-card border border-theme-border hover:opacity-80'}`}>
                                     <span className="text-lg">🏁</span> {isEditing ? 'SNIMI IZMJENE OTPREMNICE' : 'KREIRAJ ZVANIČNU OTPREMNICU'}
@@ -461,7 +483,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                 </div>
             ) : tab === 'izdatnice' ? (
                 <div className="bg-theme-card p-8 rounded-box border border-amber-500/50 shadow-2xl animate-in zoom-in-95">
-                    {/* WMS UTOVAR ILI LISTA (vidi prethodni puni renderTabIzdatnice blok, sveden na kompaktnost) */}
+                    {/* WMS UTOVAR ILI LISTA */}
                     {wmsIzdatnica ? (
                         <>
                             <div className="flex justify-between items-start border-b border-theme-border pb-6 mb-6">
@@ -475,9 +497,10 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                             <div className="space-y-4 mb-8">
                                 {wmsStavke.map(s => {
                                     const kat = katalog.find(k => k.sifra === s.proizvod_sifra);
+                                    const dim = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
                                     return (
                                         <div key={s.id} className="bg-theme-panel p-5 rounded-2xl border border-theme-border flex flex-col md:flex-row justify-between items-center gap-4">
-                                            <div className="flex-1"><p className="text-theme-text font-black text-lg uppercase">{s.proizvod_sifra}</p><p className="text-slate-400 text-xs font-bold">{s.proizvod_naziv}</p><p className="text-[10px] text-red-400 font-black mt-2 bg-red-900/20 inline-block px-2 py-1 rounded border border-red-500/30">DIM: {kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : 'N/A'}</p></div>
+                                            <div className="flex-1"><p className="text-theme-text font-black text-lg uppercase">{dim ? `${dim} | ` : ''}{s.proizvod_naziv}</p><p className="text-slate-400 text-xs font-bold mt-1">Šifra: {s.proizvod_sifra}</p></div>
                                             <div className="flex items-center gap-6 bg-black/40 p-4 rounded-xl border border-slate-700">
                                                 <div className="text-center"><p className="text-[9px] text-slate-500 uppercase font-black mb-1">Planirano (Nalog)</p><p className="text-slate-300 font-black text-xl">{s.planirana_kolicina} <span className="text-xs">{s.mjerna_jedinica}</span></p></div>
                                                 <div className="text-center"><p className="text-[9px] text-amber-500 uppercase font-black mb-1">Utovareno (Stvarno)</p><input type="number" value={s.izdata_kolicina} onChange={(e) => handleWmsKolicina(s.id, e.target.value)} className="w-24 p-3 bg-amber-900/30 border border-amber-500 rounded-xl text-amber-400 font-black text-xl text-center outline-none" /></div>
@@ -490,7 +513,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                             <div className="bg-blue-900/10 p-6 rounded-2xl border border-blue-500/30 mb-8">
                                 <h4 className="text-[10px] text-blue-400 uppercase font-black mb-4">➕ Dodatni utovar (Kupac uzeo još nešta)</h4>
                                 <div className="flex gap-4 items-end z-50 relative">
-                                    <div className="flex-1"><OTP_SmartSearchableProizvod katalog={katalog} value={wmsNovaSifra} onChange={(val, txt) => setWmsNovaSifra(txt)} /></div>
+                                    <div className="flex-1">
+                                        <MasterSearch 
+                                            data={katalog} 
+                                            poljaZaPretragu={['sifra', 'naziv']} 
+                                            onSelect={(k) => setWmsNovaSifra(`${k.sifra} | ${k.naziv}`)} 
+                                            placeholder="Pronađi proizvod za dodavanje..."
+                                        />
+                                    </div>
                                     <input type="number" value={wmsNovaKol} onChange={e=>setWmsNovaKol(e.target.value)} placeholder="Kol..." className="w-24 p-4 bg-theme-card rounded-xl text-theme-text font-black text-center border border-theme-border outline-none focus:border-blue-500" />
                                     <button onClick={dodajWmsStavkuNovu} className="bg-blue-600 text-white px-6 py-4 rounded-xl font-black uppercase text-xs hover:bg-blue-500 transition-all">Dodaj stavku</button>
                                 </div>
@@ -524,7 +554,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                         )}
                                         <div className="flex gap-2">
                                             <button onClick={(e) => printIzdatnicaFromList(e, izd)} className="flex-1 bg-theme-card py-3 rounded-xl text-[10px] font-black uppercase border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Štampaj</button>
-                                            {izd.status === 'utovareno' && <button onClick={(e) => { e.stopPropagation(); setSkenerInput(izd.broj_izdatnice); setTab('nova'); setTimeout(()=>skenirajVezu(null, izd.broj_izdatnice), 500); }} className="flex-1 bg-emerald-600 py-3 rounded-xl text-[10px] font-black uppercase text-white hover:bg-emerald-500 transition-all shadow-md">📑 Napravi Otpremnicu</button>}
+                                            {izd.status === 'utovareno' && <button onClick={(e) => { e.stopPropagation(); skenirajVezu(izd.broj_izdatnice); setTab('nova'); }} className="flex-1 bg-emerald-600 py-3 rounded-xl text-[10px] font-black uppercase text-white hover:bg-emerald-500 transition-all shadow-md">📑 Napravi Otpremnicu</button>}
                                         </div>
                                     </div>
                                 ))}
@@ -546,14 +576,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                 <div className="flex justify-between items-center text-[10px] text-slate-400 font-black uppercase">
                                     <span>Vozilo: {o.registracija || 'N/A'}</span>
                                     <span>Stavki: {o.stavke_jsonb?.length}</span>
-                                    <button onClick={(e)=>{e.stopPropagation(); setForm(o); setStavke(o.stavke_jsonb||[]); setTimeout(kreirajPDF, 100);}} className="text-emerald-400 font-black px-2 py-1 rounded bg-emerald-900/30 hover:bg-emerald-500 hover:text-white transition-all">PDF</button>
+                                    <button onClick={(e)=>{e.stopPropagation(); setForm(o); setStavke(o.stavke_jsonb||[]); setTimeout(() => kreirajPDFPrivremeni(o), 100);}} className="text-emerald-400 font-black px-2 py-1 rounded bg-emerald-900/30 hover:bg-emerald-500 hover:text-white transition-all">PDF</button>
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
-            {isScanningOverlay && <ScannerOverlay onScan={(text) => { skenirajVezu(null, text); setIsScanningOverlay(false); }} onClose={() => setIsScanningOverlay(false)} />}
+            {isScanningOverlay && <ScannerOverlay onScan={(text) => { skenirajVezu(text); setIsScanningOverlay(false); }} onClose={() => setIsScanningOverlay(false)} />}
         </div>
     );
 }

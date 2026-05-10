@@ -2,7 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
+import MasterSearch from '../components/MasterSearch';
+import PametniDialog from '../components/PametniDialog';
 import { printDokument } from '../utils/printHelpers';
+import { useSaaS } from '../utils/useSaaS';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -11,11 +14,24 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
 
+    // SaaS God Mode Integracija
+    const saas = useSaaS('blagajna_modul', {
+        boja_kartice: '#1e293b',
+        boja_slova: '#ffffff',
+        velicina_naslova: '16',
+        naslov_glavni: '💵 BLAGAJNA I FINANSIJE'
+    });
+
     const [tab, setTab] = useState('unos');
     const [sveTransakcije, setSveTransakcije] = useState([]); 
     const [kategorije, setKategorije] = useState([]);
     const [masine, setMasine] = useState([]);
     const [radnici, setRadnici] = useState([]);
+
+    // PAMETNI DIJALOZI
+    const [dialog, setDialog] = useState({ isOpen: false });
+    const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
+    const zatvoriDialog = () => setDialog({ isOpen: false });
 
     const generisiID = () => `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`;
 
@@ -26,10 +42,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         return `${d}.${m}.${y}.`;
     };
 
-    const [kucanjeTimer, setKucanjeTimer] = useState(null);
-    const [showSkenerDrop, setShowSkenerDrop] = useState(false);
     const [sviDokumenti, setSviDokumenti] = useState([]);
-    
     const [skenDetalji, setSkenDetalji] = useState(null); 
     const [prikazDokumenta, setPrikazDokumenta] = useState(null);
 
@@ -76,12 +89,12 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         if(!docId) return;
         if(docId.startsWith('RAC-')) {
             const {data} = await supabase.from('racuni').select('*').eq('id', docId).maybeSingle();
-            if(data) setPrikazDokumenta({ tip: 'RAČUN', data }); else alert('Dokument nije pronađen u bazi.');
+            if(data) setPrikazDokumenta({ tip: 'RAČUN', data }); else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: 'Dokument nije pronađen u bazi.', onCancel: zatvoriDialog });
         } else if(docId.startsWith('PON-')) {
             const {data} = await supabase.from('ponude').select('*').eq('id', docId).maybeSingle();
-            if(data) setPrikazDokumenta({ tip: 'PONUDA', data }); else alert('Dokument nije pronađen u bazi.');
+            if(data) setPrikazDokumenta({ tip: 'PONUDA', data }); else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: 'Dokument nije pronađen u bazi.', onCancel: zatvoriDialog });
         } else {
-            alert("Sistem za sada može prikazati samo Račune i Ponude direktno iz blagajne.");
+            prikaziDialog({ tip: 'info', naslov: 'Informacija', poruka: "Sistem za sada može prikazati samo Račune i Ponude direktno iz blagajne.", onCancel: zatvoriDialog });
         }
     };
 
@@ -89,21 +102,6 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         const defKat = kategorije.find(k => k.tip === noviTip)?.naziv || '';
         setForm({ ...form, tip: noviTip, kategorija: defKat, racun_id: '', masina_naziv: '', radnik_ime: '', iznos: '', opis: '' });
         setSkenDetalji(null);
-    };
-
-    const handleSkenUnos = (e) => {
-        const val = e.target.value.toUpperCase();
-        setSkener(val);
-        setShowSkenerDrop(true);
-
-        if (kucanjeTimer) clearTimeout(kucanjeTimer);
-        if (val) {
-            const timer = setTimeout(() => {
-                izvrsiSkeniranje(val);
-                setShowSkenerDrop(false); 
-            }, 2000);
-            setKucanjeTimer(timer);
-        }
     };
 
     const izvrsiSkeniranje = async (trazeniBroj) => {
@@ -148,7 +146,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
 
             if (preostalo <= 0) {
                 setSkener(''); 
-                return alert(`✅ Dugovanje nula! Ovaj dokument je već u potpunosti isplaćen.`);
+                return prikaziDialog({ tip: 'uspjeh', naslov: 'Plaćeno', poruka: `✅ Dugovanje nula! Ovaj dokument je već u potpunosti isplaćen.`, onCancel: zatvoriDialog });
             }
 
             setForm({
@@ -159,13 +157,13 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
             });
             setSkener(''); 
         } else {
-            alert(`❌ Sistem nije uspio pronaći finansijski trag za dokument: ${val}.`);
+            prikaziDialog({ tip: 'greska', naslov: 'Nije pronađeno', poruka: `❌ Sistem nije uspio pronaći finansijski trag za dokument: ${val}.`, onCancel: zatvoriDialog });
         }
     };
 
     const snimiTransakciju = async () => {
-        if (!form.iznos || parseFloat(form.iznos) <= 0) return alert("Unesite ispravan iznos!");
-        if (!form.kategorija) return alert("Odaberite kategoriju!");
+        if (!form.iznos || parseFloat(form.iznos) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali iznos', poruka: "Unesite ispravan iznos!", onCancel: zatvoriDialog });
+        if (!form.kategorija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali kategorija', poruka: "Odaberite kategoriju!", onCancel: zatvoriDialog });
 
         const payload = {
             id: form.id, tip: form.tip, kategorija: form.kategorija,
@@ -177,7 +175,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         };
 
         const { error } = await supabase.from('blagajna').insert([payload]);
-        if (error) return alert("Greška pri upisu u kasu: " + error.message);
+        if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
 
         if (payload.tip === 'ULAZ' && payload.racun_id && payload.racun_id.startsWith('RAC-')) {
             const {data: r} = await supabase.from('racuni').select('ukupno_sa_pdv').eq('id', payload.racun_id).maybeSingle();
@@ -192,23 +190,37 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         }
 
         await zapisiU_Log('KASA_UNOS', `Upisan ${payload.tip} od ${payload.iznos} KM u blagajnu (${payload.kategorija}).`);
-        alert("✅ Transakcija uspješno snimljena u blagajnu!");
         
-        if (window.confirm("Da li želite isprintati Potvrdu o Uplati/Isplati?")) {
-            printPotvrda(payload);
-        }
+        prikaziDialog({
+            tip: 'uspjeh',
+            naslov: 'Proknjiženo!',
+            poruka: "Transakcija je uspješno snimljena u blagajnu.\nDa li želite isprintati Potvrdu o Uplati/Isplati?",
+            confirmText: '🖨️ DA, ŠTAMPAJ',
+            cancelText: '✕ NE',
+            onConfirm: () => { printPotvrda(payload); zatvoriDialog(); setTab('pregled'); },
+            onCancel: () => { zatvoriDialog(); setTab('pregled'); }
+        });
         
         setForm({ ...form, id: generisiID(), iznos: '', opis: '', racun_id: '', masina_naziv: '', radnik_ime: '' });
         setSkenDetalji(null);
-        load(); setTab('pregled');
+        load(); 
     };
 
     const obrisiTransakciju = async (t) => {
-        if(window.confirm(`Da li ste sigurni da želite OBRISATI ovu transakciju od ${t.iznos} KM?\nUkoliko je greška u unosu uplaćenog računa, napravite STORNIRANJE umjesto brisanja.`)) {
-            await supabase.from('blagajna').delete().eq('id', t.id);
-            await zapisiU_Log('KASA_BRISANJE', `Obrisana transakcija ${t.id} od ${t.iznos} KM (${t.kategorija}).`);
-            load();
-        }
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje Transakcije',
+            poruka: `Da li ste sigurni da želite OBRISATI ovu transakciju od ${t.iznos} KM?\nUkoliko je greška u unosu uplaćenog računa, napravite STORNIRANJE umjesto brisanja.`,
+            confirmText: '🗑️ OBRIŠI',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('blagajna').delete().eq('id', t.id);
+                await zapisiU_Log('KASA_BRISANJE', `Obrisana transakcija ${t.id} od ${t.iznos} KM (${t.kategorija}).`);
+                load();
+                zatvoriDialog();
+            },
+            onCancel: zatvoriDialog
+        });
     };
 
     const printPotvrda = (t) => {
@@ -250,12 +262,13 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     
     const apsolutnoStanjeKase = sveTransakcije.filter(t => t.tip === 'ULAZ').reduce((a,b)=>a+parseFloat(b.iznos),0) - sveTransakcije.filter(t => t.tip === 'IZLAZ').reduce((a,b)=>a+parseFloat(b.iznos),0);
 
-    // ISPRAVLJENI TYPO OVDJE:
     const unikatneKatUlaz = [...new Set(prikazaneTransakcije.filter(t => t.tip === 'ULAZ').map(t => t.kategorija))];
     const unikatneKatIzlaz = [...new Set(prikazaneTransakcije.filter(t => t.tip === 'IZLAZ').map(t => t.kategorija))];
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
+        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ color: saas.ui.boja_slova }}>
+            <PametniDialog {...dialog} />
+            
             {prikazDokumenta && (
                 <div className="fixed inset-0 z-[100] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] border-2 border-emerald-500 p-8 rounded-box shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -313,57 +326,66 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
+            {saas.isEditMode && (
+                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
+                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Veličina naslova (px): <input type="number" value={saas.ui.velicina_naslova} onChange={e => saas.setUi({...saas.ui, velicina_naslova: e.target.value})} className="w-full p-2 mt-1 bg-black text-amber-400 font-mono rounded" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black md:col-span-3">Glavni Naslov: <input type="text" value={saas.ui.naslov_glavni} onChange={e => saas.setUi({...saas.ui, naslov_glavni: e.target.value})} className="w-full p-2 mt-1 bg-black text-amber-400 rounded" /></label>
+                    </div>
+                </div>
+            )}
+
             {tab === 'analitika' || tab === 'pregled' ? (
-                <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" />
+                <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" saas={saas} />
             ) : (
-                <div className="flex justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-box border border-emerald-500/30 shadow-lg">
+                <div className="flex justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-box border border-emerald-500/30 shadow-lg" style={{ backgroundColor: saas.ui.boja_kartice }}>
                     <button onClick={onExit} className="bg-theme-panel text-[10px] px-4 py-2 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">← Meni</button>
-                    <h2 className="text-emerald-400 font-black tracking-widest uppercase text-xs">💵 BLAGAJNA I FINANSIJE</h2>
+                    <h2 className="text-emerald-400 font-black tracking-widest uppercase text-xs" style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_glavni}</h2>
                     <div className="w-20"></div>
                 </div>
             )}
 
-<div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
-    <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'unos' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-        ➕ Unos u Kasu
-    </button>
-    <button onClick={() => setTab('pregled')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'pregled' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-        📋 Dnevnik Kase
-    </button>
-    <button onClick={() => setTab('analitika')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'analitika' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-        📊 Analiza Troškova
-    </button>
-</div>
+            <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
+                <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'unos' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+                    ➕ Unos u Kasu
+                </button>
+                <button onClick={() => setTab('pregled')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'pregled' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+                    📋 Dnevnik Kase
+                </button>
+                <button onClick={() => setTab('analitika')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'analitika' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
+                    📊 Analiza Troškova
+                </button>
+            </div>
 
             {tab === 'unos' && (
                 <div className="space-y-6 max-w-4xl mx-auto animate-in slide-in-from-left">
-                    <div className="bg-theme-card border border-blue-500/50 p-6 rounded-box flex gap-3 items-center shadow-2xl relative z-50">
+                    <div className="bg-theme-card border border-blue-500/50 p-6 rounded-box flex gap-3 items-center shadow-2xl relative z-[60]" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="text-2xl hidden md:block">📷</div>
-                        <div className="flex-1 relative">
+                        <div className="flex-1 relative overflow-visible">
                             <label className="text-[10px] text-theme-accent uppercase font-black block mb-2 ml-2">Pametni sken (Učitaj PONUDU, RN ili RAČUN za naplatu)</label>
-                            <input value={skener} onChange={handleSkenUnos} onFocus={() => setShowSkenerDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border-2 border-blue-500 focus:border-blue-400 uppercase font-black tracking-widest shadow-inner relative z-10" />
                             
-                            {showSkenerDrop && skener && (
-                                <div className="absolute top-full left-0 right-0 mt-1 bg-theme-panel border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
-                                    {sviDokumenti
-                                        .filter(d => d.id.includes(skener) || (d.kupac && d.kupac.toUpperCase().includes(skener)))
-                                        .map(p => (
-                                        <div key={p.id} onClick={() => {
-                                            setSkener(p.id); setShowSkenerDrop(false);
-                                            if (kucanjeTimer) clearTimeout(kucanjeTimer);
-                                            izvrsiSkeniranje(p.id);
-                                        }} className="p-3 border-b border-theme-border hover:bg-theme-accent cursor-pointer flex justify-between items-center transition-colors">
-                                            <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-blue-300 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                            <div className="text-slate-300 text-xs font-bold">{p.kupac}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            {/* ZAMJENA: Koristimo MasterSearch umjesto onog ručnog koda */}
+                            <MasterSearch 
+                                data={sviDokumenti} 
+                                poljaZaPretragu={['id', 'kupac']} 
+                                value={skener}
+                                onSelect={(doc) => izvrsiSkeniranje(doc.id)} 
+                                placeholder="Skeniraj ili ukucaj broj..."
+                                renderItem={(item) => (
+                                    <div className="flex justify-between items-center w-full">
+                                        <div><span className="text-theme-text font-black">{item.id}</span> <span className="text-[10px] text-blue-300 ml-2 uppercase font-bold">{item.tip}</span></div>
+                                        <div className="text-slate-300 text-xs font-bold">{item.kupac}</div>
+                                    </div>
+                                )}
+                            />
                         </div>
                     </div>
 
                     {skenDetalji && (
-                        <div className="bg-theme-card border-2 border-emerald-500/50 p-6 rounded-box shadow-2xl animate-in zoom-in-95 relative z-40">
+                        <div className="bg-theme-card border-2 border-emerald-500/50 p-6 rounded-box shadow-2xl animate-in zoom-in-95 relative z-40" style={{ backgroundColor: saas.ui.boja_kartice }}>
                             <div className="flex justify-between items-start border-b border-theme-border pb-4 mb-5">
                                 <div>
                                     <h3 className="text-emerald-400 font-black text-xs uppercase tracking-widest">Pronađen finansijski trag</h3>
@@ -387,11 +409,11 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         <button onClick={() => handleTipChange('IZLAZ')} className={`flex-1 py-6 rounded-box text-xl font-black uppercase transition-all border-4 ${form.tip === 'IZLAZ' ? 'bg-red-900/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'bg-theme-card border-theme-border text-slate-600 hover:border-red-900 hover:text-red-500'}`}>- IZLAZ NOVCA</button>
                     </div>
 
-                    <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-8 rounded-box border-2 shadow-2xl space-y-6 relative z-20 transition-all ${form.tip === 'ULAZ' ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
+                    <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-8 rounded-box border-2 shadow-2xl space-y-6 relative z-20 transition-all ${form.tip === 'ULAZ' ? 'border-emerald-500/30' : 'border-red-500/30'}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Kategorija Transakcije</label>
-                                <select value={form.kategorija} onChange={e=>setForm({...form, kategorija:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner focus:border-blue-500 uppercase">
+                                <select value={form.kategorija} onChange={e=>setForm({...form, kategorija:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner focus:border-blue-500 uppercase cursor-pointer">
                                     {kategorije.filter(k=>k.tip===form.tip).map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
                             </div>
@@ -403,36 +425,30 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
 
                         <div className="bg-theme-card p-6 rounded-box border border-theme-border space-y-5 shadow-inner">
                             {(form.kategorija.toLowerCase().includes('račun') || form.kategorija.toLowerCase().includes('ponud') || form.kategorija.toLowerCase().includes('avans')) && (
-                                <div className="relative">
+                                <div className="relative overflow-visible">
                                     <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera)</label>
-                                    <input 
-                                        value={form.racun_id} 
-                                        onChange={(e) => {
-                                            const val = e.target.value.toUpperCase(); setForm({...form, racun_id: val}); setShowSkenerDrop(true);
-                                            if (kucanjeTimer) clearTimeout(kucanjeTimer);
-                                            if (val) { setKucanjeTimer(setTimeout(() => { setShowSkenerDrop(false); izvrsiSkeniranje(val); }, 2000)); }
-                                        }} 
-                                        onFocus={() => setShowSkenerDrop(true)} placeholder="npr. RAC-123" 
-                                        className="w-full p-4 bg-black rounded-xl text-sm text-theme-text outline-none border border-emerald-500 focus:border-emerald-400 uppercase font-black shadow-inner relative z-10" 
-                                    />
                                     
-                                    {showSkenerDrop && form.racun_id && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-theme-panel border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
-                                            {sviDokumenti.filter(d => (d.tip === 'Račun' || d.tip === 'Ponuda') && (d.id.includes(form.racun_id) || (d.kupac && d.kupac.toUpperCase().includes(form.racun_id)))).map(p => (
-                                                <div key={p.id} onClick={() => { setForm({...form, racun_id: p.id}); setShowSkenerDrop(false); if (kucanjeTimer) clearTimeout(kucanjeTimer); izvrsiSkeniranje(p.id); }} className="p-3 border-b border-theme-border hover:bg-slate-700 cursor-pointer flex justify-between items-center transition-colors">
-                                                    <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                                    <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {/* ZAMJENA: MasterSearch za ručni unos veze */}
+                                    <MasterSearch 
+                                        data={sviDokumenti.filter(d => d.tip === 'Račun' || d.tip === 'Ponuda')} 
+                                        poljaZaPretragu={['id', 'kupac']} 
+                                        value={form.racun_id}
+                                        onSelect={(doc) => { setForm({...form, racun_id: doc.id}); izvrsiSkeniranje(doc.id); }} 
+                                        placeholder="npr. RAC-123"
+                                        renderItem={(p) => (
+                                            <div className="flex justify-between items-center w-full">
+                                                <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-emerald-400 ml-2 uppercase font-bold">{p.tip}</span></div>
+                                                <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
+                                            </div>
+                                        )}
+                                    />
                                 </div>
                             )}
 
                             {form.kategorija.toLowerCase().includes('mašin') && (
                                 <div>
                                     <label className="text-[10px] text-amber-500 uppercase font-black ml-2 block mb-1">Za koju mašinu se plaća?</label>
-                                    <select value={form.masina_naziv} onChange={e=>setForm({...form, masina_naziv:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner">
+                                    <select value={form.masina_naziv} onChange={e=>setForm({...form, masina_naziv:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner cursor-pointer">
                                         <option value="">-- Odaberi mašinu --</option>{masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv}</option>)}
                                     </select>
                                 </div>
@@ -441,7 +457,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             {form.kategorija.toLowerCase().includes('radnic') && (
                                 <div>
                                     <label className="text-[10px] text-theme-accent uppercase font-black ml-2 block mb-1">Za kojeg radnika je isplata?</label>
-                                    <select value={form.radnik_ime} onChange={e=>setForm({...form, radnik_ime:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner">
+                                    <select value={form.radnik_ime} onChange={e=>setForm({...form, radnik_ime:e.target.value})} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text outline-none border border-theme-border font-bold shadow-inner cursor-pointer">
                                         <option value="">-- Odaberi radnika --</option>{radnici.map(r => <option key={r.ime_prezime} value={r.ime_prezime}>{r.ime_prezime}</option>)}
                                     </select>
                                 </div>
@@ -469,15 +485,15 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         <div className="bg-blue-900/20 p-6 rounded-box border border-blue-500 text-center shadow-[0_0_20px_rgba(59,130,246,0.2)]"><p className="text-[10px] text-theme-accent uppercase font-black mb-2 tracking-widest">STVARNO STANJE KASE</p><p className="text-3xl text-theme-text font-black tracking-widest">{apsolutnoStanjeKase.toFixed(2)} <span className="text-xs text-theme-accent">KM</span></p></div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-theme-border pb-4">
                             <h3 className="text-slate-400 font-black uppercase text-xs w-full md:w-auto">Knjiga Blagajne za: <span className="text-theme-text text-sm bg-theme-panel px-3 py-1.5 rounded-lg ml-2 border border-theme-border">{formatirajDatum(aktivniDatum)}</span></h3>
                             <div className="flex gap-3 w-full md:w-auto">
-                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none font-bold uppercase flex-1 shadow-inner focus:border-blue-500">
+                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none font-bold uppercase flex-1 shadow-inner focus:border-blue-500 cursor-pointer">
                                     <option value="SVE">-- Sve Kategorije --</option>
                                     {kategorije.map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
-                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none w-full md:w-64 font-bold shadow-inner focus:border-blue-500" />
+                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none w-full md:w-64 font-bold shadow-inner focus:border-blue-500 uppercase" />
                             </div>
                         </div>
 
@@ -524,7 +540,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
 
             {tab === 'analitika' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-right">
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <h3 className="text-emerald-500 font-black uppercase text-xs mb-4">📥 Struktura Ulaza na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
                             {unikatneKatUlaz.length === 0 && <p className="text-slate-500 text-xs p-4 bg-theme-card rounded-xl border border-theme-border text-center">Nema ulaznih transakcija za odabrani dan.</p>}
@@ -541,7 +557,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <h3 className="text-red-500 font-black uppercase text-xs mb-4">📤 Struktura Izlaza na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
                             {unikatneKatIzlaz.length === 0 && <p className="text-slate-500 text-xs p-4 bg-theme-card rounded-xl border border-theme-border text-center">Nema izlaznih transakcija za odabrani dan.</p>}
@@ -558,7 +574,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-amber-500/30 shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-amber-500/30 shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <h3 className="text-amber-500 font-black uppercase text-xs mb-4">⚙️ Troškovi Mašina na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
                             {masine.every(m => prikazaneTransakcije.filter(t => t.masina_naziv === m.naziv).reduce((a, t) => a + parseFloat(t.iznos), 0) === 0) && <p className="text-slate-500 text-xs p-4 bg-theme-card rounded-xl border border-theme-border text-center">Nema troškova mašina.</p>}
@@ -575,7 +591,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-2xl">
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <h3 className="text-theme-accent font-black uppercase text-xs mb-4">👷 Isplate Radnicima na dan: {formatirajDatum(aktivniDatum)}</h3>
                         <div className="space-y-3">
                             {radnici.every(r => prikazaneTransakcije.filter(t => t.radnik_ime === r.ime_prezime).reduce((a, t) => a + parseFloat(t.iznos), 0) === 0) && <p className="text-slate-500 text-xs p-4 bg-theme-card rounded-xl border border-theme-border text-center">Nema isplata radnicima.</p>}

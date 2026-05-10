@@ -21,6 +21,8 @@ import KontrolniToranjModule from './modules/KontrolniToranjModule';
 import AnalitikaModule from './modules/AnalitikaModule';
 import LagerPaketaModule from './modules/LagerPaketaModule';
 import PlaniranjeModule from './modules/PlaniranjeModule'; // NOVO: Planiranje
+import KioskModule from './modules/KioskModule';
+import HrDashboardModule from './modules/HrDashboardModule';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -40,7 +42,9 @@ const defaultModuli = [
     { id: 'blagajna', naziv: 'Blagajna', ikona: '💵', hex_boja: '#10b981' },
     { id: 'toranj', naziv: 'Kontrola', ikona: '🕵️', hex_boja: '#6366f1' },
     { id: 'analitika', naziv: 'Analitika', ikona: '📊', hex_boja: '#8b5cf6' },
-    { id: 'podesavanja', naziv: 'Postavke', ikona: '⚙️', hex_boja: '#64748b' }
+    { id: 'podesavanja', naziv: 'Postavke', ikona: '⚙️', hex_boja: '#64748b' },
+    { id: 'kiosk', naziv: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
+{ id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
 ];
 
 export default function Page() {
@@ -363,6 +367,10 @@ export default function Page() {
                     <KontrolniToranjModule onExit={() => setActiveModule('home')} />
                 ) : (activeModule === 'analitika' || activeModule === 'dashboard') ? ( 
                     <AnalitikaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                    ) : activeModule === 'kiosk' ? (
+                        <KioskModule />
+                    ) : activeModule === 'hr' ? (
+                        <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 ) : activeModule === 'podesavanja' ? (
                     <SettingsModule onExit={() => setActiveModule('home')} />
                 ) : null}

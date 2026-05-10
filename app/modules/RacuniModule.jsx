@@ -2,45 +2,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
-import SearchableInput from '../components/SearchableInput';
+import MasterSearch from '../components/MasterSearch';
+import PametniDialog from '../components/PametniDialog';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
-
-function RAC_SearchableProizvod({ katalog, value, onChange }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState(value);
-    const wrapperRef = useRef(null);
-
-    useEffect(() => { setSearch(value); }, [value]);
-    useEffect(() => {
-        function handleClickOutside(e) { if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false); }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    const filtered = katalog.filter(k => k.sifra.toUpperCase().includes(search.toUpperCase()) || k.naziv.toUpperCase().includes(search.toUpperCase()));
-    return (
-        <div ref={wrapperRef} className="relative font-black w-full z-50">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500 shadow-inner" />
-            {open && filtered.length > 0 && (
-                <div className="absolute left-0 right-0 mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] max-h-60 overflow-y-auto z-[9999]">
-                    {filtered.map(k => {
-                        const tekstZaPolje = `${k.sifra} | ${k.naziv} | Dim: ${k.visina}x${k.sirina}x${k.duzina}`;
-                        return (
-                            <div key={k.sifra} onClick={() => { onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} className="p-3 border-b border-slate-700 hover:bg-theme-card cursor-pointer transition-all">
-                                <div className="text-theme-text text-xs font-black">{k.sifra} <span className="text-red-400 ml-2">{k.naziv}</span></div>
-                                <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Dim: {k.visina}x{k.sirina}x{k.duzina}</div>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
 
 export default function RacuniModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
@@ -71,11 +39,11 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [katalog, setKatalog] = useState([]);
     const [racuni, setRacuni] = useState([]);
     
-    // --- NOVI STATEOVI ZA PAMETNE DIJALOGE ---
-    const [duplikatDialog, setDuplikatDialog] = useState(null);
-    const [upozorenjeDialog, setUpozorenjeDialog] = useState(null);
-    const [uspjesnoDialog, setUspjesnoDialog] = useState(null);
-    // -----------------------------------------
+    // --- PAMETNI DIJALOZI ---
+    const [dialog, setDialog] = useState({ isOpen: false });
+    const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
+    const zatvoriDialog = () => setDialog({ isOpen: false });
+    // ------------------------
 
     const generisiID = () => `RAC-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
     const formatirajDatum = (isoString) => { if(!isoString) return ''; if(isoString.includes('.')) return isoString; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
@@ -91,9 +59,6 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [showBrziKupac, setShowBrziKupac] = useState(false);
     const [showBrziKatalog, setShowBrziKatalog] = useState(false);
     const [dostupniDokumenti, setDostupniDokumenti] = useState([]);
-    const [prikaziDrop, setPrikaziDrop] = useState(false);
-    const [kucanjeTimer, setKucanjeTimer] = useState(null);
-    const [skenerInput, setSkenerInput] = useState('');
     
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
@@ -164,7 +129,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             const ukupno = kolicina * fiksna_cijena;
             return { id: Math.random().toString(), sifra: sk.sifra, naziv: sk.naziv, kolicina_unos: sk.kolicina_unos || kolicina, jm_unos: sk.jm_unos || sk.jm_obracun || 'kom', kolicina_obracun: kolicina, jm_obracun: sk.jm_obracun || sk.jm || 'kom', cijena_baza, rabat_procenat, fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: ukupno_bez_rabata - ukupno, ukupno };
         });
-        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null }); setStavke(konacneStavke); setSkenerInput(''); 
+        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: broj, napomena: napomenaTekst, originalna_ponuda: baznaPonuda ? baznaPonuda.id : null }); setStavke(konacneStavke);
     };
 
     const skenirajVezu = async (trazeniBroj) => {
@@ -173,8 +138,19 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         // --- BLOKADA DUPLIKATA ZA RAČUNE ---
         const { data: postojeciRacun } = await supabase.from('racuni').select('*').eq('broj_veze', broj).limit(1);
         if (postojeciRacun && postojeciRacun.length > 0) {
-            setDuplikatDialog({ racun: postojeciRacun[0] });
-            setSkenerInput('');
+            prikaziDialog({
+                tip: 'upozorenje',
+                naslov: 'Račun već postoji!',
+                poruka: `Za ovaj dokument je već izdat račun ${postojeciRacun[0].id}. Šta želite uraditi?`,
+                confirmText: '🖨️ Isprintaj Kopiju',
+                cancelText: '✏️ Uredi Račun',
+                onConfirm: () => { 
+                    setForm(postojeciRacun[0]); setStavke(postojeciRacun[0].stavke_jsonb); 
+                    setTimeout(() => kreirajPDFPrivremeni(postojeciRacun[0], postojeciRacun[0].stavke_jsonb, parseFloat(postojeciRacun[0].ukupno_sa_pdv) > parseFloat(postojeciRacun[0].ukupno_bez_pdv)), 300); 
+                    zatvoriDialog(); 
+                },
+                onCancel: () => { pokreniIzmjenu(postojeciRacun[0]); zatvoriDialog(); }
+            });
             return;
         }
 
@@ -183,18 +159,15 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         
         if (otp) {
             if (otp.status !== 'ISPORUČENO') { 
-                // UMJESTO window.confirm KORISTIMO CUSTOM DIJALOG
-                setUpozorenjeDialog({
-                    dokument: otp,
-                    broj: broj,
-                    poruka: `Otpremnica ${broj} je u statusu "${otp.status}". Roba još uvijek nije fizički isporučena kupcu!`,
-                    onConfirm: async () => {
-                        setUpozorenjeDialog(null);
-                        await obradiPovezaniDokument(otp, broj, true);
-                    },
-                    onCancel: () => { setUpozorenjeDialog(null); setSkenerInput(''); }
+                return prikaziDialog({
+                    tip: 'upozorenje',
+                    naslov: 'Roba Nije Isporučena',
+                    poruka: `Otpremnica ${broj} je u statusu "${otp.status}". Roba još uvijek nije fizički isporučena kupcu!\n\nDa li ste sigurni da želite unaprijed napraviti račun?`,
+                    confirmText: '✅ Da, Napravi Račun',
+                    cancelText: '✕ Prekini',
+                    onConfirm: async () => { zatvoriDialog(); await obradiPovezaniDokument(otp, broj, true); },
+                    onCancel: zatvoriDialog
                 });
-                return;
             } else {
                 await obradiPovezaniDokument(otp, broj, true);
                 return;
@@ -204,7 +177,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         if (!dokument) { let { data: rn } = await supabase.from('radni_nalozi').select('*').eq('id', broj).maybeSingle(); if (rn) { await obradiPovezaniDokument(rn, broj, false); return; } }
         if (!dokument) { let { data: pon } = await supabase.from('ponude').select('*').eq('id', broj).maybeSingle(); if (pon) { dokument = pon; baznaPonuda = pon; await izvrsiUcitavanjeDokumenta(dokument, broj, baznaPonuda, napomenaTekst); return; } }
         
-        if(!dokument) return alert(`❌ Dokument ${broj} nije pronađen nigdje u bazi!`);
+        if(!dokument) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Dokument ${broj} nije pronađen nigdje u bazi!`, onCancel: zatvoriDialog });
     };
 
     const obradiPovezaniDokument = async (dok, broj, isOtp) => {
@@ -217,15 +190,15 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             let { data: pon } = await supabase.from('ponude').select('*').eq('id', dok.broj_ponude).maybeSingle(); baznaPonuda = pon; napomenaTekst += ` -> ${dok.broj_ponude}`;
         }
         await izvrsiUcitavanjeDokumenta(dok, broj, baznaPonuda, napomenaTekst);
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Učitano', poruka: `✅ Uspješno preuzeti podaci iz: ${broj}`, onCancel: zatvoriDialog });
     };
 
-    const handleSkenUnos = (e) => { const val = e.target.value.toUpperCase(); setSkenerInput(val); setPrikaziDrop(true); if (kucanjeTimer) clearTimeout(kucanjeTimer); if (val) { setKucanjeTimer(setTimeout(() => { setPrikaziDrop(false); skenirajVezu(val); }, 2000)); } };
-    
     const dinamickaCijena = trenutniProizvod ? izracunajDinamickuCijenu(trenutniProizvod, stavkaForm.jm_obracun) : 0;
 
-    const handleProizvodSelect = (sifraVal, tekstZaPolje) => {
-        const nadjeni = katalog.find(k => k.sifra === sifraVal); setTrenutniProizvod(nadjeni || null);
+    const handleProizvodSelect = (nadjeni) => {
+        setTrenutniProizvod(nadjeni || null);
         if (nadjeni) {
+            const tekstZaPolje = `${nadjeni.sifra} | ${nadjeni.naziv}`;
             const predlozeniRabat = izracunajRabat(nadjeni, odabraniKupac);
             const bazna = izracunajDinamickuCijenu(nadjeni, nadjeni.default_jedinica || 'm3');
             const predlozenaFiksna = bazna - (bazna * (predlozeniRabat / 100));
@@ -254,8 +227,9 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const dodajStavku = async () => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return alert("Odaberite proizvod i količinu!");
-        if(!odabraniKupac) return alert("Prvo odaberite kupca!");
+        if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Odaberite proizvod i unesite količinu!", onCancel: zatvoriDialog });
+        if(!odabraniKupac) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
+        
         const kolicina = parseFloat(stavkaForm.kolicina_obracun);
         const fiksna_cijena = parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena;
         const ukupno_bez_rabata = kolicina * dinamickaCijena;
@@ -288,13 +262,14 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     }, [stavke, form.ukljuciPDV]);
 
     const snimiRacun = async () => {
-        if(!form.kupac_naziv) return alert("Kupac je obavezan!"); if(stavke.length === 0) return alert("Račun mora imati stavke!");
+        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac je obavezan', poruka: "Morate odabrati kupca da biste snimili račun.", onCancel: zatvoriDialog });
+        if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema stavki', poruka: "Račun mora imati barem jednu stavku!", onCancel: zatvoriDialog });
 
         // --- BLOKADA DUPLIKATA PRI SNIMANJU ---
         if (!isEditing && form.broj_veze) {
             const { data: postojece } = await supabase.from('racuni').select('id').eq('broj_veze', form.broj_veze).limit(1);
             if (postojece && postojece.length > 0) {
-                return alert(`⛔ STOP: Za dokument ${form.broj_veze} je VEĆ KREIRAN RAČUN (${postojece[0].id})!\nNije dozvoljeno kreiranje duplih računa.`);
+                return prikaziDialog({ tip: 'greska', naslov: 'Duplikat', poruka: `Za dokument ${form.broj_veze} je VEĆ KREIRAN RAČUN (${postojece[0].id})!\nNije dozvoljeno kreiranje duplih računa.`, onCancel: zatvoriDialog });
             }
         }
         // ----------------------------------------
@@ -303,40 +278,50 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             id: form.id.toUpperCase(), broj_veze: form.broj_veze, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_placanja: form.rok_placanja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, napomena: form.napomena, stavke_jsonb: stavke, status: form.status,
             ukupno_bez_pdv: parseFloat(totals.osnovica), ukupno_rabat: parseFloat(totals.rabat), ukupno_sa_pdv: parseFloat(totals.za_naplatu), snimio_korisnik: currentUser.ime_prezime
         };
+        
         if (isEditing) {
             const { error } = await supabase.from('racuni').update(payload).eq('id', form.id);
-            if(error) return alert("Greška: " + error.message); await zapisiU_Log('IZMJENA_RACUNA', `Ažuriran račun ${form.id}`); 
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            await zapisiU_Log('IZMJENA_RACUNA', `Ažuriran račun ${form.id}`); 
         } else {
             const { error } = await supabase.from('racuni').insert([payload]);
-            if(error) return alert("Greška pri snimanju: " + error.message);
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            
             if (form.originalna_ponuda) { await supabase.from('ponude').update({ status: 'REALIZOVANA ✅' }).eq('id', form.originalna_ponuda); await zapisiU_Log('ZATVARANJE_PONUDE', `Ponuda ${form.originalna_ponuda} zatvorena kreiranjem računa ${form.id}`); }
             await zapisiU_Log('KREIRAN_RACUN', `Račun ${form.id} za ${form.kupac_naziv}`); 
         }
         await sinhronizujKasu(form.id, form.status, form.nacin_placanja, form.kupac_naziv, parseFloat(totals.za_naplatu));
         
-        // UMJESTO ALERT I CONFIRM, IDE CUSTOM DIJALOG ZA USPJEH I PRINT
-        setUspjesnoDialog({
-            racun: payload,
-            poruka: isEditing ? "Račun uspješno ažuriran!" : "Račun uspješno kreiran!"
-        });
-
         resetFormu(); load(); setTab('otvoreni');
+
+        prikaziDialog({
+            tip: 'uspjeh',
+            naslov: isEditing ? "Ažurirano!" : "Račun Kreiran!",
+            poruka: "Račun je uspješno pohranjen u bazu. Želite li isprintati PDF?",
+            confirmText: '🖨️ DA, ISPRINTAJ PDF',
+            cancelText: '✕ ZATVORI',
+            onConfirm: () => { kreirajPDFPrivremeni(payload, payload.stavke_jsonb, parseFloat(payload.ukupno_sa_pdv) > parseFloat(payload.ukupno_bez_pdv)); zatvoriDialog(); },
+            onCancel: zatvoriDialog
+        });
     };
 
     const kreirajPDF = () => { kreirajPDFPrivremeni(form, stavke, form.ukljuciPDV); };
 
     const kreirajPDFPrivremeni = (podaci, stavkeZaPrint, imaPDV) => {
         const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
-        let redovi = stavkeZaPrint.map((s, i) => `
+        let redovi = stavkeZaPrint.map((s, i) => {
+            const kat = katalog.find(k => k.sifra === s.sifra);
+            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
+            return `
             <tr>
                 <td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td>
-                <td><b style="color: #0f172a; font-size: 13px;">${s.sifra}</b><br/><span style="color: #64748b; font-size: 11px;">${s.naziv}</span></td>
+                <td><b style="color: #0f172a; font-size: 13px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span></td>
                 <td style="text-align: center; font-weight: 800; color: #0f172a;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun}</span></td>
                 <td style="text-align: right; font-weight: 600;">${s.cijena_baza.toFixed(2)}</td>
                 <td style="text-align: right; color: #ec4899; font-weight: 800;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td>
                 <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 13px;">${s.ukupno.toFixed(2)}</td>
             </tr>
-        `).join('');
+        `}).join('');
 
         const htmlSadrzajTabela = `
             <div class="info-grid">
@@ -354,7 +339,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                 </div>
             </div>
             <table>
-                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Šifra i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${podaci.valuta})</th></tr></thead>
+                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${podaci.valuta})</th></tr></thead>
                 <tbody>${redovi}</tbody>
             </table>
             <div class="summary-box">
@@ -363,11 +348,10 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                 ${imaPDV ? `
                 <div class="summary-row"><span>Osnovica za PDV:</span> <b>${podaci.ukupno_bez_pdv}</b></div>
                 <div class="summary-row"><span>PDV iznos (17%):</span> <b>${(parseFloat(podaci.ukupno_sa_pdv) - parseFloat(podaci.ukupno_bez_pdv)).toFixed(2)}</b></div>
-                ` : ''}
-                <div class="summary-total">
-                    <span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">ZA NAPLATU:</span>
-                    <span>${podaci.ukupno_sa_pdv} ${podaci.valuta}</span>
-                </div>
+                <div class="summary-total"><span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">ZA NAPLATU SA PDV:</span><span>${podaci.ukupno_sa_pdv} ${podaci.valuta}</span></div>
+                ` : `
+                <div class="summary-total"><span style="font-size: 14px; letter-spacing: 1px; padding-top:4px;">UKUPNO ZA NAPLATU:</span><span>${podaci.ukupno_sa_pdv} ${podaci.valuta}</span></div>
+                `}
             </div>
             <div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz račun:</b><br/>${podaci.napomena || 'Zahvaljujemo se na povjerenju.'}</div></div>
         `;
@@ -375,7 +359,6 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     };
 
     const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null, ukljuciPDV: true }); setStavke([]); setSkenerInput(''); setIsEditing(false); setOdabraniKupac(null); setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); };
-    const handleKupacSelect = (naziv) => { setForm({...form, kupac_naziv: naziv}); setOdabraniKupac(kupci.find(k => k.naziv === naziv) || null); };
     
     const pokreniIzmjenu = (r) => { 
         const ukljuciPDV = parseFloat(r.ukupno_sa_pdv) > parseFloat(r.ukupno_bez_pdv);
@@ -389,15 +372,22 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const renderPoljeHeader = (polje) => {
         if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border uppercase focus:border-red-500 shadow-inner" placeholder="Nema veze" />;
         if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border font-black disabled:opacity-50" />;
-        if (polje.id === 'kupac') return (<div className="flex gap-2 items-center w-full h-full"><div className="flex-1 min-w-0 h-full"><SearchableInput value={form.kupac_naziv} onChange={handleKupacSelect} list={kupci.map(k=>k.naziv)} /></div>{hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-theme-text px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}</div>);
+        if (polje.id === 'kupac') return (
+            <div className="flex gap-2 items-center w-full h-full">
+                <div className="flex-1 min-w-0 h-full">
+                    <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => {setForm({...form, kupac_naziv: k.naziv}); setOdabraniKupac(k);}} placeholder="Odaberi kupca..." />
+                </div>
+                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-theme-text px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+            </div>
+        );
         if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500 shadow-inner" />;
         if (polje.id === 'rok') return <input type="date" value={form.rok_placanja} onChange={e=>setForm({...form, rok_placanja:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500 shadow-inner" />;
         if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-red-500 shadow-inner"><option value="KM">KM</option><option value="EUR">EUR</option></select>;
         if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none"><option value="NENAPLAĆENO">Nenaplaćeno</option><option value="NAPLAĆENO">NAPLAĆENO</option></select>;
         if (polje.id === 'placanje') return (
             <div className="flex flex-col gap-2 h-full">
-                <select value={form.nacin_placanja} onChange={e => { const val = e.target.value; setForm({...form, nacin_placanja: val, ukljuciPDV: val === 'Virmanski'}); }} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border">
-                    <option value="Virmanski">Virmanski (Uključuje PDV)</option><option value="Gotovina">Gotovina (Cijena Konačna)</option><option value="Kartica">Kartica</option>
+                <select value={form.nacin_placanja} onChange={e => { const val = e.target.value; setForm({...form, nacin_placanja: val, ukljuciPDV: val === 'Virmanski'}); }} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-red-500 shadow-inner cursor-pointer">
+                    <option value="Virmanski">Virmanski (Uključuje PDV)</option><option value="Gotovina">Gotovina (BEZ PDV-a)</option><option value="Kartica">Kartica</option>
                 </select>
                 <div className="flex items-center gap-4 text-[10px] uppercase font-black text-slate-400 pl-1">
                     <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="radio" name="pdv_racun" checked={form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: true})} /> + Obračunaj PDV</label>
@@ -411,52 +401,8 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="računi" saas={saas} />
-
-            {/* PAMETNI DIJALOZI */}
-            {duplikatDialog && (
-                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-red-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(239,68,68,0.3)] max-w-lg w-full text-center">
-                        <span className="text-6xl mb-4 block animate-bounce">⚠️</span>
-                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Račun već postoji!</h2>
-                        <p className="text-slate-400 text-sm mb-8">Za ovaj dokument je već izdat račun <b className="text-red-500">{duplikatDialog.racun.id}</b>. Šta želite uraditi?</p>
-                        
-                        <div className="flex flex-col gap-3">
-                            <button onClick={() => { setForm(duplikatDialog.racun); setStavke(duplikatDialog.racun.stavke_jsonb); setTimeout(() => kreirajPDFPrivremeni(duplikatDialog.racun, duplikatDialog.racun.stavke_jsonb, parseFloat(duplikatDialog.racun.ukupno_sa_pdv) > parseFloat(duplikatDialog.racun.ukupno_bez_pdv)), 300); setDuplikatDialog(null); }} className="w-full py-4 bg-theme-panel border border-slate-600 text-white rounded-xl uppercase font-black hover:bg-white hover:text-black transition-all">🖨️ Isprintaj Kopiju PDF-a</button>
-                            <button onClick={() => { pokreniIzmjenu(duplikatDialog.racun); setDuplikatDialog(null); }} className="w-full py-4 bg-red-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-red-500 transition-all">✏️ Uredi (Otvori račun)</button>
-                            <button onClick={() => setDuplikatDialog(null)} className="w-full py-4 bg-red-900/30 text-red-400 border border-red-500/30 rounded-xl uppercase font-black hover:bg-red-500 hover:text-white transition-all mt-4">✕ Otkaži i zatvori</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {upozorenjeDialog && (
-                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-orange-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(249,115,22,0.3)] max-w-lg w-full text-center">
-                        <span className="text-6xl mb-4 block animate-pulse">🚚</span>
-                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Roba nije isporučena!</h2>
-                        <p className="text-slate-400 text-sm mb-8">{upozorenjeDialog.poruka}<br/><br/>Da li ste sigurni da želite unaprijed napraviti račun?</p>
-                        <div className="flex gap-4">
-                            <button onClick={upozorenjeDialog.onCancel} className="flex-1 py-4 bg-theme-panel text-slate-300 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">✕ Prekini</button>
-                            <button onClick={upozorenjeDialog.onConfirm} className="flex-1 py-4 bg-orange-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-orange-500 transition-all">✅ Da, napravi račun</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {uspjesnoDialog && (
-                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-emerald-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(16,185,129,0.3)] max-w-md w-full text-center">
-                        <span className="text-6xl mb-4 block">✅</span>
-                        <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Uspješno!</h2>
-                        <p className="text-slate-400 text-sm mb-8">{uspjesnoDialog.poruka}<br/>Da li želite odmah isprintati PDF?</p>
-                        <div className="flex flex-col gap-3">
-                            <button onClick={() => { kreirajPDFPrivremeni(uspjesnoDialog.racun, uspjesnoDialog.racun.stavke_jsonb, parseFloat(uspjesnoDialog.racun.ukupno_sa_pdv) > parseFloat(uspjesnoDialog.racun.ukupno_bez_pdv)); setUspjesnoDialog(null); }} className="w-full py-4 bg-emerald-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-emerald-500 transition-all">🖨️ Da, Isprintaj PDF</button>
-                            <button onClick={() => setUspjesnoDialog(null)} className="w-full py-4 bg-theme-panel text-slate-400 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">✕ Ne, zatvori</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            {/* ------------------------------------- */}
+            
+            <PametniDialog {...dialog} />
 
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
                 <button onClick={() => {setTab('novi'); if(!isEditing) resetFormu();}} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'novi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>{isEditing ? '✏️ Ažuriranje Računa' : '➕ Kreiraj Račun'}</button>
@@ -471,24 +417,19 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                     
                     {!isEditing && (
                         <div className="bg-theme-card border border-red-500/50 p-6 rounded-box shadow-2xl relative z-[60]">
-                            <div className="flex gap-3 items-center">
-                                <div className="text-2xl hidden md:block">📷</div>
-                                <div className="flex-1 relative">
-                                    <label className="text-[10px] text-red-400 uppercase font-black block mb-1 ml-2">Pametni unos (Skeniraj OTP, RN ili PON)</label>
-                                    <input value={skenerInput} onChange={handleSkenUnos} onFocus={() => setPrikaziDrop(true)} placeholder="Skeniraj ili ukucaj broj..." className="w-full p-4 bg-theme-panel border-2 border-red-500 rounded-xl text-sm text-theme-text outline-none focus:border-red-400 uppercase font-black shadow-inner relative z-10" />
-                                    {prikaziDrop && skenerInput && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-theme-panel border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-[100] max-h-60 overflow-y-auto text-left">
-                                            {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).length === 0 && <div className="p-3 text-xs text-slate-500 text-center">Nema rezultata...</div>}
-                                            {dostupniDokumenti.filter(d => d.id.includes(skenerInput) || (d.kupac && d.kupac.toUpperCase().includes(skenerInput))).map(p => (
-                                                <div key={p.id} onClick={() => { setSkenerInput(p.id); setPrikaziDrop(false); if (kucanjeTimer) clearTimeout(kucanjeTimer); skenirajVezu(p.id); }} className="p-3 border-b border-theme-border hover:bg-red-600 cursor-pointer flex justify-between items-center transition-all">
-                                                    <div><span className="text-theme-text font-black">{p.id}</span> <span className="text-[10px] text-red-300 ml-2 uppercase font-bold">{p.tip}</span></div>
-                                                    <div className="text-slate-400 text-xs font-bold">{p.kupac}</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                            <label className="text-[10px] text-red-400 uppercase font-black block mb-2 ml-2">Pametni unos (Skeniraj OTP, RN ili PON)</label>
+                            <MasterSearch 
+                                data={dostupniDokumenti} 
+                                poljaZaPretragu={['id', 'kupac']} 
+                                onSelect={(d) => skenirajVezu(d.id)} 
+                                placeholder="Skeniraj ili ukucaj broj (npr. OTP-123)..."
+                                renderItem={(item) => (
+                                    <div className="flex justify-between items-center w-full">
+                                        <div><span className="text-theme-text font-black">{item.id}</span> <span className="text-[10px] text-red-300 ml-2 font-bold">{item.tip}</span></div>
+                                        <div className="text-slate-400 text-xs font-bold">{item.kupac}</div>
+                                    </div>
+                                )}
+                            />
                         </div>
                     )}
 
@@ -513,7 +454,21 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                         <div className="relative z-40 mb-3">
                             <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod za dodavanje</label>
                             <div className="flex gap-2 items-center w-full">
-                                <div className="flex-1 min-w-0"><RAC_SearchableProizvod katalog={katalog} value={stavkaForm.sifra_unos} onChange={handleProizvodSelect} /></div>
+                                <div className="flex-1 min-w-0">
+                                    <MasterSearch 
+                                        data={katalog} 
+                                        poljaZaPretragu={['sifra', 'naziv']} 
+                                        value={stavkaForm.sifra_unos}
+                                        onSelect={handleProizvodSelect} 
+                                        placeholder="Pronađi proizvod..."
+                                        renderItem={(k) => (
+                                            <div>
+                                                <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-red-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                                <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
+                                            </div>
+                                        )}
+                                    />
+                                </div>
                                 {hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-theme-text px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
                             </div>
                         </div>
@@ -521,13 +476,13 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                         {trenutniProizvod && (
                             <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4 shadow-inner">
                                 <div className="flex justify-between items-center border-b border-theme-border pb-3">
-                                    <div><p className="text-theme-text text-sm font-black">{trenutniProizvod.sifra} - {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Dim: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina}</p></div>
+                                    <div><p className="text-theme-text text-sm font-black">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} | {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Šifra: {trenutniProizvod.sifra}</p></div>
                                     <div className="text-right"><p className="text-[10px] text-slate-400 uppercase">Cijena po {stavkaForm.jm_obracun}</p><p className="text-red-400 font-black text-lg">{dinamickaCijena.toFixed(2)} {form.valuta}</p></div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                                     <div className="grid grid-cols-2 gap-2">
-                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-theme-border focus:border-red-500 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
-                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina (Obračun po)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-400 font-black text-center border border-theme-border outline-none cursor-not-allowed" /><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div></div>
+                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-theme-border focus:border-red-500 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
+                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina (Obračun po)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-400 font-black text-center border border-theme-border outline-none cursor-not-allowed" /><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div></div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 bg-black/20 p-3 rounded-xl border border-theme-border">
                                         <div>
@@ -549,13 +504,16 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                         <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl animate-in slide-in-from-bottom">
                             <div className="flex justify-between items-center mb-4"><h3 className="text-red-400 font-black uppercase text-xs">3. Konačni obračun</h3><button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button></div>
                             <div className="space-y-2 mb-6">
-                                {stavke.map((s, i) => (
+                                {stavke.map((s, i) => {
+                                    const katItem = katalog.find(k => k.sifra === s.sifra);
+                                    const dim = katItem ? `${katItem.visina}x${katItem.sirina}x${katItem.duzina}` : '';
+                                    return (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-theme-card border border-theme-border rounded-xl relative overflow-hidden cursor-pointer hover:border-red-500 transition-all group shadow-md">
                                         {s.rabat_procenat > 0 && <div className="absolute top-0 left-0 h-full w-1 bg-pink-500"></div>}
-                                        <div className="flex items-center gap-3"><div className="w-6 h-6 rounded-box bg-theme-panel text-slate-400 flex items-center justify-center text-[10px] font-black">{i+1}</div><div><p className="text-theme-text text-xs font-black">{s.sifra} <span className="text-slate-400 font-normal ml-1">{s.naziv}</span></p><p className="text-[9px] text-slate-500 uppercase mt-1">Količina: <b className="text-theme-text">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.fiksna_cijena} {form.valuta}</p></div></div>
+                                        <div className="flex items-center gap-3"><div className="w-6 h-6 rounded-box bg-theme-panel text-slate-400 flex items-center justify-center text-[10px] font-black">{i+1}</div><div><p className="text-theme-text text-xs font-black">{dim ? `${dim} | ` : ''}{s.naziv}</p><p className="text-[9px] text-slate-500 uppercase mt-1">Šifra: {s.sifra} <span className="mx-2">|</span> Kol: <b className="text-theme-text">{s.kolicina_obracun} {s.jm_obracun}</b> x {s.fiksna_cijena} {form.valuta}</p></div></div>
                                         <div className="flex items-center gap-4"><div className="text-right">{s.rabat_procenat > 0 && <p className="text-[9px] text-pink-500 font-bold line-through">{(s.kolicina_obracun * s.cijena_baza).toFixed(2)}</p>}<p className="text-red-400 font-black text-sm">{s.ukupno.toFixed(2)} {form.valuta} {s.rabat_procenat > 0 && <span className="text-pink-500 text-[8px] ml-1">(-{s.rabat_procenat}%)</span>}</p></div><button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 font-black p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 rounded-lg transition-all">✕</button></div>
                                     </div>
-                                ))}
+                                )})}
                             </div>
                             <div className="bg-theme-card p-5 rounded-2xl border border-theme-border space-y-2 shadow-inner">
                                 <div className="flex justify-between text-xs text-slate-400"><span>Iznos bez rabata:</span><span>{totals.bez_rabata} {form.valuta}</span></div>

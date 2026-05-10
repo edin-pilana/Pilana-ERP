@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { LayoutDashboard, Scissors, ArrowRightLeft, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, TreePine, Axe, Package, FileText, Wrench, Truck, Receipt, Wallet, Radar, BarChart3, AlignJustify, CalendarDays } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
+import { Clock, Users } from 'lucide-react'; // Dodaj na vrh
 
 export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor }) {
     const { theme, layout, setTheme, setLayout, initSettings } = useAppStore();
@@ -68,13 +69,17 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         if (!user) return false;
         if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
         if (modulId === 'home') return true; 
+
+        // NOVO: Specijalna provjera za planiranje (pripušta ako ima Edit ILI samo pregled)
+        if (modulId === 'planiranje') {
+            return (user.dozvole || []).includes('Planiranje Proizvodnje') || (user.dozvole || []).includes('Planiranje (Samo Pregled)');
+        }
         
         const mapaDozvola = {
             'prijem': 'Prijem trupaca',
             'prorez': 'Prorez (Trupci)',
             'pilana': 'Pilana (Izlaz)',
             'dorada': 'Dorada (Ulaz/Izlaz)',
-            'planiranje': 'Planiranje Proizvodnje',
             'lager': 'Lager Paketa', 
             'ponude': 'Ponude',
             'radni_nalozi': 'Radni Nalozi',
@@ -83,7 +88,9 @@ export default function AppShell({ children, user, activeModule = "home", onModu
             'blagajna': 'Blagajna (Keš)',
             'toranj': 'Kontrolni Toranj',
             'analitika': 'Analitika',
-            'podesavanja': 'Podešavanja'
+            'podesavanja': 'Podešavanja',
+            'kiosk': 'Prijava na Rad',
+            'hr': 'HR Dashboard'
         };
         
         return (user.dozvole || []).includes(mapaDozvola[modulId]);
@@ -91,11 +98,13 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
     const menuItems = [
         { id: 'home', label: menuLabels.home, icon: LayoutDashboard },
+        { id: 'kiosk', label: 'Prijava', icon: Clock },
+        { id: 'hr', label: 'HR Admin', icon: Users },
         { id: 'prijem', label: menuLabels.prijem, icon: TreePine },
         { id: 'prorez', label: menuLabels.prorez, icon: Axe },
         { id: 'pilana', label: menuLabels.pilana, icon: Scissors },
         { id: 'dorada', label: menuLabels.dorada, icon: ArrowRightLeft },
-        { id: 'planiranje', label: menuLabels.planiranje, icon: CalendarDays }, // NOVO
+        { id: 'planiranje', label: menuLabels.planiranje, icon: CalendarDays }, 
         { id: 'lager', label: menuLabels.lager, icon: Package },
         { id: 'ponude', label: menuLabels.ponude, icon: FileText },
         { id: 'radni_nalozi', label: menuLabels.radni_nalozi, icon: Wrench },
@@ -104,6 +113,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         { id: 'blagajna', label: menuLabels.blagajna, icon: Wallet },
         { id: 'toranj', label: menuLabels.toranj, icon: Radar },
         { id: 'analitika', label: menuLabels.analitika, icon: BarChart3 },
+        { id: 'podesavanja', label: 'Admin Postavke', icon: Settings }
     ];
 
     // FILTRIRAMO VIDLJIVE MENIJE

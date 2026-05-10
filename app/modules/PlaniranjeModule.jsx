@@ -17,6 +17,10 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const danasnjiDatum = new Date().toISOString().split('T')[0];
 
+    // --- READ ONLY ZABRANA ---
+    // Ako radnik NIJE admin i NEMA glavnu dozvolu, onda je u "Samo Pregled" modu
+    const isReadOnly = user?.uloga !== 'admin' && user?.uloga !== 'superadmin' && !(user?.dozvole || []).includes('Planiranje Proizvodnje');
+
     const [loading, setLoading] = useState(true);
     const [masine, setMasine] = useState([]);
     const [odabranaMasina, setOdabranaMasina] = useState('');
@@ -26,14 +30,12 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const [raspored, setRaspored] = useState([]);
     const [sviPlanoviGlobal, setSviPlanoviGlobal] = useState([]); 
     
-    // Sedmični prikaz
     const [pocetakSedmice, setPocetakSedmice] = useState(getStartOfWeek(new Date()));
 
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    // Modali
     const [pregledNaloga, setPregledNaloga] = useState(null); 
     const [planiranjeModal, setPlaniranjeModal] = useState(null); 
     const [stavkeZaPlaniranje, setStavkeZaPlaniranje] = useState([]); 
@@ -72,16 +74,13 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         const dOd = pocetakSedmice.toISOString().split('T')[0];
         const dDo = krajSedmice.toISOString().split('T')[0];
 
-        // Učitavanje rasporeda
-        const { data: raspData, error: raspErr } = await supabase.from('raspored_proizvodnje')
+        const { data: raspData } = await supabase.from('raspored_proizvodnje')
             .select('*').eq('masina', odabranaMasina).gte('datum_plana', dOd).lte('datum_plana', dDo);
-        if (raspErr) console.error("Greška kod rasporeda:", raspErr);
         setRaspored(raspData || []);
 
         const { data: sviPlanovi } = await supabase.from('raspored_proizvodnje').select('*').eq('masina', odabranaMasina);
         setSviPlanoviGlobal(sviPlanovi || []);
 
-        // Učitavanje aktivnih naloga
         const { data: rnData } = await supabase.from('radni_nalozi').select('*').neq('status', 'ZAVRŠENO');
         
         let naloziZaLijevuStranu = [];
@@ -137,18 +136,15 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         setLoading(false);
     };
 
-    // --- PAMETNA PREPORUKA DATUMA ---
     const izracunajPreporuku = (rok_isporuke) => {
         const rokDate = new Date(rok_isporuke);
         const preporukaDate = new Date(rokDate);
-        preporukaDate.setDate(preporukaDate.getDate() - 2); // 2 dana ranije
+        preporukaDate.setDate(preporukaDate.getDate() - 2);
         const danas = new Date(danasnjiDatum);
-        // Ako je preporuka u prošlosti, forsiraj današnji datum
         const finalPreporuka = preporukaDate < danas ? danas : preporukaDate;
         return finalPreporuka;
     };
 
-    // --- DRAG & DROP LOGIKA ---
     const handleDragStart = (e, nalog) => { e.dataTransfer.setData('nalogId', nalog.id); };
     const handleDragOver = (e) => { e.preventDefault(); e.currentTarget.classList.add('bg-white/5'); };
     const handleDragLeave = (e) => { e.currentTarget.classList.remove('bg-white/5'); };
@@ -156,17 +152,16 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const handleDrop = (e, ciljniDatum) => {
         e.preventDefault();
         e.currentTarget.classList.remove('bg-white/5');
-        
         const nalogId = e.dataTransfer.getData('nalogId');
         if (!nalogId) return;
-
         const nalog = nerasporedjeniNalozi.find(n => n.id === nalogId);
         if(!nalog) return;
-
         otvoriPlaniranjeModal(nalog, ciljniDatum);
     };
 
     const otvoriPlaniranjeModal = (nalog, datum = '') => {
+        if(isReadOnly) return; // Zabrana ako je read only
+
         const pocetnoStanjeStavki = nalog.stavkeZaPlaniranje.map(st => ({
             id: st.id, naziv: st.naziv, 
             dimenzije: st.dimenzije_prikaz,
@@ -177,7 +172,6 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             checked: true 
         }));
         
-        // Ako nema datuma, izvuci pametnu preporuku
         let finalniDatum = datum;
         if (!finalniDatum) {
             finalniDatum = izracunajPreporuku(nalog.rok_isporuke).toISOString().split('T')[0];
@@ -200,7 +194,6 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         if (stavkeZaBazu.length === 0) return alert("Morate odabrati bar jednu stavku za planiranje!");
         if (!planiranjeModal.datum) return alert("Morate odabrati datum!");
 
-        // BLOKADA ZA PROŠLE DATUME (Sigurnosna provjera pred upis u bazu)
         if (planiranjeModal.datum < danasnjiDatum) {
             return alert("⛔ Greška: Ne možete planirati proizvodnju za datum koji je već prošao!");
         }
@@ -234,11 +227,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             planirano_m3: parseFloat(s.kolicinaZaUnos), status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
         }));
 
-        const { error } = await supabase.from('raspored_proizvodnje').insert(payload);
-        if (error) {
-            alert("❌ Greška baze: " + error.message + "\n(Pobrinite se da ste isključili RLS u bazi kako smo dogovorili!)");
-            return;
-        }
+        await supabase.from('raspored_proizvodnje').insert(payload);
 
         setPlaniranjeModal(null); 
         loadRaspored(); 
@@ -275,7 +264,15 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-amber-500" user={user} modulIme="planiranje" saas={saas} hideMasina={true} />
             <PametniDialog {...dialog} />
 
-            {/* MODAL 1: PREGLED NALOGA (Z-INDEX 10000 da ide preko svega) */}
+            {/* OBAVIJEST O READ ONLY MODU */}
+            {isReadOnly && (
+                <div className="bg-blue-900/30 border border-blue-500/50 p-4 rounded-2xl flex items-center justify-center gap-3">
+                    <span className="text-2xl">👁️</span>
+                    <p className="text-blue-400 uppercase tracking-widest text-xs font-black">Nalazite se u "Samo Pregled" načinu rada. Nemate dozvolu za izmjenu plana proizvodnje.</p>
+                </div>
+            )}
+
+            {/* MODAL 1: PREGLED NALOGA */}
             {pregledNaloga && (
                 <div className="fixed inset-0 z-[10000] bg-[#090e17]/95 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
                     <div className="bg-theme-card border-2 border-blue-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-2xl w-full max-h-[90vh] flex flex-col relative">
@@ -320,38 +317,27 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
                         <div className="flex gap-2 mt-6 border-t border-theme-border pt-4">
                             <button onClick={() => setPregledNaloga(null)} className="flex-1 py-4 bg-theme-panel hover:bg-slate-700 text-slate-300 rounded-xl uppercase font-black transition-all border border-slate-600">✕ ZATVORI</button>
-                            <button onClick={() => { setPregledNaloga(null); otvoriPlaniranjeModal(pregledNaloga); }} className="flex-1 py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl uppercase font-black transition-all shadow-lg">📅 ZAKAŽI ODMAH</button>
+                            {!isReadOnly && (
+                                <button onClick={() => { setPregledNaloga(null); otvoriPlaniranjeModal(pregledNaloga); }} className="flex-1 py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl uppercase font-black transition-all shadow-lg">📅 ZAKAŽI ODMAH</button>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
 
             {/* MODAL 2: PLANIRANJE (ODABIR STAVKI, KOLIČINA I DATUMA) */}
-            {planiranjeModal && (
+            {planiranjeModal && !isReadOnly && (
                 <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
                     <div className="bg-theme-card border-2 border-amber-500 p-8 rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-2xl w-full max-h-[90vh] flex flex-col">
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start border-b border-theme-border pb-4 mb-4 gap-4">
                             <div>
                                 <h3 className="text-amber-500 font-black uppercase text-xs mb-1 tracking-widest">Planiranje Naloga</h3>
-                                <p 
-                                    onClick={() => setPregledNaloga(planiranjeModal.nalog)} 
-                                    className="text-blue-400 hover:text-blue-300 cursor-pointer transition-colors text-3xl font-black mb-1 underline decoration-blue-500/50 underline-offset-4"
-                                    title="Klikni za detaljan pregled naloga"
-                                >
-                                    {planiranjeModal.nalog.id}
-                                </p>
+                                <p onClick={() => setPregledNaloga(planiranjeModal.nalog)} className="text-blue-400 hover:text-blue-300 cursor-pointer transition-colors text-3xl font-black mb-1 underline decoration-blue-500/50 underline-offset-4" title="Klikni za detaljan pregled naloga">{planiranjeModal.nalog.id}</p>
                                 <p className="text-slate-300 text-xs font-bold uppercase bg-theme-panel inline-block px-3 py-1.5 rounded-lg border border-theme-border mt-1 shadow-inner">{planiranjeModal.nalog.kupac_naziv}</p>
                             </div>
                             <div className="w-full sm:w-auto bg-amber-900/10 border border-amber-500/30 p-3 rounded-xl shadow-inner">
                                 <label className="text-[10px] text-amber-500 uppercase font-black block mb-2">Odaberi Datum Proizvodnje</label>
-                                {/* BLOKADA PROŠLIH DATUMA (min={danasnjiDatum}) */}
-                                <input 
-                                    type="date" 
-                                    min={danasnjiDatum}
-                                    value={planiranjeModal.datum} 
-                                    onChange={e => setPlaniranjeModal({...planiranjeModal, datum: e.target.value})} 
-                                    className="w-full p-3 bg-black text-amber-400 rounded-lg outline-none border border-amber-500/50 focus:border-amber-400 font-black text-sm uppercase cursor-pointer" 
-                                />
+                                <input type="date" min={danasnjiDatum} value={planiranjeModal.datum} onChange={e => setPlaniranjeModal({...planiranjeModal, datum: e.target.value})} className="w-full p-3 bg-black text-amber-400 rounded-lg outline-none border border-amber-500/50 focus:border-amber-400 font-black text-sm uppercase cursor-pointer" />
                             </div>
                         </div>
                         
@@ -409,7 +395,9 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 <div className="w-full lg:w-[350px] bg-theme-card backdrop-blur-[var(--glass-blur)] border border-theme-border rounded-2xl flex flex-col shadow-2xl shrink-0">
                     <div className="p-4 border-b border-theme-border">
                         <h3 className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Neraspoređeno ({nerasporedjeniNalozi.length})</h3>
-                        <p className="text-[9px] text-slate-500 mt-1">Klikni na "ZAKAŽI" za pametno planiranje.</p>
+                        <p className="text-[9px] text-slate-500 mt-1">
+                            {isReadOnly ? "Pregled dostupnih naloga." : "Prevuci mišem (Drag) ili klikni 'ZAKAŽI'."}
+                        </p>
                     </div>
                     
                     <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
@@ -420,16 +408,15 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             const isHitno = new Date(rn.rok_isporuke) <= new Date(DaniUSedmici[6].datum);
                             const preostaloM3 = rn.stavkeZaPlaniranje.reduce((s, st) => s + parseFloat(st.preostalo), 0).toFixed(2);
                             
-                            // PAMETNA PREPORUKA DATUMA
                             const preporuceniDatum = izracunajPreporuku(rn.rok_isporuke);
                             const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${preporuceniDatum.toLocaleDateString('de-DE').substring(0, 5)})`;
 
                             return (
                                 <div 
                                     key={rn.id} 
-                                    draggable
-                                    onDragStart={(e) => handleDragStart(e, rn)}
-                                    className={`bg-theme-panel border ${isHitno ? 'border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'border-theme-border'} p-4 rounded-2xl cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800 transition-all group`}
+                                    draggable={!isReadOnly}
+                                    onDragStart={(e) => !isReadOnly && handleDragStart(e, rn)}
+                                    className={`bg-theme-panel border ${isHitno ? 'border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'border-theme-border'} p-4 rounded-2xl ${!isReadOnly ? 'cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800' : 'opacity-90'} transition-all group`}
                                 >
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="text-[11px] text-blue-400 font-black uppercase bg-blue-900/20 px-2.5 py-1 rounded border border-blue-500/30">{rn.id}</span>
@@ -442,16 +429,16 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                         <span className="text-xl text-emerald-400 font-black bg-emerald-900/10 px-3 py-1 rounded-lg border border-emerald-500/20 shadow-sm">{preostaloM3} <span className="text-[10px] text-emerald-600">m³</span></span>
                                     </div>
 
-                                    {/* AI PREPORUKA DATUMA */}
-                                    <div className="mt-3 bg-blue-900/10 border border-blue-500/20 p-2 rounded-lg flex items-center justify-between shadow-inner">
-                                        <span className="text-[9px] text-blue-400 uppercase font-black tracking-widest">💡 Preporuka:</span>
-                                        <span className="text-[10px] text-white font-bold bg-blue-600/40 px-2 py-0.5 rounded">{preporukaText}</span>
-                                    </div>
+                                    {!isReadOnly && (
+                                        <div className="mt-3 bg-blue-900/10 border border-blue-500/20 p-2 rounded-lg flex items-center justify-between shadow-inner">
+                                            <span className="text-[9px] text-blue-400 uppercase font-black tracking-widest">💡 Preporuka:</span>
+                                            <span className="text-[10px] text-white font-bold bg-blue-600/40 px-2 py-0.5 rounded">{preporukaText}</span>
+                                        </div>
+                                    )}
                                     
-                                    {/* DUGMAD ZA KLIK */}
                                     <div className="mt-3 flex gap-2">
                                         <button onClick={() => setPregledNaloga(rn)} className="flex-[1] bg-theme-card text-blue-400 py-3 rounded-xl text-[10px] font-black uppercase border border-theme-border hover:bg-slate-700 hover:text-white transition-colors">👁️ Detalji</button>
-                                        <button onClick={() => otvoriPlaniranjeModal(rn)} className="flex-[2] bg-amber-600 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:bg-amber-500 transition-colors shadow-lg shadow-amber-600/20">📅 Zakaži</button>
+                                        {!isReadOnly && <button onClick={() => otvoriPlaniranjeModal(rn)} className="flex-[2] bg-amber-600 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:bg-amber-500 transition-colors shadow-lg shadow-amber-600/20">📅 Zakaži</button>}
                                     </div>
                                 </div>
                             );
@@ -470,17 +457,15 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         return (
                             <div 
                                 key={dan.iso}
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleDrop(e, dan.iso)}
-                                className={`flex-1 min-w-[240px] border-r border-theme-border last:border-0 flex flex-col transition-colors ${dan.iso === danasnjiDatum ? 'bg-blue-900/5' : ''}`}
+                                onDragOver={!isReadOnly ? handleDragOver : undefined}
+                                onDragLeave={!isReadOnly ? handleDragLeave : undefined}
+                                onDrop={!isReadOnly ? (e) => handleDrop(e, dan.iso) : undefined}
+                                className={`flex-1 min-w-[240px] border-r border-theme-border last:border-0 flex flex-col transition-colors ${dan.iso === danasnjiDatum ? 'bg-blue-900/10' : ''}`}
                             >
-                                {/* DNEVNI HEADER */}
                                 <div className="p-3 border-b border-theme-border/50 text-center shrink-0 bg-theme-panel/50">
                                     <h4 className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{dan.ime}</h4>
                                     <h3 className={`text-base font-black mt-1 ${dan.iso === danasnjiDatum ? 'text-blue-400' : 'text-theme-text'}`}>{dan.datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit'})}</h3>
                                     
-                                    {/* KAPACITET BAR */}
                                     <div className="mt-3 bg-black/30 p-2 rounded-xl border border-theme-border/50 shadow-inner">
                                         <div className="flex justify-between text-[8px] font-black uppercase mb-1">
                                             <span className={isPrekoKapaciteta ? 'text-red-400' : 'text-emerald-400'}>{ukupnoDanas.toFixed(2)} m³</span>
@@ -492,7 +477,6 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                     </div>
                                 </div>
 
-                                {/* LISTA ZAKAZANIH STAVKI */}
                                 <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
                                     {stavkeZaDan.map(st => {
                                         const dijeljen = isNalogDijeljen(st.rn_id);
@@ -501,7 +485,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                             <div key={st.id} className={`bg-theme-panel p-3 rounded-xl border ${st.status === 'ZAVRŠENO' ? 'border-emerald-500/30 bg-emerald-900/10' : 'border-slate-700 hover:border-amber-500/50'} shadow-md group transition-all`}>
                                                 <div className="flex justify-between items-start mb-3">
                                                     <span className="text-[10px] text-blue-300 uppercase font-black bg-blue-900/20 px-2 py-0.5 rounded border border-blue-500/30">{st.rn_id}</span>
-                                                    <button onClick={(e) => obrisiIzPlana(st.id, e)} className="text-red-500 bg-red-900/30 w-6 h-6 flex items-center justify-center rounded-lg text-[10px] opacity-0 group-hover:opacity-100 transition-opacity font-black hover:bg-red-500 hover:text-white">✕</button>
+                                                    {!isReadOnly && <button onClick={(e) => obrisiIzPlana(st.id, e)} className="text-red-500 bg-red-900/30 w-6 h-6 flex items-center justify-center rounded-lg text-[10px] opacity-0 group-hover:opacity-100 transition-opacity font-black hover:bg-red-500 hover:text-white">✕</button>}
                                                 </div>
                                                 
                                                 {dijeljen && <span className="text-[8px] bg-amber-900/40 text-amber-400 px-2 py-0.5 rounded uppercase font-black border border-amber-500/30 mb-2 inline-block">✂️ DIJELJEN NALOG</span>}

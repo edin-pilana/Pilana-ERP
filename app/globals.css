@@ -188,3 +188,17 @@ body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-toolt
 body:not([data-theme="light"]) .recharts-tooltip-item {
   color: var(--text-primary) !important;
 }
+/* FORSIRANJE VELIKIH SLOVA U SVIM POLJIMA ZA UNOS */
+input[type="text"],
+input[type="search"],
+textarea {
+  text-transform: uppercase !important;
+}
+
+/* KOREKCIJA PADAJUĆIH MENIJA (Da ne budu providni i da uvijek budu na vrhu) */
+.custom-dropdown-menu {
+  background-color: #0f172a !important; /* Čvrsta, neprovidna tamna boja */
+  border: 1px solid var(--border-color);
+  z-index: 9999 !important; /* Uvijek iznad svega */
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+}

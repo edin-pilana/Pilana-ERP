@@ -117,7 +117,6 @@ function TabSumarije() {
 
     const zapisiU_Log = async (akcija, detalji) => { await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]); };
 
-    // --- ŠUMARIJE ---
     const pokreniIzmjenuSum = (item) => { setFormSum({ id: item.id, naziv: item.naziv }); setIsEditingSum(true); };
     const ponistiIzmjenuSum = () => { setFormSum({ id: null, naziv: '' }); setIsEditingSum(false); };
     const saveSumarija = async () => {
@@ -132,7 +131,6 @@ function TabSumarije() {
     };
     const obrisiSumariju = async (id, naziv) => { if(window.confirm(`Brisati šumariju: ${naziv}?`)) { await supabase.from('sumarije').delete().eq('id', id); load(); } };
 
-    // --- PODRUŽNICE (SA PREVOZOM) ---
     const pokreniIzmjenuPodr = (item) => { setFormPodr({ id: item.id, sumarija_naziv: item.sumarija_naziv, naziv: item.naziv, cijena_prevoza_po_m3: item.cijena_prevoza_po_m3 || '' }); setIsEditingPodr(true); };
     const ponistiIzmjenuPodr = () => { setFormPodr({ id: null, sumarija_naziv: '', naziv: '', cijena_prevoza_po_m3: '' }); setIsEditingPodr(false); };
     const savePodruznica = async () => {
@@ -144,7 +142,6 @@ function TabSumarije() {
     };
     const obrisiPodruznicu = async (id, naziv) => { if(window.confirm(`Brisati podružnicu: ${naziv}?`)) { await supabase.from('podruznice').delete().eq('id', id); load(); } };
 
-    // --- VRSTE I KLASE (SA ERROR ALERTOM) ---
     const dodajVrstu = async () => { 
         if(!novaVrsta.trim()) return;
         const { error } = await supabase.from('vrste_drveta').insert([{ naziv: novaVrsta.trim().toUpperCase() }]); 
@@ -175,7 +172,6 @@ function TabSumarije() {
         } 
     };
 
-    // --- CJENOVNIK ---
     const snimiCjenovnik = async () => {
         if(!formCjenovnik.sumarija_id || !formCjenovnik.vrsta_id || !formCjenovnik.klasa_id || !formCjenovnik.cijena_po_m3) return alert("Popuni sva polja za cjenovnik!");
         const payload = { sumarija_id: formCjenovnik.sumarija_id, vrsta_id: formCjenovnik.vrsta_id, klasa_id: formCjenovnik.klasa_id, cijena_po_m3: parseFloat(formCjenovnik.cijena_po_m3) };
@@ -188,7 +184,6 @@ function TabSumarije() {
         <div className="space-y-6 animate-in fade-in">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* ŠUMARIJE */}
                 <div className="space-y-6">
                     <div className={`bg-theme-card p-6 rounded-box border shadow-2xl transition-all ${isEditingSum ? 'border-amber-500/50' : 'border-theme-border'}`}>
                         <div className="flex justify-between items-center mb-4">
@@ -212,7 +207,6 @@ function TabSumarije() {
                     </div>
                 </div>
 
-                {/* PODRUŽNICE SA PREVOZOM */}
                 <div className="space-y-6">
                     <div className={`bg-theme-card p-6 rounded-box border shadow-2xl transition-all ${isEditingPodr ? 'border-amber-500/50' : 'border-theme-border'}`}>
                         <div className="flex justify-between items-center mb-4">
@@ -246,9 +240,7 @@ function TabSumarije() {
                 </div>
             </div>
 
-            {/* VRSTE, KLASE I CJENOVNIK */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6 border-t border-theme-border pt-6">
-                
                 <div className="lg:col-span-4 space-y-6">
                     <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-xl">
                         <h3 className="text-blue-400 font-black uppercase text-xs mb-4">🌳 Vrste Drveta</h3>
@@ -404,7 +396,7 @@ function TabMasine() {
     const [masine, setMasine] = useState([]);
     const [masterOznake, setMasterOznake] = useState([]);
     const [novaMasterOznaka, setNovaMasterOznaka] = useState('');
-    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [], dnevni_kapacitet_m3: 30 }); // NOVO: Kapacitet
+    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [], dnevni_kapacitet_m3: 30 }); 
     const [isEditing, setIsEditing] = useState(false);
 
     useEffect(() => { load(); }, []);
@@ -480,7 +472,6 @@ function TabMasine() {
                     <div className="grid grid-cols-1 gap-4">
                         <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* Naziv Mašine</label><input placeholder="npr. BRENTA 1" value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-4 bg-theme-card rounded-xl text-sm font-black text-theme-text outline-none uppercase border border-theme-border focus:border-blue-500" /></div>
                         
-                        {/* NOVO: KAPACIET MAŠINE */}
                         <div>
                             <label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1">Dnevni kapacitet proizvodnje (m³ / dan)</label>
                             <input type="number" placeholder="npr. 30" value={form.dnevni_kapacitet_m3} onChange={e=>setForm({...form, dnevni_kapacitet_m3:e.target.value})} className="w-full p-3 bg-amber-900/10 text-amber-400 font-black rounded-xl text-sm outline-none border border-amber-500/30 focus:border-amber-500" />
@@ -1005,27 +996,15 @@ function TabKupci() {
 function TabRadnici() {
     const [radnici, setRadnici] = useState([]);
     const [editId, setEditId] = useState(null); 
-    const [form, setForm] = useState({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [] });
+    const [form, setForm] = useState({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [], qr_kod: '' });
 
-    // REVIDIRANE I KATEGORISANE DOZVOLE ZA SVE MODULE (Uključeno Planiranje)
     const sviModuliKategorisano = {
-        "📦 PROIZVODNJA": [
-            'Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje'
-        ],
-        "💼 PRODAJA I WMS": [
-            'Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi'
-        ],
-        "📊 NADZOR I LAGER": [
-            'Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca'
-        ],
-        "💰 FINANSIJE": [
-            'Blagajna (Keš)'
-        ],
-        "⚙️ ŠIFARNICI (ADMIN)": [
-            'Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)'
-        ]
+        "📦 PROIZVODNJA": ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje', 'Planiranje (Samo Pregled)'],
+        "💼 PRODAJA I WMS": ['Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi'],
+        "📊 NADZOR I LAGER": ['Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca', 'HR Dashboard', 'Prijava na Rad'],
+        "💰 FINANSIJE": ['Blagajna (Keš)'],
+        "⚙️ ŠIFARNICI (ADMIN)": ['Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)']
     };
-
     const sviModuli = Object.values(sviModuliKategorisano).flat();
 
     useEffect(() => { load(); }, []);
@@ -1039,34 +1018,66 @@ function TabRadnici() {
     };
 
     const pokreniEdit = (r) => {
-        setForm({ ime_prezime: r.ime_prezime, username: r.username, password: r.password, uloga: r.uloga, bruto_satnica: r.bruto_satnica, preostalo_godisnjeg: r.preostalo_godisnjeg, dozvole: r.dozvole || [] });
+        setForm({ ime_prezime: r.ime_prezime, username: r.username, password: r.password, uloga: r.uloga, bruto_satnica: r.bruto_satnica, preostalo_godisnjeg: r.preostalo_godisnjeg, dozvole: r.dozvole || [], qr_kod: r.qr_kod || '' });
         setEditId(r.id); window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
 
-    const ponistiEdit = () => { setForm({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [] }); setEditId(null); };
+    const ponistiEdit = () => { setForm({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [], qr_kod: '' }); setEditId(null); };
 
     const snimi = async () => {
         if(!form.ime_prezime || !form.username || !form.password) return alert("Popuni Ime, Username i Password!");
-        if(form.dozvole.length === 0 && !window.confirm("Radniku niste dodijelili nijednu dozvolu. Da li ste sigurni?")) return;
         
-        if (editId) {
-            const { data: userPostoji } = await supabase.from('radnici').select('id').ilike('username', form.username).neq('id', editId).maybeSingle();
-            if(userPostoji) return alert("Upozorenje: Ovaj username već koristi drugi radnik!");
-        } else {
-            const { data: userPostoji } = await supabase.from('radnici').select('id').ilike('username', form.username).maybeSingle();
-            if(userPostoji) return alert("Upozorenje: Ovaj username je već zauzet!");
-        }
-
-        const payload = { ime_prezime: form.ime_prezime, username: form.username.toLowerCase(), password: form.password, uloga: form.uloga, bruto_satnica: parseFloat(form.bruto_satnica)||0, preostalo_godisnjeg: parseInt(form.preostalo_godisnjeg)||0, dozvole: form.dozvole };
+        const payload = { ime_prezime: form.ime_prezime, username: form.username.toLowerCase(), password: form.password, uloga: form.uloga, bruto_satnica: parseFloat(form.bruto_satnica)||0, preostalo_godisnjeg: parseInt(form.preostalo_godisnjeg)||0, dozvole: form.dozvole, qr_kod: form.qr_kod };
 
         if (editId) {
             const { error } = await supabase.from('radnici').update(payload).eq('id', editId);
-            if(error) return alert("Greška pri ažuriranju: " + error.message); alert("Radnik uspješno ažuriran!");
+            if(error) return alert("Greška: " + error.message); alert("Radnik ažuriran!");
         } else {
             const { error } = await supabase.from('radnici').insert([payload]);
-            if(error) return alert("Greška pri kreiranju: " + error.message); alert("Radnik uspješno kreiran!"); 
+            if(error) return alert("Greška: " + error.message); alert("Radnik kreiran!"); 
         }
         ponistiEdit(); load();
+    };
+
+    const printAkreditaciju = (r) => {
+        const logo = localStorage.getItem('saas_app_logo') || '';
+        const appName = localStorage.getItem('saas_app_name') || 'SmartERP';
+        const kodZaQR = r.qr_kod || r.username; 
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(kodZaQR)}&color=0f172a`;
+
+        const printWindow = window.open('', '', 'width=800,height=800');
+        printWindow.document.write(`
+            <html><head><title>ID Kartica - ${r.ime_prezime}</title>
+            <style>
+                body { font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f1f5f9; }
+                .id-card { width: 54mm; height: 86mm; background: white; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 2px solid #cbd5e1; overflow: hidden; position: relative; text-align: center; }
+                .header { background: #1e293b; color: white; padding: 15px 10px; border-bottom: 4px solid #3b82f6; }
+                .header img { max-width: 100%; max-height: 30px; object-fit: contain; }
+                .header h2 { margin: 0; font-size: 14px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+                .photo-area { width: 60px; height: 60px; background: #e2e8f0; border-radius: 50%; margin: 15px auto 10px; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 24px; font-weight: bold; color: #64748b; }
+                .name { font-size: 14px; font-weight: 900; color: #0f172a; margin: 0 0 2px 0; text-transform: uppercase; }
+                .role { font-size: 10px; color: #3b82f6; font-weight: bold; text-transform: uppercase; margin: 0 0 15px 0; }
+                .qr-container { padding: 10px; background: white; width: fit-content; margin: 0 auto; border-radius: 8px; border: 1px dashed #cbd5e1; }
+                .qr-code { width: 90px; height: 90px; }
+                .footer { position: absolute; bottom: 0; width: 100%; background: #f8fafc; padding: 5px; font-size: 8px; color: #64748b; font-weight: bold; border-top: 1px solid #e2e8f0; }
+            </style>
+            </head><body>
+                <div class="id-card">
+                    <div class="header">
+                        ${logo ? `<img src="${logo}" />` : `<h2>${appName}</h2>`}
+                    </div>
+                    <div class="photo-area">${r.ime_prezime.charAt(0)}</div>
+                    <h3 class="name">${r.ime_prezime}</h3>
+                    <p class="role">${r.uloga === 'admin' ? 'Uprava / Šef' : 'Zaposlenik'}</p>
+                    <div class="qr-container">
+                        <img src="${qrUrl}" class="qr-code" />
+                    </div>
+                    <div class="footer">ID: ${kodZaQR}</div>
+                </div>
+                <script>setTimeout(() => { window.print(); }, 1000);</script>
+            </body></html>
+        `);
+        printWindow.document.close();
     };
 
     return (
@@ -1083,6 +1094,13 @@ function TabRadnici() {
                         <div className="grid grid-cols-2 gap-3">
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Korisničko ime (Login)</label><input placeholder="dzemal" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500 lowercase font-mono" /></div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Šifra (Lozinka)</label><input placeholder="***" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500 font-mono" /></div>
+                        </div>
+
+                        {/* NOVO: QR KOD POLJE */}
+                        <div className="bg-blue-900/10 border border-blue-500/30 p-3 rounded-xl shadow-inner">
+                            <label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1 font-black">Serijski broj kartice / QR Kod (Za Kiosk skener)</label>
+                            <input value={form.qr_kod} onChange={e=>setForm({...form, qr_kod:e.target.value})} placeholder="Skenirajte karticu u ovo polje..." className="w-full p-3 bg-black rounded-lg text-xs text-blue-400 font-black outline-none border border-blue-500/50 uppercase tracking-widest text-center" />
+                            <p className="text-[8px] text-slate-500 text-center mt-1">Ako ostavite prazno, Kiosk će tražiti njegov username umjesto QR koda.</p>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1128,7 +1146,7 @@ function TabRadnici() {
                                     <div className="w-10 h-10 bg-theme-card rounded-xl border border-theme-border flex items-center justify-center font-black text-lg text-theme-accent">{r.ime_prezime.charAt(0)}</div>
                                     <div>
                                         <p className="text-theme-text text-base font-black uppercase">{r.ime_prezime}</p>
-                                        <p className="text-slate-500 text-[10px] font-bold mt-0.5">@{r.username}</p>
+                                        <p className="text-slate-500 text-[10px] font-bold mt-0.5">@{r.username} {r.qr_kod && <span className="ml-2 bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">QR: {r.qr_kod}</span>}</p>
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3 mt-4 text-[10px] text-slate-400 uppercase font-bold tracking-widest">
@@ -1141,7 +1159,9 @@ function TabRadnici() {
                                     {(r.dozvole || []).length === 0 ? ( <span className="text-[8px] text-red-500 font-bold italic">NEMA DOZVOLA</span> ) : ( (r.dozvole || []).map(d => ( <span key={d} className="text-[8px] text-emerald-400 bg-emerald-900/10 border border-emerald-500/30 px-2 py-1 rounded uppercase font-black shadow-sm">{d}</span> )) )}
                                 </div>
                             </div>
-                            <div className="flex md:flex-col gap-2 w-full md:w-auto">
+                            <div className="flex flex-wrap md:flex-col gap-2 w-full md:w-auto">
+                                {/* NOVO DUGME ZA PRINTANJE KARTICE */}
+                                <button onClick={() => printAkreditaciju(r)} className="flex-1 md:flex-none text-theme-text font-black px-4 py-2 bg-theme-card hover:bg-white hover:text-black rounded-xl transition-all border border-slate-600 uppercase text-[9px] shadow-sm">🖨️ ID Kartica</button>
                                 <button onClick={() => pokreniEdit(r)} className="flex-1 md:flex-none text-blue-400 font-black px-4 py-3 bg-blue-900/20 hover:bg-blue-600 hover:text-theme-text rounded-xl transition-all border border-blue-500/30 uppercase text-[10px] shadow-sm">✎ Uredi</button>
                                 <button onClick={async()=>{if(window.confirm(`Da li ste sigurni da zelite obrisati radnika ${r.ime_prezime}?`)){await supabase.from('radnici').delete().eq('id', r.id); load();}}} className="flex-1 md:flex-none text-red-400 font-black px-4 py-3 bg-red-900/20 hover:bg-red-600 hover:text-theme-text rounded-xl transition-all border border-red-500/30 uppercase text-[10px] shadow-sm">✕ Obriši</button>
                             </div>
@@ -1484,6 +1504,46 @@ function TabBrending() {
                 </div>
             </div>
 
+        </div>
+    );
+}
+
+export default function SettingsModule({ onExit, lockedTab }) {
+    const [tab, setTab] = useState(lockedTab || 'sumarije');
+    const tabs = ['sumarije', 'prevoznici', 'masine', 'katalog', 'kupci', 'radnici', 'blagajna', 'brending'];
+    const labels = { sumarije: '🌲 Šumarije', prevoznici: '🚚 Prevoznici', masine: '⚙️ Mašine', katalog: '📦 Katalog', kupci: '🤝 Kupci', radnici: '👷 Radnici', blagajna: '🗂️ Kase / Kat.', brending: '🎨 Brending / Print' };
+
+    return (
+        <div className="p-4 max-w-7xl mx-auto space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-theme-border shadow-xl gap-4">
+                <div className="flex items-center gap-4">
+                    <button onClick={onExit} className={`text-[10px] px-5 py-3 rounded-xl uppercase font-black text-theme-text transition-all shadow-md ${lockedTab ? 'bg-red-600 hover:bg-red-500' : 'bg-theme-panel border border-theme-border hover:bg-slate-700'}`}>
+                        {lockedTab ? '✕ ZATVORI I NASTAVI RAD' : '← Nazad u Meni'}
+                    </button>
+                    <h2 className={`${lockedTab ? 'text-amber-500' : 'text-slate-400'} font-black tracking-widest uppercase text-xs md:text-sm hidden md:block`}>
+                        {lockedTab ? '⚡ BRZI UNOS PODATAKA' : '⚙️ ERP CENTRALNE POSTAVKE'}
+                    </h2>
+                </div>
+                
+                {!lockedTab && (
+                    <div className="flex flex-wrap gap-2 justify-center bg-theme-panel p-2 rounded-2xl border border-theme-border shadow-inner">
+                        {tabs.map(t => (
+                            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 rounded-xl transition-all text-[9px] tracking-widest uppercase font-black ${tab === t ? 'bg-theme-accent border border-blue-400 text-white shadow-md' : 'bg-transparent text-slate-400 hover:text-theme-text hover:bg-theme-card'}`}>
+                                {labels[t]}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+            
+            {tab === 'sumarije' && <TabSumarije />}
+            {tab === 'prevoznici' && <TabPrevoznici />}
+            {tab === 'masine' && <TabMasine />}
+            {tab === 'katalog' && <TabKatalog />}
+            {tab === 'kupci' && <TabKupci />}
+            {tab === 'radnici' && <TabRadnici />}
+            {tab === 'blagajna' && <TabKategorijeBlagajne />}
+            {tab === 'brending' && <TabBrending />}
         </div>
     );
 }
