@@ -8,7 +8,6 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
     const [open, setOpen] = useState(false);
     const wrapperRef = useRef(null);
 
-    // OVO JE DODANO: Zatvaranje liste kada se klikne bilo gdje van nje
     useEffect(() => {
         function handleClickOutside(event) { 
             if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false); 
@@ -33,7 +32,6 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
                 placeholder={placeholder} 
             />
             {open && list.length > 0 && (
-                // OVDJE JE POPRAVLJENO: Stavljen z-[5000] da ide preko svega i bg-slate-800 da pozadina bude 100% puna
                 <div className="absolute z-[5000] w-full mt-1 bg-slate-800 border border-theme-border rounded-xl shadow-2xl max-h-40 overflow-y-auto custom-scrollbar">
                     {list.filter(i => i.toUpperCase().includes((value||'').toUpperCase())).map((item, idx) => (
                         <div key={idx} onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-theme-border hover:bg-theme-accent uppercase cursor-pointer text-slate-200 hover:text-white">
@@ -406,7 +404,7 @@ function TabMasine() {
     const [masine, setMasine] = useState([]);
     const [masterOznake, setMasterOznake] = useState([]);
     const [novaMasterOznaka, setNovaMasterOznaka] = useState('');
-    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [] });
+    const [form, setForm] = useState({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [], dnevni_kapacitet_m3: 30 }); // NOVO: Kapacitet
     const [isEditing, setIsEditing] = useState(false);
 
     useEffect(() => { load(); }, []);
@@ -441,17 +439,17 @@ function TabMasine() {
     };
 
     const pokreniIzmjenu = (m) => {
-        setForm({ id: m.id, naziv: m.naziv, cijena_sat: m.cijena_sat || '', cijena_m3: m.cijena_m3 || '', atributi_paketa: m.atributi_paketa || [], dozvoljeni_moduli: m.dozvoljeni_moduli ? m.dozvoljeni_moduli.split(',').map(s => s.trim().toLowerCase()) : [] });
+        setForm({ id: m.id, naziv: m.naziv, cijena_sat: m.cijena_sat || '', cijena_m3: m.cijena_m3 || '', atributi_paketa: m.atributi_paketa || [], dozvoljeni_moduli: m.dozvoljeni_moduli ? m.dozvoljeni_moduli.split(',').map(s => s.trim().toLowerCase()) : [], dnevni_kapacitet_m3: m.dnevni_kapacitet_m3 || 30 });
         setIsEditing(true); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const ponistiIzmjenu = () => {
-        setForm({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [] }); setIsEditing(false);
+        setForm({ id: null, naziv: '', cijena_sat: '', cijena_m3: '', atributi_paketa: [], dozvoljeni_moduli: [], dnevni_kapacitet_m3: 30 }); setIsEditing(false);
     };
 
     const save = async () => {
         if(!form.naziv) return alert("Naziv mašine je obavezan!");
-        const payload = { naziv: form.naziv, cijena_sat: parseFloat(form.cijena_sat)||0, cijena_m3: parseFloat(form.cijena_m3)||0, atributi_paketa: form.atributi_paketa, dozvoljeni_moduli: form.dozvoljeni_moduli.join(', ') };
+        const payload = { naziv: form.naziv, cijena_sat: parseFloat(form.cijena_sat)||0, cijena_m3: parseFloat(form.cijena_m3)||0, atributi_paketa: form.atributi_paketa, dozvoljeni_moduli: form.dozvoljeni_moduli.join(', '), dnevni_kapacitet_m3: parseFloat(form.dnevni_kapacitet_m3)||0 };
         if (isEditing) {
             const {error} = await supabase.from('masine').update(payload).eq('id', form.id);
             if(error) return alert("Greška: " + error.message);
@@ -481,6 +479,13 @@ function TabMasine() {
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                         <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* Naziv Mašine</label><input placeholder="npr. BRENTA 1" value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-4 bg-theme-card rounded-xl text-sm font-black text-theme-text outline-none uppercase border border-theme-border focus:border-blue-500" /></div>
+                        
+                        {/* NOVO: KAPACIET MAŠINE */}
+                        <div>
+                            <label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1">Dnevni kapacitet proizvodnje (m³ / dan)</label>
+                            <input type="number" placeholder="npr. 30" value={form.dnevni_kapacitet_m3} onChange={e=>setForm({...form, dnevni_kapacitet_m3:e.target.value})} className="w-full p-3 bg-amber-900/10 text-amber-400 font-black rounded-xl text-sm outline-none border border-amber-500/30 focus:border-amber-500" />
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Cijena / Sat (KM)</label><input type="number" placeholder="0.00" value={form.cijena_sat} onChange={e=>setForm({...form, cijena_sat:e.target.value})} className="w-full p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500" /></div>
                             <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Cijena / m³ (KM)</label><input type="number" placeholder="0.00" value={form.cijena_m3} onChange={e=>setForm({...form, cijena_m3:e.target.value})} className="w-full p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500" /></div>
@@ -528,7 +533,7 @@ function TabMasine() {
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="font-black text-theme-text text-base">{m.naziv}</p>
-                                    <p className="text-[10px] text-slate-400 mt-2">Radni sat: <b className="text-emerald-400">{m.cijena_sat} KM</b> | Po kubiku: <b className="text-emerald-400">{m.cijena_m3} KM</b> | Moduli: <b className="text-theme-accent">{m.dozvoljeni_moduli ? m.dozvoljeni_moduli.toUpperCase() : 'SVI'}</b></p>
+                                    <p className="text-[10px] text-slate-400 mt-2">Kapacitet: <b className="text-amber-400">{m.dnevni_kapacitet_m3 || 30} m³</b> | Radni sat: <b className="text-emerald-400">{m.cijena_sat} KM</b> | Moduli: <b className="text-theme-accent">{m.dozvoljeni_moduli ? m.dozvoljeni_moduli.toUpperCase() : 'SVI'}</b></p>
                                 </div>
                                 <button onClick={(e)=>obrisi(m.id, m.naziv, e)} className="text-red-500 font-black px-4 py-3 bg-red-900/20 rounded-xl hover:bg-red-500 hover:text-theme-text transition-all">✕ Obriši</button>
                             </div>
@@ -557,13 +562,11 @@ function TabKatalog() {
     const [novaGlobalnaCijena, setNovaGlobalnaCijena] = useState('');
     const [cijeneEditMap, setCijeneEditMap] = useState({}); 
 
-    // NOVO: State za masovno prebacivanje kategorija
     const [kategorijaZaMijenjanje, setKategorijaZaMijenjanje] = useState('');
     const [kategorijaNovaDestinacija, setKategorijaNovaDestinacija] = useState('');
 
     useEffect(() => { load(); }, []);
 
-    // NOVO: Funkcija za masovno prebacivanje
     const masovnoPrebaciKategoriju = async () => {
         if (!kategorijaZaMijenjanje || !kategorijaNovaDestinacija) return alert("Odaberite staru i unesite novu kategoriju!");
         if (kategorijaZaMijenjanje === kategorijaNovaDestinacija) return alert("Kategorije su iste!");
@@ -621,14 +624,13 @@ function TabKatalog() {
         
         const d = parseFloat(form.duzina)||0; const s = parseFloat(form.sirina)||0; const v = parseFloat(form.visina)||0;
 
-        // NOVO: Pametna provjera dimenzija (ako su dimenzije unesene)
         if (d > 0 && s > 0 && v > 0) {
             const duplikatDimenzija = katalog.find(k => 
                 k.sifra !== form.sifra && parseFloat(k.duzina||0) === d && parseFloat(k.sirina||0) === s && parseFloat(k.visina||0) === v
             );
             if (duplikatDimenzija) {
                 if (!window.confirm(`⚠️ UPOZORENJE: Proizvod sa potpuno istim dimenzijama (${v}x${s}x${d}) već postoji u bazi!\n\nŠifra postojećeg: ${duplikatDimenzija.sifra}\nNaziv postojećeg: ${duplikatDimenzija.naziv}\n\nDa li ste sigurni da želite ignorisati ovo i svejedno snimiti ovaj proizvod?`)) {
-                    return; // Prekida snimanje
+                    return; 
                 }
             }
         }
@@ -727,7 +729,6 @@ function TabKatalog() {
                     )}
                 </div>
 
-                {/* FORMA ZA UNOS PROIZVODA */}
                 {/* MASOVNO PREBACIVANJE KATEGORIJA */}
                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-xl mb-6">
                     <h3 className="text-blue-500 font-black uppercase text-xs mb-4">🔀 Masovno Prebacivanje Kategorija</h3>
@@ -1006,11 +1007,26 @@ function TabRadnici() {
     const [editId, setEditId] = useState(null); 
     const [form, setForm] = useState({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [] });
 
-    const sviModuli = [
-        'Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 
-        'Ponude', 'Radni Nalozi', 'Otpremnice', 'Računi', 'Blagajna (Keš)', 'Kontrolni Toranj',
-        'LAGER PAKETA', 'Analitika', 'Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)'
-    ];
+    // REVIDIRANE I KATEGORISANE DOZVOLE ZA SVE MODULE (Uključeno Planiranje)
+    const sviModuliKategorisano = {
+        "📦 PROIZVODNJA": [
+            'Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje'
+        ],
+        "💼 PRODAJA I WMS": [
+            'Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi'
+        ],
+        "📊 NADZOR I LAGER": [
+            'Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca'
+        ],
+        "💰 FINANSIJE": [
+            'Blagajna (Keš)'
+        ],
+        "⚙️ ŠIFARNICI (ADMIN)": [
+            'Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)'
+        ]
+    };
+
+    const sviModuli = Object.values(sviModuliKategorisano).flat();
 
     useEffect(() => { load(); }, []);
     const load = async () => { const {data} = await supabase.from('radnici').select('*').order('ime_prezime'); setRadnici(data||[]); };
@@ -1076,16 +1092,24 @@ function TabRadnici() {
                         </div>
 
                         <div className="mt-4 bg-theme-panel p-4 rounded-2xl border border-theme-border shadow-inner">
-                            <label className="text-[10px] text-slate-400 uppercase font-black mb-3 block">🔐 Odobreni Moduli (Dozvole pristupa):</label>
-                            <div className="flex flex-wrap gap-2">
-                                {sviModuli.map(modul => {
-                                    const aktivan = form.dozvole.includes(modul);
-                                    return (
-                                        <button key={modul} onClick={() => toggleDozvola(modul)} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${aktivan ? 'bg-emerald-600 border-emerald-400 text-theme-text shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-theme-card border-theme-border text-slate-500 hover:border-slate-500'}`}>
-                                            {aktivan ? '✓ ' : '+ '} {modul}
-                                        </button>
-                                    );
-                                })}
+                            <label className="text-[10px] text-slate-400 uppercase font-black mb-4 block border-b border-theme-border pb-2">🔐 Odobreni Moduli (Dozvole pristupa):</label>
+                            
+                            <div className="space-y-4">
+                                {Object.entries(sviModuliKategorisano).map(([kategorija, moduli]) => (
+                                    <div key={kategorija}>
+                                        <h4 className="text-[9px] text-theme-accent uppercase font-black mb-2">{kategorija}</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {moduli.map(modul => {
+                                                const aktivan = form.dozvole.includes(modul);
+                                                return (
+                                                    <button key={modul} type="button" onClick={(e) => { e.preventDefault(); toggleDozvola(modul); }} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${aktivan ? 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-theme-card border-theme-border text-slate-500 hover:border-slate-400'}`}>
+                                                        {aktivan ? '✓ ' : '+ '} {modul}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -1189,7 +1213,6 @@ function TabBrending() {
         app_name: 'SmartERP'
     });
 
-    // NOVO: STATE ZA CLOUD FOLDERE
     const [cloudPostavke, setCloudPostavke] = useState({
         folder_prorez: '', folder_dorada: '', folder_ukupno: '', folder_finansije: '', webhook_url: ''
     });
@@ -1205,19 +1228,14 @@ function TabBrending() {
         const { data: fData } = await supabase.from('postavke_firme').select('*').eq('id', 1).maybeSingle();
         if (fData) {
             setFirmaInfo({
-                adresa: fData.adresa || '', 
-                telefon: fData.telefon || '', 
-                email: fData.email || '', 
-                footer_tekst: fData.footer_tekst || '', 
-                footer_boja: fData.footer_boja || '#64748b', 
-                footer_velicina: fData.footer_velicina || '12',
+                adresa: fData.adresa || '', telefon: fData.telefon || '', email: fData.email || '', 
+                footer_tekst: fData.footer_tekst || '', footer_boja: fData.footer_boja || '#64748b', footer_velicina: fData.footer_velicina || '12',
                 app_name: localStorage.getItem('saas_app_name') || 'SmartERP'
             });
         } else {
             setFirmaInfo(prev => ({...prev, app_name: localStorage.getItem('saas_app_name') || 'SmartERP'}));
         }
 
-        // NOVO: UČITAVANJE CLOUD POSTAVKI
         const { data: cData } = await supabase.from('postavke_izvjestaja').select('*').eq('id', 1).maybeSingle();
         if (cData) setCloudPostavke(cData);
     };
@@ -1230,7 +1248,6 @@ function TabBrending() {
         else alert("✅ Podaci o firmi i Naziv Aplikacije uspješno spašeni!");
     };
 
-    // NOVO: SPAŠAVANJE CLOUD POSTAVKI
     const spasiCloudPostavke = async () => {
         const { error } = await supabase.from('postavke_izvjestaja').upsert({ id: 1, ...cloudPostavke });
         if (error) alert("Greška pri spašavanju cloud postavki: " + error.message);
@@ -1287,9 +1304,7 @@ function TabBrending() {
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in">
-            
             <div className="space-y-6">
-                {/* 1. KARTICA: IME APLIKACIJE I FIRMA */}
                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-2xl space-y-6">
                     <div>
                         <h3 className="text-blue-500 font-black uppercase text-xs border-b border-theme-border pb-2 mb-4">🖥️ Naziv Aplikacije (Glavni Meni / Sidebar)</h3>
@@ -1337,7 +1352,6 @@ function TabBrending() {
                     <button onClick={spasiFirmuInfo} className="w-full py-4 bg-theme-accent text-theme-text font-black rounded-xl text-xs uppercase shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:opacity-80 transition-all mt-6 tracking-widest">💾 Spasi i Sinhronizuj Aplikaciju</button>
                 </div>
 
-                {/* NOVO: KARTICA ZA CLOUD FOLDERE */}
                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl space-y-6">
                     <div>
                         <h3 className="text-emerald-500 font-black uppercase text-xs border-b border-theme-border pb-2 mb-4">☁️ Cloud Print (Google Drive / Webhook)</h3>
@@ -1372,7 +1386,6 @@ function TabBrending() {
             </div>
 
             <div className="space-y-6">
-                {/* 2. KARTICA: LOGO UPLOADER */}
                 <div className={`p-6 rounded-box border shadow-2xl space-y-4 transition-all ${isEditing ? 'bg-amber-950/30 border-amber-500' : 'bg-theme-card backdrop-blur-[var(--glass-blur)] border-theme-border'}`}>
                     <div className="flex justify-between items-center mb-4">
                         <h3 className={`${isEditing ? 'text-amber-500' : 'text-blue-500'} font-black uppercase text-xs`}>
@@ -1438,7 +1451,6 @@ function TabBrending() {
                     </button>
                 </div>
 
-                {/* 3. KARTICA: LISTA LOGOTIPA */}
                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-xl">
                     <h3 className="text-slate-400 font-black uppercase text-[10px] mb-5 tracking-widest">Trenutni Logotipi u Sistemu (Klikni za izmjenu)</h3>
                     <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
@@ -1472,46 +1484,6 @@ function TabBrending() {
                 </div>
             </div>
 
-        </div>
-    );
-}
-
-export default function SettingsModule({ onExit, lockedTab }) {
-    const [tab, setTab] = useState(lockedTab || 'sumarije');
-    const tabs = ['sumarije', 'prevoznici', 'masine', 'katalog', 'kupci', 'radnici', 'blagajna', 'brending'];
-    const labels = { sumarije: '🌲 Šumarije', prevoznici: '🚚 Prevoznici', masine: '⚙️ Mašine', katalog: '📦 Katalog', kupci: '🤝 Kupci', radnici: '👷 Radnici', blagajna: '🗂️ Kase / Kat.', brending: '🎨 Brending / Print' };
-
-    return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-theme-border shadow-xl gap-4">
-                <div className="flex items-center gap-4">
-                    <button onClick={onExit} className={`text-[10px] px-5 py-3 rounded-xl uppercase font-black text-theme-text transition-all shadow-md ${lockedTab ? 'bg-red-600 hover:bg-red-500' : 'bg-theme-panel border border-theme-border hover:bg-slate-700'}`}>
-                        {lockedTab ? '✕ ZATVORI I NASTAVI RAD' : '← Nazad u Meni'}
-                    </button>
-                    <h2 className={`${lockedTab ? 'text-amber-500' : 'text-slate-400'} font-black tracking-widest uppercase text-xs md:text-sm hidden md:block`}>
-                        {lockedTab ? '⚡ BRZI UNOS PODATAKA' : '⚙️ ERP CENTRALNE POSTAVKE'}
-                    </h2>
-                </div>
-                
-                {!lockedTab && (
-                    <div className="flex flex-wrap gap-2 justify-center bg-theme-panel p-2 rounded-2xl border border-theme-border shadow-inner">
-                        {tabs.map(t => (
-                            <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 rounded-xl transition-all text-[9px] tracking-widest uppercase font-black ${tab === t ? 'bg-theme-accent border border-blue-400 text-white shadow-md' : 'bg-transparent text-slate-400 hover:text-theme-text hover:bg-theme-card'}`}>
-                                {labels[t]}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-            
-            {tab === 'sumarije' && <TabSumarije />}
-            {tab === 'prevoznici' && <TabPrevoznici />}
-            {tab === 'masine' && <TabMasine />}
-            {tab === 'katalog' && <TabKatalog />}
-            {tab === 'kupci' && <TabKupci />}
-            {tab === 'radnici' && <TabRadnici />}
-            {tab === 'blagajna' && <TabKategorijeBlagajne />}
-            {tab === 'brending' && <TabBrending />}
         </div>
     );
 }

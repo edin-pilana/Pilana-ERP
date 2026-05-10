@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
+import MasterSearch from '../components/MasterSearch'; // NOVO
+import PametniDialog from '../components/PametniDialog'; // NOVO
 import { useSaaS } from '../utils/useSaaS';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// --- UNIVERZALNI PARSER DATUMA ---
 const formatirajTacanDatum = (d1, d2, d3) => {
     const moguciDatumi = [d1, d2, d3].filter(Boolean);
     for (let dt of moguciDatumi) {
@@ -36,7 +37,6 @@ const getSortableTime = (d1, d2, d3) => {
     return 0;
 };
 
-// --- DUBINSKA ANALIZA STAVKI (MOLEKULARNA PRECIZNOST) ---
 const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
     let stare = []; let nove = [];
     try { stare = typeof stareRaw === 'string' ? JSON.parse(stareRaw) : (stareRaw || []); } catch(e) { stare = []; }
@@ -62,7 +62,6 @@ const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
     let diffs = [];
     const getKljuc = (s) => s.id || s.sifra || s.naziv || s.paket_id || JSON.stringify(s);
 
-    // Analiza novog stanja i upoređivanje
     nove.forEach(n => {
         const kljuc = getKljuc(n);
         const o = stare.find(s => getKljuc(s) === kljuc);
@@ -74,8 +73,6 @@ const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
             diffs.push(<div key={`add-${kljuc}`} className="text-emerald-400 font-bold bg-emerald-900/10 p-2 rounded mb-1 border border-emerald-500/20 text-[10px]">➕ Dodana nova stavka: <span className="text-theme-text">{naziv}</span> {kolN && `(${kolN} ${jm})`}</div>);
         } else {
             let promjeneNaStavci = [];
-            
-            // Prolazimo kroz sve pod-ključeve te stavke da vidimo šta je mijenjano
             const subKeys = Array.from(new Set([...Object.keys(o), ...Object.keys(n)])).filter(sk => !['id', 'sifra', 'naziv', 'naziv_proizvoda', 'paket_id'].includes(sk));
             
             subKeys.forEach(sk => {
@@ -106,7 +103,6 @@ const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
         }
     });
 
-    // Pronađi obrisano
     stare.forEach(o => {
         const kljuc = getKljuc(o);
         const n = nove.find(s => getKljuc(s) === kljuc);
@@ -122,11 +118,9 @@ const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
     return <div className="mt-2 space-y-2">{diffs}</div>;
 };
 
-// --- GLAVNI PREVODILAC SIROVOG JSON KODA ---
 const PrikazIzmjena = ({ log }) => {
     const stari = log.stari_podaci || {};
     const novi = log.novi_podaci || {};
-
     const isCreation = Object.keys(stari).length === 0 && Object.keys(novi).length > 0;
 
     if (Object.keys(stari).length === 0 && Object.keys(novi).length === 0) {
@@ -140,7 +134,6 @@ const PrikazIzmjena = ({ log }) => {
     
     let ispisIzmjena = [];
 
-    // Jasan ispis kreiranja
     if (isCreation) {
         ispisIzmjena.push(
             <div key="init" className="mb-3 bg-emerald-900/10 border border-emerald-500/30 p-3 rounded-xl shadow-sm">
@@ -152,11 +145,8 @@ const PrikazIzmjena = ({ log }) => {
     kljucevi.forEach(k => {
         const staraVr = stari[k];
         const novaVr = novi[k];
-
-        // Ako se nije promijenilo (a nije kreiranje), preskoči
         if (!isCreation && JSON.stringify(staraVr) === JSON.stringify(novaVr)) return;
 
-        // OBRADA STATUSA
         if (k === 'status') {
             ispisIzmjena.push(
                 <div key="status" className="mb-3 bg-blue-900/20 border border-blue-500/30 p-3 rounded-xl shadow-inner">
@@ -171,7 +161,6 @@ const PrikazIzmjena = ({ log }) => {
             return;
         }
 
-        // OBRADA LISTA I KOMPLEKSNIH JSONB POLJA
         if (k === 'stavke_jsonb' || k === 'rabati_jsonb' || k === 'ulaz_trupci_ids' || k === 'ai_sirovina_ids' || Array.isArray(novaVr)) {
             ispisIzmjena.push(
                 <div key={k} className="mb-3 bg-theme-panel p-4 rounded-xl border border-theme-border/50 shadow-inner">
@@ -182,7 +171,6 @@ const PrikazIzmjena = ({ log }) => {
             return;
         }
 
-        // OBRADA OBIČNIH POLJA (Tekst, Brojevi)
         const formatStaro = staraVr === null || staraVr === '' || staraVr === undefined ? 'Prazno' : String(staraVr);
         const formatNovo = novaVr === null || novaVr === '' || novaVr === undefined ? 'Prazno' : String(novaVr);
 
@@ -199,14 +187,10 @@ const PrikazIzmjena = ({ log }) => {
     });
 
     if (ispisIzmjena.length === 0 && !isCreation) return <p className="text-[11px] text-slate-500 italic mt-3 border-t border-theme-border pt-3">Korisnik je kliknuo "Sačuvaj", ali sistem nije pronašao promjene u poljima dokumenta.</p>;
-    
     return <div className="mt-4">{ispisIzmjena}</div>;
 };
 
-
 export default function KontrolniToranjModule({ user, header, setHeader, onExit }) {
-    
-    // --- SAAS INTEGRACIJA ---
     const saas = useSaaS('forenzika_toranj', {
         boja_kartice: '#1e293b',
         boja_naslova: 'text-indigo-400',
@@ -216,7 +200,10 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
     const [loading, setLoading] = useState(false);
     const [forenzika, setForenzika] = useState(null);
     const [sviDokumenti, setSviDokumenti] = useState([]);
-    const [showDropdown, setShowDropdown] = useState(false);
+
+    const [dialog, setDialog] = useState({ isOpen: false });
+    const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
+    const zatvoriDialog = () => setDialog({ isOpen: false });
 
     const [otvoreniLogovi, setOtvoreniLogovi] = useState(new Set());
     const toggleLog = (id) => {
@@ -258,38 +245,20 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         ucitajSve();
     }, []);
 
-    const preporuke = useMemo(() => {
-        if (!sken) return [];
-        const pojam = sken.toUpperCase();
-        return sviDokumenti
-            .filter(d => d.id.toUpperCase().includes(pojam))
-            .sort((a, b) => {
-                const aTačno = a.id.toUpperCase() === pojam ? 1 : 0;
-                const bTačno = b.id.toUpperCase() === pojam ? 1 : 0;
-                if (aTačno !== bTačno) return bTačno - aTačno;
-                if (a.active !== b.active) return b.active - a.active;
-                return 0;
-            }).slice(0, 15);
-    }, [sken, sviDokumenti]);
-
-    // =======================================================
-    // 🕸️ DVOSMJERNA RADARSKA PRETRAGA (BI-DIRECTIONAL GRAPH)
-    // =======================================================
     const analizirajSve = async (tačanBroj) => {
         const val = tačanBroj.toUpperCase().trim();
         if (!val) return;
         
-        setLoading(true); setForenzika(null); setShowDropdown(false); setOtvoreniLogovi(new Set());
+        setLoading(true);
+        setForenzika(null); setOtvoreniLogovi(new Set());
 
         let SVI_IDOVI_Lanca = new Set([val]);
 
-        // 1. REKURZIVNO TRAŽENJE SVIH POVEZANIH DOKUMENATA GORE I DOLJE
         let proslaVelicina = 0;
         while (SVI_IDOVI_Lanca.size > proslaVelicina) {
             proslaVelicina = SVI_IDOVI_Lanca.size;
             const trenutniNiz = Array.from(SVI_IDOVI_Lanca);
 
-            // Tražimo roditelje (Gledamo broj_veze i broj_ponude)
             const { data: otpP } = await supabase.from('otpremnice').select('broj_veze').in('id', trenutniNiz);
             if (otpP) otpP.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
             
@@ -305,7 +274,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             const { data: pakP } = await supabase.from('paketi').select('broj_veze').in('paket_id', trenutniNiz);
             if (pakP) pakP.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
 
-            // Tražimo djecu (Gdje sam ja broj_veze)
             const { data: otpC } = await supabase.from('otpremnice').select('id').in('broj_veze', trenutniNiz);
             if (otpC) otpC.forEach(x => SVI_IDOVI_Lanca.add(x.id));
             
@@ -322,7 +290,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             if (pakC) pakC.forEach(x => SVI_IDOVI_Lanca.add(x.paket_id));
         }
 
-        // 2. SKIDANJE KONKRETNIH PODATAKA IZ BAZE NA OSNOVU PRONAĐENIH ID-ova
         const cistiIdovi = Array.from(SVI_IDOVI_Lanca);
         
         const { data: naloziDB } = await supabase.from('radni_nalozi').select('*').in('id', cistiIdovi);
@@ -331,7 +298,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         const { data: racuniDB } = await supabase.from('racuni').select('*').in('id', cistiIdovi);
         const { data: paketiDB } = await supabase.from('paketi').select('*').in('paket_id', cistiIdovi).order('created_at', { ascending: true });
 
-        // Pravimo dataChain objekat za UI
         let dataChain = {
             paketHistory: paketiDB || [], paketSadrzaj: [], paketUkupnoM3: 0, 
             nalozi: naloziDB || [], ponuda: (ponudeDB && ponudeDB.length > 0) ? ponudeDB[0] : null, 
@@ -340,7 +306,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             ulazniTrupci: [], ulazniPaketi: [], izlazniPaketi: []
         };
 
-        // Obrada ako imamo Pakete u lancu (Fokus na prvi skenirani ako je paket)
         let glavniPaketId = paketiDB?.find(p => p.paket_id.includes(val))?.paket_id || (paketiDB && paketiDB.length > 0 ? paketiDB[0].paket_id : null);
         
         if (glavniPaketId) {
@@ -377,9 +342,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             if (forward) dataChain.izlazniPaketi = [...new Map(forward.map(i => [i.paket_id, i])).values()];
         }
 
-        // KUPAC I FINANSIJE
         let targetKupacIme = dataChain.ponuda?.kupac_naziv || dataChain.nalozi[0]?.kupac_naziv || dataChain.racuni[0]?.kupac_naziv || dataChain.otpremnice[0]?.kupac_naziv;
-        
         if (targetKupacIme) {
             const { data: kupacPodaci } = await supabase.from('kupci').select('*').eq('naziv', targetKupacIme).limit(1);
             if (kupacPodaci && kupacPodaci.length > 0) dataChain.kupac = kupacPodaci[0];
@@ -404,21 +367,17 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         }
 
         if (cistiIdovi.length === 0) {
-            setLoading(false); return alert(`Sistem ne može pronaći dokument niti paket sa tačnim brojem: ${val}`);
+            setLoading(false); 
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Nije pronađeno', poruka: `Sistem ne može pronaći dokument niti paket sa tačnim brojem: ${val}`, onCancel: zatvoriDialog });
         }
 
-        // 3. MIKRO-FORENZIKA (LOG IZMJENA ZA SVE DOKUMENTE U LANCU)
         let sysLogsRaw = []; let auditLogsRaw = [];
-
-        // Sistemski audit log
-        // Razdvajamo uslove zbog limita URL-a
         const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
         if (orConditions) {
             const { data: sLogs } = await supabase.from('sistem_audit_log').select('*').or(orConditions);
             if (sLogs) sysLogsRaw = sLogs;
         }
 
-        // Paketni audit log
         if (cistiIdovi.length > 0) {
             const { data: aLogs } = await supabase.from('audit_log').select('*').in('zapis_id', cistiIdovi);
             if (aLogs) auditLogsRaw = aLogs;
@@ -450,17 +409,10 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         setSken(val); 
     };
 
-    const pokreniSkenKucanje = (e) => {
-        if (e.key === 'Enter') {
-            if (kucanjeTimer) clearTimeout(kucanjeTimer);
-            analizirajSve(sken);
-            setShowDropdown(false);
-        }
-    };
-
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_pozadine }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} hideMasina={true} modulIme="forenzika" saas={saas} />
+            <PametniDialog {...dialog} />
 
             <div className={`p-8 rounded-box border border-theme-border shadow-2xl text-center relative z-50 transition-colors ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : 'bg-theme-card backdrop-blur-[var(--glass-blur)]'}`} >
                 <h3 className={`${saas.ui.boja_naslova || 'text-indigo-400'} font-black uppercase text-xs mb-4 tracking-widest flex items-center justify-center gap-2`}><span>🕵️‍♂️ FORENZIČKI SKENER / X-RAY DOKUMENTA</span></h3>
@@ -473,36 +425,29 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 )}
 
                 <p className="text-[10px] text-slate-500 mb-4 max-w-lg mx-auto">Skeniraj Paket, Radni Nalog, Ponudu, Otpremnicu ili Račun. Algoritam će pretražiti cijelu bazu u oba smjera i rekonstruisati apsolutno cijelo genetsko stablo posla.</p>
-                <div className="flex gap-2 max-w-2xl mx-auto relative">
-                    <div className="flex-1 relative">
-                        <input 
-                            type="text" 
-                            value={sken} 
-                            onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} 
-                            onKeyDown={pokreniSkenKucanje}
-                            onFocus={()=>setShowDropdown(true)} 
-                            placeholder="Skeniraj barkod ili upiši tačan ID (pa stisni ENTER)..." 
-                            className="w-full p-5 bg-theme-panel rounded-2xl text-center font-black text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" 
-                        />
-                        
-                        {showDropdown && sken && preporuke.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 mt-2 bg-theme-panel border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-[100] text-left max-h-80 overflow-y-auto">
-                                {preporuke.map(p => (
-                                    <div key={p.id} onClick={() => { setSken(p.id); analizirajSve(p.id); setShowDropdown(false); }} className="p-4 border-b border-theme-border hover:bg-slate-700 cursor-pointer flex justify-between items-center group">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-theme-text font-black">{p.id}</span> 
-                                            <span className="text-[9px] text-indigo-400 uppercase font-bold border border-indigo-500/30 px-2 py-0.5 rounded bg-indigo-900/20">{p.tip}</span>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-slate-300 text-xs font-bold">{p.meta}</div>
-                                            <div className={`text-[9px] uppercase mt-1 ${p.active ? 'text-emerald-400' : 'text-slate-500'}`}>{p.status}</div>
-                                        </div>
-                                    </div>
-                                ))}
+                
+                {/* ZAMJENA: Koristimo MasterSearch za skeniranje */}
+                <div className="max-w-2xl mx-auto relative z-40">
+                    <MasterSearch 
+                        data={sviDokumenti} 
+                        poljaZaPretragu={['id', 'meta', 'tip']} 
+                        value={sken}
+                        onSelect={(doc) => { setSken(doc.id); analizirajSve(doc.id); }} 
+                        placeholder="Skeniraj barkod ili upiši tačan ID..."
+                        onScanClick={() => { /* Opcija za paljenje kamere */ }}
+                        renderItem={(p) => (
+                            <div className="flex justify-between items-center group w-full">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-theme-text font-black">{p.id}</span>
+                                    <span className="text-[9px] text-indigo-400 uppercase font-bold border border-indigo-500/30 px-2 py-0.5 rounded bg-indigo-900/20">{p.tip}</span>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-slate-300 text-xs font-bold">{p.meta}</div>
+                                    <div className={`text-[9px] uppercase mt-1 ${p.active ? 'text-emerald-400' : 'text-slate-500'}`}>{p.status}</div>
+                                </div>
                             </div>
                         )}
-                    </div>
-                    <button onClick={() => { analizirajSve(sken); setShowDropdown(false); }} className="bg-indigo-600 px-8 rounded-2xl text-theme-text font-black hover:bg-indigo-500 shadow-xl flex items-center gap-2 text-xl transition-all">📷</button>
+                    />
                 </div>
             </div>
 

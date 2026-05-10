@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { toast } from 'sonner'; // Uvozimo moderne obavijesti!
+import { toast } from 'sonner';
 
-// Importujemo našu novu pametnu školjku
 import AppShell from './components/AppShell'; 
 
 // Import moduli
@@ -21,16 +20,32 @@ import BlagajnaModule from './modules/BlagajnaModule';
 import KontrolniToranjModule from './modules/KontrolniToranjModule';
 import AnalitikaModule from './modules/AnalitikaModule';
 import LagerPaketaModule from './modules/LagerPaketaModule';
+import PlaniranjeModule from './modules/PlaniranjeModule'; // NOVO: Planiranje
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const defaultModuli = [
+    { id: 'prijem', naziv: 'Prijem Trupaca', ikona: '🌲', hex_boja: '#10b981' },
+    { id: 'prorez', naziv: 'Prorez', ikona: '🪚', hex_boja: '#ef4444' },
+    { id: 'pilana', naziv: 'Pilana', ikona: '🪵', hex_boja: '#10b981' },
+    { id: 'dorada', naziv: 'Dorada', ikona: '🔄', hex_boja: '#3b82f6' },
+    { id: 'planiranje', naziv: 'Planiranje', ikona: '📅', hex_boja: '#f59e0b' }, // NOVO
+    { id: 'lager', naziv: 'Lager', ikona: '📦', hex_boja: '#3b82f6' },
+    { id: 'ponude', naziv: 'Ponude', ikona: '📝', hex_boja: '#ec4899' },
+    { id: 'radni_nalozi', naziv: 'Nalozi', ikona: '⚙️', hex_boja: '#a855f7' },
+    { id: 'otpremnice', naziv: 'Otpremnice', ikona: '🚚', hex_boja: '#f97316' },
+    { id: 'racuni', naziv: 'Računi', ikona: '🧾', hex_boja: '#ef4444' },
+    { id: 'blagajna', naziv: 'Blagajna', ikona: '💵', hex_boja: '#10b981' },
+    { id: 'toranj', naziv: 'Kontrola', ikona: '🕵️', hex_boja: '#6366f1' },
+    { id: 'analitika', naziv: 'Analitika', ikona: '📊', hex_boja: '#8b5cf6' },
+    { id: 'podesavanja', naziv: 'Postavke', ikona: '⚙️', hex_boja: '#64748b' }
+];
+
 export default function Page() {
     const [loggedUser, setLoggedUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
-    
-    // Promijenjeno sa 'dashboard' na 'home' da izbjegnemo konflikt
     const [activeModule, setActiveModule] = useState('home');
     
     const [header, setHeader] = useState({
@@ -52,7 +67,6 @@ export default function Page() {
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
 
-    // === DRAG & DROP I EDIT LOGIKA ===
     const pokreniEdit = () => {
         setBackupPostavke(JSON.parse(JSON.stringify(uiPostavke))); 
         setIsEditMode(true);
@@ -119,8 +133,21 @@ export default function Page() {
             
             try {
                 const { data: uiData } = await supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'dashboard').maybeSingle();
-                if (uiData && uiData.postavke_jsonb) {
-                    setUiPostavke(uiData.postavke_jsonb);
+                let fetchedSettings = uiData?.postavke_jsonb || { glavni_naslov: "Operativni Centar", pozdravna_poruka: "Odaberi modul...", moduli: [] };
+                
+                // PAMETNO SAMOIZLJEČENJE: Dodaje nove module koji fale u bazi (poput Planiranja)
+                let changed = false;
+                defaultModuli.forEach(dm => {
+                    if (!fetchedSettings.moduli.some(m => m.id === dm.id)) {
+                        fetchedSettings.moduli.push(dm);
+                        changed = true;
+                    }
+                });
+                setUiPostavke(fetchedSettings);
+                
+                // Ako je dodan novi, odmah ga spasi u bazu da ostane trajno
+                if (changed && uiData) {
+                    supabase.from('ui_postavke').update({ postavke_jsonb: fetchedSettings }).eq('modul_ime', 'dashboard').then();
                 }
             } catch(e) { console.log("Greška pri učitavanju UI postavki", e) }
             
@@ -147,10 +174,31 @@ export default function Page() {
         }
     };
 
-    // Ekran za učitavanje
+    const hasPermission = (modulId) => {
+        if (!loggedUser) return false;
+        if (loggedUser.uloga === 'superadmin' || loggedUser.uloga === 'admin') return true;
+        
+        const mapaDozvola = {
+            'prijem': 'Prijem trupaca',
+            'prorez': 'Prorez (Trupci)',
+            'pilana': 'Pilana (Izlaz)',
+            'dorada': 'Dorada (Ulaz/Izlaz)',
+            'planiranje': 'Planiranje Proizvodnje',
+            'lager': 'Lager Paketa', 
+            'ponude': 'Ponude',
+            'radni_nalozi': 'Radni Nalozi',
+            'otpremnice': 'Otpremnice i Izdatnice', 
+            'racuni': 'Računi',
+            'blagajna': 'Blagajna (Keš)',
+            'toranj': 'Kontrolni Toranj',
+            'analitika': 'Analitika',
+            'podesavanja': 'Podešavanja'
+        };
+        return (loggedUser.dozvole || []).includes(mapaDozvola[modulId]);
+    };
+
     if (authLoading) return <div className="min-h-screen bg-theme-main" />;
 
-    // Login ekran (Ostaje fiksno dizajniran jer je van aplikacije)
     if (!loggedUser) {
         return (
             <div className="min-h-screen bg-theme-main flex items-center justify-center p-6 font-bold relative z-50">
@@ -169,28 +217,21 @@ export default function Page() {
         );
     }
 
-    // ==============================================================
-    // LOGIKA ZA KONTEKSTUALNO TEMIRANJE (NALAŽENJE BOJE MODULA)
-    // ==============================================================
     const aktivniModulKonfig = (uiPostavke.moduli || []).find(m => m.id === activeModule);
-    const modulBoja = aktivniModulKonfig?.hex_boja || ''; // Uzima hex kod (npr. #22c55e) sa odabrane pločice
+    const modulBoja = aktivniModulKonfig?.hex_boja || ''; 
 
-    // ==============================================================
-    // APLIKACIJA - AppShell
-    // ==============================================================
     return (
         <AppShell 
-            userName={loggedUser?.ime_prezime} 
+            user={loggedUser} 
             activeModule={activeModule} 
             onModuleChange={setActiveModule}
-            accentColor={modulBoja} // <-- MAGIJA: Šaljemo boju u AppShell da ofarba Sidebar i Menije!
+            accentColor={modulBoja} 
         >
             <div className="w-full min-h-full transition-colors duration-700">
                 {activeModule === 'home' ? (
                     <div className="p-4 md:p-8 font-sans selection:bg-emerald-500/30 w-full animate-in fade-in">
                         <div className="max-w-5xl mx-auto space-y-8">
                             
-                            {/* Glavni Header (Operativni Centar) */}
                             <div className={`border border-theme-border p-8 rounded-[var(--radius-box)] flex flex-col md:flex-row gap-4 justify-between items-center shadow-2xl transition-colors duration-500 bg-theme-card backdrop-blur-[var(--glass-blur)] ${isEditMode ? 'ring-4 ring-amber-500' : ''}`}>
                                 <div className="w-full md:w-auto">
                                     {isEditMode ? (
@@ -224,13 +265,9 @@ export default function Page() {
                                 </div>
                             </div>
 
-                            {/* Moduli Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
                                 {(uiPostavke.moduli || []).map((modul, index) => {
-                                    let imaDozvolu = false;
-                                    if (loggedUser?.uloga === 'superadmin' || loggedUser?.uloga === 'admin') imaDozvolu = true; 
-                                    else imaDozvolu = (loggedUser?.dozvole || []).includes(modul.naziv);
-
+                                    const imaDozvolu = hasPermission(modul.id);
                                     if (!imaDozvolu && !isEditMode) return null; 
 
                                     return (
@@ -308,6 +345,8 @@ export default function Page() {
                     <PilanaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 ) : activeModule === 'dorada' ? (
                     <DoradaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                ) : activeModule === 'planiranje' ? (
+                    <PlaniranjeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 ) : activeModule === 'lager' ? (
                     <LagerPaketaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 ) : activeModule === 'ponude' ? (

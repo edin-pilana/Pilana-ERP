@@ -1,15 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Scissors, ArrowRightLeft, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, TreePine, Axe, Package, FileText, Wrench, Truck, Receipt, Wallet, Radar, BarChart3, AlignJustify } from 'lucide-react';
+import { LayoutDashboard, Scissors, ArrowRightLeft, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, TreePine, Axe, Package, FileText, Wrench, Truck, Receipt, Wallet, Radar, BarChart3, AlignJustify, CalendarDays } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
 
-export default function AppShell({ children, userName = "Edin", activeModule = "home", onModuleChange, accentColor }) {
+export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor }) {
     const { theme, layout, setTheme, setLayout, initSettings } = useAppStore();
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-    // --- PAMĆENJE IMENA I LOGOTIPA ---
     const [menuLabels, setMenuLabels] = useState({});
     const [appBranding, setAppBranding] = useState({ name: 'SmartERP', logo: '' });
 
@@ -21,6 +20,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
                 prorez: localStorage.getItem('saas_prorez_trupaca_naslov') || 'Prorez',
                 pilana: localStorage.getItem('saas_pilana_izlaz_naslov') || 'Pilana',
                 dorada: localStorage.getItem('saas_dorada_modul_naslov') || 'Dorada',
+                planiranje: localStorage.getItem('saas_planiranje_naslov') || 'Planiranje',
                 lager: localStorage.getItem('saas_lager_paketa_naslov') || 'Lager',
                 ponude: localStorage.getItem('saas_ponude_naslov') || 'Ponude',
                 radni_nalozi: localStorage.getItem('saas_radni_nalozi_naslov') || 'Nalozi',
@@ -42,10 +42,9 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
     }, []);
 
     useEffect(() => {
-        initSettings(userName);
-    }, [userName, initSettings]);
+        initSettings(user?.ime_prezime || 'Korisnik');
+    }, [user, initSettings]);
 
-    // --- NOVO: HVATANJE "BACK" DUGMETA (SWIPE) NA MOBITELU ---
     useEffect(() => {
         const handlePopState = (e) => {
             if (activeModule !== 'home') {
@@ -63,7 +62,32 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
             }
         }
     }, [activeModule]);
-    // ----------------------------------------------------------
+
+    // OVO JE PAMETNA ZAŠTITA: Briše menije ako nemaš dozvolu
+    const hasPermission = (modulId) => {
+        if (!user) return false;
+        if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
+        if (modulId === 'home') return true; 
+        
+        const mapaDozvola = {
+            'prijem': 'Prijem trupaca',
+            'prorez': 'Prorez (Trupci)',
+            'pilana': 'Pilana (Izlaz)',
+            'dorada': 'Dorada (Ulaz/Izlaz)',
+            'planiranje': 'Planiranje Proizvodnje',
+            'lager': 'Lager Paketa', 
+            'ponude': 'Ponude',
+            'radni_nalozi': 'Radni Nalozi',
+            'otpremnice': 'Otpremnice i Izdatnice', 
+            'racuni': 'Računi',
+            'blagajna': 'Blagajna (Keš)',
+            'toranj': 'Kontrolni Toranj',
+            'analitika': 'Analitika',
+            'podesavanja': 'Podešavanja'
+        };
+        
+        return (user.dozvole || []).includes(mapaDozvola[modulId]);
+    };
 
     const menuItems = [
         { id: 'home', label: menuLabels.home, icon: LayoutDashboard },
@@ -71,6 +95,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
         { id: 'prorez', label: menuLabels.prorez, icon: Axe },
         { id: 'pilana', label: menuLabels.pilana, icon: Scissors },
         { id: 'dorada', label: menuLabels.dorada, icon: ArrowRightLeft },
+        { id: 'planiranje', label: menuLabels.planiranje, icon: CalendarDays }, // NOVO
         { id: 'lager', label: menuLabels.lager, icon: Package },
         { id: 'ponude', label: menuLabels.ponude, icon: FileText },
         { id: 'radni_nalozi', label: menuLabels.radni_nalozi, icon: Wrench },
@@ -80,6 +105,9 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
         { id: 'toranj', label: menuLabels.toranj, icon: Radar },
         { id: 'analitika', label: menuLabels.analitika, icon: BarChart3 },
     ];
+
+    // FILTRIRAMO VIDLJIVE MENIJE
+    const visibleMenuItems = menuItems.filter(item => hasPermission(item.id));
 
     const LogoDisplay = ({ mobile = false }) => (
         <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
@@ -136,7 +164,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
             <motion.aside initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="w-64 fixed h-screen bg-theme-card border-r border-theme-border flex flex-col p-4 backdrop-blur-[var(--glass-blur)] z-40 hidden md:flex">
                 <LogoDisplay />
                 <nav className="flex flex-col gap-2 flex-1">
-                    {menuItems.map(item => {
+                    {visibleMenuItems.map(item => {
                         const Icon = item.icon;
                         const isActive = activeModule === item.id;
                         return (
@@ -149,7 +177,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
                 <div className="border-t border-theme-border pt-4 mt-auto">
                     <div className="flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
                         <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
-                        <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black">{userName}</p></div>
+                        <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black">{user?.ime_prezime || 'Korisnik'}</p></div>
                     </div>
                     <button onClick={() => setIsSettingsOpen(true)} className="flex w-full items-center justify-center gap-2 p-4 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-xs font-black uppercase border border-theme-border"><Settings size={16}/> Postavke</button>
                 </div>
@@ -163,7 +191,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
             <motion.header initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-20 w-full bg-theme-card border-b border-theme-border px-6 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
                 <LogoDisplay mobile={true} />
                 <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
-                    {menuItems.map(item => {
+                    {visibleMenuItems.map(item => {
                         const isActive = activeModule === item.id;
                         return (
                             <button key={item.id} onClick={() => onModuleChange(item.id)} className={`px-4 py-3 rounded-xl font-black uppercase transition-all text-xs tracking-widest border whitespace-nowrap ${isActive ? 'bg-theme-accent border-theme-accent text-white shadow-glow' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text hidden sm:block'}`}>
@@ -183,7 +211,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
         <div className="flex flex-col w-full min-h-screen relative pb-24">
             <main className="flex-1 p-4 md:p-8 relative z-10 w-full max-w-7xl mx-auto">{children}</main>
             <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed bottom-4 left-0 right-0 mx-auto w-fit max-w-[95vw] overflow-x-auto custom-scrollbar bg-theme-card border border-theme-accent/50 p-2 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 flex items-center gap-2 backdrop-blur-2xl">
-                {menuItems.map(item => {
+                {visibleMenuItems.map(item => {
                     const Icon = item.icon;
                     const isActive = activeModule === item.id;
                     return (
@@ -205,7 +233,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
                 <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-14 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)]">
                     <LogoDisplay mobile={true} />
                     <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto">
-                        {menuItems.map(item => {
+                        {visibleMenuItems.map(item => {
                             const Icon = item.icon;
                             const isActive = activeModule === item.id;
                             return (
@@ -218,7 +246,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
                     <div className="flex items-center gap-2 flex-shrink-0">
                         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border">
                             <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
-                            <span className="text-[10px] font-black text-theme-text uppercase tracking-widest">{userName}</span>
+                            <span className="text-[10px] font-black text-theme-text uppercase tracking-widest">{user?.ime_prezime || 'Korisnik'}</span>
                         </div>
                         <button onClick={() => setIsSettingsOpen(true)} className="w-8 h-8 flex items-center justify-center bg-theme-panel border border-theme-border rounded-lg text-theme-muted hover:text-white hover:bg-theme-accent transition-all"><Settings size={15}/></button>
                         <button onClick={() => setMobileMenuOpen(v => !v)} className="md:hidden w-8 h-8 flex items-center justify-center bg-theme-panel border border-theme-border rounded-lg text-theme-muted">
@@ -230,7 +258,7 @@ export default function AppShell({ children, userName = "Edin", activeModule = "
                 <AnimatePresence>
                     {mobileMenuOpen && (
                         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="md:hidden w-full bg-theme-card border-b border-theme-border px-4 py-3 grid grid-cols-3 gap-2 z-30 sticky top-14 shadow-2xl">
-                            {menuItems.map(item => {
+                            {visibleMenuItems.map(item => {
                                 const Icon = item.icon;
                                 const isActive = activeModule === item.id;
                                 return (

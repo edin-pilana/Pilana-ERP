@@ -90,11 +90,10 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const [masineList, setMasineList] = useState([]);
     const [isScanning, setIsScanning] = useState(false);
 
-    // --- NOVI STATE-OVI ZA PAMETNE DIJALOGE ---
+    // --- PAMETNI DIJALOZI ---
     const [duplikatDialog, setDuplikatDialog] = useState(null);
     const [greskaDialog, setGreskaDialog] = useState(null);
     const [uspjesnoDialog, setUspjesnoDialog] = useState(null);
-    // ------------------------------------------
 
     const generisiID = () => `RN-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
     const [form, setForm] = useState({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI', modifikovan: false });
@@ -134,22 +133,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             return;
         }
 
-        // --- BLOKADA 1: PAMETNA PROVJERA DUPLIKATA (Zabrana duplih RN za istu ponudu) ---
         const { data: postojeciRN } = await supabase.from('radni_nalozi').select('*').eq('broj_ponude', cistBroj).limit(1);
         if (postojeciRN && postojeciRN.length > 0) {
             setDuplikatDialog({ nalog: postojeciRN[0] });
             setSkenerInput('');
             return;
         }
-        // -------------------------------------------------------------------------------
 
-        // --- BLOKADA 2: STATUSNA ZAŠTITA ---
         if (ponuda.status === 'NA ODLUČIVANJU') {
             setGreskaDialog(`UPOZORENJE:\nPonuda ${cistBroj} je još uvijek u statusu "NA ODLUČIVANJU".\n\nMorate je prvo prebaciti u "POTVRĐENA ✅" unutar modula Ponuda da biste započeli proizvodnju!`);
             setSkenerInput('');
             return;
         }
-        // -----------------------------------
 
         const prepravljeneStavke = (ponuda.stavke_jsonb || []).map(s => {
             const katItem = katalog.find(k => k.sifra === s.sifra) || {};
@@ -212,14 +207,12 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         if(!form.kupac_naziv) return setGreskaDialog("Ime kupca je obavezno!");
         if(stavke.length === 0) return setGreskaDialog("Radni nalog mora imati stavke!");
 
-        // --- BLOKADA PRI SNIMANJU (ako neko ukuca ručno broj) ---
         if (!isEditingNalog && form.broj_ponude) {
             const { data: postojece } = await supabase.from('radni_nalozi').select('id').eq('broj_ponude', form.broj_ponude).limit(1);
             if (postojece && postojece.length > 0) {
                 return setGreskaDialog(`STOP: Za ponudu ${form.broj_ponude} je VEĆ KREIRAN RADNI NALOG (${postojece[0].id})!\nNije dozvoljeno kreiranje duplih naloga.`);
             }
         }
-        // --------------------------------------------------------
 
         const payload = {
             id: form.id.toUpperCase(), broj_ponude: form.broj_ponude, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_isporuke: form.rok_isporuke, napomena: form.napomena,
@@ -235,7 +228,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         }
         await zapisiU_Log(isEditingNalog ? 'IZMJENA_RN' : 'KREIRAN_RN', `Radni Nalog ${form.id}`);
 
-        // UMJESTO window.confirm KORISTIMO CUSTOM DIJALOG ZA USPJEH I PRINT
         setUspjesnoDialog({
             nalog: payload,
             isFazni: form.tip_naloga === 'FAZNI',
@@ -353,6 +345,12 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                         <h2 className="text-2xl font-black text-theme-text uppercase mb-2">Uspješno!</h2>
                         <p className="text-slate-400 text-sm mb-8">{uspjesnoDialog.poruka}</p>
                         <div className="flex flex-col gap-3">
+                            {/* OVDJE JE DODANA PREPORUKA ZA ODLAZAK NA PLANIRANJE */}
+                            <button onClick={() => { 
+                                setUspjesnoDialog(null); 
+                                alert("Za raspoređivanje na mašine, u meniju sa strane kliknite na 'Planiranje'."); 
+                            }} className="w-full py-4 bg-amber-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-amber-500 transition-all">📅 Idi na Planiranje</button>
+                            
                             {uspjesnoDialog.isFazni ? (
                                 <button onClick={() => { setTab('lista'); setUspjesnoDialog(null); }} className="w-full py-4 bg-emerald-600 text-white rounded-xl uppercase font-black shadow-lg hover:bg-emerald-500 transition-all">📋 Idi u arhivu (Printaj faze)</button>
                             ) : (
@@ -426,8 +424,21 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                             <div className="space-y-3 mb-6">
                                 {stavke.map((s, i) => (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-theme-card border border-theme-border rounded-xl cursor-pointer hover:border-purple-500 transition-all group shadow-md">
-                                        <div className="flex items-center gap-4"><span className="text-slate-500 text-sm font-black">{i+1}.</span><div><p className="text-theme-text text-sm font-black">{s.naziv}</p><p className="text-xs text-blue-300 font-bold mt-1 tracking-wider uppercase">ŠIFRA: {s.sifra} {s.dimenzije && <span className="ml-2 text-emerald-400">| DIM: {s.dimenzije}</span>}</p></div></div>
-                                        <div className="text-right flex items-center gap-4"><div><p className="text-theme-accent text-lg font-black tracking-widest">{s.kolicina_obracun} m³</p><p className="text-[10px] text-slate-500 uppercase bg-black px-2 py-1 rounded mt-1 inline-block font-bold">{s.kolicina_unos} {s.jm_unos}</p></div><button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button></div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-slate-500 text-sm font-black">{i+1}.</span>
+                                            <div>
+                                                <p className="text-theme-text text-sm font-black">{s.naziv}</p>
+                                                <p className="text-xs text-blue-300 font-bold mt-1 tracking-wider uppercase">ŠIFRA: {s.sifra} {s.dimenzije && <span className="ml-2 text-amber-500">| DIM: {s.dimenzije}</span>}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex items-center gap-4">
+                                            <div>
+                                                {/* Povećana količina ovdje */}
+                                                <p className="text-theme-accent text-3xl font-black tracking-widest">{s.kolicina_obracun} <span className="text-xs">m³</span></p>
+                                                <p className="text-[10px] text-slate-400 uppercase mt-1 font-bold">Unos: {s.kolicina_unos} {s.jm_unos}</p>
+                                            </div>
+                                            <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>

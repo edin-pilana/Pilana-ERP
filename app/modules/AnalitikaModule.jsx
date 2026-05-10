@@ -5,7 +5,6 @@ import { Flex } from '@tremor/react';
 import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import { useSaaS } from '../utils/useSaaS';
 
-// IMPORTUJEMO NAŠ NOVI TAB ZA PROREZ
 import TabProrezAnalitika from '../components/TabProrezAnalitika';
 import TabDoradaAnalitika from '../components/TabDoradaAnalitika';
 import TabFinansijeAnalitika from '../components/TabFinansijeAnalitika';
@@ -33,26 +32,22 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     const [masinaFilter, setMasinaFilter] = useState('SVE');
     const [sveMasineIzBaze, setSveMasineIzBaze] = useState([]);
 
-    // 1. Povlačimo SVE mašine iz baze i njihove dozvole
     useEffect(() => {
         supabase.from('masine').select('naziv, dozvoljeni_moduli').then(({data}) => {
             if(data) setSveMasineIzBaze(data);
         });
     }, []);
 
-    // 2. Pametni filter - prikazuje samo mašine zavisno od taba!
     const dostupneMasine = useMemo(() => {
         const filtrirane = sveMasineIzBaze.filter(m => {
-            if (!m.dozvoljeni_moduli) return true; // Ako nije podešeno, daj ga svuda
+            if (!m.dozvoljeni_moduli) return true; 
             const dozvole = m.dozvoljeni_moduli.toLowerCase();
             
-            // Logika: Na tabu prorez prikazuj mašine za pilanu/prorez, na doradi za doradu
             if (activeTab === 'prorez') return dozvole.includes('pilana') || dozvole.includes('prorez');
             if (activeTab === 'dorada') return dozvole.includes('dorada');
             return true;
         });
 
-        // Osigurač: Ako promijenimo tab i trenutno odabrana mašina nije na listi novog taba, vrati na SVE MAŠINE
         const nazivi = filtrirane.map(m => m.naziv);
         if (masinaFilter !== 'SVE' && !nazivi.includes(masinaFilter)) {
             setMasinaFilter('SVE');
@@ -74,7 +69,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     return (
         <div className="min-h-screen p-4 md:p-8 pb-24 font-sans transition-colors duration-500" style={{ backgroundColor: saas.ui.boja_pozadine }}>
             
-            {/* 1. GLOBALNI HEADER (Navigacija, Datumi, Filteri) */}
             <div className="max-w-[1600px] mx-auto flex flex-col lg:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: '#1e293b' }}>
                 
                 <div className="flex flex-col md:flex-row items-center gap-4 md:gap-6 w-full lg:w-auto overflow-x-auto">
@@ -93,7 +87,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 
                 <div className="flex flex-col md:flex-row items-center gap-4 w-full lg:w-auto justify-end">
                     
-                    {/* PAMETNI FILTER MAŠINA */}
                     {(activeTab === 'prorez' || activeTab === 'dorada') && (
                        <select value={masinaFilter} onChange={e => setMasinaFilter(e.target.value)} className="bg-black/20 text-slate-300 p-2 h-10 rounded-xl text-xs font-bold border border-white/5 outline-none focus:border-emerald-500 shadow-inner uppercase tracking-widest [&>option]:bg-theme-card [&>option]:text-theme-text">
                        <option value="SVE">SVE MAŠINE</option>
@@ -136,7 +129,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </div>
             </div>
 
-            {/* SAAS EDITOR OVERLAY (GLOBALNE BOJE) */}
             {saas.isEditMode && (
                 <div className="max-w-[1600px] mx-auto mb-6 bg-amber-900/20 p-6 rounded-box flex flex-wrap gap-4 items-center justify-between border-2 border-amber-500/50 shadow-2xl">
                     <div>
@@ -154,7 +146,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {/* 2. SADRŽAJ TABOVA */}
             <div className="max-w-[1600px] mx-auto">
                 {activeTab === 'prorez' && (
                 <TabProrezAnalitika datumOd={datumOd} datumDo={datumDo} masinaFilter={masinaFilter} saas={saas} header={header} />
