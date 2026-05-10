@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
-import { Users, CalendarCheck, Clock4, CalendarX2, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { Users, CalendarCheck, Clock4, CalendarX2, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -21,7 +21,6 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const [zahtjevi, setZahtjevi] = useState([]);
     const [praznici, setPraznici] = useState([]);
 
-    // POSTAVKE SMJENE
     const [pocetakSmjene, setPocetakSmjene] = useState('07:30');
     const [krajSmjene, setKrajSmjene] = useState('16:00');
 
@@ -36,21 +35,23 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const [formaUpis, setFormaUpis] = useState({ tip_odsustva: 'NEOPRAVDANO', datum_od: '', datum_do: '', razlog: '' });
     const [formaPraznik, setFormaPraznik] = useState({ datum: '', naziv: '', je_radni_dan: false });
 
-    // MODAL ZA PREKOVREMENO
-    const [modalPrekovremeno, setModalPrekovremeno] = useState(null);
-    const [iznosPrekovremenog, setIznosPrekovremenog] = useState('');
+    // NOVI STATE ZA UREĐIVANJE SATI I KAŠNJENJA
+    const [modalUredi, setModalUredi] = useState(null);
+    const [stvarniSati, setStvarniSati] = useState(0);
+    const [editSati, setEditSati] = useState('');
+    const [editPrekovremeno, setEditPrekovremeno] = useState('');
+    const [editKasnjenje, setEditKasnjenje] = useState('');
+    const [editRanije, setEditRanije] = useState('');
 
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
     useEffect(() => { 
-        // Učitaj postavke smjene iz lokalne memorije (ako postoje)
         const snimljenPocetak = localStorage.getItem('erp_pocetak_smjene');
         const snimljenKraj = localStorage.getItem('erp_kraj_smjene');
         if (snimljenPocetak) setPocetakSmjene(snimljenPocetak);
         if (snimljenKraj) setKrajSmjene(snimljenKraj);
-        
         loadAll(); 
     }, [mjesecPrikaza]);
 
@@ -78,7 +79,9 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     };
 
     const izracunajDnevnicu = async (zapis) => {
-        if (!zapis.vrijeme_dolaska || !zapis.vrijeme_odlaska) return;
+        if (!zapis.vrijeme_dolaska || !zapis.vrijeme_odlaska) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Greška', poruka: 'Radnik još uvijek nije odjavljen. Smjena mora biti završena da bi se izvršio obračun!', onCancel: zatvoriDialog });
+        }
 
         const dStart = new Date(zapis.vrijeme_dolaska);
         const dEnd = new Date(zapis.vrijeme_odlaska);
@@ -86,39 +89,81 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
         const [hStart, mStart] = pocetakSmjene.split(':');
         const [hEnd, mEnd] = krajSmjene.split(':');
         
-        const officialStart = new Date(dStart); officialStart.setHours(parseInt(hStart), parseInt(mStart), 0);
-        const officialEnd = new Date(dEnd); officialEnd.setHours(parseInt(hEnd), parseInt(mEnd), 0);
+        let officialStart = new Date(dStart); officialStart.setHours(parseInt(hStart), parseInt(mStart), 0);
+        let officialEnd = new Date(dStart); officialEnd.setHours(parseInt(hEnd), parseInt(mEnd), 0);
 
         let kasnjenjeMin = 0; let ranijiIzlazakMin = 0;
-        let obracunskiStart = new Date(dStart);
-        let obracunskiEnd = new Date(dEnd);
+        let radniSatiDec = 0;
 
-        if (dStart < officialStart) { obracunskiStart = officialStart; }
-        else if (dStart > officialStart) { kasnjenjeMin = Math.round((dStart - officialStart) / 60000); }
+        if (dStart >= officialEnd || dEnd <= officialStart) {
+            radniSatiDec = 0;
+            kasnjenjeMin = 0;
+            ranijiIzlazakMin = 0;
+        } else {
+            let obracunskiStart = new Date(dStart);
+            let obracunskiEnd = new Date(dEnd);
 
-        if (dEnd < officialEnd) { ranijiIzlazakMin = Math.round((officialEnd - dEnd) / 60000); }
-        else if (dEnd > officialEnd) { obracunskiEnd = officialEnd; }
+            if (dStart < officialStart) { obracunskiStart = officialStart; }
+            else if (dStart > officialStart) { kasnjenjeMin = Math.round((dStart - officialStart) / 60000); }
 
-        const radniSatiDec = (obracunskiEnd - obracunskiStart) / (1000 * 60 * 60);
+            if (dEnd < officialEnd) { ranijiIzlazakMin = Math.round((officialEnd - dEnd) / 60000); }
+            else if (dEnd > officialEnd) { obracunskiEnd = officialEnd; }
+
+            radniSatiDec = (obracunskiEnd - obracunskiStart) / (1000 * 60 * 60);
+            if (radniSatiDec < 0) radniSatiDec = 0;
+        }
 
         await supabase.from('radni_sati').update({
-            obracunato_sati: Math.max(0, radniSatiDec).toFixed(2),
+            obracunato_sati: radniSatiDec.toFixed(2),
             kasnjenje_min: kasnjenjeMin,
             raniji_izlazak_min: ranijiIzlazakMin
         }).eq('id', zapis.id);
         
         loadAll();
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Uspješan obračun', poruka: `Sistem je ponovo izračunao sate za radnika ${zapis.radnik_ime}.`, onCancel: zatvoriDialog });
     };
 
-    const sacuvajPrekovremeno = async () => {
-        if (!modalPrekovremeno || !iznosPrekovremenog) return;
-        const sati = parseFloat(iznosPrekovremenog);
-        if (isNaN(sati) || sati < 0) return alert("Unesite ispravan broj sati!");
+    const otvoriModalUredi = (zapis) => {
+        setModalUredi(zapis);
+        const stvarni = (new Date(zapis.vrijeme_odlaska) - new Date(zapis.vrijeme_dolaska)) / 3600000;
+        setStvarniSati(stvarni > 0 ? stvarni : 0);
+        
+        setEditSati(zapis.obracunato_sati || 0);
+        setEditPrekovremeno((zapis.prekovremeno_min || 0) / 60);
+        setEditKasnjenje(zapis.kasnjenje_min || 0);
+        setEditRanije(zapis.raniji_izlazak_min || 0);
+    };
 
-        await supabase.from('radni_sati').update({ prekovremeno_min: sati * 60 }).eq('id', modalPrekovremeno.id);
-        setModalPrekovremeno(null);
-        setIznosPrekovremenog('');
+    const sacuvajIzmjeneSati = async () => {
+        if (!modalUredi) return;
+        const obracunato = parseFloat(editSati) || 0;
+        const prekovr = parseFloat(editPrekovremeno) || 0;
+        const kasni = parseInt(editKasnjenje) || 0;
+        const ranije = parseInt(editRanije) || 0;
+
+        await supabase.from('radni_sati').update({ 
+            obracunato_sati: obracunato.toFixed(2),
+            prekovremeno_min: prekovr * 60,
+            kasnjenje_min: kasni,
+            raniji_izlazak_min: ranije
+        }).eq('id', modalUredi.id);
+        
+        setModalUredi(null);
         loadAll();
+    };
+
+    const automatskiSveStandardno = () => {
+        setEditSati(stvarniSati.toFixed(2));
+        setEditPrekovremeno(0);
+        setEditKasnjenje(0);
+        setEditRanije(0);
+    };
+
+    const automatskiSvePrekovremeno = () => {
+        setEditSati(0);
+        setEditPrekovremeno(stvarniSati.toFixed(2));
+        setEditKasnjenje(0);
+        setEditRanije(0);
     };
 
     const obradiZahtjevOdmor = async (z, status, inicijativa) => {
@@ -156,8 +201,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
         }
 
         const payload = {
-            radnik_ime: odabraniRadnik.ime_prezime,
-            tip_odsustva: formaUpis.tip_odsustva,
+            radnik_ime: odabraniRadnik.ime_prezime, tip_odsustva: formaUpis.tip_odsustva,
             datum_od: formaUpis.datum_od, datum_do: formaUpis.datum_do,
             broj_radnih_dana: brojDana, status: 'ODOBRENO', inicijativa: 'POSLODAVAC',
             razlog: formaUpis.razlog, odobrio_korisnik: user?.ime_prezime
@@ -176,8 +220,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
     const obrisiPraznik = async (datum) => {
         if(window.confirm("Da li ste sigurni da želite obrisati ovaj izuzetak u kalendaru?")) {
-            await supabase.from('kalendar_izuzeci').delete().eq('datum', datum);
-            loadAll();
+            await supabase.from('kalendar_izuzeci').delete().eq('datum', datum); loadAll();
         }
     };
 
@@ -185,8 +228,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
         const danas = new Date(); const godina = danas.getFullYear();
         let zaUbaciti = [];
         for (let m = 0; m < 12; m++) {
-            let prvaSubotaNadjen = false;
-            let counterSubota = 0;
+            let prvaSubotaNadjen = false; let counterSubota = 0;
             for (let d = 1; d <= 31; d++) {
                 const dateObj = new Date(godina, m, d);
                 if (dateObj.getMonth() !== m) break;
@@ -249,27 +291,50 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="hr_modul" saas={saas} hideMasina={true} />
             <PametniDialog {...dialog} />
 
-            {/* MODAL ZA PREKOVREMENO ZAKUCAN PREKO SVEGA */}
-            {modalPrekovremeno && (
-                <div className="fixed inset-0 z-[10000] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
-                    <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-md w-full flex flex-col items-center">
-                        <div className="w-16 h-16 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center mb-4 border border-blue-500/30"><Clock4 size={32}/></div>
-                        <h2 className="text-xl md:text-2xl font-black uppercase tracking-widest text-white mb-2 text-center">Odobri Prekovremeno</h2>
-                        <p className="text-slate-400 text-xs md:text-sm mb-6 text-center">Radnik: <span className="text-white font-bold">{modalPrekovremeno.radnik_ime}</span><br/>Datum: {new Date(modalPrekovremeno.datum).toLocaleDateString('bs-BA')}</p>
-                        
-                        <div className="w-full bg-theme-panel p-4 rounded-xl border border-theme-border mb-6 shadow-inner">
-                            <label className="text-[10px] md:text-xs text-blue-400 uppercase font-black mb-2 block text-center">Broj odobrenih sati (npr. 1.5)</label>
-                            <input 
-                                type="number" step="0.5" 
-                                value={iznosPrekovremenog} onChange={e => setIznosPrekovremenog(e.target.value)} 
-                                className="w-full p-4 bg-black text-white text-center rounded-lg outline-none border border-slate-600 focus:border-blue-500 font-black text-2xl" 
-                                placeholder="0.0" autoFocus
-                            />
+            {/* MODAL ZA UREĐIVANJE SATI */}
+            {modalUredi && (
+                <div className="fixed inset-0 z-[10000] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md animate-in zoom-in-95">
+                    <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-lg w-full flex flex-col relative max-h-[95vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
+                            <div>
+                                <h2 className="text-xl md:text-2xl font-black uppercase tracking-widest text-white flex items-center gap-2"><Edit3 size={24}/> Uredi Sate</h2>
+                                <p className="text-slate-400 text-xs mt-1">Radnik: <span className="text-blue-400 font-bold">{modalUredi.radnik_ime}</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-slate-400 text-[10px] uppercase">Datum:</p>
+                                <p className="text-white font-black text-sm">{new Date(modalUredi.datum).toLocaleDateString('bs-BA')}</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl mb-6 flex justify-between items-center shadow-inner">
+                            <div>
+                                <p className="text-[10px] text-blue-400 uppercase font-black tracking-widest mb-1">Stvarno vrijeme na poslu:</p>
+                                <p className="text-sm text-slate-300">Od: <span className="text-white">{new Date(modalUredi.vrijeme_dolaska).toLocaleTimeString('de-DE')}</span> do <span className="text-white">{new Date(modalUredi.vrijeme_odlaska).toLocaleTimeString('de-DE')}</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-2xl text-blue-400 font-black">{stvarniSati.toFixed(2)} <span className="text-xs">h</span></p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div><label className="text-[9px] text-slate-400 uppercase block mb-1 font-bold">Standardni Sati (h)</label><input type="number" step="0.5" value={editSati} onChange={e=>setEditSati(e.target.value)} className="w-full p-3 bg-black border border-slate-700 rounded-xl text-white font-black outline-none focus:border-emerald-500 shadow-inner" /></div>
+                            <div><label className="text-[9px] text-amber-500 uppercase block mb-1 font-bold">Prekovremeno (h)</label><input type="number" step="0.5" value={editPrekovremeno} onChange={e=>setEditPrekovremeno(e.target.value)} className="w-full p-3 bg-amber-900/20 border border-amber-500/50 rounded-xl text-amber-400 font-black outline-none focus:border-amber-400 shadow-inner" /></div>
+                            <div><label className="text-[9px] text-slate-400 uppercase block mb-1 font-bold">Kašnjenje (min)</label><input type="number" value={editKasnjenje} onChange={e=>setEditKasnjenje(e.target.value)} className="w-full p-3 bg-black border border-slate-700 rounded-xl text-white font-black outline-none focus:border-red-500 shadow-inner" /></div>
+                            <div><label className="text-[9px] text-slate-400 uppercase block mb-1 font-bold">Raniji izlazak (min)</label><input type="number" value={editRanije} onChange={e=>setEditRanije(e.target.value)} className="w-full p-3 bg-black border border-slate-700 rounded-xl text-white font-black outline-none focus:border-orange-500 shadow-inner" /></div>
+                        </div>
+
+                        <div className="flex flex-col gap-2 mb-6 w-full">
+                            <button onClick={automatskiSveStandardno} className="w-full py-3 bg-blue-900/30 hover:bg-blue-600 border border-blue-500/50 rounded-xl text-[10px] text-blue-400 hover:text-white font-black uppercase transition-colors">
+                                ⚡ Upiši sve kao STANDARDNU smjenu ({stvarniSati.toFixed(2)} h)
+                            </button>
+                            <button onClick={automatskiSvePrekovremeno} className="w-full py-3 bg-amber-900/30 hover:bg-amber-600 border border-amber-500/50 rounded-xl text-[10px] text-amber-400 hover:text-white font-black uppercase transition-colors">
+                                ⚡ Poništi kašnjenja i upiši kao PREKOVREMENO ({stvarniSati.toFixed(2)} h)
+                            </button>
                         </div>
 
                         <div className="flex gap-3 w-full">
-                            <button onClick={() => { setModalPrekovremeno(null); setIznosPrekovremenog(''); }} className="flex-1 py-4 bg-theme-panel border border-slate-600 rounded-xl text-slate-300 font-black uppercase text-xs hover:bg-slate-700 transition-colors">✕ OTKAŽI</button>
-                            <button onClick={sacuvajPrekovremeno} className="flex-[2] py-4 bg-blue-600 rounded-xl text-white font-black uppercase text-xs hover:bg-blue-500 transition-all shadow-[0_0_20px_rgba(37,99,235,0.4)]">✅ ODOBRI SATE</button>
+                            <button onClick={() => setModalUredi(null)} className="flex-1 py-4 bg-theme-panel border border-slate-600 rounded-xl text-slate-300 font-black uppercase text-xs hover:bg-slate-700 transition-colors">✕ OTKAŽI</button>
+                            <button onClick={sacuvajIzmjeneSati} className="flex-[2] py-4 bg-blue-600 rounded-xl text-white font-black uppercase text-xs hover:bg-blue-500 transition-all shadow-[0_0_20px_rgba(37,99,235,0.4)]">💾 SAČUVAJ IZMJENE</button>
                         </div>
                     </div>
                 </div>
@@ -306,7 +371,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                     <span className={`text-[8px] md:text-[9px] px-2 md:px-3 py-1 md:py-1.5 rounded-lg font-black uppercase tracking-widest ${p.status === 'NA_POSLU' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
                                         {p.status === 'NA_POSLU' ? '🟢 AKTIVAN' : '⚪ ZAVRŠIO'}
                                     </span>
-                                    {p.status === 'ZAVRŠIO' && parseFloat(p.obracunato_sati) === 0 && (
+                                    {p.status === 'ZAVRŠIO' && (
                                         <button onClick={() => izracunajDnevnicu(p)} className="bg-amber-600 hover:bg-amber-500 text-white px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-[8px] md:text-[9px] font-black uppercase shadow-lg">⚙️ Obračunaj</button>
                                     )}
                                 </div>
@@ -316,7 +381,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {/* TAB 2: ODOBRENJA ODMORA (Sa Vizuelnim Kalendarom) */}
+            {/* TAB 2: ODOBRENJA ODMORA */}
             {tab === 'odobrenja' && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 animate-in slide-in-from-right">
                     <div className="lg:col-span-5 bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl flex flex-col h-[400px] lg:h-[700px]">
@@ -394,7 +459,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                             <span className="text-xs md:text-sm font-black text-slate-300">{dan}</span>
                                             <div className="w-full flex flex-col gap-0.5 mt-0.5 md:mt-1 px-0.5 md:px-1 overflow-hidden">
                                                 {zapisiNaOvajDan.map((ime, idx) => (
-                                                    <div key={idx} className="bg-red-500/20 border border-red-500/30 text-red-400 text-[5px] md:text-[6px] uppercase font-black px-1 rounded truncate leading-tight w-full" title={ime}>{ime.split(' ')[0]}</div>
+                                                    <div key={idx} className="bg-red-500/20 border border-red-500/30 text-red-400 text-[5px] md:text-[6px] uppercase font-black px-0.5 md:px-1 rounded truncate leading-tight w-full" title={ime}>{ime.split(' ')[0]}</div>
                                                 ))}
                                             </div>
                                         </div>
@@ -422,7 +487,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {/* TAB 3: PROFIL RADNIKA (HR ANALITIKA I UPIS BOLOVANJA) */}
+            {/* TAB 3: PROFIL RADNIKA */}
             {tab === 'profili' && (
                 <div className="flex flex-col lg:flex-row gap-4 md:gap-6 animate-in slide-in-from-bottom">
                     <div className="w-full lg:w-1/3 bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl h-[30vh] lg:h-[700px] flex flex-col shrink-0">
@@ -445,9 +510,16 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                         ) : (() => {
                             const mjesecniZapis = radniSati.filter(s => s.radnik_ime === odabraniRadnik.ime_prezime);
                             const totalKasnjenje = mjesecniZapis.reduce((s, z) => s + (z.kasnjenje_min || 0), 0);
-                            const totalRanije = mjesecniZapis.reduce((s, z) => s + (z.raniji_izlazak_min || 0), 0);
-                            const totalPrekovremeno = mjesecniZapis.reduce((s, z) => s + ((z.prekovremeno_min || 0)/60), 0);
                             const daniKasnjenja = mjesecniZapis.filter(z => (z.kasnjenje_min || 0) > 0).length;
+                            
+                            let ukupnoSatiMjesec = 0;
+                            let ukupnoRadnihDana = 0;
+                            mjesecniZapis.forEach(z => {
+                                const h = parseFloat(z.obracunato_sati) || 0;
+                                const prek = (z.prekovremeno_min || 0) / 60;
+                                ukupnoSatiMjesec += (h + prek);
+                                if (h > 0 || prek > 0) ukupnoRadnihDana++;
+                            });
                             
                             const kvotaUkupno = odabraniRadnik.godisnji_ukupno || 20;
                             const kvotaRadnik = odabraniRadnik.godisnji_iskoristeno_radnik || 0;
@@ -463,7 +535,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-theme-border pb-4 md:pb-6 gap-3 md:gap-4 shrink-0">
                                         <div>
                                             <h2 className="text-xl md:text-3xl text-white font-black uppercase tracking-tighter truncate">{odabraniRadnik.ime_prezime}</h2>
-                                            <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-widest mt-1 md:mt-2 bg-theme-panel inline-block px-2 md:px-3 py-1 rounded-md md:rounded-lg border border-theme-border">Uloga: {odabraniRadnik.uloga}</p>
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-widest bg-theme-panel px-2 md:px-3 py-1 rounded-md md:rounded-lg border border-theme-border">Uloga: {odabraniRadnik.uloga}</p>
+                                                <p className="text-blue-400 text-[10px] md:text-xs font-bold uppercase tracking-widest bg-blue-900/20 px-2 md:px-3 py-1 rounded-md md:rounded-lg border border-blue-500/30">🗓️ {ukupnoRadnihDana} DANA ({ukupnoSatiMjesec.toFixed(1)} h)</p>
+                                            </div>
                                         </div>
                                         <div className="flex gap-2 md:gap-3 items-center w-full sm:w-auto">
                                             <button onClick={() => setShowRucniUpis(true)} className="flex-1 sm:flex-none bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] uppercase font-black border border-red-500/30 transition-colors">+ Upis Izostanka</button>
@@ -496,26 +571,40 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                         <div className="bg-theme-panel border border-theme-border rounded-xl shadow-inner flex-1 overflow-x-auto custom-scrollbar">
                                             <table className="w-full text-left text-[10px] md:text-xs min-w-[500px]">
                                                 <thead className="bg-black/40 text-slate-500 uppercase text-[8px] md:text-[9px]">
-                                                    <tr><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Datum</th><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Dolazak</th><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Odlazak</th><th className="p-3 md:p-4 text-center sticky top-0 bg-black/80 backdrop-blur">Obračunato</th><th className="p-3 md:p-4 text-right sticky top-0 bg-black/80 backdrop-blur">Devijacije</th></tr>
+                                                    <tr><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Datum</th><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Dolazak</th><th className="p-3 md:p-4 sticky top-0 bg-black/80 backdrop-blur">Odlazak</th><th className="p-3 md:p-4 text-center sticky top-0 bg-black/80 backdrop-blur">Obračunato</th><th className="p-3 md:p-4 text-right sticky top-0 bg-black/80 backdrop-blur">Devijacije / Korekcija</th></tr>
                                                 </thead>
                                                 <tbody className="text-theme-text font-bold divide-y divide-theme-border/50">
                                                     {mjesecniZapis.length === 0 && <tr><td colSpan="5" className="p-4 md:p-6 text-center text-slate-600 italic">Nema prijava u ovom mjesecu.</td></tr>}
-                                                    {mjesecniZapis.map(z => (
-                                                        <tr key={z.id} className="hover:bg-slate-800/50 transition-colors">
-                                                            <td className="p-3 md:p-4 uppercase">{new Date(z.datum).toLocaleDateString('bs-BA')}</td>
-                                                            <td className="p-3 md:p-4 text-emerald-400">{z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).toLocaleTimeString('de-DE') : '-'}</td>
-                                                            <td className="p-3 md:p-4 text-amber-400">{z.vrijeme_odlaska ? new Date(z.vrijeme_odlaska).toLocaleTimeString('de-DE') : '-'}</td>
-                                                            <td className="p-3 md:p-4 text-center font-black text-white">{z.obracunato_sati} h</td>
-                                                            <td className="p-3 md:p-4 text-right">
-                                                                <div className="flex flex-wrap justify-end gap-1">
-                                                                    {z.kasnjenje_min > 0 && <span className="text-[8px] md:text-[9px] bg-red-900/40 text-red-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Kasnio: {z.kasnjenje_min}m</span>}
-                                                                    {z.raniji_izlazak_min > 0 && <span className="text-[8px] md:text-[9px] bg-orange-900/40 text-orange-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Ranije: {z.raniji_izlazak_min}m</span>}
-                                                                    {parseFloat(z.obracunato_sati) > 0 && z.prekovremeno_min === 0 && <button onClick={() => {setModalPrekovremeno(z); setIznosPrekovremenog('');}} className="text-[8px] md:text-[9px] bg-blue-900/30 text-blue-400 hover:bg-blue-600 hover:text-white px-1.5 md:px-2 py-0.5 md:py-1 rounded transition-colors border border-blue-500/30">+ Prekovr.</button>}
-                                                                    {z.prekovremeno_min > 0 && <span className="text-[8px] md:text-[9px] bg-emerald-900/40 text-emerald-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Prekovr: {z.prekovremeno_min/60}h</span>}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
+                                                    {mjesecniZapis.map(z => {
+                                                        const standardSati = parseFloat(z.obracunato_sati) || 0;
+                                                        const prekovrSati = (z.prekovremeno_min || 0) / 60;
+                                                        const ukupnoObacunato = standardSati + prekovrSati;
+
+                                                        return (
+                                                            <tr key={z.id} className="hover:bg-slate-800/50 transition-colors">
+                                                                <td className="p-3 md:p-4 uppercase">{new Date(z.datum).toLocaleDateString('bs-BA')}</td>
+                                                                <td className="p-3 md:p-4 text-emerald-400">{z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).toLocaleTimeString('de-DE') : '-'}</td>
+                                                                <td className="p-3 md:p-4 text-amber-400">{z.vrijeme_odlaska ? new Date(z.vrijeme_odlaska).toLocaleTimeString('de-DE') : '-'}</td>
+                                                                
+                                                                {/* OVDJE SE SADA PRIKAZUJE UKUPNI ZBIR! */}
+                                                                <td className="p-3 md:p-4 text-center font-black text-white">{ukupnoObacunato.toFixed(1)} h</td>
+                                                                
+                                                                <td className="p-3 md:p-4 text-right">
+                                                                    <div className="flex flex-wrap justify-end items-center gap-2">
+                                                                        {z.kasnjenje_min > 0 && <span className="text-[8px] md:text-[9px] bg-red-900/40 text-red-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Kasnio: {z.kasnjenje_min}m</span>}
+                                                                        {z.raniji_izlazak_min > 0 && <span className="text-[8px] md:text-[9px] bg-orange-900/40 text-orange-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Ranije: {z.raniji_izlazak_min}m</span>}
+                                                                        {z.prekovremeno_min > 0 && <span className="text-[8px] md:text-[9px] bg-emerald-900/40 text-emerald-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Prekovr: {(z.prekovremeno_min/60).toFixed(1)}h</span>}
+                                                                        
+                                                                        {z.vrijeme_odlaska && (
+                                                                            <button onClick={() => otvoriModalUredi(z)} className="text-[8px] md:text-[9px] bg-theme-card text-blue-400 hover:bg-blue-600 hover:text-white px-2 py-1.5 rounded-lg transition-colors border border-theme-border flex items-center gap-1 shadow-sm">
+                                                                                <Edit3 size={12}/> Uredi Sate
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -527,12 +616,11 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {/* TAB 4: PRAZNICI I POSTAVKE SMJENE */}
+            {/* TAB 4: PRAZNICI I KALENDAR */}
             {tab === 'kalendar' && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 animate-in slide-in-from-right max-w-5xl mx-auto">
                     <div className="lg:col-span-5 space-y-4 md:space-y-6">
                         
-                        {/* NOVO: POSTAVKE SMJENE */}
                         <div className="bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl">
                             <h3 className="text-emerald-400 font-black uppercase text-xs md:text-sm mb-4 border-b border-theme-border pb-3">⚙️ Postavke Glavne Smjene</h3>
                             <div className="grid grid-cols-2 gap-3 mb-4">

@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { CalendarDays, CheckCircle2, UserCheck, AlertCircle, ScanLine, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import MasterSearch from '../components/MasterSearch';
 
@@ -20,25 +19,30 @@ export default function KioskModule() {
     const [radniciList, setRadniciList] = useState([]);
     const [radnikProfil, setRadnikProfil] = useState(null);
 
-    // Odmor State
     const [showOdmorModal, setShowOdmorModal] = useState(false);
     const [formaOdmor, setFormaOdmor] = useState({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
     const [odsustvaZauzetost, setOdsustvaZauzetost] = useState({}); 
 
-    // Interaktivni kalendar
     const [trenutniMjesec, setTrenutniMjesec] = useState(new Date());
     const [datumOd, setDatumOd] = useState(null);
     const [datumDo, setDatumDo] = useState(null);
     const [potvrdaModal, setPotvrdaModal] = useState(null); 
 
     const inputRef = useRef(null);
-    const autoCloseRef = useRef(null); // Ref za kontrolu 10s tajmera
+    const autoCloseRef = useRef(null); 
 
     useEffect(() => {
         const timer = setInterval(() => setVrijeme(new Date()), 1000);
         supabase.from('radnici').select('ime_prezime, username, qr_kod').then(({data}) => setRadniciList(data || []));
         return () => clearInterval(timer);
     }, []);
+
+    // POPRAVLJENO: Uklonjen dialog.isOpen iz pratilaca
+    useEffect(() => {
+        if (!showOdmorModal && !isScanning && !radnikProfil && !potvrdaModal) {
+            inputRef.current?.focus();
+        }
+    }, [sken, poruka, showOdmorModal, isScanning, radnikProfil, potvrdaModal]);
 
     const ucitajZauzetost = async () => {
         const { data } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
@@ -64,8 +68,8 @@ export default function KioskModule() {
     };
 
     const procesuirajSkenId = async (unos) => {
-        if (!unos || isProcessing) return;
-        setIsProcessing(true); // Blokada duplih skeniranja
+        if (!unos || isProcessing || radnikProfil) return;
+        setIsProcessing(true); 
 
         const { data: radnik } = await supabase.from('radnici').select('*').or(`username.ilike.${unos},ime_prezime.ilike.${unos},qr_kod.eq.${unos}`).maybeSingle();
         
@@ -108,12 +112,15 @@ export default function KioskModule() {
         setSken('');
         setRadnikProfil({ radnik, akcijaTekst, akcijaTip, zahtjevi: zahtjevi || [] });
 
-        // Tajmer od 10 sekundi za auto-close profila
         if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
-        autoCloseRef.current = setTimeout(() => setRadnikProfil(null), 10000);
+        autoCloseRef.current = setTimeout(() => zatvoriProfil(), 10000);
         
-        // Oslobađamo skener tek nakon 2 sekunde da spriječimo ludovanje
         setTimeout(() => setIsProcessing(false), 2000); 
+    };
+
+    const zatvoriProfil = () => {
+        if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
+        setRadnikProfil(null);
     };
 
     const handleSkenTrigger = (text) => {
@@ -125,17 +132,17 @@ export default function KioskModule() {
     };
 
     const pokreniZahtjevIzProfila = () => {
-        // Gasimo auto-close da ne zatvori odmor modal u sred kucanja
         if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
         setFormaOdmor(prev => ({ ...prev, radnik_ime: radnikProfil.radnik.ime_prezime }));
         setRadnikProfil(null);
+        
         ucitajZauzetost();
         setTrenutniMjesec(new Date());
         setDatumOd(null); setDatumDo(null);
-        setShowOdmorModal(true);
+        
+        setTimeout(() => setShowOdmorModal(true), 150); 
     };
 
-    // --- LOGIKA KALENDARA ---
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => { let day = new Date(year, month, 1).getDay(); return day === 0 ? 6 : day - 1; };
 
@@ -195,14 +202,13 @@ export default function KioskModule() {
             setShowOdmorModal(false);
             setFormaOdmor({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
             setDatumOd(null); setDatumDo(null);
-            prikaziPrivremenuPoruku('success', `✅ Zahtjev za odmor uspješno poslan!`);
+            prikaziPrivremenuPoruku('success', `✅ Zahtjev uspješno poslan!`);
         }
     };
 
     return (
         <div className="min-h-screen bg-[#090e17] text-white flex flex-col items-center justify-center p-4 md:p-6 relative font-sans overflow-x-hidden overflow-y-auto">
             
-            {/* NOVI MODAL ZAKUCAN PREKO SVEGA (Z-INDEX 10000) */}
             {potvrdaModal && (
                 <div className="fixed inset-0 z-[10000] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
                     <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-md w-full text-center flex flex-col items-center">
@@ -226,21 +232,20 @@ export default function KioskModule() {
                 </div>
             )}
 
-            {/* LIČNI PROFIL RADNIKA KOJI ISKAČE NA 10 SEKUNDI NAKON PRIJAVE */}
             {radnikProfil && (
                 <div className="fixed inset-0 z-[10020] bg-[#090e17]/95 flex items-center justify-center p-4 backdrop-blur-xl animate-in zoom-in-95">
-                    <div className="bg-theme-card border-2 border-emerald-500 p-6 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(16,185,129,0.3)] max-w-3xl w-full flex flex-col relative max-h-screen overflow-y-auto">
-                        <button onClick={() => setRadnikProfil(null)} className="absolute top-4 right-4 bg-slate-800 w-10 h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50">✕</button>
+                    <div className="bg-theme-card border-2 border-emerald-500 p-6 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(16,185,129,0.3)] max-w-3xl w-full flex flex-col relative max-h-[95vh] overflow-y-auto">
+                        <button onClick={zatvoriProfil} className="absolute top-4 right-4 bg-slate-800 w-10 h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50"><X/></button>
                         
-                        <div className="text-center border-b border-theme-border pb-6 mb-6">
-                            <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 border-4 shadow-lg ${radnikProfil.akcijaTip === 'PRIJAVA' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500' : (radnikProfil.akcijaTip === 'ODJAVA' ? 'bg-amber-900/30 text-amber-400 border-amber-500' : 'bg-red-900/30 text-red-400 border-red-500')}`}>
-                                {radnikProfil.akcijaTip === 'PRIJAVA' ? <CheckCircle2 size={36}/> : (radnikProfil.akcijaTip === 'ODJAVA' ? <CheckCircle2 size={36}/> : <AlertCircle size={36}/>)}
+                        <div className="text-center border-b border-theme-border pb-6 mb-6 mt-4 md:mt-0">
+                            <div className={`w-16 h-16 md:w-20 md:h-20 mx-auto rounded-full flex items-center justify-center mb-4 border-4 shadow-lg ${radnikProfil.akcijaTip === 'PRIJAVA' ? 'bg-emerald-900/30 text-emerald-400 border-emerald-500' : (radnikProfil.akcijaTip === 'ODJAVA' ? 'bg-amber-900/30 text-amber-400 border-amber-500' : 'bg-red-900/30 text-red-400 border-red-500')}`}>
+                                {radnikProfil.akcijaTip === 'PRIJAVA' ? <CheckCircle2 size={32}/> : (radnikProfil.akcijaTip === 'ODJAVA' ? <CheckCircle2 size={32}/> : <AlertCircle size={32}/>)}
                             </div>
-                            <h2 className="text-2xl md:text-4xl font-black uppercase tracking-widest text-white mb-2">{radnikProfil.radnik.ime_prezime}</h2>
-                            <p className={`text-sm md:text-lg font-bold uppercase tracking-widest ${radnikProfil.akcijaTip === 'PRIJAVA' ? 'text-emerald-400' : (radnikProfil.akcijaTip === 'ODJAVA' ? 'text-amber-400' : 'text-red-400')}`}>{radnikProfil.akcijaTekst}</p>
+                            <h2 className="text-xl md:text-4xl font-black uppercase tracking-widest text-white mb-2">{radnikProfil.radnik.ime_prezime}</h2>
+                            <p className={`text-xs md:text-lg font-bold uppercase tracking-widest ${radnikProfil.akcijaTip === 'PRIJAVA' ? 'text-emerald-400' : (radnikProfil.akcijaTip === 'ODJAVA' ? 'text-amber-400' : 'text-red-400')}`}>{radnikProfil.akcijaTekst}</p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
                             <div className="bg-theme-panel p-5 rounded-2xl border border-theme-border shadow-inner">
                                 <h4 className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-4">Vaš Godišnji Odmor</h4>
                                 <div className="space-y-3">
@@ -254,7 +259,7 @@ export default function KioskModule() {
                                     </div>
                                     <div className="flex justify-between items-center pt-2">
                                         <span className="text-sm font-bold text-slate-300">PREOSTALO:</span>
-                                        <span className="text-2xl font-black text-emerald-400">
+                                        <span className="text-xl md:text-2xl font-black text-emerald-400">
                                             {(radnikProfil.radnik.godisnji_ukupno || 20) - ((radnikProfil.radnik.godisnji_iskoristeno_radnik || 0) + (radnikProfil.radnik.godisnji_iskoristeno_poslodavac || 0))} d
                                         </span>
                                     </div>
@@ -273,7 +278,7 @@ export default function KioskModule() {
                                                     <span className="text-[10px] font-bold text-white uppercase">{z.tip_odsustva}</span>
                                                     <span className="text-[9px] text-slate-400">{new Date(z.datum_od).toLocaleDateString('de-DE')} - {new Date(z.datum_do).toLocaleDateString('de-DE')}</span>
                                                 </div>
-                                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${z.status === 'ODOBRENO' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : (z.status === 'ODBIJENO' ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-amber-900/30 text-amber-400 border border-amber-500/30')}`}>
+                                                <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-1 rounded-lg ${z.status === 'ODOBRENO' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : (z.status === 'ODBIJENO' ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-amber-900/30 text-amber-400 border border-amber-500/30')}`}>
                                                     {z.status}
                                                 </span>
                                             </div>
@@ -283,25 +288,22 @@ export default function KioskModule() {
                             </div>
                         </div>
 
-                        {/* OVO JE NOVO DUGME UNUTAR PROFILA! */}
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <button onClick={pokreniZahtjevIzProfila} className="flex-[2] py-4 md:py-5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl uppercase font-black text-xs md:text-sm transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center gap-3">
-                                <CalendarDays size={20} /> ZATRAŽI ODMOR / SLOBODNO
+                            <button onClick={pokreniZahtjevIzProfila} className="flex-[2] py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl uppercase font-black text-xs md:text-sm transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center gap-2 md:gap-3">
+                                <CalendarDays size={18} /> ZATRAŽI ODMOR / SLOBODNO
                             </button>
-                            <button onClick={() => setRadnikProfil(null)} className="flex-1 py-4 md:py-5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl uppercase font-black text-xs md:text-sm transition-colors border border-slate-600">
-                                ZATVORI (10s)
+                            <button onClick={zatvoriProfil} className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl uppercase font-black text-xs md:text-sm transition-colors border border-slate-600">
+                                ZATVORI
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* KAMERA ZAKUCANA NA VRH IZNAD SVEGA */}
             <div className="relative z-[10010]">
                 {isScanning && <ScannerOverlay onScan={handleSkenTrigger} onClose={() => setIsScanning(false)} />}
             </div>
             
-            {/* DEKORACIJA */}
             <div className="absolute top-[-20%] left-[-10%] w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-96 h-96 bg-emerald-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
@@ -322,7 +324,6 @@ export default function KioskModule() {
                 <h2 className="text-xl md:text-2xl font-black uppercase tracking-widest mb-2 text-center">Prijava / Odjava sa posla</h2>
                 <p className="text-slate-400 text-xs md:text-sm mb-6 md:mb-8 text-center">Prislonite ID karticu ili ukucajte ime.</p>
 
-                {/* POPRAVLJENA ŠIRINA UNOSA DA NE GURA SKENER */}
                 <div className="w-full max-w-md flex bg-black/50 border-2 border-slate-600 focus-within:border-blue-500 rounded-2xl overflow-hidden shadow-inner transition-colors relative z-20">
                     <div className="flex-1 min-w-0 [&_input]:p-4 md:[&_input]:p-6 [&_input]:text-center [&_input]:text-lg md:[&_input]:text-2xl [&_input]:font-black [&_input]:text-white [&_input]:uppercase [&_input]:tracking-widest [&_input]:bg-transparent">
                         <MasterSearch 
@@ -334,7 +335,6 @@ export default function KioskModule() {
                             placeholder="ID KARTICA..."
                         />
                     </div>
-                    {/* DUGME SKENERA SADA IMA STALNU BOJU I NE MOŽE ISPASTI */}
                     <button onClick={() => setIsScanning(true)} className="w-16 md:w-20 shrink-0 bg-amber-600/20 text-amber-500 hover:bg-amber-600 hover:text-white transition-all flex items-center justify-center border-l border-slate-600 z-10 relative"><ScanLine className="w-6 h-6 md:w-8 md:h-8"/></button>
                 </div>
 
@@ -346,7 +346,6 @@ export default function KioskModule() {
                 )}
             </div>
 
-            {/* INTERAKTIVNI MODAL ZA ODMOR */}
             {showOdmorModal && (
                 <div className="fixed inset-0 bg-[#090e17]/95 z-[9990] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in overflow-y-auto">
                     <div className="bg-slate-900 border-2 border-amber-500/50 p-4 md:p-8 rounded-[2rem] w-full max-w-5xl shadow-[0_0_80px_rgba(245,158,11,0.15)] relative flex flex-col mt-10 md:mt-0">
@@ -354,7 +353,7 @@ export default function KioskModule() {
                         
                         <div className="mb-6 md:mb-8 border-b border-slate-800 pb-4 pr-12 md:pr-0">
                             <h2 className="text-xl md:text-2xl text-amber-500 font-black uppercase tracking-widest flex items-center gap-2 md:gap-3">🏖️ Rezervacija Odsustva</h2>
-                            <p className="text-white text-lg mt-2 font-bold bg-slate-800 inline-block px-3 py-1 rounded-lg">Radnik: {formaOdmor.radnik_ime}</p>
+                            <p className="text-white text-sm md:text-lg mt-2 font-bold bg-slate-800 inline-block px-3 py-1 rounded-lg border border-slate-600">Radnik: {formaOdmor.radnik_ime}</p>
                         </div>
 
                         <div className="flex flex-col lg:flex-row gap-6 md:gap-8 flex-1 min-h-0">
@@ -389,18 +388,15 @@ export default function KioskModule() {
 
                                 <div className="grid grid-cols-7 gap-1 md:gap-2 flex-1">
                                     {['Pon', 'Uto', 'Sri', 'Čet', 'Pet', 'Sub', 'Ned'].map(d => <div key={d} className="text-center text-[8px] md:text-[10px] text-slate-500 font-black uppercase pb-1 md:pb-2">{d}</div>)}
-                                    
                                     {Array.from({length: praznaPoljaNaPocetku}).map((_, i) => <div key={`empty-${i}`} />)}
                                     
                                     {daniNiz.map((dan) => {
                                         const dateObj = new Date(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth(), dan);
                                         const iso = dateObj.toISOString().split('T')[0];
                                         const zauz = odsustvaZauzetost[iso];
-                                        
                                         const danasPocetak = new Date(); danasPocetak.setHours(0,0,0,0);
                                         const jeProsli = dateObj < danasPocetak;
                                         const jeVikend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                        
                                         const isStart = datumOd && iso === datumOd.toISOString().split('T')[0];
                                         const isEnd = datumDo && iso === datumDo.toISOString().split('T')[0];
                                         const inRange = datumOd && datumDo && dateObj > datumOd && dateObj < datumDo;
