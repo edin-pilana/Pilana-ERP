@@ -35,7 +35,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const [formaUpis, setFormaUpis] = useState({ tip_odsustva: 'NEOPRAVDANO', datum_od: '', datum_do: '', razlog: '' });
     const [formaPraznik, setFormaPraznik] = useState({ datum: '', naziv: '', je_radni_dan: false });
 
-    // NOVI STATE ZA UREĐIVANJE SATI I KAŠNJENJA
+    // STATE ZA UREĐIVANJE SATI I KAŠNJENJA
     const [modalUredi, setModalUredi] = useState(null);
     const [stvarniSati, setStvarniSati] = useState(0);
     const [editSati, setEditSati] = useState('');
@@ -70,6 +70,11 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
         const { data: pData } = await supabase.from('kalendar_izuzeci').select('*').order('datum');
         setPraznici(pData || []);
+    };
+
+    // NOVO: SISTEM ZA PRAĆENJE (AUDIT LOG)
+    const zapisiU_Log = async (akcija, detalji) => { 
+        await supabase.from('sistem_audit_log').insert([{ korisnik: user?.ime_prezime || 'Nepoznat_Admin', akcija, detalji }]); 
     };
 
     const spasiPostavkeSmjene = () => {
@@ -148,6 +153,8 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             raniji_izlazak_min: ranije
         }).eq('id', modalUredi.id);
         
+        await zapisiU_Log('KOREKCIJA_RADNOG_VREMENA', `Izmijenjeni sati za: ${modalUredi.radnik_ime} (Datum: ${modalUredi.datum})`);
+        
         setModalUredi(null);
         loadAll();
     };
@@ -164,6 +171,24 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
         setEditPrekovremeno(stvarniSati.toFixed(2));
         setEditKasnjenje(0);
         setEditRanije(0);
+    };
+
+    // NOVO: SIGURNO BRISANJE ZAPISA SA AUDIT LOGOM
+    const obrisiZapisSigurno = (zapis) => {
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje Radnog Vremena',
+            poruka: `Da li ste apsolutno sigurni da želite trajno obrisati zapis za radnika ${zapis.radnik_ime}?\n(Datum: ${new Date(zapis.datum).toLocaleDateString('bs-BA')})`,
+            confirmText: '🗑️ TRAJNO OBRIŠI',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('radni_sati').delete().eq('id', zapis.id);
+                await zapisiU_Log('BRISANJE_RADNOG_VREMENA', `Obrisan zapis za: ${zapis.radnik_ime} (Datum: ${zapis.datum})`);
+                loadAll();
+                zatvoriDialog();
+            },
+            onCancel: zatvoriDialog
+        });
     };
 
     const obradiZahtjevOdmor = async (z, status, inicijativa) => {
@@ -219,9 +244,12 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     };
 
     const obrisiPraznik = async (datum) => {
-        if(window.confirm("Da li ste sigurni da želite obrisati ovaj izuzetak u kalendaru?")) {
-            await supabase.from('kalendar_izuzeci').delete().eq('datum', datum); loadAll();
-        }
+        prikaziDialog({
+            tip: 'upozorenje', naslov: 'Brisanje', poruka: "Da li ste sigurni da želite obrisati ovaj izuzetak u kalendaru?",
+            confirmText: '🗑️ OBRIŠI', cancelText: '✕ ODUSTANI',
+            onConfirm: async () => { await supabase.from('kalendar_izuzeci').delete().eq('datum', datum); loadAll(); zatvoriDialog(); },
+            onCancel: zatvoriDialog
+        });
     };
 
     const generisiSubote = async (tip) => {
@@ -585,21 +613,19 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                                                 <td className="p-3 md:p-4 uppercase">{new Date(z.datum).toLocaleDateString('bs-BA')}</td>
                                                                 <td className="p-3 md:p-4 text-emerald-400">{z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).toLocaleTimeString('de-DE') : '-'}</td>
                                                                 <td className="p-3 md:p-4 text-amber-400">{z.vrijeme_odlaska ? new Date(z.vrijeme_odlaska).toLocaleTimeString('de-DE') : '-'}</td>
-                                                                
-                                                                {/* OVDJE SE SADA PRIKAZUJE UKUPNI ZBIR! */}
                                                                 <td className="p-3 md:p-4 text-center font-black text-white">{ukupnoObacunato.toFixed(1)} h</td>
-                                                                
                                                                 <td className="p-3 md:p-4 text-right">
                                                                     <div className="flex flex-wrap justify-end items-center gap-2">
                                                                         {z.kasnjenje_min > 0 && <span className="text-[8px] md:text-[9px] bg-red-900/40 text-red-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Kasnio: {z.kasnjenje_min}m</span>}
                                                                         {z.raniji_izlazak_min > 0 && <span className="text-[8px] md:text-[9px] bg-orange-900/40 text-orange-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Ranije: {z.raniji_izlazak_min}m</span>}
                                                                         {z.prekovremeno_min > 0 && <span className="text-[8px] md:text-[9px] bg-emerald-900/40 text-emerald-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded">Prekovr: {(z.prekovremeno_min/60).toFixed(1)}h</span>}
                                                                         
-                                                                        {z.vrijeme_odlaska && (
-                                                                            <button onClick={() => otvoriModalUredi(z)} className="text-[8px] md:text-[9px] bg-theme-card text-blue-400 hover:bg-blue-600 hover:text-white px-2 py-1.5 rounded-lg transition-colors border border-theme-border flex items-center gap-1 shadow-sm">
-                                                                                <Edit3 size={12}/> Uredi Sate
-                                                                            </button>
-                                                                        )}
+                                                                        <button onClick={() => otvoriModalUredi(z)} className="text-[8px] md:text-[9px] bg-theme-card text-blue-400 hover:bg-blue-600 hover:text-white px-2 py-1.5 rounded-lg transition-colors border border-theme-border flex items-center gap-1 shadow-sm">
+                                                                            <Edit3 size={12}/> Uredi
+                                                                        </button>
+                                                                        <button onClick={() => obrisiZapisSigurno(z)} className="text-[8px] md:text-[9px] bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-2 py-1.5 rounded-lg transition-colors border border-red-500/30 flex items-center shadow-sm font-black uppercase">
+                                                                            ✕ Obriši
+                                                                        </button>
                                                                     </div>
                                                                 </td>
                                                             </tr>

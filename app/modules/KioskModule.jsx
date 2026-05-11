@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft } from 'lucide-react';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
-import MasterSearch from '../components/MasterSearch';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -12,30 +11,28 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function KioskModule() {
     const [vrijeme, setVrijeme] = useState(new Date());
-    
-    // --- NOVI FLOW: Akcija -> Sken -> Rezultat ---
-    const [aktivnaAkcija, setAktivaAkcija] = useState(null); // 'PRIJAVA', 'ODJAVA', 'PROFIL'
+    const [aktivnaAkcija, setAktivaAkcija] = useState(null); 
     
     const [sken, setSken] = useState('');
     const [poruka, setPoruka] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false); 
     
     const [radniciList, setRadniciList] = useState([]);
+    const [filteredRadnici, setFilteredRadnici] = useState([]);
     const [radnikProfil, setRadnikProfil] = useState(null);
 
-    // Odmor State
     const [showOdmorModal, setShowOdmorModal] = useState(false);
     const [formaOdmor, setFormaOdmor] = useState({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
     const [odsustvaZauzetost, setOdsustvaZauzetost] = useState({}); 
 
-    // Interaktivni kalendar
     const [trenutniMjesec, setTrenutniMjesec] = useState(new Date());
     const [datumOd, setDatumOd] = useState(null);
     const [datumDo, setDatumDo] = useState(null);
     const [potvrdaModal, setPotvrdaModal] = useState(null); 
 
     const inputRef = useRef(null);
+    const isProcessingRef = useRef(false); // NEPROBOJNI ZID ZA SKENER
+    const porukaTimeoutRef = useRef(null);
 
     useEffect(() => {
         const timer = setInterval(() => setVrijeme(new Date()), 1000);
@@ -43,20 +40,30 @@ export default function KioskModule() {
         return () => clearInterval(timer);
     }, []);
 
-    // Fokusiraj input samo ako smo na ekranu za skeniranje
     useEffect(() => {
         if (aktivnaAkcija && !isScanning && !radnikProfil && !showOdmorModal && !potvrdaModal) {
-            inputRef.current?.focus();
+            setTimeout(() => inputRef.current?.focus(), 100);
         }
     }, [aktivnaAkcija, sken, isScanning, radnikProfil, showOdmorModal, potvrdaModal]);
+
+    // Live pretraga za Kiosk
+    useEffect(() => {
+        if (!sken) { setFilteredRadnici([]); return; }
+        const search = sken.toLowerCase();
+        const results = radniciList.filter(r => 
+            (r.ime_prezime && r.ime_prezime.toLowerCase().includes(search)) ||
+            (r.username && r.username.toLowerCase().includes(search)) ||
+            (r.qr_kod && r.qr_kod.toLowerCase().includes(search))
+        );
+        setFilteredRadnici(results);
+    }, [sken, radniciList]);
 
     const ucitajZauzetost = async () => {
         const { data } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
         if (data) {
             let mapa = {};
             data.forEach(z => {
-                let start = new Date(z.datum_od);
-                let end = new Date(z.datum_do);
+                let start = new Date(z.datum_od); let end = new Date(z.datum_do);
                 for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                     let dStr = d.toISOString().split('T')[0];
                     if(!mapa[dStr]) mapa[dStr] = { odobreno: 0, cekanje: 0 };
@@ -70,11 +77,85 @@ export default function KioskModule() {
 
     const prikaziPrivremenuPoruku = (tip, tekst) => {
         setPoruka({ tip, tekst });
-        setTimeout(() => {
+        if (porukaTimeoutRef.current) clearTimeout(porukaTimeoutRef.current);
+        porukaTimeoutRef.current = setTimeout(() => {
             setPoruka(null);
-            // Vrati na početni ekran nakon poruke ako nije profil
-            if (tip === 'success') setAktivaAkcija(null);
+            if (tip === 'success' && aktivnaAkcija !== 'PROFIL') {
+                setAktivaAkcija(null);
+            }
         }, 4000);
+    };
+
+    const procesuirajSkenId = async (unos) => {
+        const unosZaObradu = unos || sken.trim();
+        if (!unosZaObradu || isProcessingRef.current) return;
+        
+        // ZAKLJUČAVAMO SISTEM (Barijera za brzi skener)
+        isProcessingRef.current = true; 
+        setIsScanning(false); 
+        setSken('');
+        setFilteredRadnici([]);
+
+        try {
+            const { data: radniciPretraga } = await supabase.from('radnici').select('*')
+                .or(`username.ilike.${unosZaObradu},ime_prezime.ilike.${unosZaObradu},qr_kod.eq.${unosZaObradu}`)
+                .limit(1);
+            
+            if (!radniciPretraga || radniciPretraga.length === 0) {
+                prikaziPrivremenuPoruku('error', `Radnik/Kartica "${unosZaObradu}" nije pronađen u bazi.`);
+                return;
+            }
+
+            const radnik = radniciPretraga[0];
+            const ime = radnik.ime_prezime;
+            const danas = new Date().toISOString().split('T')[0];
+            const sada = new Date().toISOString();
+
+            if (aktivnaAkcija === 'PRIJAVA') {
+                const { data: otvoreniZapis } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU').limit(1);
+                const { data: zatvoreniZapis } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'ZAVRŠIO').limit(1);
+                
+                if (otvoreniZapis && otvoreniZapis.length > 0) {
+                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već prijavljeni na posao!`);
+                } else if (zatvoreniZapis && zatvoreniZapis.length > 0) {
+                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već završili smjenu za danas!`);
+                } else {
+                    const { error } = await supabase.from('radni_sati').insert([{ radnik_ime: ime, datum: danas, vrijeme_dolaska: sada, status: 'NA_POSLU' }]);
+                    if (error) throw error;
+                    prikaziPrivremenuPoruku('success', `✅ Dobrodošli, ${ime}! Prijava u ${new Date().toLocaleTimeString('de-DE')}.`);
+                }
+            } 
+            else if (aktivnaAkcija === 'ODJAVA') {
+                // Tražimo sve otvorene zapise u slučaju da se desio duplikat bug od ranije!
+                const { data: otvoreniZapisi } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU');
+                
+                if (otvoreniZapisi && otvoreniZapisi.length > 0) {
+                    for (let z of otvoreniZapisi) {
+                        await supabase.from('radni_sati').update({ vrijeme_odlaska: sada, status: 'ZAVRŠIO' }).eq('id', z.id);
+                    }
+                    prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')}.`);
+                } else {
+                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, niste prijavljeni na posao za današnji dan!`);
+                }
+            }
+            else if (aktivnaAkcija === 'PROFIL') {
+                const { data: zahtjevi } = await supabase.from('zahtjevi_odsustva').select('*').eq('radnik_ime', ime).order('created_at', { ascending: false }).limit(3);
+                setRadnikProfil({ radnik, zahtjevi: zahtjevi || [] });
+                setAktivaAkcija(null); 
+            }
+        } catch (err) {
+            prikaziPrivremenuPoruku('error', `Sistemska greška: ${err.message}`);
+        } finally {
+            // Oslobađamo lock tek nakon 2 sekunde
+            setTimeout(() => { isProcessingRef.current = false; }, 2000);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            procesuirajSkenId();
+        }
     };
 
     const zatvoriSveModale = () => {
@@ -83,62 +164,8 @@ export default function KioskModule() {
         setPotvrdaModal(null);
         setAktivaAkcija(null);
         setSken('');
+        setFilteredRadnici([]);
         setIsScanning(false);
-        setIsProcessing(false);
-    };
-
-    // --- GLAVNA LOGIKA NAKON SKENIRANJA ---
-    const procesuirajSkenId = async (unos) => {
-        if (!unos || isProcessing) return;
-        setIsProcessing(true); 
-        setIsScanning(false); // MOMENTALNO ugasi kameru da ne skenira duplo
-
-        const { data: radnik } = await supabase.from('radnici').select('*').or(`username.ilike.${unos},ime_prezime.ilike.${unos},qr_kod.eq.${unos}`).maybeSingle();
-        
-        if (!radnik) {
-            prikaziPrivremenuPoruku('error', `Radnik/Kartica "${unos}" nije pronađen u bazi.`);
-            setSken('');
-            setIsProcessing(false);
-            return;
-        }
-
-        const ime = radnik.ime_prezime;
-        const danas = new Date().toISOString().split('T')[0];
-        const sada = new Date().toISOString();
-
-        if (aktivnaAkcija === 'PRIJAVA') {
-            const { data: otvoreniZapis } = await supabase.from('radni_sati').select('*').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU').maybeSingle();
-            const { data: zatvoreniZapis } = await supabase.from('radni_sati').select('*').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'ZAVRŠIO').maybeSingle();
-            
-            if (otvoreniZapis) {
-                prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već prijavljeni na posao!`);
-            } else if (zatvoreniZapis) {
-                prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već završili smjenu za danas!`);
-            } else {
-                const { error } = await supabase.from('radni_sati').insert([{ radnik_ime: ime, datum: danas, vrijeme_dolaska: sada, status: 'NA_POSLU' }]);
-                if (error) prikaziPrivremenuPoruku('error', error.message);
-                else prikaziPrivremenuPoruku('success', `✅ Dobrodošli, ${ime}! Prijava u ${new Date().toLocaleTimeString('de-DE')}.`);
-            }
-        } 
-        else if (aktivnaAkcija === 'ODJAVA') {
-            const { data: otvoreniZapis } = await supabase.from('radni_sati').select('*').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU').maybeSingle();
-            
-            if (otvoreniZapis) {
-                const { error } = await supabase.from('radni_sati').update({ vrijeme_odlaska: sada, status: 'ZAVRŠIO' }).eq('id', otvoreniZapis.id);
-                if (error) prikaziPrivremenuPoruku('error', error.message);
-                else prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')}.`);
-            } else {
-                prikaziPrivremenuPoruku('error', `⚠️ ${ime}, niste prijavljeni na posao za današnji dan!`);
-            }
-        }
-        else if (aktivnaAkcija === 'PROFIL') {
-            const { data: zahtjevi } = await supabase.from('zahtjevi_odsustva').select('*').eq('radnik_ime', ime).order('created_at', { ascending: false }).limit(3);
-            setRadnikProfil({ radnik, zahtjevi: zahtjevi || [] });
-            setAktivaAkcija(null); // Skloni pozadinski skener
-        }
-
-        setSken('');
-        setIsProcessing(false);
     };
 
     const pokreniZahtjevIzProfila = () => {
@@ -150,10 +177,8 @@ export default function KioskModule() {
         setTimeout(() => setShowOdmorModal(true), 100); 
     };
 
-    // --- LOGIKA KALENDARA (ODMOR) ---
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => { let day = new Date(year, month, 1).getDay(); return day === 0 ? 6 : day - 1; };
-
     const daniUMjesecu = getDaysInMonth(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth());
     const praznaPoljaNaPocetku = getFirstDayOfMonth(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth());
     const daniNiz = Array.from({length: daniUMjesecu}, (_, i) => i + 1);
@@ -163,15 +188,10 @@ export default function KioskModule() {
         const danasPocetak = new Date(); danasPocetak.setHours(0,0,0,0);
         if (kliknutiDatum < danasPocetak) return; 
 
-        if (!datumOd || (datumOd && datumDo)) {
-            setDatumOd(kliknutiDatum); setDatumDo(null);
-        } else if (datumOd && !datumDo) {
-            if (kliknutiDatum < datumOd) {
-                setDatumOd(kliknutiDatum);
-            } else {
-                setDatumDo(kliknutiDatum);
-                zatraziOdmorInteraktivno(datumOd, kliknutiDatum);
-            }
+        if (!datumOd || (datumOd && datumDo)) { setDatumOd(kliknutiDatum); setDatumDo(null); } 
+        else if (datumOd && !datumDo) {
+            if (kliknutiDatum < datumOd) { setDatumOd(kliknutiDatum); } 
+            else { setDatumDo(kliknutiDatum); zatraziOdmorInteraktivno(datumOd, kliknutiDatum); }
         }
     };
 
@@ -179,14 +199,10 @@ export default function KioskModule() {
 
     const zatraziOdmorInteraktivno = async (startD, endD) => {
         let brojDana = 0;
-        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
-            const day = d.getDay();
-            if (day !== 0 && day !== 6) brojDana++; 
-        }
+        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) { const day = d.getDay(); if (day !== 0 && day !== 6) brojDana++; }
         const pocetakStr = startD.toLocaleDateString('bs-BA');
         const krajStr = endD.toLocaleDateString('bs-BA');
         const istiDan = pocetakStr === krajStr;
-
         setPotvrdaModal({ radnik: formaOdmor.radnik_ime, tip: formaOdmor.tip, pocetakStr, krajStr, istiDan, brojDana, startD, endD });
     };
 
@@ -194,7 +210,6 @@ export default function KioskModule() {
         const p = potvrdaModal;
         const payload = { radnik_ime: p.radnik, tip_odsustva: p.tip, datum_od: p.startD.toISOString().split('T')[0], datum_do: p.endD.toISOString().split('T')[0], broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' };
         const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
-        
         if (error) { prikaziPrivremenuPoruku('error', error.message); }
         else {
             zatvoriSveModale();
@@ -205,16 +220,9 @@ export default function KioskModule() {
     return (
         <div className="min-h-screen bg-[#090e17] text-white flex flex-col items-center p-4 md:p-6 relative font-sans overflow-x-hidden overflow-y-auto">
             
-            {/* KAMERA PREKO SVEGA */}
-            <div className="relative z-[10010]">
-                {isScanning && <ScannerOverlay onScan={(text) => { setSken(text); procesuirajSkenId(text); }} onClose={() => setIsScanning(false)} />}
-            </div>
-
-            {/* DEKORACIJA */}
             <div className="fixed top-[-20%] left-[-10%] w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
             <div className="fixed bottom-[-20%] right-[-10%] w-96 h-96 bg-emerald-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
-            {/* HEADER SAT */}
             <div className="text-center z-10 mb-8 md:mb-12 mt-6">
                 <h1 className="text-6xl md:text-[8vw] font-black tracking-tighter leading-none text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 drop-shadow-2xl">
                     {vrijeme.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
@@ -224,7 +232,6 @@ export default function KioskModule() {
                 </p>
             </div>
 
-            {/* --- FAZA 1: GLAVNI EKRAN SA DUGMADIMA --- */}
             {!aktivnaAkcija && !radnikProfil && !showOdmorModal && (
                 <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 z-10 animate-in fade-in zoom-in-95">
                     <button onClick={() => setAktivaAkcija('PRIJAVA')} className="bg-emerald-900/40 border-2 border-emerald-500/50 hover:bg-emerald-600 rounded-[2rem] p-8 md:p-12 flex flex-col items-center justify-center gap-4 transition-all shadow-[0_0_40px_rgba(16,185,129,0.15)] hover:shadow-[0_0_60px_rgba(16,185,129,0.4)] group">
@@ -244,10 +251,9 @@ export default function KioskModule() {
                 </div>
             )}
 
-            {/* --- FAZA 2: EKRAN ZA SKENIRANJE --- */}
             {aktivnaAkcija && !radnikProfil && (
                 <div className="w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border-2 border-slate-700 p-6 md:p-10 rounded-3xl md:rounded-[3rem] shadow-2xl z-10 flex flex-col items-center animate-in slide-in-from-bottom-8">
-                    <button onClick={() => {setAktivaAkcija(null); setPoruka(null);}} className="absolute top-6 left-6 text-slate-400 hover:text-white flex items-center gap-2 font-black uppercase text-xs bg-black/40 px-4 py-2 rounded-xl transition-colors">
+                    <button onClick={() => {setAktivaAkcija(null); setPoruka(null); setSken(''); setFilteredRadnici([]);}} className="absolute top-6 left-6 text-slate-400 hover:text-white flex items-center gap-2 font-black uppercase text-xs bg-black/40 px-4 py-2 rounded-xl transition-colors">
                         <ArrowLeft size={16}/> Nazad
                     </button>
 
@@ -258,15 +264,24 @@ export default function KioskModule() {
                     <h2 className="text-xl md:text-3xl font-black uppercase tracking-widest mb-2 text-center">{aktivnaAkcija}</h2>
                     <p className="text-slate-400 text-xs md:text-sm mb-8 text-center">Prislonite ID karticu ili ukucajte ime u polje ispod.</p>
 
-                    <div className="w-full max-w-md flex bg-black/80 border-2 border-slate-600 focus-within:border-white rounded-2xl overflow-hidden shadow-inner transition-colors relative z-20">
-                        <div className="flex-1 min-w-0 [&_input]:p-5 md:[&_input]:p-6 [&_input]:text-center [&_input]:text-xl md:[&_input]:text-2xl [&_input]:font-black [&_input]:text-white [&_input]:uppercase [&_input]:tracking-widest [&_input]:bg-transparent">
-                            <MasterSearch 
-                                data={radniciList} 
-                                poljaZaPretragu={['ime_prezime', 'username', 'qr_kod']} 
-                                value={sken} onChange={(val) => setSken(val)}
-                                onSelect={(r) => { const id = r.qr_kod || r.username || r.ime_prezime; setSken(id); procesuirajSkenId(id); }} 
-                                placeholder="KARTICA / IME"
+                    <div className="w-full max-w-md flex bg-black/80 border-2 border-slate-600 focus-within:border-white rounded-2xl overflow-visible shadow-inner transition-colors relative z-20">
+                        <div className="flex-1 relative">
+                            <input 
+                                ref={inputRef} type="text" value={sken} 
+                                onChange={(e) => setSken(e.target.value)} onKeyDown={handleKeyDown}
+                                className="w-full h-full p-5 md:p-6 text-center text-xl md:text-2xl font-black text-white uppercase tracking-widest bg-transparent outline-none"
+                                placeholder="KARTICA / IME" autoFocus
                             />
+                            {sken && filteredRadnici.length > 0 && (
+                                <div className="absolute top-full mt-2 w-full bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-50">
+                                    {filteredRadnici.map(r => (
+                                        <div key={r.id} onClick={() => procesuirajSkenId(r.qr_kod || r.username || r.ime_prezime)} className="p-4 border-b border-slate-700 hover:bg-blue-600 cursor-pointer transition-colors text-left">
+                                            <p className="font-black text-white">{r.ime_prezime}</p>
+                                            <p className="text-[10px] text-slate-400">ID: {r.qr_kod || r.username}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         <button onClick={() => setIsScanning(true)} className="w-16 md:w-24 shrink-0 bg-slate-800 text-white hover:bg-slate-700 transition-all flex items-center justify-center border-l border-slate-600 z-10 relative">
                             <ScanLine className="w-6 h-6 md:w-8 md:h-8"/>
@@ -282,7 +297,6 @@ export default function KioskModule() {
                 </div>
             )}
 
-            {/* --- FAZA 3: PROFIL RADNIKA --- */}
             {radnikProfil && (
                 <div className="fixed inset-0 z-[10020] bg-black/95 flex items-center justify-center p-4 backdrop-blur-xl animate-in zoom-in-95">
                     <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(59,130,246,0.3)] max-w-3xl w-full flex flex-col relative max-h-[95vh] overflow-y-auto">
@@ -344,14 +358,13 @@ export default function KioskModule() {
                                 <CalendarDays size={24} /> ZATRAŽI ODMOR / SLOBODNO
                             </button>
                             <button onClick={zatvoriSveModale} className="flex-1 py-5 md:py-6 bg-slate-800 hover:bg-slate-700 text-white hover:text-white rounded-2xl uppercase font-black text-sm md:text-base transition-colors border-2 border-slate-600">
-                                ✕ ZATVORI
+                                ✕ NAZAD NA EKRAN
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- FAZA 4: INTERAKTIVNI MODAL ZA ODMOR --- */}
             {showOdmorModal && (
                 <div className="fixed inset-0 bg-black/95 z-[9990] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in overflow-y-auto">
                     <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] w-full max-w-5xl shadow-[0_0_80px_rgba(245,158,11,0.15)] relative flex flex-col mt-10 md:mt-0">
@@ -434,7 +447,6 @@ export default function KioskModule() {
                 </div>
             )}
 
-            {/* --- MODAL ZA POTVRDU ZAHTJEVA --- */}
             {potvrdaModal && (
                 <div className="fixed inset-0 z-[10030] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
                     <div className="bg-theme-card border-2 border-amber-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.5)] max-w-md w-full text-center flex flex-col items-center">
@@ -456,6 +468,10 @@ export default function KioskModule() {
                     </div>
                 </div>
             )}
+
+            <div className="relative z-[10010]">
+                {isScanning && <ScannerOverlay onScan={(text) => { setIsScanning(false); procesuirajSkenId(text); }} onClose={() => setIsScanning(false)} />}
+            </div>
         </div>
     );
 }
