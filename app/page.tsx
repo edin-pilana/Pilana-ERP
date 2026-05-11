@@ -20,7 +20,7 @@ import BlagajnaModule from './modules/BlagajnaModule';
 import KontrolniToranjModule from './modules/KontrolniToranjModule';
 import AnalitikaModule from './modules/AnalitikaModule';
 import LagerPaketaModule from './modules/LagerPaketaModule';
-import PlaniranjeModule from './modules/PlaniranjeModule'; // NOVO: Planiranje
+import PlaniranjeModule from './modules/PlaniranjeModule'; 
 import KioskModule from './modules/KioskModule';
 import HrDashboardModule from './modules/HrDashboardModule';
 
@@ -33,7 +33,7 @@ const defaultModuli = [
     { id: 'prorez', naziv: 'Prorez', ikona: '🪚', hex_boja: '#ef4444' },
     { id: 'pilana', naziv: 'Pilana', ikona: '🪵', hex_boja: '#10b981' },
     { id: 'dorada', naziv: 'Dorada', ikona: '🔄', hex_boja: '#3b82f6' },
-    { id: 'planiranje', naziv: 'Planiranje', ikona: '📅', hex_boja: '#f59e0b' }, // NOVO
+    { id: 'planiranje', naziv: 'Planiranje', ikona: '📅', hex_boja: '#f59e0b' },
     { id: 'lager', naziv: 'Lager', ikona: '📦', hex_boja: '#3b82f6' },
     { id: 'ponude', naziv: 'Ponude', ikona: '📝', hex_boja: '#ec4899' },
     { id: 'radni_nalozi', naziv: 'Nalozi', ikona: '⚙️', hex_boja: '#a855f7' },
@@ -44,7 +44,7 @@ const defaultModuli = [
     { id: 'analitika', naziv: 'Analitika', ikona: '📊', hex_boja: '#8b5cf6' },
     { id: 'podesavanja', naziv: 'Postavke', ikona: '⚙️', hex_boja: '#64748b' },
     { id: 'kiosk', naziv: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
-{ id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
+    { id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
 ];
 
 export default function Page() {
@@ -100,6 +100,15 @@ export default function Page() {
         setUiPostavke({ ...uiPostavke, moduli: novaLista });
     };
 
+    // NOVO: BRISANJE MODULA IZ EDIT MODA
+    const obrisiModulPotpuno = (index) => {
+        if (window.confirm("Da li ste sigurni da želite obrisati ovu karticu?")) {
+            const novaLista = [...(uiPostavke.moduli || [])];
+            novaLista.splice(index, 1);
+            setUiPostavke({ ...uiPostavke, moduli: novaLista });
+        }
+    };
+
     const handleImageUpload = async (e, index) => {
         const file = e.target.files[0];
         if(!file) return;
@@ -139,7 +148,6 @@ export default function Page() {
                 const { data: uiData } = await supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'dashboard').maybeSingle();
                 let fetchedSettings = uiData?.postavke_jsonb || { glavni_naslov: "Operativni Centar", pozdravna_poruka: "Odaberi modul...", moduli: [] };
                 
-                // PAMETNO SAMOIZLJEČENJE: Dodaje nove module koji fale u bazi (poput Planiranja)
                 let changed = false;
                 defaultModuli.forEach(dm => {
                     if (!fetchedSettings.moduli.some(m => m.id === dm.id)) {
@@ -149,7 +157,6 @@ export default function Page() {
                 });
                 setUiPostavke(fetchedSettings);
                 
-                // Ako je dodan novi, odmah ga spasi u bazu da ostane trajno
                 if (changed && uiData) {
                     supabase.from('ui_postavke').update({ postavke_jsonb: fetchedSettings }).eq('modul_ime', 'dashboard').then();
                 }
@@ -196,8 +203,13 @@ export default function Page() {
             'blagajna': 'Blagajna (Keš)',
             'toranj': 'Kontrolni Toranj',
             'analitika': 'Analitika',
-            'podesavanja': 'Podešavanja'
+            'podesavanja': 'Podešavanja',
+            'kiosk': 'Prijava na Rad',
+            'hr': 'HR Dashboard'
         };
+        // Specijalni uvjet za planiranje (Read Only)
+        if (modulId === 'planiranje' && (loggedUser.dozvole || []).includes('Planiranje (Samo Pregled)')) return true;
+
         return (loggedUser.dozvole || []).includes(mapaDozvola[modulId]);
     };
 
@@ -276,7 +288,7 @@ export default function Page() {
 
                                     return (
                                         <div 
-                                            key={modul.id}
+                                            key={`${modul.id}_${index}`}
                                             draggable={isEditMode}
                                             onDragStart={(e) => handleDragStart(e, index)}
                                             onDragEnter={(e) => handleDragEnter(e, index)}
@@ -285,7 +297,11 @@ export default function Page() {
                                             className={`relative ${isEditMode ? 'cursor-move animate-in zoom-in duration-200' : ''}`}
                                         >
                                             {isEditMode ? (
-                                                <div className="bg-theme-card border-2 border-amber-500 border-dashed p-4 rounded-2xl flex flex-col gap-2 opacity-95 hover:opacity-100 transition-all shadow-xl">
+                                                <div className="bg-theme-card border-2 border-amber-500 border-dashed p-4 rounded-2xl flex flex-col gap-2 opacity-95 hover:opacity-100 transition-all shadow-xl relative">
+                                                    
+                                                    {/* NOVO: KANTICA ZA BRISANJE KARTICE */}
+                                                    <button onClick={() => obrisiModulPotpuno(index)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center font-black shadow-lg hover:bg-red-500 transition-colors z-50">✕</button>
+
                                                     <div className="flex justify-between items-center mb-2">
                                                         <span className="text-amber-500 font-black text-[10px] uppercase tracking-widest flex items-center gap-1">☰ <span className="text-slate-400">Povuci i spusti</span></span>
                                                         <span className="text-slate-500 text-[10px] uppercase font-bold">{modul.id}</span>
