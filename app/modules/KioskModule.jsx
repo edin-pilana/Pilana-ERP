@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-// POPRAVLJENO: Vraćeni ChevronLeft i ChevronRight u import!
 import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
@@ -12,7 +11,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const mjeseciBHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Juni', 'Juli', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar'];
 
-// Sigurna funkcija za formatiranje datuma koja sprečava pucanje
 const formatLocalISODate = (date) => {
     if (!date || isNaN(date.getTime())) return '';
     const y = date.getFullYear();
@@ -35,7 +33,9 @@ export default function KioskModule() {
 
     const [showOdmorModal, setShowOdmorModal] = useState(false);
     const [formaOdmor, setFormaOdmor] = useState({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
+    
     const [odsustvaZauzetost, setOdsustvaZauzetost] = useState({}); 
+    const [kalendarIzuzeci, setKalendarIzuzeci] = useState({});
 
     const [trenutniMjesec, setTrenutniMjesec] = useState(new Date());
     const [datumOd, setDatumOd] = useState(null);
@@ -69,12 +69,12 @@ export default function KioskModule() {
         setFilteredRadnici(results);
     }, [sken, radniciList]);
 
-    const ucitajZauzetost = async () => {
+    const ucitajZauzetostI_Izuzetke = async () => {
         try {
-            const { data } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
-            if (data) {
+            const { data: odsustva } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
+            if (odsustva) {
                 let mapa = {};
-                data.forEach(z => {
+                odsustva.forEach(z => {
                     let start = new Date(z.datum_od); 
                     let end = new Date(z.datum_do);
                     
@@ -95,8 +95,17 @@ export default function KioskModule() {
                 });
                 setOdsustvaZauzetost(mapa);
             }
+
+            const { data: izuzeci } = await supabase.from('kalendar_izuzeci').select('datum, je_radni_dan');
+            if (izuzeci) {
+                let mapaIzuzetaka = {};
+                izuzeci.forEach(iz => {
+                    mapaIzuzetaka[iz.datum] = iz.je_radni_dan; 
+                });
+                setKalendarIzuzeci(mapaIzuzetaka);
+            }
         } catch (err) {
-            console.error("Greška pri učitavanju zauzetosti:", err);
+            console.error("Greška pri učitavanju kalendara:", err);
         }
     };
 
@@ -195,7 +204,7 @@ export default function KioskModule() {
         setFormaOdmor(prev => ({ ...prev, radnik_ime: radnikProfil.radnik.ime_prezime }));
         setRadnikProfil(null);
         
-        ucitajZauzetost();
+        ucitajZauzetostI_Izuzetke(); 
         setTrenutniMjesec(new Date());
         setDatumOd(null); 
         setDatumDo(null);
@@ -223,6 +232,7 @@ export default function KioskModule() {
 
     const zatraziOdmorJedanDan = () => { if(datumOd && !datumDo) zatraziOdmorInteraktivno(datumOd, datumOd); };
 
+    // ISPRAVLJENO: Robusnija provjera za radne subote
     const zatraziOdmorInteraktivno = async (startD, endD) => {
         let brojDana = 0;
         let d = new Date(startD);
@@ -231,8 +241,19 @@ export default function KioskModule() {
         target.setHours(0,0,0,0);
 
         while (d <= target) {
+            const isoDatum = formatLocalISODate(d);
             const day = d.getDay(); 
-            if (day !== 0 && day !== 6) brojDana++; 
+            
+            // SIGURNOSNA PROVJERA: Da li je baza sačuvala "true" ili string 'true'
+            if (kalendarIzuzeci[isoDatum] !== undefined) {
+                if (kalendarIzuzeci[isoDatum] === true || kalendarIzuzeci[isoDatum] === 'true' || kalendarIzuzeci[isoDatum] === 1) {
+                    brojDana++;
+                }
+            } else {
+                if (day !== 0 && day !== 6) {
+                    brojDana++; 
+                }
+            }
             d.setDate(d.getDate() + 1);
         }
 
