@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft } from 'lucide-react';
+// POPRAVLJENO: Vraćeni ChevronLeft i ChevronRight u import!
+import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 
@@ -9,7 +10,9 @@ const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// NOVO: Sigurna funkcija za datume koja sprečava pucanje (Client-Side Exceptions)
+const mjeseciBHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Juni', 'Juli', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar'];
+
+// Sigurna funkcija za formatiranje datuma koja sprečava pucanje
 const formatLocalISODate = (date) => {
     if (!date || isNaN(date.getTime())) return '';
     const y = date.getFullYear();
@@ -72,15 +75,22 @@ export default function KioskModule() {
             if (data) {
                 let mapa = {};
                 data.forEach(z => {
-                    let start = new Date(z.datum_od); let end = new Date(z.datum_do);
-                    // Sigurnosna provjera: Ako je datum oštećen u bazi, preskoči ga da ne sruši sistem
+                    let start = new Date(z.datum_od); 
+                    let end = new Date(z.datum_do);
+                    
                     if (isNaN(start.getTime()) || isNaN(end.getTime())) return; 
+                    
+                    start.setHours(0,0,0,0);
+                    end.setHours(0,0,0,0);
 
-                    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                    let d = new Date(start);
+                    while (d <= end) {
                         let dStr = formatLocalISODate(d);
                         if(!mapa[dStr]) mapa[dStr] = { odobreno: 0, cekanje: 0 };
                         if (z.status === 'ODOBRENO') mapa[dStr].odobreno += 1;
                         else mapa[dStr].cekanje += 1;
+                        
+                        d.setDate(d.getDate() + 1);
                     }
                 });
                 setOdsustvaZauzetost(mapa);
@@ -122,7 +132,7 @@ export default function KioskModule() {
 
             const radnik = radniciPretraga[0];
             const ime = radnik.ime_prezime;
-            const danas = formatLocalISODate(new Date()); // Koristimo siguran lokalni format
+            const danas = formatLocalISODate(new Date()); 
             const sada = new Date().toISOString();
 
             if (aktivnaAkcija === 'PRIJAVA') {
@@ -190,7 +200,7 @@ export default function KioskModule() {
         setDatumOd(null); 
         setDatumDo(null);
         
-        setTimeout(() => setShowOdmorModal(true), 150); 
+        setShowOdmorModal(true); 
     };
 
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
@@ -215,7 +225,17 @@ export default function KioskModule() {
 
     const zatraziOdmorInteraktivno = async (startD, endD) => {
         let brojDana = 0;
-        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) { const day = d.getDay(); if (day !== 0 && day !== 6) brojDana++; }
+        let d = new Date(startD);
+        d.setHours(0,0,0,0);
+        let target = new Date(endD);
+        target.setHours(0,0,0,0);
+
+        while (d <= target) {
+            const day = d.getDay(); 
+            if (day !== 0 && day !== 6) brojDana++; 
+            d.setDate(d.getDate() + 1);
+        }
+
         const pocetakStr = startD.toLocaleDateString('bs-BA');
         const krajStr = endD.toLocaleDateString('bs-BA');
         const istiDan = pocetakStr === krajStr;
@@ -383,7 +403,7 @@ export default function KioskModule() {
                                 <CalendarDays size={24} /> ZATRAŽI ODMOR / SLOBODNO
                             </button>
                             <button onClick={zatvoriSveModale} className="flex-1 py-5 md:py-6 bg-slate-800 hover:bg-slate-700 text-white hover:text-white rounded-2xl uppercase font-black text-sm md:text-base transition-colors border-2 border-slate-600">
-                                ✕ ZATVORI
+                                ✕ NAZAD NA EKRAN
                             </button>
                         </div>
                     </div>
@@ -424,9 +444,11 @@ export default function KioskModule() {
                             <div className="flex-1 bg-black/40 border-2 border-slate-800 p-4 md:p-6 rounded-2xl md:rounded-3xl flex flex-col select-none relative z-10">
                                 <div className="flex justify-between items-center mb-4 md:mb-6">
                                     <button onClick={() => setTrenutniMjesec(new Date(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth() - 1, 1))} className="p-3 md:p-4 bg-slate-800 hover:bg-amber-600 rounded-xl transition-colors"><ChevronLeft className="w-4 h-4 md:w-6 md:h-6"/></button>
+                                    
                                     <h3 className="text-lg md:text-2xl font-black uppercase tracking-widest text-amber-500">
-                                        {trenutniMjesec.toLocaleDateString('bs-BA', { month: 'long', year: 'numeric' })}
+                                        {mjeseciBHS[trenutniMjesec.getMonth()]} {trenutniMjesec.getFullYear()}.
                                     </h3>
+                                    
                                     <button onClick={() => setTrenutniMjesec(new Date(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth() + 1, 1))} className="p-3 md:p-4 bg-slate-800 hover:bg-amber-600 rounded-xl transition-colors"><ChevronRight className="w-4 h-4 md:w-6 md:h-6"/></button>
                                 </div>
 
@@ -436,7 +458,7 @@ export default function KioskModule() {
                                     
                                     {daniNiz.map((dan) => {
                                         const dateObj = new Date(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth(), dan);
-                                        const iso = formatLocalISODate(dateObj); // Korištenje sigurne lokalne metode
+                                        const iso = formatLocalISODate(dateObj);
                                         const zauz = odsustvaZauzetost[iso];
                                         const danasPocetak = new Date(); danasPocetak.setHours(0,0,0,0);
                                         const jeProsli = dateObj < danasPocetak;
