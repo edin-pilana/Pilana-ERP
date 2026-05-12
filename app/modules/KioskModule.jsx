@@ -9,6 +9,15 @@ const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// NOVO: Sigurna funkcija za datume koja sprečava pucanje (Client-Side Exceptions)
+const formatLocalISODate = (date) => {
+    if (!date || isNaN(date.getTime())) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 export default function KioskModule() {
     const [vrijeme, setVrijeme] = useState(new Date());
     const [aktivnaAkcija, setAktivaAkcija] = useState(null); 
@@ -31,7 +40,7 @@ export default function KioskModule() {
     const [potvrdaModal, setPotvrdaModal] = useState(null); 
 
     const inputRef = useRef(null);
-    const isProcessingRef = useRef(false); // NEPROBOJNI ZID ZA SKENER
+    const isProcessingRef = useRef(false);
     const porukaTimeoutRef = useRef(null);
 
     useEffect(() => {
@@ -46,7 +55,6 @@ export default function KioskModule() {
         }
     }, [aktivnaAkcija, sken, isScanning, radnikProfil, showOdmorModal, potvrdaModal]);
 
-    // Live pretraga za Kiosk
     useEffect(() => {
         if (!sken) { setFilteredRadnici([]); return; }
         const search = sken.toLowerCase();
@@ -59,19 +67,26 @@ export default function KioskModule() {
     }, [sken, radniciList]);
 
     const ucitajZauzetost = async () => {
-        const { data } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
-        if (data) {
-            let mapa = {};
-            data.forEach(z => {
-                let start = new Date(z.datum_od); let end = new Date(z.datum_do);
-                for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                    let dStr = d.toISOString().split('T')[0];
-                    if(!mapa[dStr]) mapa[dStr] = { odobreno: 0, cekanje: 0 };
-                    if (z.status === 'ODOBRENO') mapa[dStr].odobreno += 1;
-                    else mapa[dStr].cekanje += 1;
-                }
-            });
-            setOdsustvaZauzetost(mapa);
+        try {
+            const { data } = await supabase.from('zahtjevi_odsustva').select('datum_od, datum_do, status').neq('status', 'ODBIJENO');
+            if (data) {
+                let mapa = {};
+                data.forEach(z => {
+                    let start = new Date(z.datum_od); let end = new Date(z.datum_do);
+                    // Sigurnosna provjera: Ako je datum oštećen u bazi, preskoči ga da ne sruši sistem
+                    if (isNaN(start.getTime()) || isNaN(end.getTime())) return; 
+
+                    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                        let dStr = formatLocalISODate(d);
+                        if(!mapa[dStr]) mapa[dStr] = { odobreno: 0, cekanje: 0 };
+                        if (z.status === 'ODOBRENO') mapa[dStr].odobreno += 1;
+                        else mapa[dStr].cekanje += 1;
+                    }
+                });
+                setOdsustvaZauzetost(mapa);
+            }
+        } catch (err) {
+            console.error("Greška pri učitavanju zauzetosti:", err);
         }
     };
 
@@ -90,7 +105,6 @@ export default function KioskModule() {
         const unosZaObradu = unos || sken.trim();
         if (!unosZaObradu || isProcessingRef.current) return;
         
-        // ZAKLJUČAVAMO SISTEM (Barijera za brzi skener)
         isProcessingRef.current = true; 
         setIsScanning(false); 
         setSken('');
@@ -108,7 +122,7 @@ export default function KioskModule() {
 
             const radnik = radniciPretraga[0];
             const ime = radnik.ime_prezime;
-            const danas = new Date().toISOString().split('T')[0];
+            const danas = formatLocalISODate(new Date()); // Koristimo siguran lokalni format
             const sada = new Date().toISOString();
 
             if (aktivnaAkcija === 'PRIJAVA') {
@@ -126,7 +140,6 @@ export default function KioskModule() {
                 }
             } 
             else if (aktivnaAkcija === 'ODJAVA') {
-                // Tražimo sve otvorene zapise u slučaju da se desio duplikat bug od ranije!
                 const { data: otvoreniZapisi } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU');
                 
                 if (otvoreniZapisi && otvoreniZapisi.length > 0) {
@@ -146,7 +159,6 @@ export default function KioskModule() {
         } catch (err) {
             prikaziPrivremenuPoruku('error', `Sistemska greška: ${err.message}`);
         } finally {
-            // Oslobađamo lock tek nakon 2 sekunde
             setTimeout(() => { isProcessingRef.current = false; }, 2000);
         }
     };
@@ -169,12 +181,16 @@ export default function KioskModule() {
     };
 
     const pokreniZahtjevIzProfila = () => {
+        if (!radnikProfil || !radnikProfil.radnik) return;
         setFormaOdmor(prev => ({ ...prev, radnik_ime: radnikProfil.radnik.ime_prezime }));
         setRadnikProfil(null);
+        
         ucitajZauzetost();
         setTrenutniMjesec(new Date());
-        setDatumOd(null); setDatumDo(null);
-        setTimeout(() => setShowOdmorModal(true), 100); 
+        setDatumOd(null); 
+        setDatumDo(null);
+        
+        setTimeout(() => setShowOdmorModal(true), 150); 
     };
 
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
@@ -208,7 +224,12 @@ export default function KioskModule() {
 
     const posaljiKrajnjiZahtjev = async () => {
         const p = potvrdaModal;
-        const payload = { radnik_ime: p.radnik, tip_odsustva: p.tip, datum_od: p.startD.toISOString().split('T')[0], datum_do: p.endD.toISOString().split('T')[0], broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' };
+        const payload = { 
+            radnik_ime: p.radnik, tip_odsustva: p.tip, 
+            datum_od: formatLocalISODate(p.startD), 
+            datum_do: formatLocalISODate(p.endD), 
+            broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' 
+        };
         const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
         if (error) { prikaziPrivremenuPoruku('error', error.message); }
         else {
@@ -220,6 +241,10 @@ export default function KioskModule() {
     return (
         <div className="min-h-screen bg-[#090e17] text-white flex flex-col items-center p-4 md:p-6 relative font-sans overflow-x-hidden overflow-y-auto">
             
+            <div className="relative z-[10010]">
+                {isScanning && <ScannerOverlay onScan={(text) => { setIsScanning(false); procesuirajSkenId(text); }} onClose={() => setIsScanning(false)} />}
+            </div>
+
             <div className="fixed top-[-20%] left-[-10%] w-96 h-96 bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
             <div className="fixed bottom-[-20%] right-[-10%] w-96 h-96 bg-emerald-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
@@ -358,7 +383,7 @@ export default function KioskModule() {
                                 <CalendarDays size={24} /> ZATRAŽI ODMOR / SLOBODNO
                             </button>
                             <button onClick={zatvoriSveModale} className="flex-1 py-5 md:py-6 bg-slate-800 hover:bg-slate-700 text-white hover:text-white rounded-2xl uppercase font-black text-sm md:text-base transition-colors border-2 border-slate-600">
-                                ✕ NAZAD NA EKRAN
+                                ✕ ZATVORI
                             </button>
                         </div>
                     </div>
@@ -411,13 +436,14 @@ export default function KioskModule() {
                                     
                                     {daniNiz.map((dan) => {
                                         const dateObj = new Date(trenutniMjesec.getFullYear(), trenutniMjesec.getMonth(), dan);
-                                        const iso = dateObj.toISOString().split('T')[0];
+                                        const iso = formatLocalISODate(dateObj); // Korištenje sigurne lokalne metode
                                         const zauz = odsustvaZauzetost[iso];
                                         const danasPocetak = new Date(); danasPocetak.setHours(0,0,0,0);
                                         const jeProsli = dateObj < danasPocetak;
                                         const jeVikend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                        const isStart = datumOd && iso === datumOd.toISOString().split('T')[0];
-                                        const isEnd = datumDo && iso === datumDo.toISOString().split('T')[0];
+                                        
+                                        const isStart = datumOd && iso === formatLocalISODate(datumOd);
+                                        const isEnd = datumDo && iso === formatLocalISODate(datumDo);
                                         const inRange = datumOd && datumDo && dateObj > datumOd && dateObj < datumDo;
                                         
                                         let bgClass = jeVikend ? 'bg-slate-900/50 text-slate-500' : 'bg-slate-800 hover:bg-slate-700 cursor-pointer';
@@ -432,8 +458,8 @@ export default function KioskModule() {
                                                 <span className="text-sm md:text-xl font-black">{dan}</span>
                                                 {zauz && !isStart && !isEnd && !inRange && !jeProsli && (
                                                     <div className="absolute bottom-1 md:bottom-2 flex gap-0.5 md:gap-1 justify-center">
-                                                        {Array.from({length: Math.min(3, zauz.odobreno)}).map((_, i) => <div key={`o${i}`} className="w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_red]"></div>)}
-                                                        {Array.from({length: Math.min(3, zauz.cekanje)}).map((_, i) => <div key={`c${i}`} className="w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-amber-500 shadow-[0_0_5px_orange]"></div>)}
+                                                        {Array.from({length: Math.min(3, zauz.odobreno || 0)}).map((_, i) => <div key={`o${i}`} className="w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_red]"></div>)}
+                                                        {Array.from({length: Math.min(3, zauz.cekanje || 0)}).map((_, i) => <div key={`c${i}`} className="w-1 md:w-1.5 h-1 md:h-1.5 rounded-full bg-amber-500 shadow-[0_0_5px_orange]"></div>)}
                                                     </div>
                                                 )}
                                             </div>
@@ -468,10 +494,6 @@ export default function KioskModule() {
                     </div>
                 </div>
             )}
-
-            <div className="relative z-[10010]">
-                {isScanning && <ScannerOverlay onScan={(text) => { setIsScanning(false); procesuirajSkenId(text); }} onClose={() => setIsScanning(false)} />}
-            </div>
         </div>
     );
 }
