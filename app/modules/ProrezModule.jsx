@@ -17,23 +17,20 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
     const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
 
     useEffect(() => { loadLogove(); }, [header]);
-
     const loadLogove = async () => {
         if(!header || !header.datum || !header.masina) return;
         const { data } = await supabase.from('dnevnik_masine').select('*').eq('datum', header.datum).eq('masina', header.masina).eq('modul', modul).order('vrijeme_od', { ascending: false });
         if (data) setLogovi(data);
     };
-
     const snimiZastojIliRad = async () => {
         if (!form.vrijeme_od) return alert("Vrijeme početka je obavezno!");
-        const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user.ime_prezime };
+        const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
         await supabase.from('dnevnik_masine').insert([payload]);
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
 
     const obrisiLog = async (id) => { if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); } };
-
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500" />;
         if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500" />;
@@ -76,83 +73,120 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 }
 
 export default function ProrezModule({ user, header, setHeader, onExit }) {
-    useEffect(() => { if (!header?.masina) { setHeader(prev => ({ ...prev, masina: 'BRENTA 1' })); } }, [header?.masina]);
+    
+    // PAMETNA SELEKCIJA MAŠINE
+    useEffect(() => {
+        const postaviMasinu = async () => {
+            const { data } = await supabase.from('masine').select('naziv').ilike('dozvoljeni_moduli', '%Prorez%');
+            const dozvoljene = data ? data.map(m => m.naziv) : [];
+            const zadnja = localStorage.getItem('zadnja_masina_prorez');
 
+            if (!header?.masina || !dozvoljene.includes(header.masina)) {
+                const nova = (zadnja && dozvoljene.includes(zadnja)) ? zadnja : (dozvoljene[0] || 'BRENTA 1');
+                setHeader(prev => ({ ...prev, masina: nova }));
+                localStorage.setItem('zadnja_masina_prorez', nova);
+            } else if (header.masina && dozvoljene.includes(header.masina)) {
+                localStorage.setItem('zadnja_masina_prorez', header.masina);
+            }
+        };
+        postaviMasinu();
+    }, [header?.masina]);
+    
     const saas = useSaaS('prorez_modul', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16', naslov_skenera: 'SKENIRAJ TRUPAC NA BRENTI',
-        polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (GLAVNI)', span: 'col-span-1' }, { id: 'pomocnik', label: '👷 POMOĆNIK 1', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
+        polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (GLAVNI)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
         polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1', customWidth: '100%', span: 'col-span-4' } ]
     });
 
-    const dragItem = useRef(null); const dragOverItem = useRef(null);
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
     const handleDragStart = (e, index, lista) => { dragItem.current = { index, lista }; };
     const handleDragEnter = (e, index) => { dragOverItem.current = index; };
-    const handleDrop = (listaIme) => { if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return; const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; const premjesteniItem = novaLista[dragItem.current.index]; novaLista.splice(dragItem.current.index, 1); novaLista.splice(dragOverItem.current, 0, premjesteniItem); dragItem.current = null; dragOverItem.current = null; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const updatePolje = (index, key, val, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; novaLista[index][key] = val; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const toggleVelicinaPolja = (index, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; const trenutno = novaLista[index].span; novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const spremiDimenzije = (e, index, listaIme) => { if (!saas.isEditMode) return; const w = e.currentTarget.style.width; const h = e.currentTarget.style.height; if (w || h) { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; if (w) novaLista[index].customWidth = w; if (h) novaLista[index].customHeight = h; saas.setUi({...saas.ui, [listaIme]: novaLista}); } };
+    const handleDrop = (listaIme) => { if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
+    const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; const premjesteniItem = novaLista[dragItem.current.index]; novaLista.splice(dragItem.current.index, 1);
+    novaLista.splice(dragOverItem.current, 0, premjesteniItem); dragItem.current = null; dragOverItem.current = null; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
+    const updatePolje = (index, key, val, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+    const novaLista = [...aktuelnaLista]; novaLista[index][key] = val; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
+    const toggleVelicinaPolja = (index, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+    const novaLista = [...aktuelnaLista]; const trenutno = novaLista[index].span; novaLista[index].span = trenutno === 'col-span-1' ?
+    'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); saas.setUi({...saas.ui, [listaIme]: novaLista}); };
+    const spremiDimenzije = (e, index, listaIme) => { if (!saas.isEditMode) return; const w = e.currentTarget.style.width; const h = e.currentTarget.style.height;
+    if (w || h) { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista];
+    if (w) novaLista[index].customWidth = w; if (h) novaLista[index].customHeight = h; saas.setUi({...saas.ui, [listaIme]: novaLista}); } };
 
     const [scan, setScan] = useState('');
     const [trupac, setTrupac] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
     const [prorezaniLista, setProrezaniLista] = useState([]);
-    
-    // PAMETNI DIJALOZI
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    // OVDJE SU SADA PRAVI RADNICI UZ ULOGU PROREZA
+    const scanTimerRef = useRef(null); 
+
     const [brentista, setBrentista] = useState('');
-    const [pomocnik, setPomocnik] = useState('');
     const [viljuskarista, setViljuskarista] = useState('');
     const [radniciList, setRadniciList] = useState([]);
+
+    const emitRadniciUpdate = (brentistaIme, viljuskaristaIme) => {
+        window.dispatchEvent(new CustomEvent('radnici_updated', {
+            detail: { brentista: brentistaIme, viljuskarista: viljuskaristaIme }
+        }));
+    };
 
     const handleBrentistaChange = async (novoIme) => {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'brentista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
-            window.dispatchEvent(new Event('radnici_updated')); 
+            setBrentista(novoIme);
+            localStorage.setItem('zajednicki_brentista', novoIme);
+            emitRadniciUpdate(novoIme, viljuskarista);
         }
-        setBrentista(novoIme); localStorage.setItem('prorez_brentista', novoIme);
-    };
-
-    const handlePomocnikChange = async (novoIme) => {
-        if (header?.masina) {
-            await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'pomocnik').is('vrijeme_odjave', null);
-            if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'pomocnik' }]);
-            window.dispatchEvent(new Event('radnici_updated')); 
-        }
-        setPomocnik(novoIme); localStorage.setItem('prorez_pomocnik', novoIme);
     };
 
     const handleViljuskaristaChange = async (novoIme) => {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
-            window.dispatchEvent(new Event('radnici_updated')); 
+            setViljuskarista(novoIme);
+            localStorage.setItem('zajednicki_viljuskarista', novoIme);
+            emitRadniciUpdate(brentista, novoIme);
         }
-        setViljuskarista(novoIme); localStorage.setItem('prorez_viljuskarista', novoIme);
     };
 
     useEffect(() => {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>({naziv: r.ime_prezime})) : []));
         if (header?.masina) loadProrezani();
 
-        // UČITAVAMO RADNIKE ZA OVU MAŠINU U PROREZU
         const ucitajDezurneRadnike = async () => {
             if (!header?.masina) return;
             const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-            if (data) {
+            let locBrentista = localStorage.getItem('zajednicki_brentista') || '';
+            let locViljuskarista = localStorage.getItem('zajednicki_viljuskarista') || '';
+
+            if (data && data.length > 0) {
                 const b = data.find(r => r.uloga === 'brentista');
-                const p = data.find(r => r.uloga === 'pomocnik');
                 const v = data.find(r => r.uloga === 'viljuskarista');
-                if (b) { setBrentista(b.radnik_ime); localStorage.setItem('prorez_brentista', b.radnik_ime); }
-                if (p) { setPomocnik(p.radnik_ime); localStorage.setItem('prorez_pomocnik', p.radnik_ime); }
-                if (v) { setViljuskarista(v.radnik_ime); localStorage.setItem('prorez_viljuskarista', v.radnik_ime); }
+                if (b) { locBrentista = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
+                if (v) { locViljuskarista = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
             }
+            
+            setBrentista(locBrentista);
+            setViljuskarista(locViljuskarista);
+            emitRadniciUpdate(locBrentista, locViljuskarista);
         };
         ucitajDezurneRadnike();
+
+        const handleRadniciUpdate = (event) => { 
+            if (event.detail) {
+                setBrentista(event.detail.brentista);
+                setViljuskarista(event.detail.viljuskarista);
+            } else {
+                 ucitajDezurneRadnike();
+            }
+        };
+        window.addEventListener('radnici_updated', handleRadniciUpdate);
+        return () => window.removeEventListener('radnici_updated', handleRadniciUpdate);
     }, [header?.masina]);
 
     const loadProrezani = async () => {
@@ -163,23 +197,37 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if(data) setProrezaniLista(data);
     };
 
-    const handleScanInput = async (val) => {
+    const handleScanInput = (val, isEnter = false) => {
         setScan(val);
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        if (!val) return;
+        
+        if (isEnter) {
+            processTrupacScan(val);
+        } else {
+            scanTimerRef.current = setTimeout(() => processTrupacScan(val), 2000);
+        }
+    };
+
+    const processTrupacScan = async (val) => {
         const id = val.toUpperCase().trim();
-        if (id.length >= 3) {
-            const { data } = await supabase.from('trupci').select('*').eq('id', id).maybeSingle();
-            if(data) {
-                if(data.prorezan_at) return prikaziDialog({ tip: 'upozorenje', naslov: 'Iskorišten Trupac', poruka: `Trupac ${id} je VEĆ PROREZAN!\nSkenirajte drugi.`, onCancel: zatvoriDialog });
-                setTrupac(data); setScan('');
-                if (window.navigator.vibrate) window.navigator.vibrate(50);
-            }
+        if (id.length < 3) return; 
+        
+        const { data } = await supabase.from('trupci').select('*').eq('id', id).maybeSingle();
+        if (data) {
+            if(data.prorezan_at) return prikaziDialog({ tip: 'upozorenje', naslov: 'Iskorišten Trupac', poruka: `Trupac ${id} je VEĆ PROREZAN!\nSkenirajte drugi.`, onCancel: zatvoriDialog });
+            setTrupac(data); 
+            setScan('');
+            if (window.navigator.vibrate) window.navigator.vibrate(50);
+        } else {
+            prikaziDialog({ tip: 'greska', naslov: 'Nepoznat Trupac', poruka: `Trupac sa ID kodom "${id}" ne postoji na lageru!`, onCancel: zatvoriDialog });
+            setScan('');
         }
     };
 
     const zavrsiProrez = async () => {
         if(!trupac) return;
         if(!brentista) return prikaziDialog({ tip: 'upozorenje', naslov: 'Obavezno Polje', poruka: "ZABRANJENO:\nMorate odabrati Brentistu kako bi se prorez evidentirao!", onCancel: zatvoriDialog });
-
         prikaziDialog({
             tip: 'info', naslov: 'Potvrda',
             poruka: `Da li ste sigurni da je trupac ${trupac.id} izrezan i želite ga skinuti sa zaliha?`,
@@ -190,18 +238,19 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 if (errUpdate) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: errUpdate.message, onCancel: zatvoriDialog });
 
                 const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-                const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== pomocnik && ime !== viljuskarista) : [];
-                const sviRadniciProrez = [brentista, pomocnik, viljuskarista, ...ostaliRadnici].filter(Boolean).join(', ');
-
+                const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
+                const sviRadniciProrez = [brentista, viljuskarista, ...ostaliRadnici].filter(Boolean).join(', ');
+                
                 const logPayload = {
                     trupac_id: trupac.id, zapremina: trupac.zapremina,
                     mjesto: header.mjesto, masina: header.masina,
-                    brentista, pomocnik, viljuskarista, svi_radnici_imena: sviRadniciProrez,
+                    brentista, viljuskarista, svi_radnici_imena: sviRadniciProrez,
                     snimio_korisnik: user.ime_prezime, vrsta_drveta: trupac.vrsta || 'N/A'
                 };
                 
                 await supabase.from('prorez_log').insert([logPayload]);
-                setTrupac(null); setScan(''); loadProrezani(); zatvoriDialog();
+                setTrupac(null);
+                setScan(''); loadProrezani(); zatvoriDialog();
             },
             onCancel: zatvoriDialog
         });
@@ -211,7 +260,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
     const renderRadnikPolje = (polje) => {
         if (polje.id === 'brentista') return <div className="h-full w-full min-w-0 bg-transparent text-theme-text font-black text-sm uppercase px-2 py-1 outline-none overflow-visible"><MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={brentista} onSelect={r => handleBrentistaChange(r.naziv)} placeholder="Odaberi..." /></div>;
-        if (polje.id === 'pomocnik') return <div className="h-full w-full min-w-0 bg-transparent text-theme-text font-black text-sm uppercase px-2 py-1 outline-none overflow-visible"><MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={pomocnik} onSelect={r => handlePomocnikChange(r.naziv)} placeholder="Odaberi..." /></div>;
         if (polje.id === 'viljuskarista') return <div className="h-full w-full min-w-0 bg-transparent text-theme-text font-black text-sm uppercase px-2 py-1 outline-none overflow-visible"><MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={viljuskarista} onSelect={r => handleViljuskaristaChange(r.naziv)} placeholder="Odaberi..." /></div>;
         return null;
     };
@@ -268,7 +316,9 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50"></div>
                         <label className="text-[9px] text-theme-muted uppercase block mb-4 font-black tracking-widest text-center" style={{ color: saas.ui.boja_teksta, fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_skenera}</label>
                         <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-red-500/50 focus-within:border-red-500'}`}>
-                            <input value={scan} onChange={e => handleScanInput(e.target.value)} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="ČEKAM SKEN..." />
+                            
+                            <input value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleScanInput(scan, true) }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="ČEKAM SKEN..." />
+                            
                             <button onClick={() => setIsScanning(true)} className="shrink-0 px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
                         </div>
 
@@ -322,7 +372,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             </div>
             
             <SaaS_DnevnikMasine modul="Prorez" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} />
-            {isScanning && <ScannerOverlay onScan={(text) => { handleScanInput(text.toUpperCase()); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
+            {isScanning && <ScannerOverlay onScan={(text) => { handleScanInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }

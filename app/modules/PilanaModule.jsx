@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch'; // NOVO
-import PametniDialog from '../components/PametniDialog'; // NOVO
+import MasterSearch from '../components/MasterSearch';
+import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa, printFaznaDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
+const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -21,20 +21,17 @@ function DimBox({ label, val, set, disabled }) {
     );
 }
 
-// U Pilani ostavljamo samo lokalni SaaS dnevnik jer je usko vezan za modul
 function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop }) {
     const [logovi, setLogovi] = useState([]);
     const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
 
     useEffect(() => { loadLogove(); }, [header]);
-
     const loadLogove = async () => {
         if(!header || !header.datum || !header.masina) return;
         const { data } = await supabase.from('dnevnik_masine').select('*').eq('datum', header.datum).eq('masina', header.masina).eq('modul', modul).order('vrijeme_od', { ascending: false });
         if (data) setLogovi(data);
     };
-
     const snimiZastojIliRad = async () => {
         if (!form.vrijeme_od) return alert("Vrijeme početka je obavezno!");
         const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
@@ -42,9 +39,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
-
     const obrisiLog = async (id) => { if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); } };
-
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
         if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
@@ -58,26 +53,100 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
             <h3 className="text-theme-accent font-black uppercase text-xs tracking-widest">⚙️ Evidencija rada i zastoja mašine</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-theme-panel p-4 rounded-2xl border border-theme-accent/40 items-start shadow-inner">
                 {(saas.ui.polja_dnevnik || []).map((polje, index) => (
-                    <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20' : ''}`} style={{ maxWidth: '100%', width: polje.customWidth || undefined }}>
-                        {polje.label && <label className="text-[8px] text-theme-muted uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>}
-                        <div className="flex-1">{renderDnevnikPolje(polje)}</div>
+                    <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
+                        {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
+                        {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
+                        <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
                     </div>
                 ))}
                 <button onClick={snimiZastojIliRad} className={`w-full py-4 bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-orange-500 col-span-4 md:col-span-4 mt-2`}>➕ Dodaj Zapis u Dnevnik</button>
+            </div>
+            
+            <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
+                {logovi.map(l => (
+                    <div key={l.id} className="flex justify-between items-center p-3 bg-slate-800 border border-theme-border rounded-xl">
+                        <div>
+                            <p className="text-[10px] text-slate-400 font-black"><span className="text-emerald-400">{l.vrijeme_od}</span> - {l.vrijeme_do ? <span className="text-amber-400">{l.vrijeme_do}</span> : <span className="text-slate-500">...</span>}</p>
+                            <p className="text-theme-text text-xs font-bold mt-1">{l.napomena || 'Nema napomene'}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {l.zastoj_min > 0 && <span className="text-red-400 text-xs font-black bg-red-900/30 px-2 py-1 rounded border border-red-500/30">Zastoj: {l.zastoj_min} min</span>}
+                            <button onClick={() => obrisiLog(l.id)} className="text-red-500 font-black hover:bg-slate-700 p-2 rounded">✕</button>
+                        </div>
+                    </div>
+                ))}
             </div>
         </div>
     );
 }
 
 export default function PilanaModule({ user, header, setHeader, onExit }) {
-    useEffect(() => { if (!header?.masina) { setHeader(prev => ({ ...prev, masina: 'PILANA' })); } }, [header?.masina]);
     
+    // PAMETNA SELEKCIJA MAŠINE
+    useEffect(() => {
+        const postaviMasinu = async () => {
+            const { data } = await supabase.from('masine').select('naziv').ilike('dozvoljeni_moduli', '%Pilana%');
+            const dozvoljene = data ? data.map(m => m.naziv) : [];
+            const zadnja = localStorage.getItem('zadnja_masina_pilana');
+
+            if (!header?.masina || !dozvoljene.includes(header.masina)) {
+                const nova = (zadnja && dozvoljene.includes(zadnja)) ? zadnja : (dozvoljene[0] || 'PILANA 1');
+                setHeader(prev => ({ ...prev, masina: nova }));
+                localStorage.setItem('zadnja_masina_pilana', nova);
+            } else if (header.masina && dozvoljene.includes(header.masina)) {
+                localStorage.setItem('zadnja_masina_pilana', header.masina);
+            }
+        };
+        postaviMasinu();
+    }, [header?.masina]);
+    
+    // ZAJEDNIČKI MODUL U UI
     const saas = useSaaS('pilana_izlaz', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16',
         naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET',
         polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (IZ PROREZA)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
         polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1' } ]
     });
+
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+    const handleDragStart = (e, index, lista) => { dragItem.current = { index, lista }; };
+    const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+    const handleDrop = (listaIme) => { 
+        if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
+        const novaLista = [...aktuelnaLista]; 
+        const premjesteniItem = novaLista[dragItem.current.index]; 
+        novaLista.splice(dragItem.current.index, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteniItem); 
+        dragItem.current = null; dragOverItem.current = null; 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const updatePolje = (index, key, val, listaIme) => { 
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+        const novaLista = [...aktuelnaLista]; 
+        novaLista[index][key] = val; 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const toggleVelicinaPolja = (index, listaIme) => { 
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+        const novaLista = [...aktuelnaLista]; 
+        const trenutno = novaLista[index].span; 
+        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const spremiDimenzije = (e, index, listaIme) => { 
+        if (!saas.isEditMode) return; 
+        const w = e.currentTarget.style.width; const h = e.currentTarget.style.height;
+        if (w || h) { 
+            const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
+            const novaLista = [...aktuelnaLista];
+            if (w) novaLista[index].customWidth = w; 
+            if (h) novaLista[index].customHeight = h; 
+            saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+        } 
+    };
 
     const [izlazScan, setIzlazScan] = useState('');
     const [radniNalog, setRadniNalog] = useState('');
@@ -89,11 +158,11 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     const [activeEditItem, setActiveEditItem] = useState(null);
     const [updateMode, setUpdateMode] = useState('dodaj');
-
-    const [brentista, setBrentista] = useState(typeof window !== 'undefined' ? localStorage.getItem('pilana_brentista') || '' : '');
-    const [viljuskarista, setViljuskarista] = useState(typeof window !== 'undefined' ? localStorage.getItem('pilana_viljuskarista') || '' : '');
+    
+    const [brentista, setBrentista] = useState('');
+    const [viljuskarista, setViljuskarista] = useState('');
+    
     const [radniciList, setRadniciList] = useState([]);
-
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -105,17 +174,75 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [odabraneOznake, setOdabraneOznake] = useState([]);
     const timerRef = useRef(null);
 
+    const emitRadniciUpdate = (brentistaIme, viljuskaristaIme) => {
+        window.dispatchEvent(new CustomEvent('radnici_updated', {
+            detail: { brentista: brentistaIme, viljuskarista: viljuskaristaIme }
+        }));
+    };
+
     useEffect(() => {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>({naziv: r.ime_prezime})) : []));
         supabase.from('katalog_proizvoda').select('*').then(({data}) => setKatalog(data || []));
         supabase.from('radni_nalozi').select('id, kupac_naziv, status, tip_naloga, stavke_jsonb, tehnologija_jsonb').neq('status', 'ZAVRŠENO').then(({data}) => setAktivniNalozi(data || []));
         ucitajSveZapoocetePakete();
+
+        const ucitajDezurneRadnike = async () => {
+            if (!header?.masina) return;
+            const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim(); 
+            const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', masinaKojaReze).is('vrijeme_odjave', null);
+            let locBrentista = localStorage.getItem('zajednicki_brentista') || '';
+            let locViljuskarista = localStorage.getItem('zajednicki_viljuskarista') || '';
+
+            if (data && data.length > 0) {
+                const b = data.find(r => r.uloga === 'brentista');
+                const v = data.find(r => r.uloga === 'viljuskarista');
+                if (b) { locBrentista = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
+                if (v) { locViljuskarista = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
+            }
+            
+            setBrentista(locBrentista);
+            setViljuskarista(locViljuskarista);
+        };
+        ucitajDezurneRadnike();
+
+        const handleRadniciUpdate = (event) => { 
+            if (event.detail) {
+                setBrentista(event.detail.brentista);
+                setViljuskarista(event.detail.viljuskarista);
+            } else {
+                 ucitajDezurneRadnike(); 
+            }
+        };
+        window.addEventListener('radnici_updated', handleRadniciUpdate);
+        return () => window.removeEventListener('radnici_updated', handleRadniciUpdate);
+
     }, [header?.masina]);
+
+    const handleBrentistaChange = async (novoIme) => {
+        const masinaKojaReze = header?.masina ? header.masina.replace('PILANA', 'BRENTA').trim() : 'BRENTA 1';
+        await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', masinaKojaReze).eq('uloga', 'brentista').is('vrijeme_odjave', null);
+        if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: masinaKojaReze, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
+        
+        setBrentista(novoIme);
+        localStorage.setItem('zajednicki_brentista', novoIme);
+        emitRadniciUpdate(novoIme, viljuskarista);
+    };
+
+    const handleViljuskaristaChange = async (novoIme) => {
+        const masinaKojaReze = header?.masina ? header.masina.replace('PILANA', 'BRENTA').trim() : 'BRENTA 1';
+        await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', masinaKojaReze).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
+        if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: masinaKojaReze, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
+        
+        setViljuskarista(novoIme);
+        localStorage.setItem('zajednicki_viljuskarista', novoIme);
+        emitRadniciUpdate(brentista, novoIme);
+    };
 
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) return;
         const { data } = await supabase.from('paketi').select('paket_id').is('closed_at', null).eq('masina', header.masina);
-        if (data && data.length > 0) setActiveIzlazIds([...new Set(data.map(p => p.paket_id))]); else setActiveIzlazIds([]);
+        if (data && data.length > 0) setActiveIzlazIds([...new Set(data.map(p => p.paket_id))]);
+        else setActiveIzlazIds([]);
     };
 
     useEffect(() => {
@@ -177,7 +304,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const handleStavkaSelect = async (stavka) => {
         let deb = '', sir = '', duz = '';
         if (stavka.isFazni && stavka.dimenzije && stavka.dimenzije !== 'Nema u katalogu') {
-            const parts = stavka.dimenzije.split(/x|\*/i); 
+            const parts = stavka.dimenzije.split(/x|\*/i);
             if (parts.length >= 3) { deb = parts[0].trim(); sir = parts[1].trim(); duz = parts[2].trim(); }
         } else {
             const {data: kat} = await supabase.from('katalog_proizvoda').select('*').eq('sifra', stavka.sifra_proizvoda).maybeSingle();
@@ -190,7 +317,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const fetchIzlaz = async (pid) => { 
-        const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid); 
+        const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid);
         setIzlazPackageItems(data || []); 
         if (data && data.length > 0 && data[0].broj_veze) handleNalogSelect(data[0].broj_veze);
     };
@@ -214,7 +341,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const handleIzlazInput = (val, isEnter = false) => {
-        setIzlazScan(val); if(timerRef.current) clearTimeout(timerRef.current); if(!val) return;
+        setIzlazScan(val); if(timerRef.current) clearTimeout(timerRef.current);
+        if(!val) return;
         if (isEnter) processIzlaz(val); else timerRef.current = setTimeout(() => processIzlaz(val), 2000);
     };
 
@@ -224,22 +352,29 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (!brentista) return prikaziDialog({ tip: 'greska', naslov: 'Blokada', poruka: "ZABRANJENO: Molimo odaberite Brentistu prije snimanja paketa!", onCancel: zatvoriDialog });
         if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Paket', poruka: "Prvo skenirajte ili unesite ID za IZLAZNI PAKET!", onCancel: zatvoriDialog });
         if (!form.kolicina_ulaz) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Količina', poruka: "Unesite količinu prije snimanja!", onCancel: zatvoriDialog });
-
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);
         let komada = unosKol;
-        if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100)); else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100)); else if (form.jm === 'm1') komada = unosKol / (d/100);
+        if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
+        else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
+        else if (form.jm === 'm1') komada = unosKol / (d/100);
         const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
-
+        
         let isNusProizvod = false; let currentRnStavka = null;
-        if (form.rn_stavka_id) { currentRnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id); if (currentRnStavka && currentRnStavka.naziv_proizvoda !== form.naziv) isNusProizvod = true; } 
-        else if (radniNalog) { isNusProizvod = true; }
+        if (form.rn_stavka_id) { 
+            currentRnStavka = rnStavke.find(rs => rs.id === form.rn_stavka_id);
+            if (currentRnStavka && currentRnStavka.naziv_proizvoda !== form.naziv) isNusProizvod = true; 
+        } else if (radniNalog) { 
+            isNusProizvod = true;
+        }
 
         if (currentRnStavka && !isNusProizvod && !activeEditItem) {
             const vecNapravljeno = parseFloat(currentRnStavka.napravljeno) || 0; const naruceno = parseFloat(currentRnStavka.naruceno) || 0;
             let kolikoSadPravimo = komada;
-            if (currentRnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket; else if (currentRnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100); else if (currentRnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
-
+            if (currentRnStavka.jm === 'm3') kolikoSadPravimo = qtyZaPaket;
+            else if (currentRnStavka.jm === 'm2') kolikoSadPravimo = komada * (s/100) * (d/100);
+            else if (currentRnStavka.jm === 'm1') kolikoSadPravimo = komada * (d/100);
+            
             if ((vecNapravljeno + kolikoSadPravimo) > naruceno) {
                 const preostalo = naruceno - vecNapravljeno;
                 return prikaziDialog({
@@ -255,13 +390,18 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const izvrsiSnimanjePaketa = async (qtyZaPaket, isNusProizvod, currentRnStavka, komada, v, s, d) => {
-        const timeNowFull = new Date().toISOString(); const timeNow = new Date().toLocaleTimeString('de-DE');
-        const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-        const radniciIzPilane = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).join(', ') : '';
+        const timeNowFull = new Date().toISOString();
+        const timeNow = new Date().toLocaleTimeString('de-DE');
+        
+        // ZAJEDNIČKI TROŠAK RADNIKA
+        const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim(); 
+        const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', masinaKojaReze).is('vrijeme_odjave', null);
+        const sviOstaliIzPristupa = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
+        const radniciIzPilane = [brentista, viljuskarista, ...sviOstaliIzPristupa].filter(Boolean).join(', ');
 
         const { data: lastItem } = await supabase.from('paketi').select('created_at').eq('paket_id', selectedIzlazId).order('created_at', { ascending: false }).limit(1).maybeSingle();
         const startTime = lastItem ? lastItem.created_at : new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-        const { data: logs } = await supabase.from('prorez_log').select('trupac_id').eq('masina', header.masina).gte('created_at', startTime).lte('created_at', timeNowFull);
+        const { data: logs } = await supabase.from('prorez_log').select('trupac_id').eq('masina', masinaKojaReze).gte('created_at', startTime).lte('created_at', timeNowFull);
         const currentTrupciIds = logs ? [...new Set(logs.map(l => l.trupac_id))] : [];
 
         if (activeEditItem) {
@@ -281,10 +421,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             };
             const { error } = await supabase.from('paketi').insert([payload]);
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
-
+            
             if(currentRnStavka && !isNusProizvod) {
                 const rn_jm = form.rn_jm || 'm3'; let napravljenoZaRN = komada;
-                if (rn_jm === 'm3') napravljenoZaRN = komada * (v/100) * (s/100) * (d/100); else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100); else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
+                if (rn_jm === 'm3') napravljenoZaRN = komada * (v/100) * (s/100) * (d/100);
+                else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100);
+                else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
 
                 const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
                 if (rn && rn.stavke_jsonb) {
@@ -306,7 +448,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 setForm(f => ({ ...f, napravljeno: (parseFloat(f.napravljeno) + napravljenoZaRN).toFixed(4) }));
             }
         }
-        fetchIzlaz(selectedIzlazId); setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
+        fetchIzlaz(selectedIzlazId);
+        setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
     };
 
     const obrisiStavkuIzPaketa = async (item, e) => {
@@ -322,7 +465,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
     const zakljuciPaket = async (pid) => {
         if(izlazPackageItems.length === 0) {
-            setActiveIzlazIds(p => p.filter(x => x !== pid)); if (selectedIzlazId === pid) setSelectedIzlazId('');
+            setActiveIzlazIds(p => p.filter(x => x !== pid));
+            if (selectedIzlazId === pid) setSelectedIzlazId('');
             return prikaziDialog({ tip: 'info', naslov: 'Prazan Paket', poruka: `Prazan paket ${pid} je zatvoren i oslobođen.`, onCancel: zatvoriDialog });
         }
         prikaziDialog({
@@ -334,7 +478,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 setActiveIzlazIds(p => p.filter(x => x !== pid)); if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
                 zatvoriDialog();
                 
-                // Nudi print odmah poslije zatvaranja
                 prikaziDialog({
                     tip: 'uspjeh', naslov: 'Uspješno Zaključeno!',
                     poruka: `Paket ${pid} je uspješno zaključen.\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`,
@@ -379,11 +522,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     }
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 font-sans animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={{ color: saas.ui.boja_slova }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="pilana" saas={saas} />
             
-            {/* GOD MODE EDITOR POKRENUT */}
             {saas.isEditMode && (
                 <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
                     <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
@@ -428,7 +570,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]);}} className="text-[9px] text-red-400 hover:text-red-300 uppercase bg-red-900/20 px-2 py-1 rounded border border-red-500/30 transition-all font-black">✕ Ukloni</button>}
                         </div>
                         
-                        {/* ZAMJENA: Koristimo MasterSearch za Naloge */}
                         <MasterSearch 
                             data={aktivniNalozi} 
                             poljaZaPretragu={['id', 'kupac_naziv']} 
@@ -528,14 +669,11 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             <div className="space-y-4">
                                 <div className="relative z-40">
                                     <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Proizvod koji se slaže</label>
-                                    {/* ZAMJENA: Koristimo MasterSearch za Proizvode */}
                                     <MasterSearch 
                                         data={katalog} 
                                         poljaZaPretragu={['sifra', 'naziv']} 
                                         value={form.naziv}
-                                        onSelect={(k) => {
-                                            setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'});
-                                        }} 
+                                        onSelect={(k) => { setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'}); }} 
                                         placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..."
                                         renderItem={(k) => (
                                             <div>
