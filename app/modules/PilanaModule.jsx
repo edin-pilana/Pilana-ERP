@@ -174,6 +174,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [odabraneOznake, setOdabraneOznake] = useState([]);
     const timerRef = useRef(null);
 
+    // REFERENCE ZA LIVE UPDATE (Tako da Realtime uvijek zna šta je trenutno odabrano)
+    const selectedIzlazIdRef = useRef(selectedIzlazId);
+    const radniNalogRef = useRef(radniNalog);
+    useEffect(() => { selectedIzlazIdRef.current = selectedIzlazId; }, [selectedIzlazId]);
+    useEffect(() => { radniNalogRef.current = radniNalog; }, [radniNalog]);
+
     const emitRadniciUpdate = (brentistaIme, viljuskaristaIme) => {
         window.dispatchEvent(new CustomEvent('radnici_updated', {
             detail: { brentista: brentistaIme, viljuskarista: viljuskaristaIme }
@@ -214,7 +220,31 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             }
         };
         window.addEventListener('radnici_updated', handleRadniciUpdate);
-        return () => window.removeEventListener('radnici_updated', handleRadniciUpdate);
+
+        // 🟢 REALTIME LIVE SYNC (Uživo Osvježavanje bez refresha)
+        const channel = supabase.channel('pilana_live_sync')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, (payload) => {
+                // Ako neko ažurira paket koji ja trenutno gledam, osvježi prikaz na ekranu!
+                if (selectedIzlazIdRef.current && payload.new?.paket_id === selectedIzlazIdRef.current) {
+                    fetchIzlaz(selectedIzlazIdRef.current);
+                }
+                // Ako neko kreira ili završi paket, osvježi donju listu aktivnih paketa
+                if (payload.new?.masina === header?.masina || payload.old?.masina === header?.masina) {
+                    ucitajSveZapoocetePakete();
+                }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'radni_nalozi' }, (payload) => {
+                // Ako radimo na istom nalogu i neko drugi je promijenio količinu, ažuriraj i moj ekran!
+                if (radniNalogRef.current && payload.new?.id === radniNalogRef.current) {
+                    handleNalogSelect(radniNalogRef.current);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            window.removeEventListener('radnici_updated', handleRadniciUpdate);
+            supabase.removeChannel(channel);
+        };
 
     }, [header?.masina]);
 
@@ -317,9 +347,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const fetchIzlaz = async (pid) => { 
-        const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid);
+        const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid).order('created_at', { ascending: false });
         setIzlazPackageItems(data || []); 
-        if (data && data.length > 0 && data[0].broj_veze) handleNalogSelect(data[0].broj_veze);
+        if (data && data.length > 0 && data[0].broj_veze && !radniNalogRef.current) { handleNalogSelect(data[0].broj_veze); }
     };
 
     const processIzlaz = async (val) => {
@@ -393,7 +423,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const timeNowFull = new Date().toISOString();
         const timeNow = new Date().toLocaleTimeString('de-DE');
         
-        // ZAJEDNIČKI TROŠAK RADNIKA
         const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim(); 
         const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', masinaKojaReze).is('vrijeme_odjave', null);
         const sviOstaliIzPristupa = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
@@ -405,9 +434,16 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const currentTrupciIds = logs ? [...new Set(logs.map(l => l.trupac_id))] : [];
 
         if (activeEditItem) {
-            const newM3 = updateMode === 'dodaj' ? parseFloat(activeEditItem.kolicina_final) + qtyZaPaket : parseFloat(activeEditItem.kolicina_final) - qtyZaPaket;
+            // ATOMSKO AŽURIRANJE PREKO BAZE (Sprječava sudar sa drugim radnikom na istom tabletu/paketu)
+            if (updateMode === 'dodaj') {
+                await supabase.rpc('dodaj_u_paket', { p_id: activeEditItem.id, kolicina_za_dodati: qtyZaPaket });
+            } else {
+                await supabase.rpc('oduzmi_iz_paketa', { p_id: activeEditItem.id, kolicina_za_oduzeti: qtyZaPaket });
+            }
+
+            // Ažuriramo samo tekstualne podatke standardnim putem
             const { error } = await supabase.from('paketi').update({ 
-                kolicina_final: parseFloat(newM3.toFixed(3)), vrijeme_tekst: timeNow, snimio_korisnik: user?.ime_prezime,
+                vrijeme_tekst: timeNow, snimio_korisnik: user?.ime_prezime,
                 brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
                 broj_veze: radniNalog || activeEditItem.broj_veze, ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids 
             }).eq('id', activeEditItem.id);
@@ -428,10 +464,11 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100);
                 else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
 
-                const {data: rn} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
-                if (rn && rn.stavke_jsonb) {
-                    const isFazni = rn.tip_naloga === 'FAZNI';
-                    const azurirane = rn.stavke_jsonb.map(st => {
+                // Izvlačimo apsolutno najnovije stanje Naloga prije dodavanja
+                const {data: rn_latest} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
+                if (rn_latest && rn_latest.stavke_jsonb) {
+                    const isFazni = rn_latest.tip_naloga === 'FAZNI';
+                    const azurirane = rn_latest.stavke_jsonb.map(st => {
                         if (st.id === form.rn_stavka_id) {
                             if (isFazni) {
                                 const trenutnoFaza = parseFloat(st.napravljeno_po_fazama?.[header.masina] || 0);
@@ -444,10 +481,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     });
                     await supabase.from('radni_nalozi').update({ stavke_jsonb: azurirane }).eq('id', radniNalog.toUpperCase());
                 }
-                handleNalogSelect(radniNalog);
-                setForm(f => ({ ...f, napravljeno: (parseFloat(f.napravljeno) + napravljenoZaRN).toFixed(4) }));
             }
         }
+        // Ostavljamo Live Sync-u da sam osvježi listu, ali radi sigurnosti možemo okinuti i lokalno
         fetchIzlaz(selectedIzlazId);
         setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
     };
@@ -526,6 +562,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="pilana" saas={saas} />
             
+            {/* Oznaka da je sistem povezan UŽIVO na server */}
+            <div className="absolute top-4 left-4 z-[9999] pointer-events-none flex items-center gap-2">
+                <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
+                <span className="text-[8px] text-emerald-500 uppercase font-black tracking-widest hidden md:block">LIVE SYNC</span>
+            </div>
+
             {saas.isEditMode && (
                 <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
                     <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>

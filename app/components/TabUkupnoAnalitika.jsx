@@ -30,6 +30,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
         setLoading(true);
         try {
             const [trupciRes, prorezRes, paketiRes] = await Promise.all([
+                // 🟢 ZADRŽANA SVA LOGIKA: Povlačimo trupce od početka za tačan bilans zaliha
                 supabase.from('trupci').select('*').gte('datum_prijema', '2020-01-01'),
                 supabase.from('prorez_log').select('*').gte('datum', datumOd).lte('datum', datumDo),
                 supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo)
@@ -45,6 +46,14 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                     iskoristeniTrupci.add(l.trupac_id);
                     const t = trupciDB.find(tr => tr.id === l.trupac_id);
                     if(t) ulazTrupciM3 += parseFloat(t.zapremina || 0);
+                }
+            });
+
+            // 🟢 DODATO: Racunamo koliko je prijavljeno kala na placu (krojenje) za odabrani period
+            let kaloKrojenjeM3 = 0;
+            trupciDB.forEach(t => {
+                if (t.klasa === 'KALO/OGRJEV' && t.datum_prijema >= datumOd && t.datum_prijema <= datumDo) {
+                    kaloKrojenjeM3 += parseFloat(t.zapremina || 0);
                 }
             });
 
@@ -69,7 +78,8 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             const grafikonTokMaterijala = [
                 { name: 'Sirovina (Ulaz)', M3: parseFloat(ulazTrupciM3.toFixed(2)) },
                 { name: 'Proizvedeno (Izlaz)', M3: parseFloat(ukupanIzlazGOTOVE_ROBE.toFixed(2)) },
-                { name: 'Otpad (Kalo)', M3: parseFloat((pilanaKaloM3 + doradaKaloM3).toFixed(2)) }
+                { name: 'Otpad od Rezova', M3: parseFloat((pilanaKaloM3 + doradaKaloM3).toFixed(2)) },
+                { name: 'Kalo (Krojenje)', M3: parseFloat(kaloKrojenjeM3.toFixed(2)) } // 🟢 Dodano na grafikon
             ];
 
             const grafikonProizvoda = Object.keys(proizvodiMap).map(k => ({ name: k, value: parseFloat(proizvodiMap[k].toFixed(2)) })).sort((a,b) => b.value - a.value).slice(0,10);
@@ -77,7 +87,9 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             setData({
                 kpi: {
                     ulazTrupci: ulazTrupciM3.toFixed(2), izlazGotoveRobe: ukupanIzlazGOTOVE_ROBE.toFixed(2),
-                    ukupnoKalo: (pilanaKaloM3 + doradaKaloM3).toFixed(2), iskoristenost: ulazTrupciM3 > 0 ? ((ukupanIzlazGOTOVE_ROBE / ulazTrupciM3) * 100).toFixed(1) : 0
+                    ukupnoKalo: (pilanaKaloM3 + doradaKaloM3).toFixed(2), 
+                    iskoristenost: ulazTrupciM3 > 0 ? ((ukupanIzlazGOTOVE_ROBE / ulazTrupciM3) * 100).toFixed(1) : 0,
+                    kaloKrojenje: kaloKrojenjeM3.toFixed(2)
                 },
                 grafikonTokMaterijala, grafikonProizvoda,
                 tabelaProizvodnje: Object.keys(proizvodiMap).map(k => ({ naziv: k, m3: proizvodiMap[k] })).sort((a,b) => b.m3 - a.m3)
@@ -90,7 +102,6 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
     const generisiUltimativniPDF = async (nazivModula, nazivKoloneFolder) => {
         setIsGeneratingPDF(true);
         try {
-            // 1. RENDERIRANJE (Slikanje ekrana)
             const pdfElement = document.getElementById('savrseni-pdf-dokument');
             pdfElement.style.opacity = '1';
             pdfElement.style.zIndex = '9999';
@@ -107,29 +118,19 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
             const pdfBlob = pdf.output('blob');
 
-            // 2. LOGIKA ZA PERIOD (Ime fajla)
-            // Ako su datumi isti, piše jedan datum, ako su različiti piše OD-DO
             const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
             const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
             const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
             
-            // 3. DOHVATANJE PUTANJE IZ POSTAVKI
             const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
             const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
             const timestamp = new Date().getTime();
             
-            // Finalno ime za Make.com: FOLDER___MODUL_PERIOD_ID.pdf
             const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
 
-            // =========================================================
-            // UBRZANJE: PRVO DAJEMO FAJL KORISNIKU
-            // =========================================================
             pdf.save(`${nazivModula}_${periodStr}.pdf`);
             window.open(URL.createObjectURL(pdfBlob), '_blank');
             
-            // =========================================================
-            // ONDA ŠALJEMO U POZADINI U SUPABASE
-            // =========================================================
             const { error: uploadError } = await supabase.storage
                 .from('izvjestaji_buffer')
                 .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
@@ -159,13 +160,12 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                         <h3 className="text-blue-400 font-black uppercase text-sm tracking-widest">Analitika Materijala (Kubici)</h3>
                         <p className="text-xs text-slate-400">Prikaz ulaza sirovine, izlaza robe i stvarnog kala u proizvodnji.</p>
                     </div>
-                    {/* OVDJE JE NOVI ONCLICK */}
                     <button onClick={() => generisiUltimativniPDF('Analitika_Materijala', 'folder_ukupno')} disabled={isGeneratingPDF} className={`${isGeneratingPDF ? 'bg-slate-600' : 'bg-blue-600 hover:bg-blue-500'} text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase shadow-lg transition-all`}>
                         {isGeneratingPDF ? '⌛ Generisanje...' : '🖨️ Isprintaj PDF'}
                     </button>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <Card decoration="top" decorationColor="blue" className="bg-theme-card">
                         <Text className="text-slate-400 font-bold text-[9px] uppercase">Ulaz Sirovine (Trupci)</Text>
                         <Metric className="text-white mt-1 text-xl">{data.kpi.ulazTrupci} <span className="text-sm">m³</span></Metric>
@@ -179,8 +179,12 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                         <Metric className="text-amber-400 mt-1 text-xl">{data.kpi.iskoristenost} <span className="text-sm">%</span></Metric>
                     </Card>
                     <Card decoration="top" decorationColor="rose" className="bg-theme-card">
-                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Stvarni Otpad (Kalo)</Text>
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Stvarni Otpad (Rezovi)</Text>
                         <Metric className="text-rose-400 mt-1 text-xl">{data.kpi.ukupnoKalo} <span className="text-sm">m³</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="orange" className="bg-theme-card border-orange-500/30">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Kalo od krojenja</Text>
+                        <Metric className="text-orange-400 mt-1 text-xl">{data.kpi.kaloKrojenje} <span className="text-sm">m³</span></Metric>
                     </Card>
                 </div>
 
@@ -195,9 +199,13 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                                     <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
                                     <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v} m³`} />
                                     <Bar isAnimationActive={false} dataKey="M3" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {data.grafikonTokMaterijala.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.name === 'Otpad (Kalo)' ? '#ef4444' : (entry.name === 'Sirovina (Ulaz)' ? '#3b82f6' : '#10b981')} />
-                                        ))}
+                                        {data.grafikonTokMaterijala.map((entry, index) => {
+                                            let boja = '#10b981';
+                                            if (entry.name === 'Otpad od Rezova') boja = '#ef4444';
+                                            if (entry.name === 'Sirovina (Ulaz)') boja = '#3b82f6';
+                                            if (entry.name === 'Kalo (Krojenje)') boja = '#f97316';
+                                            return <Cell key={`cell-${index}`} fill={boja} />;
+                                        })}
                                     </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
@@ -228,8 +236,8 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 backgroundColor: 'white', color: '#0f172a',
                 padding: '12mm', boxSizing: 'border-box',
                 fontFamily: 'sans-serif'
-            }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
+             }}>
+                <div style={{ display: 'flex', justifyItems: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         {logoUrl ? <img src={logoUrl} style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} alt="Logo" crossOrigin="anonymous" /> : <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#0f172a' }}>{imeFirme}</h1>}
                         <div style={{ borderLeft: '2px solid #cbd5e1', paddingLeft: '15px' }}>
@@ -248,11 +256,12 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                         { title: 'Ulaz Sirovine', val: data.kpi.ulazTrupci, unit: 'm³', color: '#3b82f6' },
                         { title: 'Ukupno Proizvedeno', val: data.kpi.izlazGotoveRobe, unit: 'm³', color: '#10b981' },
                         { title: 'Efikasnost Fabrike', val: data.kpi.iskoristenost, unit: '%', color: '#f59e0b' },
-                        { title: 'Stvarni Otpad', val: data.kpi.ukupnoKalo, unit: 'm³', color: '#f43f5e' }
+                        { title: 'Stvarni Otpad', val: data.kpi.ukupnoKalo, unit: 'm³', color: '#f43f5e' },
+                        { title: 'Kalo (Krojenje)', val: data.kpi.kaloKrojenje, unit: 'm³', color: '#f97316' }
                     ].map((kpi, i) => (
-                        <div key={i} style={{ width: '23%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', borderTop: `4px solid ${kpi.color}` }}>
-                            <div style={{ fontSize: '9px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>{kpi.title}</div>
-                            <div style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
+                        <div key={i} style={{ width: '19%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', borderTop: `4px solid ${kpi.color}` }}>
+                            <div style={{ fontSize: '7px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>{kpi.title}</div>
+                            <div style={{ fontSize: '14px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '8px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
                         </div>
                     ))}
                 </div>
@@ -266,9 +275,13 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                                 <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
                                 <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
                                 <Bar isAnimationActive={false} dataKey="M3" radius={[4, 4, 0, 0]} barSize={40}>
-                                    {data.grafikonTokMaterijala.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.name === 'Otpad (Kalo)' ? '#ef4444' : (entry.name === 'Sirovina (Ulaz)' ? '#3b82f6' : '#10b981')} />
-                                    ))}
+                                    {data.grafikonTokMaterijala.map((entry, index) => {
+                                        let boja = '#10b981';
+                                        if (entry.name === 'Otpad od Rezova') boja = '#ef4444';
+                                        if (entry.name === 'Sirovina (Ulaz)') boja = '#3b82f6';
+                                        if (entry.name === 'Kalo (Krojenje)') boja = '#f97316';
+                                        return <Cell key={`cell-${index}`} fill={boja} />;
+                                    })}
                                 </Bar>
                             </BarChart>
                         </div>

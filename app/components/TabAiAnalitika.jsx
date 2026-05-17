@@ -10,7 +10,7 @@ const ODABRANI_MODEL = "gemini-2.5-flash";
 
 export default function TabAiAnalitika({ saas }) {
     const [messages, setMessages] = useState([
-        { role: 'ai', text: 'Zdravo šefe! Ja sam tvoj AI ERP Asistent (Gemini 2.5 Flash). Imam **neograničen pristup cijeloj bazi podataka** (svi proizvodi, paketi, trupci, računi). Šta te zanima?' }
+        { role: 'ai', text: 'Zdravo šefe! Ja sam tvoj AI ERP Asistent (Gemini 2.5 Flash). Imam **neograničen pristup cijeloj bazi podataka** (svi proizvodi, paketi, trupci, računi, nalozi, i reklamacije). Šta te zanima?' }
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -24,14 +24,17 @@ export default function TabAiAnalitika({ saas }) {
     // FUNKCIJA ZA DOHVAĆANJE CIJELE BAZE (BEZ OGRANIČENJA DATUMA)
     const fetchCijelaBaza = async () => {
         try {
-            // Povlačimo SVE podatke iz baze kako bi AI imao puni pregled
-            const [trupciRes, paketiRes, racuniRes, blagajnaRes, radniciRes, katalogRes] = await Promise.all([
+            // 🟢 HIRURŠKI DODATO: Povlačimo i Reklamacije, Naloge i Otpremnice kako bi AI znao apsolutno sve
+            const [trupciRes, paketiRes, racuniRes, blagajnaRes, radniciRes, katalogRes, reklamacijeRes, naloziRes, otpremniceRes] = await Promise.all([
                 supabase.from('trupci').select('*'),
                 supabase.from('paketi').select('*'),
                 supabase.from('racuni').select('*'),
                 supabase.from('blagajna').select('*'),
                 supabase.from('radnici').select('*'),
-                supabase.from('katalog_proizvoda').select('*')
+                supabase.from('katalog_proizvoda').select('*'),
+                supabase.from('reklamacije').select('*'),
+                supabase.from('radni_nalozi').select('*'),
+                supabase.from('otpremnice').select('*')
             ]);
 
             // Pakujemo sve u jedan ogroman JSON objekat
@@ -42,7 +45,10 @@ export default function TabAiAnalitika({ saas }) {
                 tabela_izdati_racuni: racuniRes.data || [],
                 tabela_blagajna_troskovi: blagajnaRes.data || [],
                 tabela_radnici: radniciRes.data || [],
-                tabela_katalog_artikala: katalogRes.data || []
+                tabela_katalog_artikala: katalogRes.data || [],
+                tabela_reklamacije_i_povrati: reklamacijeRes.data || [],
+                tabela_radni_nalozi: naloziRes.data || [],
+                tabela_otpremnice: otpremniceRes.data || []
             };
 
             return JSON.stringify(kompletnaBaza);
@@ -70,7 +76,7 @@ export default function TabAiAnalitika({ saas }) {
             Ispod ti je proslijeđen KOMPLETAN JSON DUMP cijele ERP baze podataka klijenta.
             
             Tvoj zadatak je da pažljivo analiziraš ove sirove podatke i tačno odgovoriš na korisnikovo pitanje.
-            Slobodno navedi konkretne nazive proizvoda, šifre, imena radnika, datume i sume novca koje pronađeš u podacima.
+            Slobodno navedi konkretne nazive proizvoda, šifre, imena radnika, datume, sume novca, kao i statuse reklamacija koje pronađeš u podacima.
             
             PODACI IZ BAZE:
             ${dbDump}
@@ -166,7 +172,7 @@ export default function TabAiAnalitika({ saas }) {
                         value={input} 
                         onChange={(e) => setInput(e.target.value)} 
                         onKeyDown={(e) => { if (e.key === 'Enter') posaljiPoruku(); }} 
-                        placeholder="Pitaj nešto, npr: Nabroj mi sve proizvode koje smo proizveli ovog mjeseca..." 
+                        placeholder="Pitaj nešto, npr: Koliko smo imali odobrenih reklamacija ovog mjeseca?" 
                         disabled={isTyping} 
                         className="w-full p-5 pr-20 bg-theme-card rounded-2xl text-sm text-white font-bold outline-none border border-slate-700 focus:border-blue-500 transition-all disabled:opacity-50" 
                     />

@@ -8,13 +8,15 @@ import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
-const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
+const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function RacuniModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
     const currentUser = user?.ime_prezime ? user : loggedUser;
-    const hasKupacEdit = currentUser.uloga === 'admin' || (currentUser.dozvole && currentUser.dozvole.includes('Baza Kupaca (Edit)'));
-    const hasKatalogEdit = currentUser.uloga === 'admin' || (currentUser.dozvole && currentUser.dozvole.includes('Katalog Proizvoda (Edit)'));
+    const hasKupacEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Baza Kupaca (Edit)'));
+    const hasKatalogEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Katalog Proizvoda (Edit)'));
 
     const saas = useSaaS('racuni_zaglavlje', {
         boja_kartice: '#1e293b', boja_naslova: 'text-red-500',
@@ -43,7 +45,6 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
-    // ------------------------
 
     const generisiID = () => `RAC-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
     const formatirajDatum = (isoString) => { if(!isoString) return ''; if(isoString.includes('.')) return isoString; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
@@ -63,7 +64,20 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
-    useEffect(() => { load(); }, []);
+    // 🟢 LIVE SYNC REALTIME KANAL
+    useEffect(() => {
+        load();
+
+        const channel = supabase.channel('racuni_realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
+                supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, []);
 
     const load = async () => {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
@@ -135,7 +149,6 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const skenirajVezu = async (trazeniBroj) => {
         const broj = trazeniBroj.toUpperCase().trim(); if(!broj) return;
 
-        // --- BLOKADA DUPLIKATA ZA RAČUNE ---
         const { data: postojeciRacun } = await supabase.from('racuni').select('*').eq('broj_veze', broj).limit(1);
         if (postojeciRacun && postojeciRacun.length > 0) {
             prikaziDialog({
@@ -242,7 +255,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             kolicina_unos: parseFloat(stavkaForm.kolicina_unos), jm_unos: stavkaForm.jm_unos, kolicina_obracun: kolicina, jm_obracun: stavkaForm.jm_obracun,
             cijena_baza: dinamickaCijena, rabat_procenat: rabat_konacni.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata, ukupno: ukupno_sa_rabatom
         };
-        if (stavkaForm.id) setStavke(stavke.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
+        if (stavkaForm.id) setStavke(supabase => stavke.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
         setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); setTrenutniProizvod(null);
     };
 
@@ -265,14 +278,12 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac je obavezan', poruka: "Morate odabrati kupca da biste snimili račun.", onCancel: zatvoriDialog });
         if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema stavki', poruka: "Račun mora imati barem jednu stavku!", onCancel: zatvoriDialog });
 
-        // --- BLOKADA DUPLIKATA PRI SNIMANJU ---
         if (!isEditing && form.broj_veze) {
             const { data: postojece } = await supabase.from('racuni').select('id').eq('broj_veze', form.broj_veze).limit(1);
             if (postojece && postojece.length > 0) {
                 return prikaziDialog({ tip: 'greska', naslov: 'Duplikat', poruka: `Za dokument ${form.broj_veze} je VEĆ KREIRAN RAČUN (${postojece[0].id})!\nNije dozvoljeno kreiranje duplih računa.`, onCancel: zatvoriDialog });
             }
         }
-        // ----------------------------------------
 
         const payload = {
             id: form.id.toUpperCase(), broj_veze: form.broj_veze, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_placanja: form.rok_placanja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, napomena: form.napomena, stavke_jsonb: stavke, status: form.status,
@@ -305,17 +316,41 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    const kreirajPDF = () => { kreirajPDFPrivremeni(form, stavke, form.ukljuciPDV); };
+    const kreirajPDF = async () => { await kreirajPDFPrivremeni(form, stavke, form.ukljuciPDV); };
 
-    const kreirajPDFPrivremeni = (podaci, stavkeZaPrint, imaPDV) => {
+    const kreirajPDFPrivremeni = async (podaci, stavkeZaPrint, imaPDV) => {
+        let parentId = podaci.broj_veze || podaci.id;
+        
+        if (parentId && parentId.startsWith('OTP-')) {
+            const {data: otp} = await supabase.from('otpremnice').select('broj_veze').eq('id', parentId).maybeSingle();
+            if (otp && otp.broj_veze) {
+                parentId = otp.broj_veze;
+                if (parentId.startsWith('IZD-')) {
+                    const {data: izd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', parentId).maybeSingle();
+                    if (izd && izd.izvor_id) parentId = izd.izvor_id;
+                }
+            }
+        }
+
+        const { data: paks } = await supabase.from('paketi').select('paket_id, naziv_proizvoda').eq('broj_veze', parentId);
+        let paketiPrikaz = {};
+        if (paks) {
+            paks.forEach(p => {
+                if (!paketiPrikaz[p.naziv_proizvoda]) paketiPrikaz[p.naziv_proizvoda] = [];
+                paketiPrikaz[p.naziv_proizvoda].push(p.paket_id);
+            });
+        }
+
         const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
         let redovi = stavkeZaPrint.map((s, i) => {
             const kat = katalog.find(k => k.sifra === s.sifra);
             const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
+            const paketiStr = paketiPrikaz[s.naziv] && paketiPrikaz[s.naziv].length > 0 ? `<br/><span style="color: #3b82f6; font-size: 10px; font-weight: bold;">📦 Sadrži pakete: ${paketiPrikaz[s.naziv].join(', ')}</span>` : '';
+            
             return `
             <tr>
                 <td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td>
-                <td><b style="color: #0f172a; font-size: 13px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span></td>
+                <td><b style="color: #0f172a; font-size: 13px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span>${paketiStr}</td>
                 <td style="text-align: center; font-weight: 800; color: #0f172a;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 10px; font-weight: 600;">${s.jm_obracun}</span></td>
                 <td style="text-align: right; font-weight: 600;">${s.cijena_baza.toFixed(2)}</td>
                 <td style="text-align: right; color: #ec4899; font-weight: 800;">${s.rabat_procenat > 0 ? s.rabat_procenat + '%' : '-'}</td>
@@ -358,13 +393,12 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         printDokument('RAČUN', podaci.id, formatirajDatum(podaci.datum), htmlSadrzajTabela, '#ef4444');
     };
 
-    const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null, ukljuciPDV: true }); setStavke([]); setSkenerInput(''); setIsEditing(false); setOdabraniKupac(null); setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); };
+    const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_placanja: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', napomena: '', status: 'NENAPLAĆENO', originalna_ponuda: null, ukljuciPDV: true }); setStavke([]); setIsEditing(false); setOdabraniKupac(null); setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); };
     
     const pokreniIzmjenu = (r) => { 
         const ukljuciPDV = parseFloat(r.ukupno_sa_pdv) > parseFloat(r.ukupno_bez_pdv);
         setForm({ id: r.id, broj_veze: r.broj_veze || '', kupac_naziv: r.kupac_naziv, datum: r.datum, rok_placanja: r.rok_placanja || '', nacin_placanja: r.nacin_placanja || 'Virmanski', valuta: r.valuta || 'KM', napomena: r.napomena || '', status: r.status || 'NENAPLAĆENO', originalna_ponuda: null, ukljuciPDV }); setStavke(r.stavke_jsonb || []); setOdabraniKupac(kupci.find(k => k.naziv === r.kupac_naziv) || null); setIsEditing(true); setTab('novi'); window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
-
     const promijeniStatusBrzo = async (r, noviStatus) => { await supabase.from('racuni').update({ status: noviStatus }).eq('id', r.id); await zapisiU_Log('STATUS_RACUNA', `Račun ${r.id} prebačen u ${noviStatus}`); await sinhronizujKasu(r.id, noviStatus, r.nacin_placanja, r.kupac_naziv, r.ukupno_sa_pdv); load(); };
     
     const neplaceni = racuni.filter(r => r.status === 'NENAPLAĆENO'); const placeni = racuni.filter(r => r.status === 'NAPLAĆENO');
@@ -481,7 +515,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                                     <div className="grid grid-cols-2 gap-2">
-                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-theme-border focus:border-red-500 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
+                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-red-500/50 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
                                         <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina (Obračun po)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-400 font-black text-center border border-theme-border outline-none cursor-not-allowed" /><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div></div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 bg-black/20 p-3 rounded-xl border border-theme-border">

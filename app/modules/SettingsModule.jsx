@@ -1000,7 +1000,7 @@ function TabRadnici() {
 
     const sviModuliKategorisano = {
         "📦 PROIZVODNJA": ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje', 'Planiranje (Samo Pregled)'],
-        "💼 PRODAJA I WMS": ['Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi'],
+        "💼 PRODAJA I WMS": ['Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi', 'Reklamacije i Povrati'],
         "📊 NADZOR I LAGER": ['Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca', 'HR Dashboard', 'Prijava na Rad'],
         "💰 FINANSIJE": ['Blagajna (Keš)'],
         "⚙️ ŠIFARNICI (ADMIN)": ['Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)']

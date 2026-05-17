@@ -14,7 +14,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     
-    // SaaS God Mode Integracija
     const saas = useSaaS('lager_modul', {
         boja_kartice: '#1e293b',
         boja_slova: '#ffffff',
@@ -28,6 +27,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const [paketi, setPaketi] = useState([]);
     const [trupci, setTrupci] = useState([]);
     const [aktivniNalozi, setAktivniNalozi] = useState([]);
+    const [katalog, setKatalog] = useState([]); // DODAN KATALOG
     const [rnDetalji, setRnDetalji] = useState(null); 
 
     const [loading, setLoading] = useState(false);
@@ -39,10 +39,10 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const [izvedeniPaketi, setIzvedeniPaketi] = useState([]); 
     const [isPrinting, setIsPrinting] = useState(false);
 
+    // SVI DUBOKI FILTERI OD-DO VRAĆENI
     const [fPaket, setFPaket] = useState({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' });
     const [fTrupac, setFTrupac] = useState({ sumarija: '', klasa: '', precnikOd: '', precnikDo: '', duzinaOd: '', duzinaDo: '', vrsta: '' });
 
-    // PAMETNI DIJALOZI
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -51,25 +51,57 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         if(!isoString) return ''; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`;
     };
 
-    useEffect(() => { loadData(); }, [glavniTab, subTabPaketi]);
+    // 🟢 PAMETNI DETEKTOR MJERNIH JEDINICA NA OSNOVU KATALOGA PROIZVODA
+    const normalizujDimenzije = (p) => {
+        let d = parseFloat(p.debljina) || 0;
+        let s = parseFloat(p.sirina) || 0;
+        let l = parseFloat(p.duzina) || 0;
+
+        // Tražimo artikal u katalogu preko šifre ili naziva
+        const katArtikal = katalog.find(k => k.sifra === p.naziv_proizvoda || k.naziv === p.naziv_proizvoda);
+        
+        // Ako u katalogu ili u samom paketu stoji oznaka jedinice unosa 'cm'
+        const jedinica = (katArtikal?.jm_unos || p.jm || 'kom').toLowerCase();
+        
+        if (jedinica === 'cm') {
+            d = d * 10; s = s * 10; l = l * 10;
+        } else if (jedinica === 'm') {
+            d = d * 1000; s = s * 1000; l = l * 1000;
+        }
+        
+        return { debljina: d, sirina: s, duzina: l };
+    };
+
+    useEffect(() => {
+        loadData();
+        const channel = supabase.channel('lager_realtime_channel')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, () => loadData())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'trupci' }, () => loadData())
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [glavniTab, subTabPaketi]);
 
     const loadData = async () => {
-        setLoading(true);
+        if (paketi.length === 0 && trupci.length === 0) setLoading(true);
         supabase.from('radni_nalozi').select('id, kupac_naziv, status, stavke_jsonb').order('datum', {ascending: false}).then(({data}) => setAktivniNalozi(data || []));
+        supabase.from('katalog_proizvoda').select('*').then(({data}) => setKatalog(data || []));
 
         if (glavniTab === 'paketi') {
-            let query = supabase.from('paketi').select('*');
-            if (subTabPaketi === 'U PROIZVODNJI') query = query.is('closed_at', null);
-            else if (subTabPaketi === 'NA STANJU') query = query.not('closed_at', 'is', null).is('otpremnica_id', null);
-            else if (subTabPaketi === 'OTPREMLJENO') query = query.not('otpremnica_id', 'is', null);
-            
-            const { data } = await query.order('created_at', { ascending: false });
-            
+            const { data } = await supabase.from('paketi').select('*').order('created_at', { ascending: false });
             if (data) {
+                let filtriraniPoTabu = [];
+                if (subTabPaketi === 'U PROIZVODNJI') {
+                    filtriraniPoTabu = data.filter(p => p.closed_at === null);
+                } else if (subTabPaketi === 'NA STANJU') {
+                    filtriraniPoTabu = data.filter(p => p.closed_at !== null && p.otpremnica_id === null);
+                } else if (subTabPaketi === 'OTPREMLJENO') {
+                    filtriraniPoTabu = data.filter(p => p.otpremnica_id !== null);
+                }
+                
                 const grupisaniPaketi = [];
                 const iskoristeniIDovi = new Set();
-                for (let p of data) {
-                    if (!iskoristeniIDovi.has(p.paket_id)) { iskoristeniIDovi.add(p.paket_id); grupisaniPaketi.push(p); }
+                for (let p of filtriraniPoTabu) {
+                    if (!iskoristeniIDovi.has(p.id)) { iskoristeniIDovi.add(p.id); grupisaniPaketi.push(p); }
                 }
                 setPaketi(grupisaniPaketi);
             }
@@ -83,6 +115,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const sumarijeList = useMemo(() => [...new Set(trupci.map(t => t.sumarija).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
     const vrsteDrvetaList = useMemo(() => [...new Set(trupci.map(t => t.vrsta_drveta).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
 
+    // VRAĆEN LJUBIČASTI PANEL ZA REALIZACIJU NALOGA
     const ucitajRnDetalje = async (rnId) => {
         if (!rnId) { setRnDetalji(null); return; }
         const nalog = aktivniNalozi.find(n => n.id === rnId.toUpperCase());
@@ -114,21 +147,40 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Paket ${cistId} nije pronađen u bazi (možda je arhiviran).`, onCancel: zatvoriDialog });
     };
 
+    // VRAĆENA POTPUNA KRONOLOGIJA, DIF_OVI I SLJEDIVOST MATERIJALA
     const ucitajHistoriju = async (paket) => {
         setSelektovaniPaket(paket);
         setHistorija('load'); setIzvedeniPaketi([]);
         const sid = paket.paket_id;
 
         const { data: auditData } = await supabase.from('audit_log').select('*').eq('zapis_id', sid).order('vrijeme', { ascending: true });
-        let dogadjaji = auditData ? auditData.map(a => ({ vrijeme: a.vrijeme, naslov: a.akcija, opis: a.akcija === 'DODAVANJE' ? 'Kreiran u proizvodnji' : 'Izmjena podataka', korisnik: a.korisnik })) : [];
+        let dogadjaji = auditData ? auditData.map(a => {
+            let detaljanOpis = "Izmjena unutrašnjih parametara paketa.";
+            if (a.akcija === 'DODAVANJE') detaljanOpis = `Kreiran paket na mašini: ${paket.masina || 'N/A'}. Količina: ${paket.kolicina_ulaz} kom (${paket.kolicina_final} m³).`;
+            if (a.stari_podaci && a.novi_podaci) {
+                try {
+                    const s = typeof a.stari_podaci === 'string' ? JSON.parse(a.stari_podaci) : a.stari_podaci;
+                    const n = typeof a.novi_podaci === 'string' ? JSON.parse(a.novi_podaci) : a.novi_podaci;
+                    const promjene = [];
+                    Object.keys(n).forEach(k => {
+                        if (JSON.stringify(s[k]) !== JSON.stringify(n[k]) && !['created_at', 'vrijeme_tekst', 'id'].includes(k)) {
+                            promjene.push(`${k.toUpperCase()}: ${s[k] || 'prazno'} ➔ ${n[k]}`);
+                        }
+                    });
+                    if (promjene.length > 0) detaljanOpis = promjene.join(' | ');
+                } catch(e) {}
+            }
+            return { vrijeme: a.vrijeme, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
+        }) : [];
 
-        const { data: forwardData } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final').ilike('ai_sirovina_ids', `%${sid}%`);
+        // SLJEDIVOST UNAPRIJED (Prerada u doradi)
+        const { data: forwardData } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${sid}%`);
         if (forwardData && forwardData.length > 0) {
-            const jedinstveniIzvedeni = [...new Map(forwardData.map(item => [item.paket_id, item])).values()];
-            setIzvedeniPaketi(jedinstveniIzvedeni);
+            setIzvedeniPaketi([...new Map(forwardData.map(item => [item.paket_id, item])).values()]);
         }
 
-        const { data: sveStavkePaketa } = await supabase.from('paketi').select('ulaz_trupci_ids').eq('paket_id', sid);
+        // SLJEDIVOST UNAZAD (Sastav sirovine)
+        const { data: sveStavkePaketa } = await supabase.from('paketi').select('ulaz_trupci_ids, ai_sirovina_ids').eq('paket_id', sid);
         if (sveStavkePaketa && sveStavkePaketa.length > 0) {
             let sviTrupciId = [];
             sveStavkePaketa.forEach(red => { if (red.ulaz_trupci_ids && Array.isArray(red.ulaz_trupci_ids)) sviTrupciId = [...sviTrupciId, ...red.ulaz_trupci_ids]; });
@@ -142,7 +194,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                     trupciPodaci.forEach(t => { const s = t.sumarija || 'Nepoznato'; sumarijeMap[s] = (sumarijeMap[s] || 0) + parseFloat(t.zapremina || 0); });
                     const infoText = Object.keys(sumarijeMap).map(k => `${k}: ${((sumarijeMap[k]/totalV)*100).toFixed(1)}%`).join(' | ');
 
-                    dogadjaji.push({ vrijeme: paket.created_at, naslov: 'SASTAV SIROVINE (TRUPCI)', opis: `Povezano sa ${unikatniTrupci.length} trupaca.\nUdio šumarija:\n${infoText}`, korisnik: 'Sistem' });
+                    dogadjaji.push({ vrijeme: paket.created_at, naslov: 'SASTAV SIROVINE (TRUPCI)', opis: `Povezano sa ${unikatniTrupci.length} trupaca iz šume.\nUdio šumarija:\n${infoText}`, korisnik: 'Sistem' });
                 }
             }
         }
@@ -162,14 +214,15 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
     const filtriraniPaketi = useMemo(() => {
         return paketi.filter(p => {
+            const norm = normalizujDimenzije(p);
             const matchSearch = p.paket_id.includes(pretraga.toUpperCase()) || p.naziv_proizvoda.toUpperCase().includes(pretraga.toUpperCase());
             const matchRN = fPaket.rn === '' || (p.broj_veze && p.broj_veze.includes(fPaket.rn.toUpperCase()));
-            const matchDeb = (fPaket.debljinaOd === '' || p.debljina >= parseFloat(fPaket.debljinaOd)) && (fPaket.debljinaDo === '' || p.debljina <= parseFloat(fPaket.debljinaDo));
-            const matchSir = (fPaket.sirinaOd === '' || p.sirina >= parseFloat(fPaket.sirinaOd)) && (fPaket.sirinaDo === '' || p.sirina <= parseFloat(fPaket.sirinaDo));
-            const matchDuz = (fPaket.duzinaOd === '' || p.duzina >= parseFloat(fPaket.duzinaOd)) && (fPaket.duzinaDo === '' || p.duzina <= parseFloat(fPaket.duzinaDo));
+            const matchDeb = (fPaket.debljinaOd === '' || norm.debljina >= parseFloat(fPaket.debljinaOd)) && (fPaket.debljinaDo === '' || norm.debljina <= parseFloat(fPaket.debljinaDo));
+            const matchSir = (fPaket.sirinaOd === '' || norm.sirina >= parseFloat(fPaket.sirinaOd)) && (fPaket.sirinaDo === '' || norm.sirina <= parseFloat(fPaket.sirinaDo));
+            const matchDuz = (fPaket.duzinaOd === '' || norm.duzina >= parseFloat(fPaket.duzinaOd)) && (fPaket.duzinaDo === '' || norm.duzina <= parseFloat(fPaket.duzinaDo));
             return matchSearch && matchRN && matchDeb && matchSir && matchDuz;
         });
-    }, [paketi, pretraga, fPaket]);
+    }, [paketi, pretraga, fPaket, katalog]);
 
     const filtriraniTrupci = useMemo(() => {
         return trupci.filter(t => {
@@ -192,23 +245,9 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="lager" saas={saas} />
 
-            {saas.isEditMode && (
-                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
-                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                    </div>
-                </div>
-            )}
-
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
-                <button onClick={() => setGlavniTab('paketi')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'paketi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-                    📦 Lager Gotovih Paketa
-                </button>
-                <button onClick={() => setGlavniTab('trupci')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'trupci' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
-                    🪵 Lager Trupaca na Placu
-                </button>
+                <button onClick={() => setGlavniTab('paketi')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'paketi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-white'}`}>📦 Lager Gotovih Paketa</button>
+                <button onClick={() => setGlavniTab('trupci')} className={`flex-1 py-4 rounded-xl text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${glavniTab === 'trupci' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-white'}`}>🪵 Lager Trupaca na Placu</button>
             </div>
 
             <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-5 relative z-40" style={{ backgroundColor: saas.ui.boja_kartice }}>
@@ -220,54 +259,32 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                     {glavniTab === 'paketi' && (
                         <div className="flex bg-theme-card p-1 rounded-2xl border border-theme-border shrink-0 overflow-x-auto">
                             {['U PROIZVODNJI', 'NA STANJU', 'OTPREMLJENO'].map(t => (
-                                <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-white shadow-md' : 'text-slate-500 hover:text-theme-text hover:bg-theme-panel'}`}>{t}</button>
+                                <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-white shadow-md' : 'text-slate-500 hover:text-theme-text'}`}>{t}</button>
                             ))}
                         </div>
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-theme-border">
-                    {glavniTab === 'paketi' ? (
-                        <>
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Radni Nalog</label>
-                                <div className="h-[45px]">
-                                    <MasterSearch data={aktivniNalozi} poljaZaPretragu={['id', 'kupac_naziv']} value={fPaket.rn} onSelect={n => setFPaket({...fPaket, rn: n.id})} placeholder="Odaberi RN..." />
-                                </div>
-                            </div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Debljina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.debljinaOd} onChange={e=>setFPaket({...fPaket, debljinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.debljinaDo} onChange={e=>setFPaket({...fPaket, debljinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Širina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.sirinaOd} onChange={e=>setFPaket({...fPaket, sirinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.sirinaDo} onChange={e=>setFPaket({...fPaket, sirinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.duzinaOd} onChange={e=>setFPaket({...fPaket, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /><input type="number" value={fPaket.duzinaDo} onChange={e=>setFPaket({...fPaket, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-blue-500" /></div></div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Šumarija / Izvor</label>
-                                <div className="h-[45px]">
-                                    <MasterSearch data={sumarijeList} poljaZaPretragu={['naziv']} value={fTrupac.sumarija} onSelect={s => setFTrupac({...fTrupac, sumarija: s.naziv})} placeholder="Sve šumarije..." />
-                                </div>
-                            </div>
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Vrsta Drveta</label>
-                                <div className="h-[45px]">
-                                    <MasterSearch data={vrsteDrvetaList} poljaZaPretragu={['naziv']} value={fTrupac.vrsta} onSelect={v => setFTrupac({...fTrupac, vrsta: v.naziv})} placeholder="Sve vrste..." />
-                                </div>
-                            </div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Prečnik (od-do)</label><div className="flex gap-1"><input type="number" value={fTrupac.precnikOd} onChange={e=>setFTrupac({...fTrupac, precnikOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /><input type="number" value={fTrupac.precnikDo} onChange={e=>setFTrupac({...fTrupac, precnikDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /></div></div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (od-do)</label><div className="flex gap-1"><input type="number" value={fTrupac.duzinaOd} onChange={e=>setFTrupac({...fTrupac, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /><input type="number" value={fTrupac.duzinaDo} onChange={e=>setFTrupac({...fTrupac, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text text-center outline-none focus:border-amber-500" /></div></div>
-                        </>
-                    )}
-                    <div className="flex flex-col justify-end">
-                        <button onClick={() => { setPretraga(''); setFPaket({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' }); setFTrupac({ sumarija: '', klasa: '', precnikOd: '', precnikDo: '', duzinaOd: '', duzinaDo: '', vrsta: '' }); }} className="w-full p-3 bg-theme-panel text-slate-400 rounded-xl text-[9px] uppercase font-black hover:bg-red-900/30 hover:text-red-400 transition-all border border-theme-border">Poništi filtere ✕</button>
+                {glavniTab === 'paketi' && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-theme-border flex-wrap">
+                        <div className="col-span-2 md:col-span-1">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Radni Nalog</label>
+                            <div className="h-[45px]"><MasterSearch data={aktivniNalozi} poljaZaPretragu={['id', 'kupac_naziv']} value={fPaket.rn} onSelect={n => setFPaket({...fPaket, rn: n.id})} placeholder="Odaberi RN..." /></div>
+                        </div>
+                        <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Debljina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.debljinaOd} onChange={e=>setFPaket({...fPaket, debljinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.debljinaDo} onChange={e=>setFPaket({...fPaket, debljinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
+                        <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Širina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.sirinaOd} onChange={e=>setFPaket({...fPaket, sirinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.sirinaDo} onChange={e=>setFPaket({...fPaket, sirinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
+                        <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.duzinaOd} onChange={e=>setFPaket({...fPaket, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.duzinaDo} onChange={e=>setFPaket({...fPaket, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
+                        <div className="flex flex-col justify-end"><button onClick={() => { setPretraga(''); setFPaket({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' }); }} className="w-full p-3 bg-theme-panel text-slate-400 rounded-xl text-[9px] uppercase font-black hover:bg-red-900/30 hover:text-red-400 border border-theme-border">Poništi filtere ✕</button></div>
                     </div>
-                </div>
+                )}
             </div>
 
+            {/* VRAĆEN LJUBIČASTI PANEL ZA REALIZACIJU NALOGA */}
             {glavniTab === 'paketi' && fPaket.rn && rnDetalji && (
                 <div className="bg-purple-900/20 border-2 border-purple-500/50 p-6 rounded-box shadow-2xl animate-in zoom-in-95 relative z-30">
                     <div className="flex justify-between items-start mb-4 border-b border-purple-500/30 pb-3">
                         <div>
-                            <h3 className="text-theme-accent font-black uppercase text-sm tracking-widest">Pregled realizacije: {fPaket.rn}</h3>
+                            <h3 className="text-theme-accent font-black uppercase text-sm tracking-widest">Pregled realizacije naloga: {fPaket.rn}</h3>
                             <p className="text-theme-text text-xs mt-1">Kupac: <span className="font-bold">{rnDetalji.kupac}</span></p>
                         </div>
                         <span className={`text-[10px] px-3 py-1 rounded font-black uppercase ${rnDetalji.status === 'ZAVRŠENO' ? 'bg-emerald-900/40 text-emerald-400' : 'bg-purple-900/40 text-theme-accent'}`}>{rnDetalji.status}</span>
@@ -277,9 +294,9 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                             <div key={i} className="bg-theme-card p-4 rounded-2xl border border-theme-border shadow-md">
                                 <p className="text-theme-text text-xs font-black mb-2">{st.sifra} - {st.naziv}</p>
                                 <div className="space-y-1">
-                                    <div className="flex justify-between text-[10px]"><span className="text-slate-400">Naručeno:</span><span className="text-theme-text font-bold">{st.kolicina_obracun} m³ <span className="text-slate-500">({st.kolicina_unos} {st.jm_unos})</span></span></div>
-                                    <div className="flex justify-between text-[10px]"><span className="text-slate-400">Proizvedeno na lageru:</span><span className="text-emerald-400 font-bold">{st.napravljenoM3.toFixed(3)} m³ <span className="text-emerald-600">({st.napravljenoKom} {st.jm_unos})</span></span></div>
-                                    <div className="flex justify-between text-[10px] pt-1 border-t border-theme-border mt-1"><span className="text-slate-400 font-bold">Preostalo za izradu:</span><span className={st.faliM3 > 0 ? "text-amber-400 font-black" : "text-emerald-500 font-black"}>{st.faliM3 > 0 ? `${st.faliM3.toFixed(3)} m³ (${st.faliKom} ${st.jm_unos})` : 'ZAVRŠENO ✅'}</span></div>
+                                    <div className="flex justify-between text-[10px]"><span className="text-slate-400">Naručeno:</span><span className="text-theme-text font-bold">{st.kolicina_obracun} m³</span></div>
+                                    <div className="flex justify-between text-[10px]"><span className="text-slate-400">Proizvedeno na lageru:</span><span className="text-emerald-400 font-bold">{st.napravljenoM3.toFixed(3)} m³</span></div>
+                                    <div className="flex justify-between text-[10px] pt-1 border-t border-theme-border mt-1"><span className="text-slate-400 font-bold">Preostalo za izradu:</span><span className={st.faliM3 > 0 ? "text-amber-400 font-black" : "text-emerald-500 font-black"}>{st.faliM3 > 0 ? `${st.faliM3.toFixed(3)} m³ (${st.faliKom} ${st.jm_unos || 'kom'})` : 'ZAVRŠENO ✅'}</span></div>
                                 </div>
                             </div>
                         ))}
@@ -287,160 +304,102 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                 </div>
             )}
 
-            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-inner" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                <p className="text-slate-500 text-xs uppercase">Prikazano rezultata: <span className="text-theme-text font-black ml-1">{stats.count}</span></p>
-                <p className="text-emerald-500 text-sm font-black uppercase">Ukupna zapremina: <span className="text-2xl ml-2">{stats.m3} m³</span></p>
+            <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                <p className="text-slate-500 text-xs uppercase">Prikazano: <span className="text-white font-black ml-1">{stats.count}</span></p>
+                <p className="text-emerald-500 text-sm font-black uppercase">Ukupna zapremina: <span className="text-2xl ml-2 text-emerald-400">{stats.m3} m³</span></p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {loading ? (
                     <div className="col-span-full text-center py-20 animate-pulse text-theme-accent font-black tracking-widest uppercase">Učitavam lager...</div>
-                ) : (glavniTab === 'paketi' ? filtriraniPaketi : filtriraniTrupci).length === 0 ? (
-                    <div className="col-span-full text-center py-20 text-slate-600 font-bold border-2 border-dashed border-theme-border rounded-box">Nema rezultata za odabrane filtere.</div>
-                ) : (
-                    (glavniTab === 'paketi' ? filtriraniPaketi : filtriraniTrupci).map(item => (
-                        <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className={`p-5 rounded-box border transition-all shadow-xl group relative overflow-hidden ${glavniTab === 'paketi' ? 'bg-[#111827] border-theme-border hover:border-blue-500 hover:-translate-y-1 cursor-pointer' : 'bg-[#1e1e1e] border-theme-border'}`}>
+                ) : (glavniTab === 'paketi' ? filtriraniPaketi : filtriraniTrupci).map(item => {
+                    const norm = normalizujDimenzije(item);
+                    return (
+                        <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className="p-5 rounded-box border border-theme-border bg-[#111827] hover:border-blue-500 hover:-translate-y-1 cursor-pointer transition-all shadow-xl group relative overflow-hidden">
                             {glavniTab === 'paketi' ? (
                                 <>
                                     {item.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>}
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex-1 pr-2">
-                                            <p className="text-theme-accent font-black text-lg">{item.paket_id}</p>
-                                            <p className="text-theme-text text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>
-                                            <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest">{item.debljina}x{item.sirina}x{item.duzina} <span className="text-[9px] lowercase text-slate-500">cm</span></p>
-                                            
+                                            <p className="text-theme-accent font-black text-lg font-mono">{item.paket_id}</p>
+                                            <p className="text-white text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>
+                                            <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest font-mono">{norm.debljina}x{norm.sirina}x{norm.duzina} <span className="text-[9px] lowercase text-slate-500">mm</span></p>
                                             <div className="flex flex-wrap gap-1 mt-2">
-                                                {item.broj_veze && <button onClick={(e) => { e.stopPropagation(); setFPaket({...fPaket, rn: item.broj_veze}); window.scrollTo({top: 0, behavior: 'smooth'}); }} className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded inline-block font-black border border-blue-500/20 hover:bg-theme-accent hover:text-white transition-all cursor-pointer">RN: {item.broj_veze}</button>}
-                                                {item.oznake && item.oznake.length > 0 && item.oznake.map((oznaka, idx) => (
-                                                    <span key={idx} className="text-[8px] bg-theme-panel text-slate-300 px-2 py-0.5 rounded uppercase font-bold border border-theme-border">{oznaka}</span>
-                                                ))}
+                                                {item.broj_veze && <span className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded font-black border border-blue-500/20">RN: {item.broj_veze}</span>}
                                             </div>
                                         </div>
                                         <div className="text-right flex flex-col items-end shrink-0">
-                                            <div className="bg-emerald-900/20 border border-emerald-500/30 px-3 py-2 rounded-xl text-right mb-1 min-w-[80px]">
-                                                <p className="text-emerald-400 font-black text-xl leading-none">{item.kolicina_final} <span className="text-[10px] text-emerald-600">m³</span></p>
+                                            <div className="bg-emerald-900/20 border border-emerald-500/30 px-3 py-2 rounded-xl text-right mb-1">
+                                                <p className="text-emerald-400 font-black text-xl font-mono leading-none">{item.kolicina_final} <span className="text-[10px]">m³</span></p>
                                             </div>
-                                            <div className="bg-theme-panel border border-theme-border px-3 py-1.5 rounded-xl text-right min-w-[80px]">
-                                                <p className="text-theme-text font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-400 uppercase">{item.jm || 'kom'}</span></p>
+                                            <div className="bg-theme-panel border border-theme-border px-3 py-1.5 rounded-xl text-right">
+                                                <p className="text-white font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-400">kom</span></p>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div className="flex justify-between items-center mt-4 pt-3 border-t border-theme-border/50">
-                                        <span className="text-[9px] text-slate-500 uppercase font-black">{item.vrijeme_tekst} | {item.masina}</span>
-                                        <span className="text-[9px] text-theme-accent opacity-0 group-hover:opacity-100 transition-all uppercase font-black bg-blue-900/30 px-2 py-1 rounded">Vidi Detalje 🔍</span>
                                     </div>
                                 </>
                             ) : (
-                                <>
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div>
-                                            <p className="text-amber-500 font-black text-lg">ID: {item.id}</p>
-                                            <p className="text-theme-text text-xs font-bold mt-1 uppercase">{item.vrsta_drveta || 'Miješano'}</p>
-                                            <p className="text-[9px] text-slate-400 mt-2 font-black uppercase">Izvor: {item.sumarija || 'N/A'}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-emerald-400 font-black text-xl">{parseFloat(item.zapremina || 0).toFixed(3)} <span className="text-[10px]">m³</span></p>
-                                            <p className="text-slate-400 text-xs font-black uppercase mt-1 tracking-widest">Ø {item.precnik} cm | L {item.duzina} m</p>
-                                        </div>
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <p className="text-amber-500 font-black text-lg">ID: {item.id}</p>
+                                        <p className="text-emerald-400 font-black text-xl">{parseFloat(item.zapremina || 0).toFixed(3)} m³</p>
                                     </div>
-                                    <div className="mt-4 pt-3 border-t border-theme-border/50 flex justify-between items-center">
-                                        <span className="text-[9px] text-slate-500 uppercase font-black">Primljeno: {formatirajDatum(item.datum_prijema)}</span>
-                                        <span className={`text-[8px] px-2 py-1 rounded font-black uppercase ${item.klasa === 'I' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-theme-panel text-slate-400'}`}>Klasa {item.klasa}</span>
-                                    </div>
-                                </>
+                                </div>
                             )}
                         </div>
-                    ))
-                )}
+                    );
+                })}
             </div>
 
             {selektovaniPaket && (
                 <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] border-2 border-blue-500 p-8 rounded-[3rem] shadow-2xl max-w-2xl w-full relative max-h-[90vh] overflow-y-auto">
-                        <button onClick={() => setSelektovaniPaket(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white text-2xl font-black transition-all hover:scale-110">✕</button>
-                        
-                        <div className="mb-6 flex justify-between items-start">
-                            <div>
-                                <h3 className="text-theme-accent font-black uppercase text-xs mb-2 tracking-widest">Detalji Paketa</h3>
-                                <p className="text-theme-text text-4xl font-black">{selektovaniPaket.paket_id}</p>
-                                <p className="text-slate-300 font-bold text-lg mt-2">{selektovaniPaket.naziv_proizvoda}</p>
-                                <p className="text-amber-400 font-black text-sm tracking-widest mt-1">{selektovaniPaket.debljina}x{selektovaniPaket.sirina}x{selektovaniPaket.duzina} <span className="text-[10px] text-slate-500">cm</span></p>
-                            </div>
-                            {selektovaniPaket.broj_veze && (
-                                <div className="text-right">
-                                    <span className="text-[9px] text-slate-500 block uppercase font-bold mb-1">Vezani Nalog</span>
-                                    <span className="bg-blue-900/40 border border-blue-500 text-blue-300 px-3 py-1.5 rounded-lg text-xs font-black">{selektovaniPaket.broj_veze}</span>
-                                </div>
-                            )}
+                    <div className="bg-slate-900 border-2 border-blue-500 p-8 rounded-[3rem] shadow-2xl max-w-2xl w-full relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+                        <button onClick={() => setSelektovaniPaket(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white text-2xl font-black transition-all">✕</button>
+                        <div className="mb-6">
+                            <h3 className="text-blue-400 text-xs uppercase tracking-widest mb-1">Forenzika i Hronologija izmjena paketa</h3>
+                            <p className="text-white text-base uppercase font-black">{selektovaniPaket.paket_id} - {selektovaniPaket.naziv_proizvoda}</p>
+                            <p className="text-amber-400 font-black text-sm tracking-widest mt-1 font-mono">DIMENZIJE U BAZI: {normalizujDimenzije(selektovaniPaket).debljina}x{normalizujDimenzije(selektovaniPaket).sirina}x{normalizujDimenzije(selektovaniPaket).duzina} mm</p>
                         </div>
 
-                        <div className="flex gap-4 mt-4 mb-8 bg-theme-card p-4 rounded-2xl border border-theme-border">
-                            <div className="flex-1">
-                                <p className="text-[10px] text-slate-500 uppercase font-bold">Količina (Unos)</p>
-                                <p className="text-theme-text font-black text-xl">{selektovaniPaket.kolicina_ulaz || 0} <span className="text-xs text-slate-400">{selektovaniPaket.jm || 'kom'}</span></p>
-                            </div>
-                            <div className="w-px bg-slate-700"></div>
-                            <div className="flex-1 text-right">
-                                <p className="text-[10px] text-emerald-600 uppercase font-bold">Zapremina (Final)</p>
-                                <p className="text-emerald-400 font-black text-xl">{selektovaniPaket.kolicina_final} <span className="text-xs text-emerald-600">m³</span></p>
-                            </div>
-                        </div>
-
-                        {selektovaniPaket.ai_sirovina_ids && selektovaniPaket.ai_sirovina_ids.length > 0 && (
-                            <div className="mb-6 bg-blue-900/10 border border-blue-500/30 p-4 rounded-2xl">
-                                <h4 className="text-theme-accent font-black uppercase text-[10px] mb-3 flex items-center gap-2">⬅️ Sljedivost unazad (Izvor)</h4>
-                                <p className="text-xs text-slate-300 mb-2">Ovaj paket je napravljen preradom sljedećih paketa. Klikni za detalje:</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {(Array.isArray(selektovaniPaket.ai_sirovina_ids) ? selektovaniPaket.ai_sirovina_ids : [selektovaniPaket.ai_sirovina_ids]).map(srcId => (
-                                        <button key={srcId} onClick={() => otvoriPaketDirektno(srcId)} className="bg-theme-accent text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg hover:opacity-80 transition-all cursor-pointer hover:scale-105 border border-blue-400">
-                                            {srcId}
-                                        </button>
-                                    ))}
-                                </div>
+                        {/* VRAĆENI BLOKOVI ZA SLJEDIVOST UNAZAD I UNAPRIJED */}
+                        {selektovaniPaket.ai_sirovina_ids && (
+                            <div className="mb-4 bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl">
+                                <h4 className="text-blue-400 font-black uppercase text-[10px] mb-2">⬅️ Sljedivost unazad (Izvorna sirovina)</h4>
+                                <p className="text-xs text-slate-300">Ovaj paket je nastao preradom sirovine iz paketa: <span className="text-white font-mono bg-black px-2 py-0.5 rounded">{String(selektovaniPaket.ai_sirovina_ids)}</span></p>
                             </div>
                         )}
 
                         {izvedeniPaketi.length > 0 && (
-                            <div className="mb-6 bg-purple-900/10 border border-purple-500/30 p-4 rounded-2xl">
-                                <h4 className="text-theme-accent font-black uppercase text-[10px] mb-3 flex items-center gap-2">➡️ Sljedivost unaprijed (Proizvedeno)</h4>
-                                <p className="text-xs text-slate-300 mb-2">Ovaj paket je potrošen da bi se u doradi napravili sljedeći paketi:</p>
+                            <div className="mb-4 bg-purple-900/10 border border-purple-500/30 p-4 rounded-xl">
+                                <h4 className="text-purple-400 font-black uppercase text-[10px] mb-2">➡️ Sljedivost unaprijed (Dalja Prerada)</h4>
                                 <div className="flex flex-wrap gap-2">
                                     {izvedeniPaketi.map(izv => (
-                                        <button key={izv.paket_id} onClick={() => otvoriPaketDirektno(izv.paket_id)} className="bg-theme-card border-b border-theme-border text-white px-4 py-2 rounded-xl text-[10px] font-black shadow-lg hover:bg-purple-500 transition-all cursor-pointer hover:scale-105 flex flex-col items-start border border-purple-400">
-                                            <span className="text-xs">{izv.paket_id}</span>
-                                            <span className="text-[8px] text-purple-200">{izv.naziv_proizvoda} ({izv.kolicina_final}m³)</span>
-                                        </button>
+                                        <span key={izv.paket_id} className="text-[10px] bg-black text-slate-300 px-2 py-1 rounded border border-purple-500/30">Potrošen za: <b>{izv.paket_id}</b> ({izv.kolicina_final} m³)</span>
                                     ))}
                                 </div>
                             </div>
                         )}
 
                         <div className="space-y-4 mb-8">
-                            <h4 className="text-slate-500 font-black uppercase text-[10px] border-b border-theme-border pb-2">Vremenska Sljedivost (Historija izmjena):</h4>
+                            <h4 className="text-slate-500 font-black uppercase text-[10px] border-b border-theme-border pb-2">Hronologija i detaljne razlike izmjena (Audit):</h4>
                             {historija === 'load' ? <p className="animate-pulse text-xs text-theme-accent">Generiram timeline...</p> : 
-                             historija === 'none' ? <p className="text-xs text-slate-600">Nema dodatnih zapisa o promjenama.</p> : (
+                             historija === 'none' ? <p className="text-xs text-slate-600">Nema zapisa o izmjenama.</p> : (
                                 <div className="space-y-4">
                                     {historija.map((h, i) => (
-                                        <div key={i} className="flex gap-4 items-start relative before:absolute before:left-[7px] before:top-5 before:bottom-[-20px] before:w-[2px] before:bg-theme-panel last:before:hidden">
-                                            <div className="w-4 h-4 rounded-box bg-slate-700 border-4 border-[#1e293b] z-10 shrink-0 mt-1"></div>
-                                            <div>
-                                                <p className="text-theme-text text-xs font-black uppercase">{h.naslov}</p>
-                                                <p className="text-[10px] text-slate-400 mt-1 whitespace-pre-line">{h.opis}</p>
-                                                <p className="text-[8px] text-slate-500 mt-1 uppercase font-bold">{new Date(h.vrijeme).toLocaleString('bs-BA')} | Snimio: {h.korisnik}</p>
+                                        <div key={i} className="bg-theme-panel p-3 rounded-xl border border-theme-border/60">
+                                            <div className="flex justify-between text-[10px] text-slate-500">
+                                                <span>⏳ {new Date(h.vrijeme).toLocaleString('bs-BA')}</span>
+                                                <span className="uppercase font-black text-amber-500">Korisnik: {h.korisnik}</span>
                                             </div>
+                                            <p className="text-blue-300 uppercase font-black text-[10px] mt-1">Akcija: {h.naslov}</p>
+                                            <p className="text-slate-200 font-mono text-[11px] leading-relaxed border-l-2 border-blue-500 pl-2 mt-1 whitespace-pre-wrap">{h.opis}</p>
                                         </div>
                                     ))}
                                 </div>
                              )}
                         </div>
 
-                        <button 
-                            onClick={() => isprintajAutomatski(selektovaniPaket)}
-                            disabled={isPrinting}
-                            className={`w-full py-5 text-white font-black rounded-2xl uppercase shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 ${isPrinting ? 'bg-slate-600' : 'bg-theme-accent hover:opacity-80'}`}
-                        >
-                            {isPrinting ? '⏳ Tražim vezu i generišem...' : '🖨️ Isprintaj deklaraciju (Auto QR)'}
-                        </button>
+                        <button onClick={() => isprintajAutomatski(selektovaniPaket)} disabled={isPrinting} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl uppercase shadow-lg text-xs tracking-widest">🖨️ Isprintaj deklaraciju (Auto QR + mm)</button>
                     </div>
                 </div>
             )}

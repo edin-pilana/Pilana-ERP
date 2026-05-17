@@ -1,8 +1,8 @@
 "use client";
-
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import AppShell from './components/AppShell'; 
 
@@ -21,8 +21,10 @@ import KontrolniToranjModule from './modules/KontrolniToranjModule';
 import AnalitikaModule from './modules/AnalitikaModule';
 import LagerPaketaModule from './modules/LagerPaketaModule';
 import PlaniranjeModule from './modules/PlaniranjeModule'; 
+import ReklamacijeModule from './modules/ReklamacijeModule';
 import KioskModule from './modules/KioskModule';
 import HrDashboardModule from './modules/HrDashboardModule';
+import { Bell, BellRing, PackageX } from 'lucide-react';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -43,9 +45,99 @@ const defaultModuli = [
     { id: 'toranj', naziv: 'Kontrola', ikona: '🕵️', hex_boja: '#6366f1' },
     { id: 'analitika', naziv: 'Analitika', ikona: '📊', hex_boja: '#8b5cf6' },
     { id: 'podesavanja', naziv: 'Postavke', ikona: '⚙️', hex_boja: '#64748b' },
-    { id: 'kiosk', naziv: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
+    { id: 'kiosk', java: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
     { id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
+    { id: 'reklamacije', naziv: 'Reklamacije', ikona: '⚠️', hex_boja: '#ef4444' },
 ];
+
+function GlobalneNotifikacije({ user, onNavigate }) {
+    const [obavjestenja, setObavjestenja] = useState([]);
+    const [otvoreno, setOtvoreno] = useState(false);
+    const dropdownRef = useRef(null);
+
+    // Provjera prava za zvonce
+    const imaPravoGledanja = user && (user.uloga === 'superadmin' || user.uloga === 'admin' || (user.dozvole || []).includes('Reklamacije i Povrati'));
+
+    const ucitajObavjestenja = async () => {
+        if (!imaPravoGledanja) return;
+        const { data } = await supabase.from('reklamacije')
+            .select('*')
+            .eq('procitano', false)
+            .eq('status', 'CEKA_ODOBRENJE') // Samo one koje aktivno čekaju
+            .order('created_at', { ascending: false });
+        setObavjestenja(data || []);
+    };
+
+    useEffect(() => {
+        if (imaPravoGledanja) {
+            ucitajObavjestenja();
+            const channel = supabase.channel('notifikacije_live')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'reklamacije' }, () => {
+                    ucitajObavjestenja();
+                }).subscribe();
+            return () => supabase.removeChannel(channel);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        function handleClickOutside(event) { if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setOtvoreno(false); }
+        document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const oznaciKaoProcitano = async (e, id) => {
+        e.stopPropagation();
+        await supabase.from('reklamacije').update({ procitano: true }).eq('id', id);
+        ucitajObavjestenja();
+    };
+
+    if (!imaPravoGledanja) return null;
+
+    return (
+        <div className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end" ref={dropdownRef}>
+            <AnimatePresence>
+                {otvoreno && (
+                    <motion.div initial={{ opacity: 0, y: 20, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.95 }} className="mb-4 w-80 bg-theme-card border border-amber-500/50 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] overflow-hidden">
+                        <div className="bg-amber-500/10 p-4 border-b border-amber-500/20 flex justify-between items-center">
+                            <h3 className="text-amber-500 font-black uppercase text-xs tracking-widest flex items-center gap-2"><PackageX size={14}/> Nove obavijesti</h3>
+                            <button onClick={() => setOtvoreno(false)} className="text-slate-400 hover:text-white">✕</button>
+                        </div>
+                        <div className="max-h-80 overflow-y-auto custom-scrollbar p-2 bg-slate-950">
+                            {obavjestenja.length === 0 ? (
+                                <p className="text-center text-slate-500 text-xs py-6 font-bold italic">Nema novih zahtjeva za odobrenje.</p>
+                            ) : (
+                                obavjestenja.map(obv => (
+                                    <div key={obv.id} onClick={() => { setOtvoreno(false); onNavigate('reklamacije'); }} className="p-3 bg-theme-panel border border-theme-border rounded-xl mb-2 cursor-pointer hover:border-amber-500 transition-colors group shadow-sm">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="text-white font-black text-xs uppercase">{obv.paket_id}</span>
+                                            <button onClick={(e) => oznaciKaoProcitano(e, obv.id)} className="text-[9px] text-slate-400 bg-black/40 hover:bg-red-600 hover:text-white px-2 py-1 rounded transition-all font-bold opacity-0 group-hover:opacity-100">Sakrij ×</button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold truncate leading-relaxed">{obv.naziv_proizvoda}</p>
+                                        <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50">
+                                            <span className="text-amber-400 font-black text-sm">{obv.kolicina} m³</span>
+                                            <span className="text-[8px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded font-black uppercase border border-red-500/20">{obv.razlog}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        {obavjestenja.length > 0 && (
+                            <button onClick={() => { setOtvoreno(false); onNavigate('reklamacije'); }} className="w-full bg-slate-800 text-slate-300 hover:bg-slate-700 p-3 text-[10px] uppercase font-black transition-colors border-t border-slate-700">Pregledaj u modulu →</button>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <button onClick={() => setOtvoreno(!otvoreno)} className={`relative p-4 rounded-full transition-all shadow-[0_10px_30px_rgba(0,0,0,0.3)] border-2 ${obavjestenja.length > 0 ? 'bg-amber-600 hover:bg-amber-500 border-amber-400 animate-bounce' : 'bg-theme-panel hover:bg-slate-700 border-theme-border'}`}>
+                {obavjestenja.length > 0 ? <BellRing className="text-white" size={24} /> : <Bell className="text-slate-400" size={24} />}
+                {obavjestenja.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-600 text-white text-[11px] font-black w-6 h-6 flex items-center justify-center rounded-full border-2 border-[#090e17]">
+                        {obavjestenja.length}
+                    </span>
+                )}
+            </button>
+        </div>
+    );
+}
 
 export default function Page() {
     const [loggedUser, setLoggedUser] = useState(null);
@@ -100,7 +192,6 @@ export default function Page() {
         setUiPostavke({ ...uiPostavke, moduli: novaLista });
     };
 
-    // NOVO: BRISANJE MODULA IZ EDIT MODA
     const obrisiModulPotpuno = (index) => {
         if (window.confirm("Da li ste sigurni da želite obrisati ovu karticu?")) {
             const novaLista = [...(uiPostavke.moduli || [])];
@@ -205,9 +296,9 @@ export default function Page() {
             'analitika': 'Analitika',
             'podesavanja': 'Podešavanja',
             'kiosk': 'Prijava na Rad',
-            'hr': 'HR Dashboard'
+            'hr': 'HR Dashboard',
+            'reklamacije': 'Reklamacije i Povrati'
         };
-        // Specijalni uvjet za planiranje (Read Only)
         if (modulId === 'planiranje' && (loggedUser.dozvole || []).includes('Planiranje (Samo Pregled)')) return true;
 
         return (loggedUser.dozvole || []).includes(mapaDozvola[modulId]);
@@ -243,6 +334,9 @@ export default function Page() {
             onModuleChange={setActiveModule}
             accentColor={modulBoja} 
         >
+            {/* OBAVJEŠTENJA PROSLIJEĐENA KORISNIKU SA FUNKCIJOM PREBACIVANJA MODULA */}
+            <GlobalneNotifikacije user={loggedUser} onNavigate={(modul) => setActiveModule(modul)} />
+
             <div className="w-full min-h-full transition-colors duration-700">
                 {activeModule === 'home' ? (
                     <div className="p-4 md:p-8 font-sans selection:bg-emerald-500/30 w-full animate-in fade-in">
@@ -298,29 +392,22 @@ export default function Page() {
                                         >
                                             {isEditMode ? (
                                                 <div className="bg-theme-card border-2 border-amber-500 border-dashed p-4 rounded-2xl flex flex-col gap-2 opacity-95 hover:opacity-100 transition-all shadow-xl relative">
-                                                    
-                                                    {/* NOVO: KANTICA ZA BRISANJE KARTICE */}
                                                     <button onClick={() => obrisiModulPotpuno(index)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center font-black shadow-lg hover:bg-red-500 transition-colors z-50">✕</button>
-
                                                     <div className="flex justify-between items-center mb-2">
                                                         <span className="text-amber-500 font-black text-[10px] uppercase tracking-widest flex items-center gap-1">☰ <span className="text-slate-400">Povuci i spusti</span></span>
                                                         <span className="text-slate-500 text-[10px] uppercase font-bold">{modul.id}</span>
                                                     </div>
-                                                    
                                                     <input value={modul.naziv} onChange={(e) => updateModul(index, 'naziv', e.target.value)} className="p-3 bg-theme-main text-white text-xs font-bold rounded-lg border border-slate-700 outline-none focus:border-amber-500" placeholder="Naziv kartice" />
-                                                    
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <div className="flex flex-col items-center bg-theme-main p-2 rounded-lg border border-slate-700">
                                                             <span className="text-[8px] text-slate-500 mb-1 uppercase">Boja</span>
                                                             <input type="color" value={modul.hex_boja || '#1e293b'} onChange={(e) => updateModul(index, 'hex_boja', e.target.value)} className="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
                                                         </div>
-                                                        
                                                         <div className="flex-1 flex flex-col bg-theme-main p-2 rounded-lg border border-slate-700">
                                                             <span className="text-[8px] text-slate-500 mb-1 uppercase">Slika / Ikona</span>
                                                             <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, index)} disabled={uploadingImage} className="w-full text-[9px] text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[9px] file:font-black file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer" />
                                                         </div>
                                                     </div>
-                                                    
                                                     {modul.slika_url && (
                                                         <div className="mt-2 flex items-center justify-between bg-black/30 p-2 rounded border border-theme-border">
                                                             <img src={modul.slika_url} alt="Ikona" className="h-6 w-6 object-contain" />
@@ -336,11 +423,9 @@ export default function Page() {
                                                 >
                                                     <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-black/50 pointer-events-none"></div>
                                                     <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none"></div>
-
                                                     {modul.slika_url && (
                                                         <div className="absolute inset-0 opacity-20 group-hover:opacity-30 transition-opacity bg-cover bg-center" style={{ backgroundImage: `url(${modul.slika_url})` }}></div>
                                                     )}
-                                                    
                                                     <div className="relative z-10 flex flex-col items-center gap-2">
                                                         {modul.slika_url ? (
                                                             <img src={modul.slika_url} alt={modul.naziv} className="w-10 h-10 object-contain drop-shadow-2xl" />
@@ -387,6 +472,8 @@ export default function Page() {
                         <KioskModule />
                     ) : activeModule === 'hr' ? (
                         <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                        ) : activeModule === 'reklamacije' ? (
+                            <ReklamacijeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 ) : activeModule === 'podesavanja' ? (
                     <SettingsModule onExit={() => setActiveModule('home')} />
                 ) : null}

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -22,12 +22,14 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
     const ucitajObrazacProizvodnje = async () => {
         setLoading(true);
         try {
-            const [prorezRes, paketiRes, masineRes, radniciRes, katalogRes] = await Promise.all([
+            // 🟢 DODATO: Povlačenje odobrenih reklamacija za odabrani period
+            const [prorezRes, paketiRes, masineRes, radniciRes, katalogRes, reklamacijeRes] = await Promise.all([
                 supabase.from('prorez_log').select('*').gte('datum', datumOd).lte('datum', datumDo),
                 supabase.from('paketi').select('*').gte('datum_yyyy_mm', datumOd).lte('datum_yyyy_mm', datumDo),
                 supabase.from('masine').select('*'),
                 supabase.from('radnici').select('*'),
-                supabase.from('katalog_proizvoda').select('*')
+                supabase.from('katalog_proizvoda').select('*'),
+                supabase.from('reklamacije').select('*').eq('status', 'ODOBRENO').gte('created_at', datumOd).lte('created_at', datumDo + 'T23:59:59')
             ]);
 
             const logovi = prorezRes.data || [];
@@ -35,6 +37,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             const masineDB = masineRes.data || [];
             const radniciDB = radniciRes.data || [];
             const katalogDB = katalogRes.data || [];
+            const reklamacijeDB = reklamacijeRes.data || [];
 
             let ukupnaVrijednostRobe = 0;
             const proizvodnjaTabelaMap = {};
@@ -63,7 +66,6 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             let ukupniTrosakPrerade = 0;
             const tabelaTroskova = [];
 
-            // --- NOVO: TROŠAK SIROVINE (NABAVNA CIJENA TRUPACA) ---
             const trupacIds = logovi.map(l => l.trupac_id);
             let trosakSirovine = 0;
             let zapreminaSirovine = 0;
@@ -82,7 +84,6 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 ukupniTrosakPrerade += trosakSirovine;
                 tabelaTroskova.push({ tip: '1_Sirovina', naziv: 'Sirovina (Zaduženje trupaca)', kolicina: `${zapreminaSirovine.toFixed(2)} m³`, cijena: '-', ukupno: trosakSirovine });
             }
-            // --------------------------------------------------------
 
             const masineTrosakMap = {};
             paketi.forEach(p => {
@@ -126,17 +127,44 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 tabelaTroskova.push({ tip: '3_Radnici', naziv: `Zaposleni (${Object.keys(radniciDnevniceMap).length})`, kolicina: `${ukupnoSatiRadnika} sati`, cijena: `-`, ukupno: ukupnoTrosakRadnika });
             }
 
-            const brutoProfit = ukupnaVrijednostRobe - ukupniTrosakPrerade;
+            // 🟢 DODATO: MATEMATIKA FINANSIJSKOG GUBITKA ZBOG REKLAMACIJA
+            let finansijskiGubitakReklamacija = 0;
+            reklamacijeDB.forEach(rek => {
+                const kat = katalogDB.find(k => k.sifra === rek.naziv_proizvoda || k.naziv === rek.naziv_proizvoda);
+                let cijenaBaza = kat ? parseFloat(kat.cijena || 0) : 0;
+                let m3 = parseFloat(rek.kolicina || 0);
+
+                let izracunataVrijednostGubitka = 0;
+                if(kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
+                    // Ako se proizvod inače cijeni po komadu, moramo pretvoriti kubike nazad u komade da bismo pomnožili sa cijenom komada
+                    const v = parseFloat(kat.visina)||1; const s = parseFloat(kat.sirina)||1; const d = parseFloat(kat.duzina)||1;
+                    // Pretvaramo dimenzije u metre na osnovu sigurnosti
+                    let vol1kom = (v/1000) * (s/1000) * (d/1000); 
+                    if (d < 1000) vol1kom = (v/100) * (s/100) * (d/100);
+
+                    izracunataVrijednostGubitka = vol1kom > 0 ? (m3 / vol1kom) * cijenaBaza : 0;
+                } else {
+                    izracunataVrijednostGubitka = m3 * cijenaBaza;
+                }
+                finansijskiGubitakReklamacija += izracunataVrijednostGubitka;
+            });
+
+            // Čisti profit sada uključuje i obijanje gubitka od reklamacija
+            const brutoProfit = ukupnaVrijednostRobe - ukupniTrosakPrerade - finansijskiGubitakReklamacija;
 
             setData({
                 kpi: { 
-                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2), trosakPrerade: ukupniTrosakPrerade.toFixed(2), dodataVrijednost: brutoProfit.toFixed(2)
+                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2), 
+                    trosakPrerade: ukupniTrosakPrerade.toFixed(2), 
+                    dodataVrijednost: brutoProfit.toFixed(2),
+                    gubitakReklamacije: finansijskiGubitakReklamacija.toFixed(2) // 🟢 Novi podatak
                 },
                 tabelaProizvodnje: Object.values(proizvodnjaTabelaMap).sort((a,b) => b.vrijednost - a.vrijednost),
                 tabelaTroskova: tabelaTroskova.sort((a, b) => a.tip.localeCompare(b.tip)),
                 grafikonFinansija: [
                     { name: 'Vrijednost Robe', Iznos: parseFloat(ukupnaVrijednostRobe.toFixed(2)) },
                     { name: 'Totalni Trošak', Iznos: parseFloat(ukupniTrosakPrerade.toFixed(2)) },
+                    { name: 'Gubitak (Reklamacije)', Iznos: parseFloat(finansijskiGubitakReklamacija.toFixed(2)) }, // 🟢 Nova traka u grafu
                     { name: 'Čisti Profit', Iznos: parseFloat(brutoProfit.toFixed(2)) }
                 ]
             });
@@ -198,14 +226,14 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border shadow-lg">
                     <div>
                         <h3 className="text-emerald-500 font-black uppercase text-sm tracking-widest">Finansijska Analitika</h3>
-                        <p className="text-xs text-slate-400">Pregled prodajne vrijednosti i svih troškova (uključujući nabavku trupaca).</p>
+                        <p className="text-xs text-slate-400">Pregled prodajne vrijednosti i svih troškova (uključujući nabavku trupaca i gubitke).</p>
                     </div>
                     <button onClick={() => generisiUltimativniPDF('Izvjestaj_Finansije', 'folder_finansije')} disabled={isGeneratingPDF} className={`${isGeneratingPDF ? 'bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-6 py-2.5 rounded-xl text-sm font-black uppercase shadow-lg transition-all`}>
                         {isGeneratingPDF ? '⌛ Generisanje...' : '🖨️ Isprintaj PDF'}
                     </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card decoration="top" decorationColor="blue" className="bg-theme-card">
                         <Text className="text-slate-400 font-bold text-[9px] uppercase">Tržišna Vrijednost Robe</Text>
                         <Metric className="text-white mt-1 text-2xl">{parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
@@ -213,6 +241,10 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                     <Card decoration="top" decorationColor="rose" className="bg-theme-card">
                         <Text className="text-slate-400 font-bold text-[9px] uppercase">Trošak (Sirovina + Prerada)</Text>
                         <Metric className="text-rose-400 mt-1 text-2xl">- {parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
+                    </Card>
+                    <Card decoration="top" decorationColor="orange" className="bg-theme-card border-orange-500/30">
+                        <Text className="text-slate-400 font-bold text-[9px] uppercase">Udar od Reklamacija (Gubitak)</Text>
+                        <Metric className="text-orange-400 mt-1 text-2xl">- {parseFloat(data.kpi.gubitakReklamacije).toLocaleString('bs-BA')} <span className="text-sm">KM</span></Metric>
                     </Card>
                     <Card decoration="top" decorationColor="emerald" className="bg-theme-card">
                         <Text className="text-slate-400 font-bold text-[9px] uppercase">Čisti Profit</Text>
@@ -267,9 +299,13 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                                     <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
                                     <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
                                     <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {data.grafikonFinansija.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.name === 'Totalni Trošak' ? '#ef4444' : (entry.name === 'Čisti Profit' ? '#10b981' : '#f59e0b')} />
-                                        ))}
+                                        {data.grafikonFinansija.map((entry, index) => {
+                                            let boja = '#f59e0b';
+                                            if (entry.name === 'Totalni Trošak') boja = '#ef4444';
+                                            if (entry.name === 'Gubitak (Reklamacije)') boja = '#f97316';
+                                            if (entry.name === 'Čisti Profit') boja = '#10b981';
+                                            return <Cell key={`cell-${index}`} fill={boja} />;
+                                        })}
                                     </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
@@ -278,6 +314,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 </div>
             </div>
 
+            {/* NEVIDLJIVI PDF KONTEJNER */}
             <div id="savrseni-pdf-dokument" style={{ position: 'absolute', top: '-10000px', left: 0, width: '210mm', minHeight: '297mm', backgroundColor: 'white', color: '#0f172a', padding: '12mm', boxSizing: 'border-box', fontFamily: 'sans-serif' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -297,11 +334,12 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                     {[
                         { title: 'Tržišna Vrijednost Robe', val: parseFloat(data.kpi.vrijednostRobe).toLocaleString('bs-BA'), unit: 'KM', color: '#3b82f6' },
                         { title: 'Trošak (Sirovina + Prerada)', val: `- ${parseFloat(data.kpi.trosakPrerade).toLocaleString('bs-BA')}`, unit: 'KM', color: '#ef4444' },
+                        { title: 'Gubitak Reklamacija', val: `- ${parseFloat(data.kpi.gubitakReklamacije).toLocaleString('bs-BA')}`, unit: 'KM', color: '#f97316' },
                         { title: 'Čisti Profit', val: parseFloat(data.kpi.dodataVrijednost).toLocaleString('bs-BA'), unit: 'KM', color: marzaBojaPDF }
                     ].map((kpi, i) => (
-                        <div key={i} style={{ width: '31%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', borderTop: `4px solid ${kpi.color}` }}>
+                        <div key={i} style={{ width: '23%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', borderTop: `4px solid ${kpi.color}` }}>
                             <div style={{ fontSize: '9px', color: '#475569', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>{kpi.title}</div>
-                            <div style={{ fontSize: '18px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '10px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
+                            <div style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a' }}>{kpi.val} <span style={{ fontSize: '9px', fontWeight: 'normal' }}>{kpi.unit}</span></div>
                         </div>
                     ))}
                 </div>
@@ -354,9 +392,13 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                             <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
                             <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
                             <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={50}>
-                                {data.grafikonFinansija.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.name === 'Totalni Trošak' ? '#ef4444' : (entry.name === 'Čisti Profit' ? '#10b981' : '#f59e0b')} />
-                                ))}
+                                {data.grafikonFinansija.map((entry, index) => {
+                                    let boja = '#f59e0b';
+                                    if (entry.name === 'Totalni Trošak') boja = '#ef4444';
+                                    if (entry.name === 'Gubitak (Reklamacije)') boja = '#f97316';
+                                    if (entry.name === 'Čisti Profit') boja = '#10b981';
+                                    return <Cell key={`cell-${index}`} fill={boja} />;
+                                })}
                             </Bar>
                         </BarChart>
                     </div>

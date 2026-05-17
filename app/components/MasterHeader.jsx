@@ -43,10 +43,8 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         setAktivniRadnici(data || []);
     };
 
-    // Učitaj pri prvom renderu i kad se promijeni mašina
     useEffect(() => { ucitajAktivne(); }, [header?.masina]);
 
-    // OVO JE TAJNA MAGIJA ZA SINHRONIZACIJU: Sluša signale iz svih modula
     useEffect(() => {
         const handleRefresh = () => ucitajAktivne();
         window.addEventListener('radnici_updated', handleRefresh);
@@ -59,7 +57,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         await supabase.from('aktivni_radnici').insert([{ radnik_ime: noviRadnik, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'pomocni' }]);
         setNoviRadnik('');
         ucitajAktivne();
-        window.dispatchEvent(new Event('radnici_updated')); // Obavijesti sve da je radnik dodan
+        window.dispatchEvent(new Event('radnici_updated')); 
     };
 
     const odjaviRadnika = async (ime) => {
@@ -73,7 +71,19 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
             <div className={`flex flex-wrap lg:flex-nowrap justify-between items-center bg-theme-card p-3 lg:p-4 rounded-[var(--radius-box)] border border-theme-border shadow-glow backdrop-blur-[var(--glass-blur)] gap-4 relative z-[100] ${saas?.isEditMode ? 'ring-2 ring-amber-500' : ''}`}>
                 <div className="flex items-center gap-3">
                     <button onClick={onExit} className="bg-theme-panel border border-theme-border text-[10px] px-4 py-3 rounded-xl uppercase text-theme-text font-black hover:bg-red-500 hover:border-red-500 transition-all shadow-md">← Meni</button>
-                    {modulIme && <span className="text-theme-accent font-black tracking-widest uppercase text-xs whitespace-nowrap hidden sm:block">Modul: {modulIme}</span>}
+                    {modulIme && (
+                        <div className="flex items-center gap-3 bg-theme-panel/50 px-3 py-1.5 rounded-lg border border-theme-border/50">
+                            <span className="text-theme-accent font-black tracking-widest uppercase text-xs hidden sm:block">Modul: {modulIme}</span>
+                            {/* GLOBALNA LIVE LAMPICA */}
+                            <div className="flex items-center gap-1.5 ml-2 border-l border-theme-border/50 pl-3" title="Sistem je uživo povezan sa bazom">
+                                <span className="relative flex h-2.5 w-2.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                </span>
+                                <span className="text-[9px] text-emerald-500 font-black uppercase tracking-widest hidden md:block">Live</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
                 
                 {header && (

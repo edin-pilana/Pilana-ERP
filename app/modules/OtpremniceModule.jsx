@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch'; // NOVO: Univerzalna pretraga
-import PametniDialog from '../components/PametniDialog'; // NOVO: Pametni kameleon dijalozi
+import MasterSearch from '../components/MasterSearch'; 
+import PametniDialog from '../components/PametniDialog'; 
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
@@ -191,7 +191,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         const brojIzd = `IZD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
         const { data: izdData, error: izdErr } = await supabase.from('izdatnice').insert([{ broj_izdatnice: brojIzd, kupac_naziv: form.kupac_naziv, status: 'u_pripremi', izvor_tip: form.broj_veze ? (form.broj_veze.startsWith('PON') ? 'ponuda' : 'radni_nalog') : 'rucno', izvor_id: form.broj_veze, napomena: form.napomena, kreirao_korisnik: currentUser.ime_prezime || 'Nepoznat' }]).select().single();
         if(izdErr) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: "Greška pri kreiranju izdatnice: " + izdErr.message, onCancel: zatvoriDialog });
-
+        
         const stavkePayload = stavke.map(s => ({ izdatnica_id: izdData.id, proizvod_sifra: s.sifra, proizvod_naziv: s.naziv, planirana_kolicina: s.kolicina_obracun, mjerna_jedinica: s.jm_obracun }));
         const { error: stavkeErr } = await supabase.from('izdatnice_stavke').insert(stavkePayload);
         if(stavkeErr) return prikaziDialog({ tip: 'greska', naslov: 'Greška kod stavki', poruka: stavkeErr.message, onCancel: zatvoriDialog });
@@ -222,6 +222,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     
     const obrisiWmsStavku = (id) => { setWmsStavke(wmsStavke.filter(s => s.id !== id)); };
 
+    const dodajWmsStavkuNovu = () => {
+        if (!wmsNovaSifra || !wmsNovaKol) return;
+        const [sifra, naziv] = wmsNovaSifra.split(' | ');
+        const noviId = `novo_${Date.now()}`;
+        setWmsStavke([...wmsStavke, { id: noviId, izdatnica_id: wmsIzdatnica.id, proizvod_sifra: sifra, proizvod_naziv: naziv, planirana_kolicina: 0, izdata_kolicina: parseFloat(wmsNovaKol), mjerna_jedinica: 'm3' }]);
+        setWmsNovaSifra(''); setWmsNovaKol('');
+    };
+
     const zavrsiIPotvrdiUtovar = async () => {
         prikaziDialog({
             tip: 'info',
@@ -246,7 +254,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     };
 
     const snimiOtpremnicu = async () => {
-        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac je obavezan', poruka: "Morate odabrati kupca da biste snimili otpremnicu.", onCancel: zatvoriDialog });
+        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Morate odabrati kupca da biste snimili otpremnicu.", onCancel: zatvoriDialog });
         if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema stavki', poruka: "Otpremnica mora imati barem jednu stavku!", onCancel: zatvoriDialog });
 
         // --- BLOKADA DUPLIKATA PRI SNIMANJU ---
@@ -294,6 +302,19 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
             }
         }
 
+        // --- NOVO: AŽURIRANJE PAKETA U BAZI DA SU OTPREMLJENI ---
+        if (!needsApproval) {
+            let parentId = form.broj_veze;
+            if (parentId && parentId.startsWith('IZD-')) {
+                const {data: izd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', parentId).maybeSingle();
+                if (izd && izd.izvor_id) parentId = izd.izvor_id;
+            }
+            if (parentId) {
+                await supabase.from('paketi').update({ otpremnica_id: form.id.toUpperCase() }).eq('broj_veze', parentId).is('otpremnica_id', null);
+            }
+        }
+        // --------------------------------------------------------
+
         resetFormu(); load(); setTab('lista');
 
         prikaziDialog({
@@ -310,21 +331,59 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
     const odobriOtpremnicu = async (logId, text) => {
         const otpMatch = text.match(/OTP-\d{4}-\d+/);
-        if (otpMatch) { await supabase.from('otpremnice').update({ status: 'KREIRANA' }).eq('id', otpMatch[0]); await zapisiU_Log('OTPREMNICA_ODOBRENA', `Superadmin odobrio izmjenu za: ${otpMatch[0]}`); }
+        if (otpMatch) { 
+            const otpId = otpMatch[0];
+            await supabase.from('otpremnice').update({ status: 'KREIRANA' }).eq('id', otpId); 
+            await zapisiU_Log('OTPREMNICA_ODOBRENA', `Superadmin odobrio izmjenu za: ${otpId}`); 
+            
+            // NOVO: Ažuriraj pakete nakon odobrenja
+            const { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', otpId).maybeSingle();
+            let parentId = otp?.broj_veze;
+            if (parentId && parentId.startsWith('IZD-')) {
+                const {data: izd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', parentId).maybeSingle();
+                if (izd && izd.izvor_id) parentId = izd.izvor_id;
+            }
+            if (parentId) {
+                await supabase.from('paketi').update({ otpremnica_id: otpId.toUpperCase() }).eq('broj_veze', parentId).is('otpremnica_id', null);
+            }
+        }
         await supabase.from('sistem_audit_log').delete().eq('id', logId); 
-        prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: 'Zabrana je skinuta.', onCancel: zatvoriDialog });
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: 'Zabrana je skinuta. Paketi su otpremljeni.', onCancel: zatvoriDialog });
         load();
     };
 
     const kreirajPDF = () => { kreirajPDFPrivremeni(form); };
 
-    const kreirajPDFPrivremeni = (podaci) => {
+    // --- NOVA LOGIKA ZA ŠTAMPANJE SA PAKETIMA ---
+    const kreirajPDFPrivremeni = async (podaci) => {
+        
+        // Povezujemo pakete sa otpremnicom (preko njene veze ili izvora)
+        let parentId = podaci.broj_veze || podaci.id;
+        if (parentId && parentId.startsWith('IZD-')) {
+            const {data: izd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', parentId).maybeSingle();
+            if (izd && izd.izvor_id) parentId = izd.izvor_id;
+        }
+        
+        let paketiPrikaz = {};
+        if (parentId) {
+            const { data: paks } = await supabase.from('paketi').select('paket_id, naziv_proizvoda').eq('broj_veze', parentId);
+            if (paks) {
+                paks.forEach(p => {
+                    if (!paketiPrikaz[p.naziv_proizvoda]) paketiPrikaz[p.naziv_proizvoda] = [];
+                    paketiPrikaz[p.naziv_proizvoda].push(p.paket_id);
+                });
+            }
+        }
+
         const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
         let redovi = (podaci.stavke_jsonb || stavke).map((s, i) => {
             const kat = katalog.find(k => k.sifra === s.sifra);
             const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
-            return `<tr><td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td><td><b style="color: #0f172a; font-size: 14px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span></td><td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td></tr>`
+            const paketiStr = paketiPrikaz[s.naziv] && paketiPrikaz[s.naziv].length > 0 ? `<br/><span style="color: #3b82f6; font-size: 10px; font-weight: bold;">📦 Sadrži pakete: ${paketiPrikaz[s.naziv].join(', ')}</span>` : '';
+            
+            return `<tr><td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td><td><b style="color: #0f172a; font-size: 14px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span>${paketiStr}</td><td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td></tr>`
         }).join('');
+
         const htmlSadrzajTabela = `<div class="info-grid"><div class="info-col"><h4>Kupac / Primalac robe</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${podaci.kupac_naziv}</p><p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p><p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><h4>Detalji Transporta</h4><p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${podaci.broj_veze || '-'}</span></p><p>Ime Vozača: <span style="font-weight: 600; color: #0f172a;">${podaci.vozac || '-'}</span></p><p>Vozilo (Reg): <span style="font-weight: 900; color: #f97316;">${podaci.registracija || '-'}</span></p></div></div><table><thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija i Naziv Proizvoda</th><th style="text-align:center;">Isporučena Količina</th></tr></thead><tbody>${redovi}</tbody></table><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Isporučio (Vozač)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Izdao (Magacin)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Primio (Kupac)</div></div><div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz isporuku:</b><br/>${podaci.napomena || 'Roba isporučena bez oštećenja.'}</div></div>`;
         printDokument('OTPREMNICA', podaci.id, formatirajDatum(podaci.datum), htmlSadrzajTabela, '#f97316');
     };
