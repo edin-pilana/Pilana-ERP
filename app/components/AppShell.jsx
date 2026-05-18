@@ -56,7 +56,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         return (user.dozvole || []).includes(mapaDozvola[modulId]);
     };
 
-    // MAPIRANJE IKONA (Pretvaranje string emoji/ikone iz baze u pravu Lucide ikonu ako treba, ili ostavljanje emojija)
+    // MAPIRANJE IKONA (Pretvaranje string emoji/ikone iz baze u pravu Lucide ikonu ako treba, ili ostavljanje emojija) i
     const renderIcon = (ikona, size = 18) => {
         if (ikona === 'LayoutDashboard') return <LayoutDashboard size={size}/>;
         if (ikona === 'Settings') return <Settings size={size}/>;
