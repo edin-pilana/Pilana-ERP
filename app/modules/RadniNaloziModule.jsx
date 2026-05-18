@@ -106,6 +106,24 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const [skenerInput, setSkenerInput] = useState('');
     const [tehnologija, setTehnologija] = useState({});
     const timerRef = useRef(null);
+    // 🟢 PREMIUM DEEP LINKING: Pouzdano otvaranje naloga u Edit modu
+    const [autoEditTriggered, setAutoEditTriggered] = useState(false);
+    
+    useEffect(() => {
+        const autoId = localStorage.getItem('erp_auto_open_id');
+        const autoAction = localStorage.getItem('erp_auto_action');
+        
+        // Čekamo da nalozi stignu iz baze (nalozi.length > 0)
+        if (autoId && autoAction === 'uredi' && nalozi.length > 0 && !autoEditTriggered) {
+            const nToEdit = nalozi.find(n => n.id === autoId);
+            if (nToEdit) {
+                setAutoEditTriggered(true); // Sprječavamo ponavljanje
+                pokreniIzmjenuNaloga(nToEdit);
+                localStorage.removeItem('erp_auto_open_id');
+                localStorage.removeItem('erp_auto_action');
+            }
+        }
+    }, [nalozi, autoEditTriggered]);
 
     // 🟢 UKLJUČEN REALTIME LIVE SYNC KANAL ZA RADNE NALOGE
     useEffect(() => {
@@ -115,6 +133,19 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             .subscribe();
         return () => supabase.removeChannel(channel);
     }, []);
+    // 🟢 PREMIUM DEEP LINKING: Automatsko otvaranje naloga u Edit modu
+    useEffect(() => {
+        const autoId = localStorage.getItem('erp_auto_open_id');
+        const autoAction = localStorage.getItem('erp_auto_action');
+        if (autoId && autoAction === 'uredi' && nalozi.length > 0) {
+            const nToEdit = nalozi.find(n => n.id === autoId);
+            if (nToEdit) {
+                pokreniIzmjenuNaloga(nToEdit);
+                localStorage.removeItem('erp_auto_open_id');
+                localStorage.removeItem('erp_auto_action');
+            }
+        }
+    }, [nalozi]);
     
     const load = async () => {
         supabase.from('kupci').select('naziv').order('naziv').then(({data}) => setKupci(data||[]));

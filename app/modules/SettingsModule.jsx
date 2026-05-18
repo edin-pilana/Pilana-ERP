@@ -1104,7 +1104,15 @@ function TabRadnici() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Uloga</label><select value={form.uloga} onChange={e=>setForm({...form, uloga:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500 font-black uppercase cursor-pointer"><option value="operater">Operater</option><option value="admin">Šef (Admin)</option></select></div>
+                        <div>
+    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Uloga</label>
+    <select value={form.uloga} onChange={e=>setForm({...form, uloga:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-blue-500 font-black uppercase cursor-pointer">
+        <option value="operater">Operater</option>
+        <option value="manager">Menadžer</option>
+        <option value="admin">Šef (Admin)</option>
+        <option value="superadmin">Superadmin</option>
+    </select>
+</div>
                             <div><label className="text-[8px] text-emerald-500 uppercase ml-2 block mb-1 font-black">Bruto satnica</label><input type="number" placeholder="KM/h" value={form.bruto_satnica} onChange={e=>setForm({...form, bruto_satnica:e.target.value})} className="w-full p-3 bg-emerald-900/10 rounded-xl text-xs text-emerald-400 outline-none border border-emerald-500/30 focus:border-emerald-400 text-center font-black" /></div>
                             <div><label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1 font-black">Godišnji odmor</label><input type="number" placeholder="Dani" value={form.preostalo_godisnjeg} onChange={e=>setForm({...form, preostalo_godisnjeg:e.target.value})} className="w-full p-3 bg-blue-900/10 rounded-xl text-xs text-blue-400 outline-none border border-blue-500/30 focus:border-blue-400 text-center font-black" /></div>
                         </div>

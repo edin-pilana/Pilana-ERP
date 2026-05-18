@@ -67,7 +67,16 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     // 🟢 LIVE SYNC REALTIME KANAL
     useEffect(() => {
         load();
-
+// 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
+useEffect(() => {
+    setTimeout(() => {
+        const autoAction = localStorage.getItem('erp_auto_action');
+        if (autoAction === 'otvoreni') {
+            setTab('otvoreni');
+            localStorage.removeItem('erp_auto_action');
+        }
+    }, 150); // Kratka pauza da se UI stabilizuje
+}, []);
         const channel = supabase.channel('racuni_realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
                 supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
@@ -77,6 +86,14 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         return () => {
             supabase.removeChannel(channel);
         };
+        // 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
+    useEffect(() => {
+        const autoAction = localStorage.getItem('erp_auto_action');
+        if (autoAction === 'otvoreni') {
+            setTab('otvoreni');
+            localStorage.removeItem('erp_auto_action');
+        }
+    }, []);
     }, []);
 
     const load = async () => {

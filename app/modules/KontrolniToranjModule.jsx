@@ -22,12 +22,11 @@ const formatirajTacanDatum = (d1, d2, d3) => {
                 const yyyy = d.getFullYear();
                 const hh = String(d.getHours()).padStart(2, '0');
                 const min = String(d.getMinutes()).padStart(2, '0');
-                const ss = String(d.getSeconds()).padStart(2, '0');
-                return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+                return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
             }
         } catch(e) {}
     }
-    return 'Nepoznato vrijeme';
+    return 'N/A';
 };
 
 const getSortableTime = (d1, d2, d3) => {
@@ -38,197 +37,137 @@ const getSortableTime = (d1, d2, d3) => {
     return 0;
 };
 
-const renderStavkeDiff = (stareRaw, noveRaw, isCreation) => {
+// Handle JSON values format safely
+const siguranString = (val) => {
+    if (val === null || val === undefined) return 'prazno';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+};
+
+// 🟢 APSOLUTNA INTIMNA FORENZIKA
+const renderStavkeDiff = (stareRaw, noveRaw) => {
     let stare = []; let nove = [];
-    try { stare = typeof stareRaw === 'string' ? JSON.parse(stareRaw) : (stareRaw || []); } catch(e) { stare = []; }
-    try { nove = typeof noveRaw === 'string' ? JSON.parse(noveRaw) : (noveRaw || []); } catch(e) { nove = []; }
+    try { stare = typeof stareRaw === 'string' ? JSON.parse(stareRaw) : (stareRaw || []); } catch(e) { stare = stareRaw && typeof stareRaw === 'object' ? [stareRaw] : []; }
+    try { nove = typeof noveRaw === 'string' ? JSON.parse(noveRaw) : (noveRaw || []); } catch(e) { nove = noveRaw && typeof noveRaw === 'object' ? [noveRaw] : []; }
+    
+    if (!Array.isArray(stare)) stare = [stare];
+    if (!Array.isArray(nove)) nove = [nove];
 
-    if (!Array.isArray(stare)) stare = [];
-    if (!Array.isArray(nove)) nove = [];
+    let subDiffs = [];
+    const unikatniKljuceviStavki = Array.from(new Set([
+        ...stare.map((s, idx) => s.id || s.sifra || s.paket_id || `red_${idx}`),
+        ...nove.map((n, idx) => n.id || n.sifra || n.paket_id || `red_${idx}`)
+    ]));
 
-    if (JSON.stringify(stare) === JSON.stringify(nove)) {
-        return <div className="text-slate-500 text-[10px] italic mt-2 border-t border-theme-border pt-2">Sadržaj liste je ostao potpuno nepromijenjen.</div>;
-    }
+    unikatniKljuceviStavki.forEach((kljuc) => {
+        const o = stare.find((s, idx) => (s.id || s.sifra || s.paket_id || `red_${idx}`) === kljuc);
+        const n = nove.find((item, idx) => (item.id || item.sifra || item.paket_id || `red_${idx}`) === kljuc);
+        const nazivArtikla = n?.naziv || n?.naziv_proizvoda || o?.naziv || o?.naziv_proizvoda || kljuc;
 
-    if (isCreation || stare.length === 0) {
-        if (nove.length === 0) return <span className="text-slate-500 italic text-[10px]">Lista je prazna.</span>;
-        return (
-            <div className="space-y-1 mt-2">
-                {nove.map((n, i) => {
-                    const naziv = n.naziv || n.naziv_proizvoda || n.sifra || 'Stavka';
-                    const kol = n.kolicina_obracun || n.kolicina_unos || n.kolicina_final || n.kolicina || '';
-                    const jm = n.jm_obracun || n.jm_unos || n.jm || '';
-                    return <div key={i} className="text-emerald-400 font-bold text-[11px] truncate bg-emerald-900/10 px-2 py-1 rounded border border-emerald-500/20">➕ Dodano: <span className="text-theme-text">{naziv}</span> {kol && `(${kol} ${jm})`}</div>;
-                })}
-            </div>
-        );
-    }
-
-    let diffs = [];
-    const getKljuc = (s) => s.id || s.sifra || s.naziv || s.paket_id;
-
-    nove.forEach((n, idx) => {
-        const kljuc = getKljuc(n) || `idx_${idx}`;
-        const o = stare.find(s => getKljuc(s) === kljuc) || stare[idx]; 
-        const naziv = n.naziv || n.naziv_proizvoda || n.sifra || n.paket_id || 'Nepoznat proizvod';
-
-        if (!o) {
-            const kolN = n.kolicina_obracun || n.kolicina_unos || n.kolicina_final || n.kolicina || '';
-            const jm = n.jm_obracun || n.jm_unos || n.jm || '';
-            diffs.push(<div key={`add-${kljuc}`} className="text-emerald-400 font-bold bg-emerald-900/10 p-2 rounded mb-1 border border-emerald-500/20 text-[10px]">➕ Dodana nova stavka: <span className="text-theme-text">{naziv}</span> {kolN && `(${kolN} ${jm})`}</div>);
+        if (!o && n) {
+            subDiffs.push(
+                <div key={`add-${kljuc}`} className="text-emerald-400 font-bold bg-emerald-950/30 p-2 rounded border border-emerald-500/20 text-[10px] my-1">
+                    ➕ DODANA STAVKA: <span className="text-white uppercase">{nazivArtikla}</span> ➔ {JSON.stringify(n)}
+                </div>
+            );
+        } else if (o && !n) {
+            subDiffs.push(
+                <div key={`rem-${kljuc}`} className="text-red-400 font-bold bg-red-950/30 p-2 rounded border border-red-500/20 text-[10px] my-1">
+                    ❌ UKLONJENA STAVKA: <span className="text-slate-400 line-through uppercase">{nazivArtikla}</span> ➔ {JSON.stringify(o)}
+                </div>
+            );
         } else {
-            let promjeneNaStavci = [];
-            const subKeys = Array.from(new Set([...Object.keys(o), ...Object.keys(n)])).filter(sk => !['id', 'sifra', 'naziv', 'naziv_proizvoda', 'paket_id'].includes(sk));
+            const unutrašnjePromjene = [];
+            const unutrašnjiKljučevi = Array.from(new Set([...Object.keys(o), ...Object.keys(n)]));
             
-            subKeys.forEach(sk => {
+            unutrašnjiKljučevi.forEach(sk => {
                 if (JSON.stringify(o[sk]) !== JSON.stringify(n[sk])) {
-                    let staroVal = o[sk] === null || o[sk] === undefined ? 'prazno' : String(o[sk]);
-                    let novoVal = n[sk] === null || n[sk] === undefined ? 'prazno' : String(n[sk]);
-                    promjeneNaStavci.push(
-                        <div key={sk} className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 text-[10px] ml-4 mt-1 border-b border-theme-border/50 pb-1 last:border-0">
-                            <span className="text-slate-400 uppercase w-28 shrink-0">• {sk.replace(/_/g, ' ')}:</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-red-400 line-through bg-red-900/10 px-1 rounded">{staroVal}</span>
+                    unutrašnjePromjene.push(
+                        <div key={sk} className="flex flex-col sm:flex-row sm:items-center gap-1 text-[10px] ml-4 border-b border-slate-800 pb-1 last:border-0">
+                            <span className="text-slate-400 font-bold uppercase w-24 shrink-0">• {sk}:</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-red-400 line-through bg-red-950/40 px-1 rounded font-mono">{siguranString(o[sk])}</span>
                                 <span className="text-slate-500">➔</span>
-                                <span className="text-emerald-400 font-black bg-emerald-900/10 px-1 rounded">{novoVal}</span>
+                                <span className="text-emerald-400 font-black bg-emerald-900/40 px-1 rounded font-mono">{siguranString(n[sk])}</span>
                             </div>
                         </div>
                     );
                 }
             });
 
-            if (promjeneNaStavci.length > 0) {
-                 diffs.push(
-                     <div key={`mod-${kljuc}`} className="text-amber-400 font-bold bg-theme-panel p-2 rounded mb-1 border border-theme-border text-[10px] shadow-sm">
-                         ✏️ Izmjena na stavci: <span className="text-theme-text bg-theme-panel px-2 py-0.5 rounded ml-1">{naziv}</span>
-                         <div className="mt-2 space-y-1">{promjeneNaStavci}</div>
-                     </div>
-                 );
+            if (unutrašnjePromjene.length > 0) {
+                subDiffs.push(
+                    <div key={`mod-${kljuc}`} className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800 text-[10px] my-1">
+                        <span className="text-amber-400 font-black uppercase block mb-1.5">✏️ Izmjena unutar stavke: {nazivArtikla}</span>
+                        <div className="space-y-1">{unutrašnjePromjene}</div>
+                    </div>
+                );
             }
         }
     });
 
-    stare.forEach((o, idx) => {
-        const kljuc = getKljuc(o) || `idx_${idx}`;
-        const n = nove.find(s => getKljuc(s) === kljuc) || nove[idx];
-        if (!n) {
-             const naziv = o.naziv || o.naziv_proizvoda || o.sifra || o.paket_id || 'Stavka';
-             const kolO = o.kolicina_obracun || o.kolicina_unos || o.kolicina_final || o.kolicina || '';
-             const jm = o.jm_obracun || o.jm_unos || o.jm || '';
-             diffs.push(<div key={`rem-${kljuc}`} className="text-red-400 font-bold bg-red-900/10 p-2 rounded mb-1 border border-red-500/20 text-[10px]">❌ Uklonjena stavka: <span className="text-slate-300 line-through">{naziv}</span> {kolO && `(Bilo je: ${kolO} ${jm})`}</div>);
-        }
-    });
-
-    if (diffs.length === 0) return <div className="text-slate-500 text-[10px] italic mt-2 border-t border-theme-border pt-2">Nema zabilježenih razlika u ovoj listi.</div>;
-    return <div className="mt-2 space-y-2">{diffs}</div>;
+    return subDiffs.length > 0 ? <div className="space-y-2 mt-2">{subDiffs}</div> : null;
 };
 
 const PrikazIzmjena = ({ log }) => {
     const stari = log.stari_podaci || {};
     const novi = log.novi_podaci || {};
 
-    const isCreation = Object.keys(stari).length === 0 && Object.keys(novi).length > 0;
+    const svaPoljaZaAnalizu = Array.from(new Set([...Object.keys(stari), ...Object.keys(novi)]));
+    let ispisSvihIzmjena = [];
 
-    if (Object.keys(stari).length === 0 && Object.keys(novi).length === 0) {
-        return <div className="mt-3 p-3 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
-            <p className="text-[11px] text-slate-300 leading-relaxed italic">{log.detalji}</p>
-        </div>;
-    }
+    svaPoljaZaAnalizu.forEach(k => {
+        const staroVal = stari[k];
+        const novoVal = novi[k];
 
-    const ignorisanaPolja = ['id', 'created_at', 'vrijeme', 'datum', 'snimio_korisnik', 'vrijeme_tekst', 'broj_veze', 'broj_ponude'];
-    
-    let imaPravihPromjena = false;
-    let ispisIzmjena = [];
+        if (JSON.stringify(staroVal) === JSON.stringify(novoVal)) return;
 
-    if (isCreation) {
-        imaPravihPromjena = true;
-        ispisIzmjena.push(
-            <div key="init" className="mb-3 bg-emerald-900/10 border border-emerald-500/30 p-3 rounded-xl shadow-sm">
-                <span className="text-emerald-400 font-black text-[11px] block">✨ Dokument je inicijalno kreiran sa sljedećim parametrima:</span>
-            </div>
-        );
-    }
-
-    const kljucevi = Array.from(new Set([...Object.keys(stari), ...Object.keys(novi)])).filter(k => !ignorisanaPolja.includes(k));
-    
-    kljucevi.forEach(k => {
-        const staraVr = stari[k];
-        const novaVr = novi[k];
-
-        if (!isCreation && JSON.stringify(staraVr) === JSON.stringify(novaVr)) return;
-
-        imaPravihPromjena = true; 
-
-        if (k === 'status') {
-            ispisIzmjena.push(
-                <div key="status" className="mb-3 bg-blue-900/20 border border-blue-500/30 p-3 rounded-xl shadow-inner">
-                    <span className="text-theme-accent uppercase text-[10px] font-black mb-1 block">🔔 Promjena Statusa Dokumenta:</span>
-                    <div className="flex items-center gap-3">
-                        {!isCreation && <span className="text-red-400 line-through font-bold text-xs">{staraVr || 'Nedefinisano'}</span>}
-                        {!isCreation && <span className="text-slate-400 font-black">➔</span>}
-                        <span className="text-emerald-400 font-black text-sm uppercase">{novaVr}</span>
+        if (typeof novoVal === 'object' || typeof staroVal === 'object' || k.includes('jsonb') || k.includes('ids') || Array.isArray(novoVal)) {
+            const listaDiff = renderStavkeDiff(staroVal, novoVal);
+            if (listaDiff) {
+                ispisSvihIzmjena.push(
+                    <div key={k} className="mb-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800 shadow-inner animate-in fade-in">
+                        <span className="text-[10px] text-slate-400 font-black uppercase mb-2 block border-b border-slate-800/80 pb-1.5 tracking-wider">📦 Izmjena u strukturi liste polja: {k.toUpperCase()}</span>
+                        {listaDiff}
                     </div>
-                </div>
-            );
+                );
+            }
             return;
         }
 
-        if (k === 'stavke_jsonb' || k === 'rabati_jsonb' || k === 'ulaz_trupci_ids' || k === 'ai_sirovina_ids' || Array.isArray(novaVr)) {
-            ispisIzmjena.push(
-                <div key={k} className="mb-3 bg-theme-panel p-4 rounded-xl border border-theme-border/50 shadow-inner">
-                    <span className="text-[10px] text-slate-400 font-black uppercase mb-2 block border-b border-theme-border pb-2">📦 Detaljna analiza liste / Sadržaj ({k.replace(/_jsonb|_ids/g, '')}):</span>
-                    {renderStavkeDiff(staraVr, novaVr, isCreation)}
-                </div>
-            );
-            return;
-        }
-
-        const formatStaro = staraVr === null || staraVr === '' || staraVr === undefined ? 'Prazno' : String(staraVr);
-        const formatNovo = novaVr === null || novaVr === '' || novaVr === undefined ? 'Prazno' : String(novaVr);
-
-        ispisIzmjena.push(
-            <div key={k} className="flex flex-col md:flex-row md:items-center gap-2 text-[11px] py-1.5 border-b border-theme-border/50 last:border-0 hover:bg-theme-panel/30 px-2 rounded transition-colors">
+        ispisSvihIzmjena.push(
+            <div key={k} className="flex flex-col md:flex-row md:items-center gap-2 text-[11px] py-2 border-b border-theme-border/30 last:border-0 hover:bg-theme-panel/40 px-2 rounded transition-all">
                 <span className="text-slate-400 uppercase w-32 shrink-0 font-bold">• {k.replace(/_/g, ' ')}:</span>
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                    {!isCreation && <span className="text-red-400 line-through truncate max-w-[40%] bg-red-900/10 px-2 py-0.5 rounded">{formatStaro}</span>}
-                    {!isCreation && <span className="text-slate-600 font-black shrink-0">➔</span>}
-                    <span className="text-emerald-400 font-bold truncate flex-1 bg-emerald-900/10 px-2 py-0.5 rounded shadow-sm">{formatNovo}</span>
+                    <span className="text-red-400 line-through bg-red-950/30 px-2 py-0.5 rounded font-mono truncate max-w-[45%]">{siguranString(staroVal)}</span>
+                    <span className="text-slate-600 font-black shrink-0">➔</span>
+                    <span className="text-emerald-400 font-black bg-emerald-900/30 px-2 py-0.5 rounded font-mono truncate flex-1 shadow-sm">{siguranString(novoVal)}</span>
                 </div>
             </div>
         );
     });
 
-    if (!imaPravihPromjena && !isCreation) {
+    if (ispisSvihIzmjena.length === 0) {
         return (
-            <div className="mt-3 p-3 bg-theme-card rounded-xl border border-dashed border-slate-600 flex items-center gap-2 opacity-80">
-                <span className="text-xl">ℹ️</span>
-                <div>
-                    <p className="text-slate-400 font-bold text-[10px] uppercase">Nema promjena u podacima</p>
-                    <p className="text-slate-500 text-[9px] mt-0.5">Korisnik je samo pritisnuo dugme za snimanje, ali sistem nije detektovao nikakvu izmjenu vrijednosti.</p>
-                </div>
+            <div className="mt-2 p-3 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
+                <p className="text-[11px] text-slate-300 leading-relaxed italic">{log.detalji}</p>
             </div>
         );
     }
     
-    return <div className="mt-4">{ispisIzmjena}</div>;
+    return <div className="mt-3 space-y-2">{ispisSvihIzmjena}</div>;
 };
 
 export default function KontrolniToranjModule({ user, header, setHeader, onExit }) {
-    
-    const saas = useSaaS('forenzika_toranj', {
-        boja_kartice: '#1e293b',
-        boja_naslova: 'text-indigo-400',
-    });
+    const saas = useSaaS('forenzika_toranj', { boja_kartice: '#1e293b', boja_naslova: 'text-indigo-400' });
 
     const [sken, setSken] = useState('');
     const [loading, setLoading] = useState(false);
     const [forenzika, setForenzika] = useState(null);
     const [sviDokumenti, setSviDokumenti] = useState([]);
     const [showDropdown, setShowDropdown] = useState(false);
-
     const [otvoreniLogovi, setOtvoreniLogovi] = useState(new Set());
-    
-    // 🟢 REKLAMACIJE I KROJENJE STATES
+
     const [reklamacijskiAlarmi, setReklamacijskiAlarmi] = useState([]);
     const [istorijaKrojenjaMajke, setIstorijaKrojenjaMajke] = useState(null);
     const [katalog, setKatalog] = useState([]);
@@ -239,8 +178,9 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         setOtvoreniLogovi(newSet);
     };
 
+    // 🟢 DEEP LINKING LOGIKA ZA AUTOMATSKO OTVARANJE
     useEffect(() => {
-        const ucitajSve = async () => {
+        const ucitajSveReference = async () => {
             const [pon, rn, otp, rac, pak, trup, kat] = await Promise.all([
                 supabase.from('ponude').select('id, kupac_naziv, status'),
                 supabase.from('radni_nalozi').select('id, kupac_naziv, status'),
@@ -251,128 +191,118 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 supabase.from('katalog_proizvoda').select('*')
             ]);
             
-            if (kat.data) setKatalog(kat.data);
+            if(kat.data) setKatalog(kat.data);
 
-            const unikatniPaketi = [];
-            const pakSet = new Set();
+            const unikatniPaks = []; const pakSet = new Set();
             if (pak.data) {
                 pak.data.forEach(p => {
                     if(!pakSet.has(p.paket_id)) {
                         pakSet.add(p.paket_id);
-                        let status = 'U PROIZVODNJI'; let active = 1;
-                        if (p.otpremnica_id) { status = 'ISPORUČENO'; active = 0; }
-                        else if (p.closed_at) { status = 'NA STANJU'; active = 1; }
-                        unikatniPaketi.push({ id: p.paket_id, meta: p.naziv_proizvoda, tip: 'Paket', status, active });
+                        let st = p.otpremnica_id ? 'ISPORUČENO' : (p.closed_at ? 'NA STANJU' : 'U PROIZVODNJI');
+                        unikatniPaks.push({ id: p.paket_id, meta: p.naziv_proizvoda, tip: 'Paket', status: st, active: p.otpremnica_id ? 0 : 1 });
                     }
                 });
             }
 
             setSviDokumenti([
-                ...unikatniPaketi,
-                ...(pon.data || []).map(d => ({ id: d.id, meta: d.kupac_naziv, tip: 'Ponuda', status: d.status, active: d.status === 'REALIZOVANA ✅' ? 0 : 1 })),
+                ...unikatniPaks,
+                ...(pon.data || []).map(d => ({ id: d.id, meta: d.kupac_naziv, tip: 'Ponuda', status: d.status, active: d.status.includes('REALIZ') ? 0 : 1 })),
                 ...(rn.data || []).map(d => ({ id: d.id, meta: d.kupac_naziv, tip: 'Radni Nalog', status: d.status, active: d.status === 'ZAVRŠENO' ? 0 : 1 })),
                 ...(otp.data || []).map(d => ({ id: d.id, meta: d.kupac_naziv, tip: 'Otpremnica', status: d.status, active: d.status === 'ISPORUČENO' ? 0 : 1 })),
                 ...(rac.data || []).map(d => ({ id: d.id, meta: d.kupac_naziv, tip: 'Račun', status: d.status, active: d.status === 'NAPLAĆENO' ? 0 : 1 })),
                 ...(trup.data || []).map(d => ({ id: String(d.id), meta: d.vrsta || 'Trupac', tip: 'Trupac', status: d.status?.toUpperCase(), active: d.status === 'prorezano' ? 0 : 1 }))
             ]);
         };
-        ucitajSve();
+        ucitajSveReference();
+
+        // Čitanje namjere (intent) sa početnog ekrana
+        const autoOpenId = localStorage.getItem('erp_auto_open_id');
+        if (autoOpenId) {
+            setSken(autoOpenId);
+            analizirajSve(autoOpenId);
+            localStorage.removeItem('erp_auto_open_id'); // Očisti nakon upotrebe da ne smeta sljedeći put
+        }
+
     }, []);
 
     const preporuke = useMemo(() => {
         if (!sken) return [];
         const pojam = sken.toUpperCase();
-        return sviDokumenti
-            .filter(d => d.id.toUpperCase().includes(pojam))
-            .sort((a, b) => {
-                const aTačno = a.id.toUpperCase() === pojam ? 1 : 0;
-                const bTačno = b.id.toUpperCase() === pojam ? 1 : 0;
-                if (aTačno !== bTačno) return bTačno - aTačno;
-                if (a.active !== b.active) return b.active - a.active;
-                return 0;
-            }).slice(0, 15);
+        return sviDokumenti.filter(d => d.id.toUpperCase().includes(pojam)).slice(0, 15);
     }, [sken, sviDokumenti]);
 
     const analizirajSve = async (tačanBroj) => {
         const val = tačanBroj.toUpperCase().trim();
         if (!val) return;
-        setLoading(true);
-        setForenzika(null); setShowDropdown(false); setOtvoreniLogovi(new Set());
+        setLoading(true); setForenzika(null); setShowDropdown(false); setOtvoreniLogovi(new Set());
         setReklamacijskiAlarmi([]); setIstorijaKrojenjaMajke(null);
 
-        // 🟢 1. DETEKCIJA REKLAMACIJA
         const { data: rekPodaci } = await supabase.from('reklamacije').select('*').or(`paket_id.eq.${val},broj_otpremnice.eq.${val}`);
         if (rekPodaci && rekPodaci.length > 0) setReklamacijskiAlarmi(rekPodaci);
 
-        // 🟢 2. DETEKCIJA KROJENJA UNATRAZ
         const { data: trupacBaza } = await supabase.from('trupci').select('*').eq('id', val).maybeSingle();
         if (trupacBaza && trupacBaza.parent_id) {
             const { data: majkaBaza } = await supabase.from('trupci').select('*').eq('id', trupacBaza.parent_id).maybeSingle();
             if (majkaBaza) setIstorijaKrojenjaMajke({ dijete: trupacBaza, majka: majkaBaza });
         }
 
-        let SVI_IDOVI_Lanca = new Set([val]);
-        let proslaVelicina = 0;
-        
-        while (SVI_IDOVI_Lanca.size > proslaVelicina) {
-            proslaVelicina = SVI_IDOVI_Lanca.size;
-            const trenutniNiz = Array.from(SVI_IDOVI_Lanca);
+        let nalogIdZaLanac = null; let otpremnicaIdZaLanac = null; let racunIdZaLanac = null; let ponudaIdZaLanac = null;
 
-            const { data: otpP } = await supabase.from('otpremnice').select('broj_veze').in('id', trenutniNiz);
-            if (otpP) otpP.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
-            
-            const { data: racP } = await supabase.from('racuni').select('broj_veze').in('id', trenutniNiz);
-            if (racP) racP.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
-            
-            const { data: rnP1 } = await supabase.from('radni_nalozi').select('broj_veze').in('id', trenutniNiz);
-            if (rnP1) rnP1.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
-            
-            const { data: rnP2 } = await supabase.from('radni_nalozi').select('broj_ponude').in('id', trenutniNiz);
-            if (rnP2) rnP2.forEach(x => { if(x.broj_ponude) SVI_IDOVI_Lanca.add(x.broj_ponude); });
-
-            const { data: pakP } = await supabase.from('paketi').select('broj_veze').in('paket_id', trenutniNiz);
-            if (pakP) pakP.forEach(x => { if(x.broj_veze) SVI_IDOVI_Lanca.add(x.broj_veze); });
-
-            const { data: otpC } = await supabase.from('otpremnice').select('id').in('broj_veze', trenutniNiz);
-            if (otpC) otpC.forEach(x => SVI_IDOVI_Lanca.add(x.id));
-            
-            const { data: racC } = await supabase.from('racuni').select('id').in('broj_veze', trenutniNiz);
-            if (racC) racC.forEach(x => SVI_IDOVI_Lanca.add(x.id));
-            
-            const { data: rnC1 } = await supabase.from('radni_nalozi').select('id').in('broj_veze', trenutniNiz);
-            if (rnC1) rnC1.forEach(x => SVI_IDOVI_Lanca.add(x.id));
-            
-            const { data: rnC2 } = await supabase.from('radni_nalozi').select('id').in('broj_ponude', trenutniNiz);
-            if (rnC2) rnC2.forEach(x => SVI_IDOVI_Lanca.add(x.id));
-
-            const { data: pakC } = await supabase.from('paketi').select('paket_id').in('broj_veze', trenutniNiz);
-            if (pakC) pakC.forEach(x => SVI_IDOVI_Lanca.add(x.paket_id));
+        if (val.startsWith('RN-')) nalogIdZaLanac = val;
+        else if (val.startsWith('OTP-')) otpremnicaIdZaLanac = val;
+        else if (val.startsWith('RAC-')) racunIdZaLanac = val;
+        else if (val.startsWith('PON-')) ponudaIdZaLanac = val;
+        else {
+            const { data: pData } = await supabase.from('paketi').select('broj_veze, otpremnica_id').eq('paket_id', val).limit(1).maybeSingle();
+            if (pData) {
+                if (pData.broj_veze && pData.broj_veze.startsWith('RN-')) nalogIdZaLanac = pData.broj_veze;
+                if (pData.otpremnica_id) otpremnicaIdZaLanac = pData.otpremnica_id;
+            }
         }
 
-        const cistiIdovi = Array.from(SVI_IDOVI_Lanca);
-        
-        const { data: naloziDB } = await supabase.from('radni_nalozi').select('*').in('id', cistiIdovi);
-        const { data: ponudeDB } = await supabase.from('ponude').select('*').in('id', cistiIdovi);
-        const { data: otpremniceDB } = await supabase.from('otpremnice').select('*').in('id', cistiIdovi);
-        const { data: racuniDB } = await supabase.from('racuni').select('*').in('id', cistiIdovi);
-        const { data: paketiDB } = await supabase.from('paketi').select('*').in('paket_id', cistiIdovi).order('created_at', { ascending: true });
+        if (otpremnicaIdZaLanac && !nalogIdZaLanac) {
+            const { data: otpDb } = await supabase.from('otpremnice').select('broj_veze').eq('id', otpremnicaIdZaLanac).maybeSingle();
+            if (otpDb && otpDb.broj_veze?.startsWith('RN-')) nalogIdZaLanac = otpDb.broj_veze;
+        }
+
+        if (nalogIdZaLanac) {
+            const { data: rnDb } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', nalogIdZaLanac).maybeSingle();
+            if (rnDb?.broj_ponude) ponudaIdZaLanac = rnDb.broj_ponude;
+            if (!otpremnicaIdZaLanac) {
+                const { data: otpDb } = await supabase.from('otpremnice').select('id').eq('broj_veze', nalogIdZaLanac).maybeSingle();
+                if (otpDb) otpremnicaIdZaLanac = otpDb.id;
+            }
+        }
+
+        if (otpremnicaIdZaLanac && !racunIdZaLanac) {
+            const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).maybeSingle();
+            if (racDb) racunIdZaLanac = racDb.id;
+        }
+
+        const cistiIdovi = [val, nalogIdZaLanac, otpremnicaIdZaLanac, racunIdZaLanac, ponudaIdZaLanac].filter(Boolean);
+
+        const [naloziDB, ponudeDB, otpremniceDB, racuniDB, paketiDB] = await Promise.all([
+            supabase.from('radni_nalozi').select('*').in('id', cistiIdovi),
+            supabase.from('ponude').select('*').in('id', cistiIdovi),
+            supabase.from('otpremnice').select('*').in('id', cistiIdovi),
+            supabase.from('racuni').select('*').in('id', cistiIdovi),
+            supabase.from('paketi').select('*').or(`paket_id.eq.${val},broj_veze.eq.${nalogIdZaLanac}`).order('created_at', { ascending: true })
+        ]);
 
         let dataChain = {
-            paketHistory: paketiDB || [], paketSadrzaj: [], paketUkupnoM3: 0, 
-            nalozi: naloziDB || [], ponuda: (ponudeDB && ponudeDB.length > 0) ? ponudeDB[0] : null, 
-            otpremnice: otpremniceDB || [], racuni: racuniDB || [],
-            kupac: null, logovi: [], finansijska_analiza: [],
-            ulazniTrupci: [], ulazniPaketi: [], izlazniPaketi: []
+            paketHistory: paketiDB.data?.filter(p => p.paket_id === val) || [], paketSadrzaj: [], paketUkupnoM3: 0, 
+            nalozi: naloziDB.data || [], ponuda: (ponudeDB.data && ponudeDB.data.length > 0) ? ponudeDB.data[0] : null, 
+            otpremnice: otpremniceDB.data || [], racuni: racuniDB.data || [],
+            kupac: null, logovi: [], finansijska_analiza: [], ulazniTrupci: [], ulazniPaketi: [], izlazniPaketi: []
         };
 
-        let glavniPaketId = paketiDB?.find(p => p.paket_id.includes(val))?.paket_id || (paketiDB && paketiDB.length > 0 ? paketiDB[0].paket_id : null);
+        let glavniPaketId = paketiDB.data?.find(p => p.paket_id.includes(val))?.paket_id || (paketiDB.data && paketiDB.data.length > 0 ? paketiDB.data[0].paket_id : null);
         
         if (glavniPaketId) {
-            const fokusiraniPaketi = paketiDB.filter(p => p.paket_id === glavniPaketId);
+            const fokusiraniPaketi = paketiDB.data.filter(p => p.paket_id === glavniPaketId);
             dataChain.paketHistory = fokusiraniPaketi;
             
-            const agregacija = {};
-            let ukupnoM3 = 0;
+            const agregacija = {}; let ukupnoM3 = 0;
             fokusiraniPaketi.forEach(p => {
                 const kljuc = p.naziv_proizvoda + '_' + p.debljina + '_' + p.sirina + '_' + p.duzina;
                 if (!agregacija[kljuc]) { agregacija[kljuc] = { naziv: p.naziv_proizvoda, debljina: p.debljina, sirina: p.sirina, duzina: p.duzina, kolicina_final: 0, jm: p.jm || 'kom', oznake: new Set(p.oznake || []) }; }
@@ -397,12 +327,11 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 const { data } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').in('paket_id', [...new Set(paketiIds)]);
                 if (data) dataChain.ulazniPaketi = [...new Map(data.map(i => [i.paket_id, i])).values()];
             }
-            const { data: forward } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${glavniPaketId}%`);
+            const { data: forward } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${val}%`);
             if (forward) dataChain.izlazniPaketi = [...new Map(forward.map(i => [i.paket_id, i])).values()];
         }
 
         let targetKupacIme = dataChain.ponuda?.kupac_naziv || dataChain.nalozi[0]?.kupac_naziv || dataChain.racuni[0]?.kupac_naziv || dataChain.otpremnice[0]?.kupac_naziv;
-        
         if (targetKupacIme) {
             const { data: kupacPodaci } = await supabase.from('kupci').select('*').eq('naziv', targetKupacIme).limit(1);
             if (kupacPodaci && kupacPodaci.length > 0) dataChain.kupac = kupacPodaci[0];
@@ -415,34 +344,26 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 let defaultRabat = 0;
                 if (sistemskiRabati.proizvodi && sistemskiRabati.proizvodi[st.sifra]) defaultRabat = parseFloat(sistemskiRabati.proizvodi[st.sifra]);
                 else if (sistemskiRabati.ukupni) defaultRabat = parseFloat(sistemskiRabati.ukupni);
-
                 const primijenjeniRabat = parseFloat(st.rabat_procenat || 0);
                 const odstupanje = primijenjeniRabat - defaultRabat;
                 return {
                     sifra: st.sifra, naziv: st.naziv, kolicina: st.kolicina_obracun, cijena_baza: st.cijena_baza,
                     sistemski_rabat: defaultRabat, primijenjeni_rabat: primijenjeniRabat, odstupanje: odstupanje,
-                    upozorenje: odstupanje > 0 ? `⚠️ Rucno povećan rabat za ${odstupanje}%!` : (odstupanje < 0 ? `Manji rabat od sistemskog` : `U skladu sa bazom`)
+                    upozorenje: odstupanje > 0 ? `⚠️ Ručno povećan rabat za ${odstupanje}%!` : `U skladu sa bazom`
                 };
             });
         }
 
-        if (cistiIdovi.length === 0) {
-            setLoading(false); 
-            return alert(`Sistem ne može pronaći dokument niti paket sa tačnim brojem: ${val}`);
-        }
-
         let sysLogsRaw = []; let auditLogsRaw = [];
-
         const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
-        if (orConditions) {
-            const { data: sLogs } = await supabase.from('sistem_audit_log').select('*').or(orConditions);
-            if (sLogs) sysLogsRaw = sLogs;
-        }
+        
+        const [sLogs, aLogs] = await Promise.all([
+            orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] },
+            cistiIdovi.length > 0 ? supabase.from('audit_log').select('*').in('zapis_id', cistiIdovi) : { data: [] }
+        ]);
 
-        if (cistiIdovi.length > 0) {
-            const { data: aLogs } = await supabase.from('audit_log').select('*').in('zapis_id', cistiIdovi);
-            if (aLogs) auditLogsRaw = aLogs;
-        }
+        if (sLogs.data) sysLogsRaw = sLogs.data;
+        if (aLogs.data) auditLogsRaw = aLogs.data;
 
         const reklamacijskiLogovi = (rekPodaci || []).map(r => ({
             id: 'rek_log_' + r.id,
@@ -454,96 +375,41 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         }));
 
         const sviLogovi = [
-            ...sysLogsRaw.map(l => ({
-                id: 'sys_' + l.id,
-                created_at: getSortableTime(l.created_at, l.vrijeme, l.datum),
-                datum_prikaz: formatirajTacanDatum(l.created_at, l.vrijeme, l.datum),
-                korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || 'Sistemski zapis.',
-                stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null, raw: l
-            })),
-            ...auditLogsRaw.map(l => ({
-                id: 'aud_' + l.id,
-                created_at: getSortableTime(l.vrijeme, l.created_at, l.datum),
-                datum_prikaz: formatirajTacanDatum(l.vrijeme, l.created_at, l.datum),
-                korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || l.opis || 'Ažuriranje dokumenta.',
-                stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null, raw: l
-            })),
+            ...sysLogsRaw.map(l => ({ id: 'sys_' + l.id, created_at: getSortableTime(l.created_at, l.vrijeme, l.datum), datum_prikaz: formatirajTacanDatum(l.created_at, l.vrijeme, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || 'Zapis sistema.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
+            ...auditLogsRaw.map(l => ({ id: 'aud_' + l.id, created_at: getSortableTime(l.vrijeme, l.created_at, l.datum), datum_prikaz: formatirajTacanDatum(l.vrijeme, l.created_at, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || l.opis || 'Ažuriranje.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
             ...reklamacijskiLogovi
         ];
 
-        const unikatniLogovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values());
-        const validniLogovi = unikatniLogovi.filter(l => l.created_at > 0);
-        dataChain.logovi = validniLogovi.sort((a, b) => a.created_at - b.created_at);
+        dataChain.logovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values()).filter(l => l.created_at > 0).sort((a, b) => a.created_at - b.created_at);
 
-        setForenzika(dataChain);
-        setLoading(false);
-        setSken(val); 
-    };
-
-    const pokreniSkenKucanje = (e) => {
-        if (e.key === 'Enter') {
-            analizirajSve(sken);
-            setShowDropdown(false);
-        }
+        setForenzika(dataChain); setLoading(false); setSken(val); 
     };
 
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.isEditMode ? '' : saas.ui.boja_pozadine }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.ui.boja_pozadine }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} hideMasina={true} modulIme="forenzika" saas={saas} />
 
-            <div className={`p-8 rounded-box border border-theme-border shadow-2xl text-center relative z-50 transition-colors ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : 'bg-theme-card backdrop-blur-[var(--glass-blur)]'}`} >
+            <div className="p-6 rounded-[2rem] border border-theme-border shadow-2xl text-center bg-theme-card relative z-50">
                 <h3 className={`${saas.ui.boja_naslova || 'text-indigo-400'} font-black uppercase text-xs mb-4 tracking-widest flex items-center justify-center gap-2`}><span>🕵️‍♂️ FORENZIČKI SKENER / X-RAY DOKUMENTA</span></h3>
-                
-                {saas.isEditMode && (
-                    <div className="bg-black/40 p-4 rounded-xl flex flex-col md:flex-row gap-4 items-center justify-center mb-6 border border-amber-500/30">
-                        <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Kartica: <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-10 h-10 cursor-pointer rounded border-none bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black flex items-center gap-2">Boja Naslova (Tailwind): <input type="text" value={saas.ui.boja_naslova || 'text-indigo-400'} onChange={e => saas.setUi({...saas.ui, boja_naslova: e.target.value})} className="w-40 p-2 bg-theme-card border border-theme-border rounded text-theme-text font-mono shadow-inner" placeholder="text-indigo-400" /></label>
-                    </div>
-                )}
-
-                <p className="text-[10px] text-slate-500 mb-4 max-w-lg mx-auto">Skeniraj Paket, Radni Nalog, Ponudu, Otpremnicu ili Račun. Algoritam će pretražiti cijelu bazu u oba smjera i rekonstruisati apsolutno cijelo genetsko stablo posla.</p>
                 <div className="flex gap-2 max-w-2xl mx-auto relative">
                     <div className="flex-1 relative">
-                        <input 
-                            type="text" 
-                            value={sken} 
-                            onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} 
-                            onKeyDown={pokreniSkenKucanje}
-                            onFocus={()=>setShowDropdown(true)} 
-                            placeholder="Skeniraj barkod ili upiši tačan ID (pa stisni ENTER)..." 
-                            className="w-full p-5 bg-theme-panel rounded-2xl text-center font-black text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" 
-                        />
-                        
+                        <input type="text" value={sken} onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} onKeyDown={e => e.key === 'Enter' && analizirajSve(sken)} onFocus={()=>setShowDropdown(true)} placeholder="UPIŠI ID ILI SKENIRAJ..." className="w-full p-5 bg-theme-panel rounded-2xl text-center font-black text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" />
                         {showDropdown && sken && preporuke.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 mt-2 bg-theme-panel border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-[100] text-left max-h-80 overflow-y-auto">
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-theme-panel border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-[100] text-left max-h-60 overflow-y-auto custom-scrollbar">
                                 {preporuke.map(p => (
-                                    <div key={p.id} onClick={() => { setSken(p.id); analizirajSve(p.id); setShowDropdown(false); }} className="p-4 border-b border-theme-border hover:bg-slate-700 cursor-pointer flex justify-between items-center group">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-theme-text font-black">{p.id}</span> 
-                                            <span className="text-[9px] text-indigo-400 uppercase font-bold border border-indigo-500/30 px-2 py-0.5 rounded bg-indigo-900/20">{p.tip}</span>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-slate-300 text-xs font-bold">{p.meta}</div>
-                                            <div className={`text-[9px] uppercase mt-1 ${p.active ? 'text-emerald-400' : 'text-slate-500'}`}>{p.status}</div>
-                                        </div>
+                                    <div key={p.id} onClick={() => { setSken(p.id); analizirajSve(p.id); }} className="p-4 border-b border-theme-border hover:bg-slate-700 cursor-pointer flex justify-between items-center group">
+                                        <div className="flex items-center gap-3"><span className="text-theme-text font-black">{p.id}</span> <span className="text-[9px] text-indigo-400 uppercase font-bold border border-indigo-500/30 px-2 py-0.5 rounded bg-indigo-900/20">{p.tip}</span></div>
+                                        <div className="text-right"><div className="text-slate-300 text-xs font-bold">{p.meta}</div><div className="text-[9px] text-emerald-400 font-bold uppercase mt-1">{p.status}</div></div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <button onClick={() => { analizirajSve(sken); setShowDropdown(false); }} className="bg-indigo-600 px-8 rounded-2xl text-theme-text font-black hover:bg-indigo-500 shadow-xl flex items-center gap-2 text-xl transition-all">📷</button>
+                    <button onClick={() => { analizirajSve(sken); setShowDropdown(false); }} className="bg-indigo-600 px-8 rounded-2xl text-theme-text font-black hover:bg-indigo-500 shadow-xl text-xl flex items-center justify-center">📷</button>
                 </div>
             </div>
 
-            {loading && (
-                <div className="flex flex-col items-center justify-center py-20 animate-pulse">
-                    <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-box animate-spin mb-4"></div>
-                    <p className="text-center text-indigo-400 font-black uppercase tracking-widest">Skeniram u oba smjera i dekodiram izmjene...</p>
-                </div>
-            )}
-
-            {/* 🟢 ALARM ZA REKLAMACIJE SA PAMETNIM FORMATOM DIMENZIJA I ORIGINALNIH JEDINICA */}
-            {reklamacijskiAlarmi.length > 0 && !loading && (
+            {reklamacijskiAlarmi.length > 0 && (
                 <div className="bg-red-950/40 border-2 border-red-500 p-6 rounded-[2rem] shadow-[0_0_40px_rgba(239,68,68,0.25)] space-y-4 animate-in zoom-in-95">
                     <h3 className="text-red-400 font-black uppercase text-xs md:text-sm tracking-widest flex items-center gap-2"><AlertTriangle className="animate-pulse"/> DETEKTOVAN ALARM: PREDMET REKLAMACIJE KUPCA</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -568,7 +434,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                                         <span className="text-blue-400">Izvorni Unos: <b className="text-white">{originalniUnosUtaknut.replace(/[\[\]]/g, '')}</b></span>
                                     </div>
                                     <p className="text-amber-400 font-black">Razlog: {rek.razlog}</p>
-                                    {rek.napomena && <p className="text-[10px] text-slate-500 italic">Opis problema: "{rek.napomena.replace(/\[Unos:\s*\d+\s*\w+\]/i, '').trim()}"</p>}
+                                    {rek.napomena && <p className="text-[10px] text-slate-500 italic">Opis: "{rek.napomena.replace(/\[Unos:\s*\d+\s*\w+\]/i, '').trim()}"</p>}
                                 </div>
                             );
                         })}
@@ -576,7 +442,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 </div>
             )}
 
-            {istorijaKrojenjaMajke && !loading && (
+            {istorijaKrojenjaMajke && (
                 <div className="bg-amber-950/30 border-2 border-amber-500/50 p-6 rounded-[2rem] shadow-xl space-y-3 animate-in slide-in-from-top-4">
                     <h3 className="text-amber-500 font-black uppercase text-xs tracking-widest flex items-center gap-2"><History size={16}/> LANAC KROJENJA TRUPACA (Sljedivost sirovine)</h3>
                     <div className="p-4 bg-black/30 rounded-xl border border-theme-border flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
@@ -594,186 +460,80 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 </div>
             )}
 
+            {loading && <div className="flex flex-col items-center justify-center py-20 animate-pulse text-indigo-400 font-black text-xs uppercase tracking-widest">Skeniram bazu poslova...</div>}
+
             {forenzika && !loading && (
                 <div className="space-y-6 animate-in slide-in-from-bottom">
-                    
-                    {/* MAKRO SLIKA - STABLO */}
-                    <div className={`p-8 rounded-box border-2 border-theme-border shadow-2xl relative overflow-hidden`} >
+                    {/* LANAC MAKRO PREGLEDA */}
+                    <div className="p-6 bg-theme-card rounded-[2rem] border border-theme-border shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-2 h-full bg-indigo-500"></div>
-                        <h2 className={`${saas.ui.boja_naslova || 'text-indigo-400'} font-black uppercase text-sm mb-6 ml-4 tracking-widest`}>1. Genetsko stablo posla (Makro pregled)</h2>
-                        
+                        <h2 className="text-indigo-400 font-black uppercase text-xs mb-6 ml-4 tracking-widest">1. Hronološki lanac sljedivosti posla</h2>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 ml-4">
-                            <div className={`p-5 rounded-2xl border-2 flex flex-col items-center text-center justify-center transition-all ${forenzika.ponuda ? 'border-pink-500 bg-pink-900/10 shadow-lg' : 'border-theme-border bg-theme-panel/50 text-slate-600'}`}>
-                                <span className="text-[10px] uppercase font-black mb-2">Korijen (Ponuda)</span>
-                                {forenzika.ponuda ? (
-                                    <>
-                                        <span className="text-theme-accent font-black text-lg">{forenzika.ponuda.id}</span>
-                                        <span className="text-[9px] text-slate-400 mt-2 bg-theme-panel px-2 py-1 rounded border border-theme-border">Kupac: {forenzika.ponuda.kupac_naziv}</span>
-                                    </>
-                                ) : <span>Nema Ponude</span>}
+                            <div className={`p-4 rounded-xl border-2 text-center flex flex-col justify-center ${forenzika.ponuda ? 'border-pink-500 bg-pink-900/10' : 'border-slate-800 text-slate-600 bg-black/10'}`}>
+                                <span className="text-[9px] uppercase font-black mb-1">Korijen (Ponuda)</span>
+                                {forenzika.ponuda ? <b className="text-white text-base">{forenzika.ponuda.id}</b> : <span>Nema</span>}
                             </div>
-                            <div className={`p-5 rounded-2xl border-2 flex flex-col items-center text-center justify-center transition-all ${forenzika.nalozi.length>0 ? 'border-purple-500 bg-purple-900/10 shadow-lg' : 'border-theme-border bg-theme-panel/50 text-slate-600'}`}>
-                                <span className="text-[10px] uppercase font-black mb-2">Proizvodnja (Radni Nalozi)</span>
-                                {forenzika.nalozi.length>0 ? forenzika.nalozi.map(rn => (
-                                    <div key={rn.id} className="mb-2">
-                                        <span className="text-theme-accent font-black text-base block">{rn.id}</span>
-                                        <span className="text-[9px] text-purple-300 uppercase bg-purple-950 px-2 py-0.5 rounded border border-purple-500/20">{rn.status}</span>
-                                    </div>
-                                )) : <span>Nema Naloga</span>}
+                            <div className={`p-4 rounded-xl border-2 text-center flex flex-col justify-center ${forenzika.nalozi.length > 0 ? 'border-purple-500 bg-purple-900/10' : 'border-slate-800 text-slate-600 bg-black/10'}`}>
+                                <span className="text-[9px] uppercase font-black mb-1">Proizvodnja (Nalozi)</span>
+                                {forenzika.nalozi.map(n => <b key={n.id} className="text-white text-xs block">{n.id} ({n.status})</b>)}
                             </div>
-                            <div className={`p-5 rounded-2xl border-2 flex flex-col items-center text-center justify-center transition-all ${forenzika.otpremnice.length>0 ? 'border-orange-500 bg-orange-900/10 shadow-lg' : 'border-theme-border bg-theme-panel/50 text-slate-600'}`}>
-                                <span className="text-[10px] uppercase font-black mb-2">Isporuka (Otpremnice)</span>
-                                {forenzika.otpremnice.length>0 ? forenzika.otpremnice.map(o=><span key={o.id} className="text-theme-accent font-black text-sm my-0.5">{o.id}</span>) : <span>Nema Otpremnice</span>}
+                            <div className={`p-4 rounded-xl border-2 text-center flex flex-col justify-center ${forenzika.otpremnice.length > 0 ? 'border-orange-500 bg-orange-900/10' : 'border-slate-800 text-slate-600 bg-black/10'}`}>
+                                <span className="text-[9px] uppercase font-black mb-1">Logistika (Utovar)</span>
+                                {forenzika.otpremnice.map(o => <b key={o.id} className="text-white text-xs block">{o.id}</b>)}
                             </div>
-                            <div className={`p-5 rounded-2xl border-2 flex flex-col items-center text-center justify-center transition-all ${forenzika.racuni.length>0 ? 'border-emerald-500 bg-emerald-900/10 shadow-lg' : 'border-theme-border bg-theme-panel/50 text-slate-600'}`}>
-                                <span className="text-[10px] uppercase font-black mb-2">Naplata (Računi)</span>
-                                {forenzika.racuni.length>0 ? forenzika.racuni.map(r=><span key={r.id} className="text-emerald-400 font-black text-sm my-0.5">{r.id}</span>) : <span>Nema Računa</span>}
+                            <div className={`p-4 rounded-xl border-2 text-center flex flex-col justify-center ${forenzika.racuni.length > 0 ? 'border-emerald-500 bg-emerald-900/10' : 'border-slate-800 text-slate-600 bg-black/10'}`}>
+                                <span className="text-[9px] uppercase font-black mb-1">Finansije (Fakture)</span>
+                                {forenzika.racuni.map(r => <b key={r.id} className="text-emerald-400 text-xs block">{r.id}</b>)}
                             </div>
                         </div>
 
-                        {/* UKUPNI SADRŽAJ PAKETA AKO JE SKENIRAN PAKET */}
-                        {forenzika.paketSadrzaj && forenzika.paketSadrzaj.length > 0 && (
-                            <div className="mt-8 p-8 bg-theme-panel border border-blue-500/50 rounded-box flex flex-col items-start ml-4 shadow-2xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl rounded-box"></div>
-                                <div className="w-full flex flex-col md:flex-row justify-between items-start md:items-center border-b border-theme-border pb-4 mb-5 gap-4 relative z-10">
-                                    <div>
-                                        <p className="text-[10px] text-theme-accent uppercase font-black bg-blue-900/20 inline-block px-3 py-1 rounded-lg border border-blue-500/30">Skenirani Fokus: Paket</p>
-                                        <p className="text-theme-text text-3xl font-black mt-3">{forenzika.paketHistory[0].paket_id}</p>
+                        {forenzika.paketSadrzaj.length > 0 && (
+                            <div className="mt-6 p-5 bg-theme-panel border border-indigo-500/20 rounded-2xl ml-4">
+                                <p className="text-[10px] text-indigo-400 uppercase font-black mb-3">Trenutni sadržaj i zapremina u paketu:</p>
+                                {forenzika.paketSadrzaj.map((p, i) => (
+                                    <div key={i} className="flex justify-between items-center p-3 bg-black/20 border border-theme-border rounded-xl text-xs mb-2">
+                                        <div><p className="text-white font-black uppercase">{p.naziv}</p><p className="text-[10px] text-slate-500 font-mono mt-0.5">{p.debljina}x{p.sirina}x{p.duzina} mm</p></div>
+                                        <b className="text-emerald-400 text-base font-mono">{p.kolicina_final.toFixed(3)} m³</b>
                                     </div>
-                                    <div className="text-left md:text-right w-full md:w-auto bg-emerald-900/10 border border-emerald-500/20 p-4 rounded-2xl">
-                                        <p className="text-[10px] text-emerald-400 uppercase font-black mb-1">Trenutno stanje u paketu (Sveukupno)</p>
-                                        <p className="text-emerald-400 font-black text-3xl">{forenzika.paketUkupnoM3.toFixed(4)} <span className="text-xs">m³</span></p>
-                                    </div>
-                                </div>
-                                <div className="w-full space-y-2 relative z-10">
-                                    <p className="text-[10px] text-slate-400 uppercase font-black mb-3">Svi evidentirani proizvodi u ovom paketu:</p>
-                                    {forenzika.paketSadrzaj.map((p, idx) => {
-                                        let jmPrikaz = 'mm';
-                                        if (parseFloat(p.duzina) < 1000 && parseFloat(p.duzina) > 0) jmPrikaz = 'cm';
-                                        return (
-                                        <div key={idx} className="flex justify-between items-center text-sm font-bold bg-theme-card border border-theme-border p-4 rounded-xl shadow-md hover:border-slate-600 transition-all">
-                                            <div>
-                                                <span className="text-theme-text text-base">{p.naziv} <span className="text-slate-400 text-xs ml-1">({p.debljina}x{p.sirina}x{p.duzina} {jmPrikaz})</span></span>
-                                                {p.oznake && p.oznake.length > 0 && <span className="ml-3 text-[9px] bg-blue-900/20 px-2 py-1 rounded text-theme-accent border border-blue-500/30">{p.oznake.join(', ')}</span>}
-                                            </div>
-                                            <div className="text-right">
-                                                <span className="text-emerald-400 font-black text-xl">{p.kolicina_final.toFixed(4)} m³</span>
-                                                <span className="text-xs text-slate-500 ml-2">({p.kolicina_ulaz} {p.jm})</span>
-                                            </div>
-                                        </div>
-                                    )})}
-                                </div>
+                                ))}
                             </div>
                         )}
                     </div>
 
-                    {/* MIKRO SLIKA PAKETA (Sljedivost materijala) */}
-                    {forenzika.paketHistory && forenzika.paketHistory.length > 0 && (
-                        <div className={`p-8 rounded-box border border-theme-border shadow-2xl`} >
-                            <div className="border-b border-theme-border pb-4 mb-6">
-                                <h2 className="text-theme-accent font-black uppercase text-sm tracking-widest flex items-center gap-2"><span>📦 Historija materijala (Odakle je došao, kako se punio i gdje je otišao)</span></h2>
+                    <div className="p-6 bg-theme-card rounded-[2rem] border border-theme-border shadow-2xl">
+                        <h3 className="text-blue-400 font-black uppercase text-xs mb-4">🌳 Sljedivost materijala i procesa paketa</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="p-4 bg-theme-panel rounded-xl border border-slate-700">
+                                <h4 className="text-[10px] text-slate-400 font-black uppercase mb-2">⬅️ Ulazne Sirovine paketa:</h4>
+                                {forenzika.ulazniTrupci.map(t => <p key={t.id} className="text-xs text-emerald-400 font-mono">• Trupac ID: {t.id} ({t.zapremina} m³)</p>)}
+                                {forenzika.ulazniPaketi.map(p => <p key={p.paket_id} className="text-xs text-blue-400 font-mono">• Iz paketa: {p.paket_id} ({p.kolicina_final} m³)</p>)}
+                                {forenzika.ulazniTrupci.length === 0 && forenzika.ulazniPaketi.length === 0 && <p className="text-xs italic text-slate-500">Nema evidentirane ulazne sirovine.</p>}
                             </div>
-
-                            {/* ULAZNA SIROVINA */}
-                            <div className="mb-8 space-y-3">
-                                <h4 className="text-emerald-500 font-black text-xs uppercase flex items-center gap-2">⬅️ 1. Ulazna sirovina (Od čega je nastao)</h4>
-                                
-                                {forenzika.ulazniTrupci.length > 0 ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {forenzika.ulazniTrupci.map(t => (
-                                            <div key={t.id} className="bg-emerald-900/10 border border-emerald-500/30 p-4 rounded-2xl shadow-inner">
-                                                <p className="text-emerald-400 font-black text-xs">Trupac: {t.id}</p>
-                                                <p className="text-[9px] text-slate-400 uppercase mt-2 font-bold">{t.vrsta_drveta} | {t.zapremina} m³ | Klasa {t.klasa}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : forenzika.ulazniPaketi.length > 0 ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {forenzika.ulazniPaketi.map(p => (
-                                            <div key={p.paket_id} onClick={() => {setSken(p.paket_id); analizirajSve(p.paket_id); window.scrollTo(0,0);}} className="bg-blue-900/10 border border-blue-500/30 p-4 rounded-2xl cursor-pointer hover:bg-blue-900/30 transition-all shadow-md">
-                                                <p className="text-theme-accent font-black text-xs">Iz paketa: {p.paket_id}</p>
-                                                <p className="text-[9px] text-slate-400 uppercase mt-2 font-bold">{p.naziv_proizvoda}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-slate-500 bg-theme-card p-4 rounded-xl border border-theme-border shadow-inner">Sirovina nije specificirana u bazi podataka.</p>
-                                )}
+                            <div className="p-4 bg-theme-panel rounded-xl border border-slate-700">
+                                <h4 className="text-[10px] text-slate-400 font-black uppercase mb-2">➡️ Izvedeni proizvodi (Dalja Prerada):</h4>
+                                {forenzika.izlazniPaketi.map(izv => <p key={izv.paket_id} className="text-xs text-purple-400 font-mono">• Prerađen u paket: {izv.paket_id} ({izv.kolicina_final} m³)</p>)}
+                                {forenzika.izlazniPaketi.length === 0 && <p className="text-xs italic text-slate-500">Paket nije dalje prerađivan.</p>}
                             </div>
-
-                            {/* KORACI ZIDANJA */}
-                            <div className="mb-8 space-y-3">
-                                <h4 className="text-theme-accent font-black text-xs uppercase flex items-center gap-2">🧱 2. Hronološko zidanje (Kako se paket punio ili praznio)</h4>
-                                {forenzika.paketHistory.map((red, index) => {
-                                    const iznos = parseFloat(red.kolicina_final || 0);
-                                    const isDodavanje = iznos >= 0;
-                                    const predznak = isDodavanje ? '+' : '';
-                                    const bojaZnak = isDodavanje ? 'text-emerald-400' : 'text-red-400';
-                                    const tekstZnak = isDodavanje ? 'DODATO:' : 'ODUZETO:';
-                                    const datumZ = formatirajTacanDatum(red.created_at, red.vrijeme, red.datum);
-
-                                    return (
-                                        <div key={index} className="bg-theme-panel p-5 rounded-2xl border border-theme-border flex flex-col md:flex-row justify-between items-start md:items-center shadow-lg hover:border-blue-500/50 transition-all gap-4">
-                                            <div className="flex items-start md:items-center gap-4 w-full">
-                                                <div className={`w-10 h-10 rounded-box flex items-center justify-center font-black text-sm border-2 shrink-0 shadow-md ${isDodavanje ? 'bg-emerald-900/20 text-emerald-400 border-emerald-500/30' : 'bg-red-900/20 text-red-400 border-red-500/30'}`}>{index + 1}</div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between w-full">
-                                                        <p className="text-theme-text text-base font-black">{tekstZnak} <span className={bojaZnak}>{predznak}{iznos} m³</span> <span className="text-slate-500 text-xs font-bold ml-1">({red.kolicina_ulaz} {red.jm || 'kom'})</span></p>
-                                                        <div className="text-right shrink-0 ml-4 hidden md:block">
-                                                            <p className="text-[10px] text-slate-500 font-black uppercase bg-black px-3 py-1.5 rounded border border-theme-border">{datumZ}</p>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-[10px] text-slate-400 uppercase mt-2">Proizvod: <span className="text-theme-text font-bold">{red.naziv_proizvoda} ({red.debljina}x{red.sirina}x{red.duzina})</span></p>
-                                                    <p className="text-[9px] text-slate-500 uppercase mt-1 border-t border-theme-border/50 pt-2 mt-2">Zabilježio: <span className="text-slate-300 font-bold">{red.snimio_korisnik || 'Nepoznat'}</span> | Mašina: <span className="text-amber-400 font-bold">{red.masina || 'N/A'}</span></p>
-                                                </div>
-                                            </div>
-                                            <div className="text-left w-full border-t border-theme-border/50 pt-3 mt-2 md:hidden">
-                                                <span className="text-[10px] text-slate-400 font-black uppercase bg-black px-3 py-1.5 rounded-lg border border-theme-border">{datumZ}</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* IZLAZNA PRERADA */}
-                            {forenzika.izlazniPaketi.length > 0 && (
-                                <div className="space-y-3 pt-6 border-t border-theme-border">
-                                    <h4 className="text-theme-accent font-black text-xs uppercase flex items-center gap-2">➡️ 3. Izlazna prerada (U šta je dalje prerađen)</h4>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {forenzika.izlazniPaketi.map(p => (
-                                            <div key={p.paket_id} onClick={() => {setSken(p.paket_id); analizirajSve(p.paket_id); window.scrollTo(0,0);}} className="bg-purple-900/10 border border-purple-500/30 p-4 rounded-2xl cursor-pointer hover:bg-purple-900/30 transition-all shadow-md">
-                                                <p className="text-theme-accent font-black text-xs">Nastao paket: {p.paket_id}</p>
-                                                <p className="text-[9px] text-slate-400 uppercase mt-2 font-bold">{p.naziv_proizvoda}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    )}
+                    </div>
 
-                    {/* FINANSIJSKA ANALIZA I KONTROLA RABATA */}
                     {forenzika.finansijska_analiza.length > 0 && (
-                        <div className={`p-8 rounded-box border border-theme-border shadow-2xl`} >
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-emerald-400 font-black uppercase text-sm tracking-widest flex items-center gap-2"><span>💸 Finansijski Rendgen (Kontrola cijena)</span></h2>
-                                <span className="text-[10px] bg-theme-panel text-slate-400 px-3 py-1 rounded-lg uppercase font-black">Kupac: {forenzika.kupac?.naziv || 'Nepoznat'}</span>
-                            </div>
-                            
+                        <div className="p-6 bg-theme-card rounded-[2rem] border border-emerald-500/30 shadow-2xl">
+                            <h3 className="text-emerald-400 font-black uppercase text-xs mb-4">💸 Finansijska Kontrola Cijena i Rabata</h3>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
-                                    <thead className="bg-theme-card text-slate-400 uppercase font-black">
-                                        <tr><th className="p-4 rounded-tl-xl">Proizvod</th><th className="p-4 text-right">Količina</th><th className="p-4 text-right">Osnovna Cijena</th><th className="p-4 text-center">Sistemski Rabat (Baza)</th><th className="p-4 text-center">Ukucani Rabat</th><th className="p-4 rounded-tr-xl">Nadzor</th></tr>
+                                    <thead className="bg-black/40 text-slate-400 uppercase font-black">
+                                        <tr><th className="p-3">Proizvod</th><th className="p-3 text-center">Količina</th><th className="p-3 text-right">Cijena Baza</th><th className="p-3 text-center">Sistemski Rabat</th><th className="p-3 text-center">Ukucani Rabat</th><th className="p-3">Status Kontrole</th></tr>
                                     </thead>
-                                    <tbody className="text-theme-text font-bold">
+                                    <tbody className="text-white font-bold">
                                         {forenzika.finansijska_analiza.map((f, i) => (
-                                            <tr key={i} className="border-b border-theme-border hover:bg-theme-panel/30">
-                                                <td className="p-4">{f.sifra} <span className="text-slate-400 font-normal ml-1">{f.naziv}</span></td>
-                                                <td className="p-4 text-right text-theme-accent">{f.kolicina}</td>
-                                                <td className="p-4 text-right">{f.cijena_baza} KM</td>
-                                                <td className="p-4 text-center text-slate-400">{f.sistemski_rabat}%</td>
-                                                <td className="p-4 text-center text-theme-text">{f.primijenjeni_rabat}%</td>
-                                                <td className={`p-4 font-black text-[10px] uppercase ${f.odstupanje > 0 ? 'text-red-400 bg-red-900/10' : (f.odstupanje < 0 ? 'text-emerald-400' : 'text-slate-500')}`}>{f.upozorenje}</td>
+                                            <tr key={i} className="border-b border-theme-border hover:bg-white/5">
+                                                <td className="p-3">{f.sifra} - {f.naziv}</td>
+                                                <td className="p-3 text-center">{f.kolicina}</td>
+                                                <td className="p-3 text-right">{f.cijena_baza} KM</td>
+                                                <td className="p-3 text-center text-slate-400">{f.sistemski_rabat}%</td>
+                                                <td className="p-3 text-center text-amber-400">{f.primijenjeni_rabat}%</td>
+                                                <td className={`p-3 text-[10px] font-black uppercase ${f.odstupanje > 0 ? 'text-red-400 bg-red-950/20' : 'text-slate-500'}`}>{f.upozorenje}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -782,45 +542,32 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                         </div>
                     )}
 
-                    {/* MIKRO-FORENZIKA (SVI KLIKOVI - LJUDSKI PRIKAZ) */}
-                    <div className={`p-8 rounded-box border border-theme-border shadow-2xl relative`} >
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 sticky top-0 pt-2 pb-4 z-10 border-b border-theme-border gap-4" >
-                            <h2 className="text-amber-500 font-black uppercase text-sm tracking-widest flex items-center gap-2"><span>🔬 Skala Izmjena (Apsolutna Hronologija Logova)</span></h2>
-                            <span className="text-[10px] bg-theme-panel text-slate-400 px-3 py-1.5 rounded-lg uppercase font-black border border-theme-border shadow-inner">Ukupno zabilježenih događaja: {forenzika.logovi.length}</span>
-                        </div>
+                    {/* DNEVNIK LOGOVA I HISTORIJE IZMJENA */}
+                    <div className="p-6 bg-theme-card rounded-[2rem] border border-theme-border shadow-2xl relative">
+                        <h2 className="text-amber-500 font-black uppercase text-xs mb-6 tracking-widest">3. Skala Izmjena i hronologija događaja (Uključujući Reklamacije)</h2>
+                        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar relative pl-10 before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-800 z-0">
+                            {forenzika.logovi.map(log => {
+                                const jeOtvoren = otvoreniLogovi.has(log.id);
+                                const jeReklamacija = log.id.startsWith('rek_log_');
 
-                        <div className="space-y-4 max-h-[700px] overflow-y-auto pr-4 custom-scrollbar pb-6 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-theme-panel z-0">
-                            {forenzika.logovi.length === 0 ? (
-                                <p className="text-center text-slate-500 py-10 border-2 border-dashed border-theme-border rounded-box font-bold bg-theme-card/50 relative z-10">Nema zapisa o izmjenama u logu.</p>
-                            ) : (
-                                forenzika.logovi.map((log) => {
-                                    const isOtvoren = otvoreniLogovi.has(log.id);
-                                    
-                                    return (
-                                        <div key={log.id} className="flex gap-4 items-start relative group z-10">
-                                            <div className={`w-10 h-10 rounded-box border-4 flex items-center justify-center z-10 shrink-0 shadow-lg text-[12px] transition-all ${isOtvoren ? 'bg-amber-500 text-theme-text border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'bg-theme-panel border-slate-600 group-hover:border-amber-500/50'}`}>🕒</div>
-                                            <div 
-                                                onClick={() => toggleLog(log.id)} 
-                                                className={`p-6 rounded-[1.5rem] flex-1 cursor-pointer transition-all shadow-md border ${isOtvoren ? 'bg-theme-card border-amber-500/50 ring-1 ring-amber-500/20' : 'bg-theme-panel border-theme-border group-hover:border-slate-600'}`}
-                                            >
-                                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 border-b border-theme-border/80 pb-3 gap-3">
-                                                    <p className={`text-sm font-black uppercase tracking-widest ${log.akcija.includes('IZMJEN') || log.akcija.includes('BRISANJ') ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                                        {log.akcija.replace('PAKET_AKCIJA:', '')}
-                                                    </p>
-                                                    <p className="text-[10px] text-slate-300 font-black uppercase bg-black px-4 py-2 rounded-xl border border-theme-border shadow-inner tracking-widest">
-                                                        {log.datum_prikaz} <span className="text-slate-600 mx-2">|</span> 👤 <span className="text-theme-text">{log.korisnik || 'Sistem'}</span>
-                                                    </p>
-                                                </div>
-                                                
-                                                <PrikazIzmjena log={log} />
+                                return (
+                                    <div key={log.id} className="relative z-10">
+                                        <div onClick={() => toggleLog(log.id)} className={`p-4 rounded-xl border cursor-pointer transition-all ${jeOtvoren ? 'bg-theme-card border-amber-500/40' : 'bg-theme-panel border-theme-border hover:border-slate-700'} ${jeReklamacija ? 'border-red-500/40 bg-red-950/10' : ''}`}>
+                                            <div className="flex justify-between items-center text-xs border-b border-theme-border/60 pb-2 mb-2">
+                                                <span className={`font-black uppercase tracking-wider ${jeReklamacija ? 'text-red-400 animate-pulse' : 'text-white'}`}>{log.akcija}</span>
+                                                <span className="text-slate-400 text-[10px] font-mono bg-black px-2 py-0.5 rounded">{log.datum_prikaz} by {log.korisnik}</span>
                                             </div>
+                                            {jeReklamacija ? (
+                                                <p className="text-slate-200 font-mono text-[11px] leading-relaxed border-l-2 border-red-500 pl-2 mt-1">{log.detalji}</p>
+                                            ) : (
+                                                <PrikazIzmjena log={log} />
+                                            )}
                                         </div>
-                                    );
-                                })
-                            )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-
                 </div>
             )}
         </div>

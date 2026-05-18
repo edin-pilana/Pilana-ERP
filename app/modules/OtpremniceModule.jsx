@@ -65,7 +65,16 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
     const [wmsNovaKol, setWmsNovaKol] = useState('');
 
     useEffect(() => { load(); }, []);
-
+// 🟢 PREMIUM DEEP LINKING: Automatsko učitavanje robe sa lagera u novu otpremnicu
+useEffect(() => {
+    const autoId = localStorage.getItem('erp_auto_open_id');
+    const autoAction = localStorage.getItem('erp_auto_action');
+    if (autoId && autoAction === 'nova' && dostupniDokumenti.length > 0) {
+        skenirajVezu(autoId);
+        localStorage.removeItem('erp_auto_open_id');
+        localStorage.removeItem('erp_auto_action');
+    }
+}, [dostupniDokumenti]);
     const load = async () => {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);

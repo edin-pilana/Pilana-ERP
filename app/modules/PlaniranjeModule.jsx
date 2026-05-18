@@ -28,7 +28,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const [sviPlanoviGlobal, setSviPlanoviGlobal] = useState([]); 
     
     const [pocetakSedmice, setPocetakSedmice] = useState(getStartOfWeek(new Date()));
-
+    const [highlightedRN, setHighlightedRN] = useState(null);
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -36,10 +36,42 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const [pregledNaloga, setPregledNaloga] = useState(null); 
     const [planiranjeModal, setPlaniranjeModal] = useState(null); 
     const [stavkeZaPlaniranje, setStavkeZaPlaniranje] = useState([]); 
+// 🟢 PREMIUM DEEP LINKING: Lociranje i blinkanje naloga
+useEffect(() => {
+    const autoId = localStorage.getItem('erp_auto_open_id');
+    const autoAction = localStorage.getItem('erp_auto_action');
+    
+    // Čekamo da se nalozi učitaju
+    if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
+        setHighlightedRN(autoId);
+        localStorage.removeItem('erp_auto_open_id');
+        localStorage.removeItem('erp_auto_action');
+        
+        // Naredi browseru da kliza do tog naloga
+        setTimeout(() => {
+            const el = document.getElementById(`rn_card_${autoId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
 
+        // Ukloni blinkanje nakon 4 sekunde
+        setTimeout(() => { setHighlightedRN(null); }, 4000);
+    }
+}, [nerasporedjeniNalozi]);
     useEffect(() => { loadInitialData(); }, []);
     useEffect(() => { if (odabranaMasina) loadRaspored(); }, [odabranaMasina, pocetakSedmice]);
-
+// 🟢 PREMIUM DEEP LINKING: Automatsko otvaranje modala za zakazivanje naloga
+useEffect(() => {
+    const autoId = localStorage.getItem('erp_auto_open_id');
+    const autoAction = localStorage.getItem('erp_auto_action');
+    if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
+        const nToPlan = nerasporedjeniNalozi.find(n => n.id === autoId);
+        if (nToPlan) {
+            otvoriPlaniranjeModal(nToPlan);
+            localStorage.removeItem('erp_auto_open_id');
+            localStorage.removeItem('erp_auto_action');
+        }
+    }
+}, [nerasporedjeniNalozi]);
     function getStartOfWeek(date) {
         const d = new Date(date);
         const day = d.getDay();
@@ -372,18 +404,23 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         {!loading && nerasporedjeniNalozi.length === 0 && <div className="text-center text-slate-500 text-[9px] md:text-[10px] p-4 border border-dashed border-theme-border rounded-xl font-bold mt-2">Nema neraspoređenih naloga!</div>}
                         
                         {!loading && nerasporedjeniNalozi.map((rn) => {
-                            const isHitno = new Date(rn.rok_isporuke) <= new Date(DaniUSedmici[6].datum);
-                            const preostaloM3 = rn.stavkeZaPlaniranje.reduce((s, st) => s + parseFloat(st.preostalo), 0).toFixed(2);
-                            const preporuceniDatum = izracunajPreporuku(rn.rok_isporuke);
-                            const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${preporuceniDatum.toLocaleDateString('de-DE').substring(0, 5)})`;
+    const isHitno = new Date(rn.rok_isporuke) <= new Date(DaniUSedmici[6].datum);
+    const preostaloM3 = rn.stavkeZaPlaniranje.reduce((s, st) => s + parseFloat(st.preostalo), 0).toFixed(2);
+    const preporuceniDatum = izracunajPreporuku(rn.rok_isporuke);
+    const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${preporuceniDatum.toLocaleDateString('de-DE').substring(0, 5)})`;
 
-                            return (
-                                <div 
-                                    key={rn.id} 
-                                    draggable={!isReadOnly}
-                                    onDragStart={(e) => !isReadOnly && handleDragStart(e, rn)}
-                                    className={`bg-theme-panel border ${isHitno ? 'border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'border-theme-border'} p-3 md:p-4 rounded-xl md:rounded-2xl ${!isReadOnly ? 'cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800' : 'opacity-90'} transition-all group`}
-                                >
+    return (
+        <div 
+            id={`rn_card_${rn.id}`}
+            key={rn.id} 
+            draggable={!isReadOnly}
+            onDragStart={(e) => !isReadOnly && handleDragStart(e, rn)}
+            className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all group ${
+                highlightedRN === rn.id 
+                ? 'bg-amber-900/40 border-2 border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.6)] animate-pulse scale-[1.02] z-50 relative' 
+                : 'bg-theme-panel border ' + (isHitno ? 'border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'border-theme-border') + ' ' + (!isReadOnly ? 'cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800' : 'opacity-90')
+            }`}
+        >
                                     <div className="flex justify-between items-start mb-2 gap-2">
                                         <span className="text-[10px] md:text-[11px] text-blue-400 font-black uppercase bg-blue-900/20 px-2 py-0.5 md:py-1 rounded border border-blue-500/30 truncate">{rn.id}</span>
                                         <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-0.5 md:py-1 rounded whitespace-nowrap ${isHitno ? 'bg-rose-900/30 text-rose-400' : 'bg-black text-slate-400'}`}>Rok: {new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</span>

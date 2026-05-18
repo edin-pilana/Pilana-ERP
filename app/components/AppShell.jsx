@@ -1,123 +1,71 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Scissors, ArrowRightLeft, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, TreePine, Axe, Package, FileText, Wrench, Truck, Receipt, Wallet, Radar, BarChart3, AlignJustify, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Scissors, ArrowRightLeft, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, TreePine, Axe, Package, FileText, Wrench, Truck, Receipt, Wallet, Radar, BarChart3, AlignJustify, CalendarDays, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
-import { Clock, Users } from 'lucide-react'; // Dodaj na vrh
+import { Clock, Users } from 'lucide-react';
 
-export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor }) {
+export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor, dynamicModules = [] }) {
     const { theme, layout, setTheme, setLayout, initSettings } = useAppStore();
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-    const [menuLabels, setMenuLabels] = useState({});
     const [appBranding, setAppBranding] = useState({ name: 'SmartERP', logo: '' });
 
     useEffect(() => {
         const fetchSaaSSettings = () => {
-            setMenuLabels({
-                home: localStorage.getItem('saas_dashboard_analitika_naslov') || 'Početna',
-                prijem: localStorage.getItem('saas_prijem_trupaca_naslov') || 'Prijem',
-                prorez: localStorage.getItem('saas_prorez_trupaca_naslov') || 'Prorez',
-                pilana: localStorage.getItem('saas_pilana_izlaz_naslov') || 'Pilana',
-                dorada: localStorage.getItem('saas_dorada_modul_naslov') || 'Dorada',
-                planiranje: localStorage.getItem('saas_planiranje_naslov') || 'Planiranje',
-                lager: localStorage.getItem('saas_lager_paketa_naslov') || 'Lager',
-                ponude: localStorage.getItem('saas_ponude_naslov') || 'Ponude',
-                radni_nalozi: localStorage.getItem('saas_radni_nalozi_naslov') || 'Nalozi',
-                otpremnice: localStorage.getItem('saas_otpremnice_naslov') || 'Otpremnice',
-                racuni: localStorage.getItem('saas_racuni_naslov') || 'Računi',
-                blagajna: localStorage.getItem('saas_blagajna_naslov') || 'Blagajna',
-                toranj: localStorage.getItem('saas_kontrolni_toranj_naslov') || 'Kontrola',
-                analitika: localStorage.getItem('saas_analitika_naslov') || 'Analitika'
-            });
             setAppBranding({
                 name: localStorage.getItem('saas_app_name') || 'SmartERP',
                 logo: localStorage.getItem('saas_app_logo') || ''
             });
         };
-
         fetchSaaSSettings(); 
         window.addEventListener('saas_updated', fetchSaaSSettings);
         return () => window.removeEventListener('saas_updated', fetchSaaSSettings);
     }, []);
 
-    useEffect(() => {
-        initSettings(user?.ime_prezime || 'Korisnik');
-    }, [user, initSettings]);
+    useEffect(() => { initSettings(user?.ime_prezime || 'Korisnik'); }, [user, initSettings]);
 
     useEffect(() => {
-        const handlePopState = (e) => {
-            if (activeModule !== 'home') {
-                onModuleChange('home');
-            }
-        };
+        const handlePopState = (e) => { if (activeModule !== 'home') onModuleChange('home'); };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
     }, [activeModule, onModuleChange]);
 
     useEffect(() => {
-        if (activeModule !== 'home') {
-            if (!window.history.state?.modulOtvoren) {
-                window.history.pushState({ modulOtvoren: true }, '');
-            }
+        if (activeModule !== 'home' && !window.history.state?.modulOtvoren) {
+            window.history.pushState({ modulOtvoren: true }, '');
         }
     }, [activeModule]);
 
-    // OVO JE PAMETNA ZAŠTITA: Briše menije ako nemaš dozvolu
     const hasPermission = (modulId) => {
         if (!user) return false;
         if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
         if (modulId === 'home') return true; 
 
-        // NOVO: Specijalna provjera za planiranje (pripušta ako ima Edit ILI samo pregled)
         if (modulId === 'planiranje') {
             return (user.dozvole || []).includes('Planiranje Proizvodnje') || (user.dozvole || []).includes('Planiranje (Samo Pregled)');
         }
         
         const mapaDozvola = {
-            'prijem': 'Prijem trupaca',
-            'prorez': 'Prorez (Trupci)',
-            'pilana': 'Pilana (Izlaz)',
-            'dorada': 'Dorada (Ulaz/Izlaz)',
-            'lager': 'Lager Paketa', 
-            'ponude': 'Ponude',
-            'radni_nalozi': 'Radni Nalozi',
-            'otpremnice': 'Otpremnice i Izdatnice', 
-            'racuni': 'Računi',
-            'blagajna': 'Blagajna (Keš)',
-            'toranj': 'Kontrolni Toranj',
-            'analitika': 'Analitika',
-            'podesavanja': 'Podešavanja',
-            'kiosk': 'Prijava na Rad',
-            'hr': 'HR Dashboard'
+            'prijem': 'Prijem trupaca', 'prorez': 'Prorez (Trupci)', 'pilana': 'Pilana (Izlaz)', 'dorada': 'Dorada (Ulaz/Izlaz)',
+            'lager': 'Lager Paketa', 'ponude': 'Ponude', 'radni_nalozi': 'Radni Nalozi', 'otpremnice': 'Otpremnice i Izdatnice', 
+            'racuni': 'Računi', 'blagajna': 'Blagajna (Keš)', 'toranj': 'Kontrolni Toranj', 'analitika': 'Analitika',
+            'podesavanja': 'Podešavanja', 'kiosk': 'Prijava na Rad', 'hr': 'HR Dashboard', 'reklamacije': 'Reklamacije i Povrati'
         };
         
         return (user.dozvole || []).includes(mapaDozvola[modulId]);
     };
 
-    const menuItems = [
-        { id: 'home', label: menuLabels.home, icon: LayoutDashboard },
-        { id: 'kiosk', label: 'Prijava', icon: Clock },
-        { id: 'hr', label: 'HR Admin', icon: Users },
-        { id: 'prijem', label: menuLabels.prijem, icon: TreePine },
-        { id: 'prorez', label: menuLabels.prorez, icon: Axe },
-        { id: 'pilana', label: menuLabels.pilana, icon: Scissors },
-        { id: 'dorada', label: menuLabels.dorada, icon: ArrowRightLeft },
-        { id: 'planiranje', label: menuLabels.planiranje, icon: CalendarDays }, 
-        { id: 'lager', label: menuLabels.lager, icon: Package },
-        { id: 'ponude', label: menuLabels.ponude, icon: FileText },
-        { id: 'radni_nalozi', label: menuLabels.radni_nalozi, icon: Wrench },
-        { id: 'otpremnice', label: menuLabels.otpremnice, icon: Truck },
-        { id: 'racuni', label: menuLabels.racuni, icon: Receipt },
-        { id: 'blagajna', label: menuLabels.blagajna, icon: Wallet },
-        { id: 'toranj', label: menuLabels.toranj, icon: Radar },
-        { id: 'analitika', label: menuLabels.analitika, icon: BarChart3 },
-        { id: 'podesavanja', label: 'Admin Postavke', icon: Settings }
-    ];
+    // MAPIRANJE IKONA (Pretvaranje string emoji/ikone iz baze u pravu Lucide ikonu ako treba, ili ostavljanje emojija)
+    const renderIcon = (ikona, size = 18) => {
+        if (ikona === 'LayoutDashboard') return <LayoutDashboard size={size}/>;
+        if (ikona === 'Settings') return <Settings size={size}/>;
+        // Za ostale koristimo emoji ikonu koja dolazi iz baze
+        return <span style={{ fontSize: `${size}px` }}>{ikona}</span>;
+    };
 
-    // FILTRIRAMO VIDLJIVE MENIJE
-    const visibleMenuItems = menuItems.filter(item => hasPermission(item.id));
+    // 🟢 DINAMIČKO FILTRIRANJE MENIJA DIREKTNO IZ TVOJE BAZE (God Mode)
+    const visibleMenuItems = dynamicModules.filter(item => hasPermission(item.id));
 
     const LogoDisplay = ({ mobile = false }) => (
         <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
@@ -173,16 +121,17 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         <div className="flex w-full min-h-screen relative">
             <motion.aside initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="w-64 fixed h-screen bg-theme-card border-r border-theme-border flex flex-col p-4 backdrop-blur-[var(--glass-blur)] z-40 hidden md:flex">
                 <LogoDisplay />
-                <nav className="flex flex-col gap-2 flex-1">
-                    {visibleMenuItems.map(item => {
-                        const Icon = item.icon;
-                        const isActive = activeModule === item.id;
-                        return (
-                            <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${isActive ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                                <Icon size={18} /> {item.label}
-                            </button>
-                        );
-                    })}
+                <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    {/* Fiksirano Početna */}
+                    <button onClick={() => onModuleChange('home')} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                        <LayoutDashboard size={18} /> POČETNA
+                    </button>
+                    {/* Dinamički moduli */}
+                    {visibleMenuItems.map(item => (
+                        <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === item.id ? 'text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                            {item.slika_url ? <img src={item.slika_url} className="w-5 h-5 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 18)} {item.naziv}
+                        </button>
+                    ))}
                 </nav>
                 <div className="border-t border-theme-border pt-4 mt-auto">
                     <div className="flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
@@ -200,15 +149,15 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         <div className="flex flex-col w-full min-h-screen relative">
             <motion.header initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-20 w-full bg-theme-card border-b border-theme-border px-6 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
                 <LogoDisplay mobile={true} />
-                <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto">
-                    {visibleMenuItems.map(item => {
-                        const isActive = activeModule === item.id;
-                        return (
-                            <button key={item.id} onClick={() => onModuleChange(item.id)} className={`px-4 py-3 rounded-xl font-black uppercase transition-all text-xs tracking-widest border whitespace-nowrap ${isActive ? 'bg-theme-accent border-theme-accent text-white shadow-glow' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text hidden sm:block'}`}>
-                                {item.label}
-                            </button>
-                        );
-                    })}
+                <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto custom-scrollbar pb-1">
+                    <button onClick={() => onModuleChange('home')} className={`px-4 py-3 rounded-xl font-black uppercase transition-all text-xs tracking-widest border whitespace-nowrap ${activeModule === 'home' ? 'bg-theme-accent border-theme-accent text-white shadow-glow' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text hidden sm:block'}`}>
+                        POČETNA
+                    </button>
+                    {visibleMenuItems.map(item => (
+                        <button key={item.id} onClick={() => onModuleChange(item.id)} className={`px-4 py-3 rounded-xl font-black uppercase transition-all text-xs tracking-widest border whitespace-nowrap flex items-center gap-2 ${activeModule === item.id ? 'text-white shadow-glow border-transparent' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text hidden sm:flex'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                            {item.slika_url ? <img src={item.slika_url} className="w-4 h-4 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 14)} {item.naziv}
+                        </button>
+                    ))}
                     <div className="h-8 w-px bg-theme-border mx-2"></div>
                     <button onClick={() => setIsSettingsOpen(true)} className="w-12 h-12 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all shadow-sm"><Settings size={20}/></button>
                 </div>
@@ -221,15 +170,14 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         <div className="flex flex-col w-full min-h-screen relative pb-24">
             <main className="flex-1 p-4 md:p-8 relative z-10 w-full max-w-7xl mx-auto">{children}</main>
             <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed bottom-4 left-0 right-0 mx-auto w-fit max-w-[95vw] overflow-x-auto custom-scrollbar bg-theme-card border border-theme-accent/50 p-2 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-50 flex items-center gap-2 backdrop-blur-2xl">
-                {visibleMenuItems.map(item => {
-                    const Icon = item.icon;
-                    const isActive = activeModule === item.id;
-                    return (
-                        <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-2 px-6 py-4 rounded-2xl font-black uppercase transition-all text-xs tracking-widest ${isActive ? 'bg-theme-accent text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                            <Icon size={18} /> <span className="hidden sm:inline">{item.label}</span>
-                        </button>
-                    );
-                })}
+                <button onClick={() => onModuleChange('home')} className={`flex items-center gap-2 px-6 py-4 rounded-2xl font-black uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                    <LayoutDashboard size={18} /> <span className="hidden sm:inline">Početna</span>
+                </button>
+                {visibleMenuItems.map(item => (
+                    <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-2 px-6 py-4 rounded-2xl font-black uppercase transition-all text-xs tracking-widest ${activeModule === item.id ? 'text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                        {item.slika_url ? <img src={item.slika_url} className="w-5 h-5 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 18)} <span className="hidden sm:inline">{item.naziv}</span>
+                    </button>
+                ))}
                 <div className="w-px h-8 bg-theme-border mx-2"></div>
                 <button onClick={() => setIsSettingsOpen(true)} className="p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all"><Settings size={20}/></button>
             </motion.div>
@@ -242,16 +190,15 @@ export default function AppShell({ children, user, activeModule = "home", onModu
             <div className="flex flex-col w-full min-h-screen relative">
                 <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-14 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)]">
                     <LogoDisplay mobile={true} />
-                    <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto">
-                        {visibleMenuItems.map(item => {
-                            const Icon = item.icon;
-                            const isActive = activeModule === item.id;
-                            return (
-                                <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${isActive ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                                    <Icon size={13} /> {item.label}
-                                </button>
-                            );
-                        })}
+                    <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
+                        <button onClick={() => onModuleChange('home')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                            <LayoutDashboard size={13} /> POČETNA
+                        </button>
+                        {visibleMenuItems.map(item => (
+                            <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === item.id ? 'text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                                {item.slika_url ? <img src={item.slika_url} className="w-3 h-3 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 13)} {item.naziv}
+                            </button>
+                        ))}
                     </nav>
                     <div className="flex items-center gap-2 flex-shrink-0">
                         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border">
@@ -267,16 +214,15 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
                 <AnimatePresence>
                     {mobileMenuOpen && (
-                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="md:hidden w-full bg-theme-card border-b border-theme-border px-4 py-3 grid grid-cols-3 gap-2 z-30 sticky top-14 shadow-2xl">
-                            {visibleMenuItems.map(item => {
-                                const Icon = item.icon;
-                                const isActive = activeModule === item.id;
-                                return (
-                                    <button key={item.id} onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} className={`flex items-center gap-1.5 px-2 py-2 rounded-lg font-bold uppercase transition-all text-[9px] tracking-widest ${isActive ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                                        <Icon size={12} /> {item.label}
-                                    </button>
-                                );
-                            })}
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="md:hidden w-full bg-theme-card border-b border-theme-border px-4 py-3 grid grid-cols-2 gap-2 z-30 sticky top-14 shadow-2xl max-h-[70vh] overflow-y-auto">
+                            <button onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} className={`flex items-center gap-2 px-3 py-3 rounded-xl font-bold uppercase transition-all text-[10px] tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted bg-theme-panel border border-theme-border hover:text-theme-text'}`}>
+                                <LayoutDashboard size={14} /> POČETNA
+                            </button>
+                            {visibleMenuItems.map(item => (
+                                <button key={item.id} onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} className={`flex items-center gap-2 px-3 py-3 rounded-xl font-bold uppercase transition-all text-[10px] tracking-widest ${activeModule === item.id ? 'text-white border-transparent' : 'text-theme-muted bg-theme-panel border border-theme-border hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                                    {item.slika_url ? <img src={item.slika_url} className="w-4 h-4 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 14)} <span className="truncate">{item.naziv}</span>
+                                </button>
+                            ))}
                         </motion.div>
                     )}
                 </AnimatePresence>
