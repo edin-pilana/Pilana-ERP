@@ -11,7 +11,6 @@ export function useSaaS(modulIme, defaultPostavke) {
     const [isEditMode, setIsEditMode] = useState(false);
     const [backup, setBackup] = useState(null);
 
-    // Učitavanje dizajna iz baze kada se modul otvori
     useEffect(() => {
         if (!modulIme) return;
         const load = async () => {
@@ -23,19 +22,17 @@ export function useSaaS(modulIme, defaultPostavke) {
         load();
     }, [modulIme]);
 
-    // Kontrole za Edit mod
     const pokreniEdit = () => { 
-        setBackup(JSON.parse(JSON.stringify(ui))); // Čuvamo staro stanje za "Odustani"
+        setBackup(JSON.parse(JSON.stringify(ui))); 
         setIsEditMode(true); 
     };
     
     const odustani = () => { 
-        if (backup) setUi(backup); // Vraćamo na staro
+        if (backup) setUi(backup); 
         setIsEditMode(false); 
     };
 
     const spasiDizajn = async () => {
-        // Upsert: Ako modul ne postoji u bazi, dodaj ga. Ako postoji, ažuriraj ga.
         const { error } = await supabase.from('ui_postavke').upsert([{ modul_ime: modulIme, postavke_jsonb: ui }], { onConflict: 'modul_ime' });
         if (error) {
             alert("Greška pri snimanju dizajna: " + error.message);
@@ -46,5 +43,6 @@ export function useSaaS(modulIme, defaultPostavke) {
         }
     };
 
-    return { ui, setUi, isEditMode, pokreniEdit, odustani, spasiDizajn };
+    // 🟢 POPRAVLJENO: Vraćen defaultConfig kako moduli ne bi pucali
+    return { ui, setUi, isEditMode, pokreniEdit, odustani, spasiDizajn, defaultConfig: defaultPostavke };
 }

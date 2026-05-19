@@ -21,7 +21,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    // STANJA ZA UNOS REKLAMACIJE
     const [scan, setScan] = useState('');
     const [isScanning, setIsScanning] = useState(false);
     const scanTimerRef = useRef(null);
@@ -43,12 +42,10 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true 
     });
 
-    // STANJA ZA NADZOR
     const [reklamacijeLista, setReklamacijeLista] = useState([]);
 
     useEffect(() => {
         loadReklamacije();
-        // LIVE SYNC za Reklamacije
         const channel = supabase.channel('reklamacije_sync')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'reklamacije' }, () => {
                 loadReklamacije();
@@ -298,7 +295,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 <button onClick={() => setTab('nadzor')} className={`flex-1 py-3 md:py-4 rounded-xl text-[10px] md:text-xs uppercase font-black transition-all flex items-center justify-center gap-2 ${tab === 'nadzor' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>👑 NADZOR I ODOBRAVANJE</button>
             </div>
 
-            {/* TAB: UNOS REKLAMACIJE */}
             {tab === 'unos' && (
                 <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-left">
                     <div className="bg-theme-card p-6 md:p-8 rounded-[var(--radius-box)] border-2 border-red-500/50 shadow-[0_0_40px_rgba(239,68,68,0.15)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
@@ -414,7 +410,8 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
                                             <span className={`text-[10px] px-2 py-1 rounded font-black uppercase tracking-widest ${rek.status === 'CEKA_ODOBRENJE' ? 'bg-amber-500 text-black' : (rek.status === 'ODOBRENO' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400')}`}>
-                                                {rek.status.replace('_', ' ')}
+                                                {/* 🟢 POPRAVLJENO: Zaštita statusa pri renderovanju */}
+                                                {(rek.status || 'NEPOZNATO').replace('_', ' ')}
                                             </span>
                                             <span className="text-[10px] text-slate-400 font-bold uppercase">{new Date(rek.created_at).toLocaleString('bs-BA')} | Podnosilac: {rek.snimio_korisnik}</span>
                                         </div>
@@ -433,7 +430,8 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                         </div>
 
                                         <div className="mt-3 flex gap-2 flex-wrap">
-                                            <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">TIP: {rek.tip_reklamacije.replace('_', ' ')}</span>
+                                            {/* 🟢 POPRAVLJENO: Zaštita tipa reklamacije */}
+                                            <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">TIP: {(rek.tip_reklamacije || 'POVRAT').replace('_', ' ')}</span>
                                             <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">RAZLOG: {rek.razlog}</span>
                                             {rek.nova_isporuka && <span className="text-[9px] bg-blue-900/40 border border-blue-500/50 px-2 py-1 rounded text-blue-400 font-black uppercase">ZAHTJEVA NOVU IZRADU</span>}
                                         </div>

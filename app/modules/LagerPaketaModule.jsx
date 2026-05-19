@@ -27,7 +27,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const [paketi, setPaketi] = useState([]);
     const [trupci, setTrupci] = useState([]);
     const [aktivniNalozi, setAktivniNalozi] = useState([]);
-    const [katalog, setKatalog] = useState([]); // DODAN KATALOG
+    const [katalog, setKatalog] = useState([]); 
     const [rnDetalji, setRnDetalji] = useState(null); 
 
     const [loading, setLoading] = useState(false);
@@ -39,7 +39,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const [izvedeniPaketi, setIzvedeniPaketi] = useState([]); 
     const [isPrinting, setIsPrinting] = useState(false);
 
-    // SVI DUBOKI FILTERI OD-DO VRAĆENI
     const [fPaket, setFPaket] = useState({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' });
     const [fTrupac, setFTrupac] = useState({ sumarija: '', klasa: '', precnikOd: '', precnikDo: '', duzinaOd: '', duzinaDo: '', vrsta: '' });
 
@@ -51,16 +50,12 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         if(!isoString) return ''; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`;
     };
 
-    // 🟢 PAMETNI DETEKTOR MJERNIH JEDINICA NA OSNOVU KATALOGA PROIZVODA
     const normalizujDimenzije = (p) => {
         let d = parseFloat(p.debljina) || 0;
         let s = parseFloat(p.sirina) || 0;
         let l = parseFloat(p.duzina) || 0;
 
-        // Tražimo artikal u katalogu preko šifre ili naziva
         const katArtikal = katalog.find(k => k.sifra === p.naziv_proizvoda || k.naziv === p.naziv_proizvoda);
-        
-        // Ako u katalogu ili u samom paketu stoji oznaka jedinice unosa 'cm'
         const jedinica = (katArtikal?.jm_unos || p.jm || 'kom').toLowerCase();
         
         if (jedinica === 'cm') {
@@ -115,7 +110,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const sumarijeList = useMemo(() => [...new Set(trupci.map(t => t.sumarija).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
     const vrsteDrvetaList = useMemo(() => [...new Set(trupci.map(t => t.vrsta_drveta).filter(Boolean))].sort().map(n => ({naziv: n})), [trupci]);
 
-    // VRAĆEN LJUBIČASTI PANEL ZA REALIZACIJU NALOGA
     const ucitajRnDetalje = async (rnId) => {
         if (!rnId) { setRnDetalji(null); return; }
         const nalog = aktivniNalozi.find(n => n.id === rnId.toUpperCase());
@@ -147,7 +141,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         else prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Paket ${cistId} nije pronađen u bazi (možda je arhiviran).`, onCancel: zatvoriDialog });
     };
 
-    // VRAĆENA POTPUNA KRONOLOGIJA, DIF_OVI I SLJEDIVOST MATERIJALA
     const ucitajHistoriju = async (paket) => {
         setSelektovaniPaket(paket);
         setHistorija('load'); setIzvedeniPaketi([]);
@@ -173,13 +166,11 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             return { vrijeme: a.vrijeme, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
         }) : [];
 
-        // SLJEDIVOST UNAPRIJED (Prerada u doradi)
         const { data: forwardData } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${sid}%`);
         if (forwardData && forwardData.length > 0) {
             setIzvedeniPaketi([...new Map(forwardData.map(item => [item.paket_id, item])).values()]);
         }
 
-        // SLJEDIVOST UNAZAD (Sastav sirovine)
         const { data: sveStavkePaketa } = await supabase.from('paketi').select('ulaz_trupci_ids, ai_sirovina_ids').eq('paket_id', sid);
         if (sveStavkePaketa && sveStavkePaketa.length > 0) {
             let sviTrupciId = [];
@@ -215,7 +206,8 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const filtriraniPaketi = useMemo(() => {
         return paketi.filter(p => {
             const norm = normalizujDimenzije(p);
-            const matchSearch = p.paket_id.includes(pretraga.toUpperCase()) || p.naziv_proizvoda.toUpperCase().includes(pretraga.toUpperCase());
+            // 🟢 POPRAVLJENO: Dodano ( || '') kako bi spriječili pucanje ako fali naziv u bazi
+            const matchSearch = (p.paket_id || '').includes(pretraga.toUpperCase()) || (p.naziv_proizvoda || '').toUpperCase().includes(pretraga.toUpperCase());
             const matchRN = fPaket.rn === '' || (p.broj_veze && p.broj_veze.includes(fPaket.rn.toUpperCase()));
             const matchDeb = (fPaket.debljinaOd === '' || norm.debljina >= parseFloat(fPaket.debljinaOd)) && (fPaket.debljinaDo === '' || norm.debljina <= parseFloat(fPaket.debljinaDo));
             const matchSir = (fPaket.sirinaOd === '' || norm.sirina >= parseFloat(fPaket.sirinaOd)) && (fPaket.sirinaDo === '' || norm.sirina <= parseFloat(fPaket.sirinaDo));
@@ -279,7 +271,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                 )}
             </div>
 
-            {/* VRAĆEN LJUBIČASTI PANEL ZA REALIZACIJU NALOGA */}
             {glavniTab === 'paketi' && fPaket.rn && rnDetalji && (
                 <div className="bg-purple-900/20 border-2 border-purple-500/50 p-6 rounded-box shadow-2xl animate-in zoom-in-95 relative z-30">
                     <div className="flex justify-between items-start mb-4 border-b border-purple-500/30 pb-3">
@@ -361,7 +352,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                             <p className="text-amber-400 font-black text-sm tracking-widest mt-1 font-mono">DIMENZIJE U BAZI: {normalizujDimenzije(selektovaniPaket).debljina}x{normalizujDimenzije(selektovaniPaket).sirina}x{normalizujDimenzije(selektovaniPaket).duzina} mm</p>
                         </div>
 
-                        {/* VRAĆENI BLOKOVI ZA SLJEDIVOST UNAZAD I UNAPRIJED */}
                         {selektovaniPaket.ai_sirovina_ids && (
                             <div className="mb-4 bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl">
                                 <h4 className="text-blue-400 font-black uppercase text-[10px] mb-2">⬅️ Sljedivost unazad (Izvorna sirovina)</h4>
@@ -383,7 +373,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         <div className="space-y-4 mb-8">
                             <h4 className="text-slate-500 font-black uppercase text-[10px] border-b border-theme-border pb-2">Hronologija i detaljne razlike izmjena (Audit):</h4>
                             {historija === 'load' ? <p className="animate-pulse text-xs text-theme-accent">Generiram timeline...</p> : 
-                             historija === 'none' ? <p className="text-xs text-slate-600">Nema zapisa o izmjenama.</p> : (
+                            historija === 'none' ? <p className="text-xs text-slate-600">Nema zapisa o izmjenama.</p> : (
                                 <div className="space-y-4">
                                     {historija.map((h, i) => (
                                         <div key={i} className="bg-theme-panel p-3 rounded-xl border border-theme-border/60">
@@ -396,7 +386,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                         </div>
                                     ))}
                                 </div>
-                             )}
+                            )}
                         </div>
 
                         <button onClick={() => isprintajAutomatski(selektovaniPaket)} disabled={isPrinting} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl uppercase shadow-lg text-xs tracking-widest">🖨️ Isprintaj deklaraciju (Auto QR + mm)</button>
