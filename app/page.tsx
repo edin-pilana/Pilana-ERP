@@ -684,23 +684,39 @@ export default function Page() {
                                             onDragOver={(e) => e.preventDefault()}
                                         >
                                             {isEditMode && (
-                                                <div className="absolute top-2 right-2 left-2 flex justify-between items-center z-[100] bg-black/80 p-2 rounded-xl backdrop-blur-md border border-amber-500/50 shadow-xl">
-                                                    <span className="text-[10px] text-amber-500 font-black cursor-grab active:cursor-grabbing flex items-center gap-1 uppercase tracking-widest px-2 py-1 hover:bg-amber-900/50 rounded transition-colors"><Move size={12}/> Pomicaj</span>
-                                                    <div className="flex gap-2 items-center">
-                                                        <div className="flex items-center gap-2 border-r border-slate-700 pr-3 mr-1">
-                                                            <span className="text-[8px] text-slate-400 uppercase font-black"><Eye size={10} className="inline mr-1"/> Vide:</span>
-                                                            {['superadmin', 'admin', 'manager', 'operater'].map(uloga => (
-                                                                <label key={uloga} className="flex items-center gap-1 text-[8px] text-slate-300 font-bold cursor-pointer hover:text-white transition-colors">
-                                                                    <input type="checkbox" checked={(widget.allowedRoles || []).includes(uloga) || uloga === 'superadmin' || uloga === 'admin'} onChange={() => toggleWidgetRole(index, uloga)} className="w-3 h-3 accent-amber-500" disabled={uloga === 'superadmin' || uloga === 'admin'} />
-                                                                    {uloga.substring(0,3).toUpperCase()}
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                        <button onClick={() => updateWidgetSpan(index)} className="bg-theme-panel text-amber-400 px-3 py-1.5 rounded text-[8px] font-black uppercase border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-colors shadow-sm">ŠIRINA: {widget.span.includes('col-span-4') ? '1/3' : (widget.span.includes('col-span-6') ? '1/2' : 'FULL')}</button>
-                                                        <button onClick={() => deleteWidget(index)} className="bg-red-900/50 text-red-500 w-7 h-7 rounded flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors border border-red-500/30"><X size={14}/></button>
-                                                    </div>
-                                                </div>
-                                            )}
+    <div className="absolute top-2 right-2 left-2 flex flex-col sm:flex-row justify-between sm:items-center gap-2 z-[100] bg-black/80 p-2 sm:p-3 rounded-xl backdrop-blur-md border border-amber-500/50 shadow-xl">
+        <span className="text-[10px] text-amber-500 font-black cursor-grab active:cursor-grabbing flex items-center gap-1 uppercase tracking-widest px-2 py-1 hover:bg-amber-900/50 rounded transition-colors self-start sm:self-auto">
+            <Move size={12}/> Pomicaj
+        </span>
+        
+        <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-between w-full sm:w-auto">
+            <div className="flex items-center gap-1 sm:gap-2 sm:border-r border-slate-700 sm:pr-3 sm:mr-1 flex-1 sm:flex-none justify-center">
+                <span className="text-[8px] text-slate-400 uppercase font-black hidden sm:block"><Eye size={10} className="inline mr-1"/> Vide:</span>
+                {['superadmin', 'admin', 'manager', 'operater'].map(uloga => (
+                    <label key={uloga} className="flex items-center gap-1 text-[7px] sm:text-[8px] text-slate-300 font-bold cursor-pointer hover:text-white transition-colors">
+                        <input 
+                            type="checkbox" 
+                            checked={(widget.allowedRoles || []).includes(uloga) || uloga === 'superadmin' || uloga === 'admin'} 
+                            onChange={() => toggleWidgetRole(index, uloga)} 
+                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 accent-amber-500" 
+                            disabled={uloga === 'superadmin' || uloga === 'admin'} 
+                        />
+                        {uloga.substring(0,3).toUpperCase()}
+                    </label>
+                ))}
+            </div>
+            
+            <div className="flex gap-1.5 items-center shrink-0">
+                <button onClick={() => updateWidgetSpan(index)} className="bg-theme-panel text-amber-400 px-2 sm:px-3 py-1.5 rounded text-[7px] sm:text-[8px] font-black uppercase border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-colors shadow-sm">
+                    ŠIRINA: {widget.span.includes('col-span-4') ? '1/3' : (widget.span.includes('col-span-6') ? '1/2' : 'FULL')}
+                </button>
+                <button onClick={() => deleteWidget(index)} className="bg-red-900/50 text-red-500 w-6 h-6 sm:w-7 sm:h-7 rounded flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
+                    <X size={12}/>
+                </button>
+            </div>
+        </div>
+    </div>
+)}
                                             <div className={`flex-1 h-full w-full relative ${isEditMode ? 'mt-12 pointer-events-none opacity-50' : 'p-6'}`}>
                                                 {content}
                                             </div>

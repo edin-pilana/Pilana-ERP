@@ -184,52 +184,86 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         </div>
     );
 
-    const TopNavLayout = () => {
-        const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-        return (
-            <div className="flex flex-col w-full min-h-screen relative">
-                <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-14 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)]">
+    const TopNavLayout = () => (
+        <div className="flex flex-col w-full min-h-screen relative">
+            <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-16 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
+                
+                {/* 🟢 HAMBURGER DUGME - UVIJEK VIDLJIVO NA MOBITELU */}
+                <div className="flex items-center gap-3 w-full justify-between md:w-auto md:justify-start">
+                    <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2.5 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm active:scale-95 transition-transform">
+                        <Menu size={20}/>
+                    </button>
                     <LogoDisplay mobile={true} />
-                    <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
-                        <button onClick={() => onModuleChange('home')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                            <LayoutDashboard size={13} /> POČETNA
-                        </button>
-                        {visibleMenuItems.map(item => (
-                            <button key={item.id} onClick={() => onModuleChange(item.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === item.id ? 'text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
-                                {item.slika_url ? <img src={item.slika_url} className="w-3 h-3 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 13)} {item.naziv}
-                            </button>
-                        ))}
-                    </nav>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border">
-                            <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
-                            <span className="text-[10px] font-black text-theme-text uppercase tracking-widest">{user?.ime_prezime || 'Korisnik'}</span>
-                        </div>
-                        <button onClick={() => setIsSettingsOpen(true)} className="w-8 h-8 flex items-center justify-center bg-theme-panel border border-theme-border rounded-lg text-theme-muted hover:text-white hover:bg-theme-accent transition-all"><Settings size={15}/></button>
-                        <button onClick={() => setMobileMenuOpen(v => !v)} className="md:hidden w-8 h-8 flex items-center justify-center bg-theme-panel border border-theme-border rounded-lg text-theme-muted">
-                            {mobileMenuOpen ? <X size={16}/> : <Menu size={16}/>}
-                        </button>
+                    
+                    {/* ZAMJENSKI DUGMIĆI NA MOBITELU (ZA DESNI ĆOŠAK) */}
+                    <div className="md:hidden flex items-center gap-2">
+                         <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
                     </div>
-                </motion.header>
+                </div>
 
-                <AnimatePresence>
-                    {mobileMenuOpen && (
-                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="md:hidden w-full bg-theme-card border-b border-theme-border px-4 py-3 grid grid-cols-2 gap-2 z-30 sticky top-14 shadow-2xl max-h-[70vh] overflow-y-auto">
-                            <button onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} className={`flex items-center gap-2 px-3 py-3 rounded-xl font-bold uppercase transition-all text-[10px] tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted bg-theme-panel border border-theme-border hover:text-theme-text'}`}>
-                                <LayoutDashboard size={14} /> POČETNA
-                            </button>
-                            {visibleMenuItems.map(item => (
-                                <button key={item.id} onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} className={`flex items-center gap-2 px-3 py-3 rounded-xl font-bold uppercase transition-all text-[10px] tracking-widest ${activeModule === item.id ? 'text-white border-transparent' : 'text-theme-muted bg-theme-panel border border-theme-border hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
-                                    {item.slika_url ? <img src={item.slika_url} className="w-4 h-4 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 14)} <span className="truncate">{item.naziv}</span>
-                                </button>
-                            ))}
+                {/* DESKTOP NAVIGACIJA - SAKRIVENA NA MOBITELU */}
+                <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
+                    <MenuContent />
+                </nav>
+
+                {/* DESKTOP USER INFO - SAKRIVEN NA MOBITELU */}
+                <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border shadow-sm">
+                        <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
+                        <span className="text-[10px] font-black text-theme-text uppercase tracking-widest">{user?.ime_prezime || 'Korisnik'}</span>
+                    </div>
+                    <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
+                </div>
+            </motion.header>
+
+            {/* MOBILNA FIOKA (SLIDING DRAWER) */}
+            <AnimatePresence>
+                {mobileMenuOpen && (
+                    <>
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileMenuOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9000] md:hidden" />
+                        <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed top-0 left-0 bottom-0 w-[80%] max-w-[300px] bg-theme-card border-r border-theme-border z-[9001] p-4 flex flex-col md:hidden shadow-2xl">
+                            <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
+                                <LogoDisplay mobile={true} />
+                                <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-theme-panel rounded-lg text-theme-muted hover:text-white border border-theme-border"><X size={20}/></button>
+                            </div>
+                            
+                            <div className="flex items-center gap-3 p-3 mb-6 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
+                                <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
+                                <div className="text-left">
+                                    <p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p>
+                                    <p className="text-xs text-theme-text font-black truncate max-w-[150px]">{user?.ime_prezime || 'Korisnik'}</p>
+                                </div>
+                            </div>
+
+                            <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pb-10">
+                                <MenuContent />
+                            </nav>
                         </motion.div>
-                    )}
-                </AnimatePresence>
-                <main className="flex-1 p-4 md:p-8 relative z-10 w-full overflow-x-hidden">{children}</main>
+                    </>
+                )}
+            </AnimatePresence>
+
+            <main className="flex-1 p-3 md:p-8 relative z-10 w-full overflow-x-hidden">{children}</main>
+        </div>
+    );
+
+    return (
+        <div style={accentColor ? { '--theme-accent': accentColor } : {}} className="w-full min-h-screen bg-theme-main text-theme-text transition-colors duration-300 relative font-sans">
+            {/* OVDJE FORSIRAMO TOPNAV LAYOUT ZA MOBITELE BEZ OBZIRA NA DESKTOP IZBOR */}
+            <div className="hidden md:block">
+                {layout === 'sidebar' ? renderSidebarLayout() : <TopNavLayout />}
             </div>
-        );
-    };
+            <div className="md:hidden">
+                <TopNavLayout />
+            </div>
+            
+            <Toaster theme={theme === 'light' ? 'light' : 'dark'} richColors position="top-right" expand={true}/>
+            {renderSettingsPanel()}
+            <AnimatePresence>
+                {isSettingsOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[4000]" />}
+            </AnimatePresence>
+        </div>
+    );
 
     return (
         <div style={accentColor ? { '--theme-accent': accentColor } : {}} className="w-full min-h-screen bg-theme-main text-theme-text transition-colors duration-300 relative font-sans">
