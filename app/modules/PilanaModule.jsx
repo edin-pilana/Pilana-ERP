@@ -16,7 +16,7 @@ function DimBox({ label, val, set, disabled }) {
     return (
         <div className={`bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors ${disabled ? 'opacity-50' : ''}`}>
             <span className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl text-center" placeholder="0" />
+            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
         </div>
     );
 }
@@ -222,7 +222,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         window.addEventListener('radnici_updated', handleRadniciUpdate);
 
         // 🟢 REALTIME LIVE SYNC (Uživo Osvježavanje bez refresha)
-        const channel = supabase.channel('pilana_live_sync')
+        const channel = supabase.channel(`pilana_live_sync_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, (payload) => {
                 // Ako neko ažurira paket koji ja trenutno gledam, osvježi prikaz na ekranu!
                 if (selectedIzlazIdRef.current && payload.new?.paket_id === selectedIzlazIdRef.current) {

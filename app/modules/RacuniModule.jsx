@@ -64,37 +64,30 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
-    // 🟢 LIVE SYNC REALTIME KANAL
-    useEffect(() => {
-        load();
-// 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
-useEffect(() => {
+  // 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
+  useEffect(() => {
     setTimeout(() => {
         const autoAction = localStorage.getItem('erp_auto_action');
         if (autoAction === 'otvoreni') {
             setTab('otvoreni');
             localStorage.removeItem('erp_auto_action');
         }
-    }, 150); // Kratka pauza da se UI stabilizuje
+    }, 150);
 }, []);
-        const channel = supabase.channel('racuni_realtime')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
-                supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
-            })
-            .subscribe();
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
-        // 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
-    useEffect(() => {
-        const autoAction = localStorage.getItem('erp_auto_action');
-        if (autoAction === 'otvoreni') {
-            setTab('otvoreni');
-            localStorage.removeItem('erp_auto_action');
-        }
-    }, []);
-    }, []);
+// 🟢 LIVE SYNC REALTIME KANAL
+useEffect(() => {
+    load();
+    const channel = supabase.channel(`racuni_realtime_${Math.random()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
+            supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
+        })
+        .subscribe();
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}, []);
 
     const load = async () => {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);

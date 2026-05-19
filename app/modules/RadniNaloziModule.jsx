@@ -128,10 +128,10 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     // 🟢 UKLJUČEN REALTIME LIVE SYNC KANAL ZA RADNE NALOGE
     useEffect(() => {
         load();
-        const channel = supabase.channel('rn_global_realtime')
+        const channel = supabase.channel(`rn_global_realtime_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'radni_nalozi' }, () => load())
             .subscribe();
-        return () => supabase.removeChannel(channel);
+        return () => { supabase.removeChannel(channel); };
     }, []);
     // 🟢 PREMIUM DEEP LINKING: Automatsko otvaranje naloga u Edit modu
     useEffect(() => {

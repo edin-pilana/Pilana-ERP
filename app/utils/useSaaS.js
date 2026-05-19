@@ -43,6 +43,6 @@ export function useSaaS(modulIme, defaultPostavke) {
         }
     };
 
-    // 🟢 POPRAVLJENO: Vraćen defaultConfig kako moduli ne bi pucali
+    // 🟢 POPRAVLJENO: Vraćena ključna riječ defaultConfig!
     return { ui, setUi, isEditMode, pokreniEdit, odustani, spasiDizajn, defaultConfig: defaultPostavke };
 }

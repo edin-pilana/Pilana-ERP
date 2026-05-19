@@ -104,7 +104,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
     // 🟢 REALTIME LIVE SYNC (Uživo Osvježavanje bez refresha)
     useEffect(() => {
-        const channel = supabase.channel('prijem_live_sync')
+        const channel = supabase.channel(`prijem_live_sync_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'trupci' }, (payload) => {
                 // Kad god neko doda, izmijeni ili obriše trupac, osvježi listu
                 loadPrijemList();

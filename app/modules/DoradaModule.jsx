@@ -14,9 +14,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function DimBox({ label, val, set, disabled }) {
     return (
-        <div className={`bg-theme-card/80 p-2 rounded-xl border border-theme-border font-bold text-center shadow-inner ${disabled ? 'opacity-50' : ''}`}>
-            <span className="text-[8px] text-slate-400 uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl text-center" />
+        <div className={`bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-emerald-500 transition-colors ${disabled ? 'opacity-50' : ''}`}>
+            <span className="text-[9px] text-slate-400 uppercase block mb-1 font-black tracking-widest">{label}</span>
+            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
         </div>
     );
 }
@@ -999,10 +999,9 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                         </div>
                                     )}
                                     
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-4">
                                         <div className="relative overflow-visible">
-                                            <label className="text-[9px] text-slate-500 uppercase ml-1 block mb-1 tracking-widest">PROIZVOD KOJI SE SLAŽE</label>
-                                            
+                                            <label className="text-[9px] text-slate-500 uppercase ml-1 block mb-1 tracking-widest font-black">PROIZVOD KOJI SE SLAŽE</label>
                                             <MasterSearch 
                                                 data={katalog} 
                                                 poljaZaPretragu={['sifra', 'naziv']} 
@@ -1017,16 +1016,16 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                 )}
                                             />
                                         </div>
-                                        <div className="flex gap-2 items-center pt-[18px]">
-                                            <DimBox label="Deb" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} />
-                                            <DimBox label="Šir" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
-                                            <DimBox label="Duž" val={form.duzina} set={v => setForm({...form, duzina: v})} disabled={!!activeEditItem} />
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <DimBox label="Deb (cm)" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} />
+                                            <DimBox label="Šir (cm)" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
+                                            <DimBox label="Duž (cm)" val={form.duzina} set={v => setForm({...form, duzina: v})} disabled={!!activeEditItem} />
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row gap-3 items-stretch">
+                                    <div className="flex flex-col sm:flex-row gap-3 items-stretch mt-4">
                                         <div className="flex-1 relative">
-                                            <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') saveIzlaz()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xl text-center text-emerald-500 font-black focus:border-emerald-500 transition-all placeholder:text-theme-muted/30 shadow-inner outline-none" placeholder="KOLIČINA..." />
+                                            <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') saveIzlaz()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xl md:text-2xl text-center text-emerald-500 font-black focus:border-emerald-500 transition-all placeholder:text-theme-muted/30 shadow-inner outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="KOLIČINA..." />
                                         </div>
                                         <div className="sm:w-24 relative">
                                             <select value={form.jm} onChange={e => setForm({...form, jm: e.target.value})} className="w-full h-full bg-theme-panel rounded-xl text-theme-text font-black outline-none border border-theme-border focus:border-emerald-500 text-sm uppercase px-3 cursor-pointer shadow-inner">

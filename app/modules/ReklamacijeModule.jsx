@@ -46,11 +46,12 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
     useEffect(() => {
         loadReklamacije();
-        const channel = supabase.channel('reklamacije_sync')
+        // LIVE SYNC za Reklamacije
+        const channel = supabase.channel(`reklamacije_sync_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'reklamacije' }, () => {
                 loadReklamacije();
             }).subscribe();
-        return () => supabase.removeChannel(channel);
+        return () => { supabase.removeChannel(channel); };
     }, []);
 
     const loadReklamacije = async () => {

@@ -38,7 +38,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         return () => window.removeEventListener('saas_updated', fetchSaaSSettings);
     }, []);
 
-    // Funkcije za promjenu koje pamte izbor na uređaju
     const changeLayout = (noviLayout) => {
         setLocalLayout(noviLayout);
         localStorage.setItem('erp_device_layout', noviLayout);
@@ -92,7 +91,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
     const visibleMenuItems = dynamicModules.filter(item => hasPermission(item.id));
 
-    // 🟢 SVE ISPOD SU OBIČNE FUNKCIJE KOJE VRAĆAJU HTML (Rješenje za bijeli ekran na mobitelu)
     const renderLogoDisplay = (mobile = false) => (
         <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
             {appBranding.logo ? (

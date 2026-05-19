@@ -69,7 +69,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
     useEffect(() => {
         loadData();
-        const channel = supabase.channel('lager_realtime_channel')
+        const channel = supabase.channel(`lager_realtime_channel_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, () => loadData())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'trupci' }, () => loadData())
             .subscribe();
@@ -206,7 +206,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const filtriraniPaketi = useMemo(() => {
         return paketi.filter(p => {
             const norm = normalizujDimenzije(p);
-            // 🟢 POPRAVLJENO: Dodano ( || '') kako bi spriječili pucanje ako fali naziv u bazi
+            // 🟢 POPRAVLJENO: Zaštita null vrijednosti da spriječi "bijeli ekran"
             const matchSearch = (p.paket_id || '').includes(pretraga.toUpperCase()) || (p.naziv_proizvoda || '').toUpperCase().includes(pretraga.toUpperCase());
             const matchRN = fPaket.rn === '' || (p.broj_veze && p.broj_veze.includes(fPaket.rn.toUpperCase()));
             const matchDeb = (fPaket.debljinaOd === '' || norm.debljina >= parseFloat(fPaket.debljinaOd)) && (fPaket.debljinaDo === '' || norm.debljina <= parseFloat(fPaket.debljinaDo));
