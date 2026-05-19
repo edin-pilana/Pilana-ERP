@@ -6,10 +6,15 @@ import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
 
 export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor, dynamicModules = [] }) {
-    const { theme, layout, setTheme, setLayout, initSettings } = useAppStore();
+    const { initSettings, setTheme, setLayout } = useAppStore();
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false); 
     const [appBranding, setAppBranding] = useState({ name: 'SmartERP', logo: '' });
+
+    // 🟢 LOKALNO ČUVANJE DIZAJNA ZA SVAKI UREĐAJ ZASEBNO
+    const [localLayout, setLocalLayout] = useState('sidebar'); // ZAKUCAN DEFAULT
+    const [localTheme, setLocalTheme] = useState('industrial'); 
+    const [isLoaded, setIsLoaded] = useState(false);
 
     useEffect(() => {
         const fetchSaaSSettings = () => {
@@ -20,8 +25,31 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         };
         fetchSaaSSettings(); 
         window.addEventListener('saas_updated', fetchSaaSSettings);
+
+        // Učitavanje dizajna sa specifičnog uređaja
+        const savedLayout = localStorage.getItem('erp_device_layout');
+        if (savedLayout) setLocalLayout(savedLayout);
+        
+        const savedTheme = localStorage.getItem('erp_device_theme');
+        if (savedTheme) setLocalTheme(savedTheme);
+
+        setIsLoaded(true);
+
         return () => window.removeEventListener('saas_updated', fetchSaaSSettings);
     }, []);
+
+    // Funkcije za promjenu koje pamte izbor na uređaju
+    const changeLayout = (noviLayout) => {
+        setLocalLayout(noviLayout);
+        localStorage.setItem('erp_device_layout', noviLayout);
+        setLayout(noviLayout); 
+    };
+
+    const changeTheme = (novaTema) => {
+        setLocalTheme(novaTema);
+        localStorage.setItem('erp_device_theme', novaTema);
+        setTheme(novaTema);
+    };
 
     useEffect(() => { initSettings(user?.ime_prezime || 'Korisnik'); }, [user, initSettings]);
 
@@ -64,7 +92,8 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
     const visibleMenuItems = dynamicModules.filter(item => hasPermission(item.id));
 
-    const LogoDisplay = ({ mobile = false }) => (
+    // 🟢 SVE ISPOD SU OBIČNE FUNKCIJE KOJE VRAĆAJU HTML (Rješenje za bijeli ekran na mobitelu)
+    const renderLogoDisplay = (mobile = false) => (
         <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
             {appBranding.logo ? (
                 <img src={appBranding.logo} alt="ERP Logo" className={`${mobile ? 'h-7' : 'h-12'} object-contain`} />
@@ -81,40 +110,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         </div>
     );
 
-    const renderSettingsPanel = () => (
-        <AnimatePresence>
-            {isSettingsOpen && (
-                <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-0 right-0 h-full w-80 bg-theme-card border-l border-theme-border shadow-2xl z-[5000] p-6 flex flex-col backdrop-blur-[var(--glass-blur)]">
-                    <div className="flex justify-between items-center mb-8 border-b border-theme-border pb-4">
-                        <h2 className="text-lg font-black text-theme-text uppercase tracking-widest flex items-center gap-2"><Settings size={20}/> Postavke</h2>
-                        <button onClick={() => setIsSettingsOpen(false)} className="text-theme-muted hover:text-red-500 transition-colors"><X size={24}/></button>
-                    </div>
-                    <div className="space-y-6 flex-1 overflow-y-auto">
-                        <div>
-                            <h3 className="text-[10px] font-black text-theme-muted mb-3 uppercase tracking-widest">Tema / Boje</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button onClick={() => setTheme('industrial')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${theme==='industrial' ? 'bg-blue-600 border-blue-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Cpu size={24}/> <span className="text-[10px] font-black uppercase">Industrial</span></button>
-                                <button onClick={() => setTheme('aurora')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${theme==='aurora' ? 'bg-purple-600 border-purple-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Palette size={24}/> <span className="text-[10px] font-black uppercase">Aurora Glass</span></button>
-                                <button onClick={() => setTheme('light')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${theme==='light' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Sun size={24}/> <span className="text-[10px] font-black uppercase">Clinical Light</span></button>
-                                <button onClick={() => setTheme('executive')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${theme==='executive' ? 'bg-yellow-700 border-yellow-500 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Crown size={24}/> <span className="text-[10px] font-black uppercase">Executive Gold</span></button>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-[10px] font-black text-theme-muted mb-3 uppercase tracking-widest mt-6">Izgled Ekrana</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button onClick={() => setLayout('sidebar')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${layout==='sidebar' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><MonitorSmartphone size={24}/> <span className="text-[10px] font-black uppercase">Sidebar</span></button>
-                                <button onClick={() => setLayout('topnav')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${layout==='topnav' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><AlignJustify size={24}/> <span className="text-[10px] font-black uppercase">Top Nav</span></button>
-                                <button onClick={() => setLayout('bento')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${layout==='bento' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Menu size={24}/> <span className="text-[10px] font-black uppercase text-center">Bento</span></button>
-                                <button onClick={() => setLayout('kiosk')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${layout==='kiosk' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><LayoutDashboard size={24}/> <span className="text-[10px] font-black uppercase">Kiosk</span></button>
-                            </div>
-                        </div>
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
-
-    const MenuContent = () => (
+    const renderMenuContent = () => (
         <>
             <button onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
                 <LayoutDashboard size={18} /> POČETNA
@@ -127,38 +123,69 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         </>
     );
 
+    const renderSettingsPanel = () => (
+        <AnimatePresence>
+            {isSettingsOpen && (
+                <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-0 right-0 h-full w-80 bg-theme-card border-l border-theme-border shadow-2xl z-[5000] p-6 flex flex-col backdrop-blur-[var(--glass-blur)]">
+                    <div className="flex justify-between items-center mb-8 border-b border-theme-border pb-4">
+                        <h2 className="text-lg font-black text-theme-text uppercase tracking-widest flex items-center gap-2"><Settings size={20}/> Postavke uređaja</h2>
+                        <button onClick={() => setIsSettingsOpen(false)} className="text-theme-muted hover:text-red-500 transition-colors"><X size={24}/></button>
+                    </div>
+                    <div className="space-y-6 flex-1 overflow-y-auto">
+                        <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest text-center border-b border-theme-border pb-3">Ove postavke se pamte samo na ovom uređaju.</p>
+                        <div>
+                            <h3 className="text-[10px] font-black text-theme-muted mb-3 uppercase tracking-widest">Tema / Boje</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => changeTheme('industrial')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localTheme==='industrial' ? 'bg-blue-600 border-blue-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Cpu size={24}/> <span className="text-[10px] font-black uppercase">Industrial</span></button>
+                                <button onClick={() => changeTheme('aurora')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localTheme==='aurora' ? 'bg-purple-600 border-purple-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Palette size={24}/> <span className="text-[10px] font-black uppercase">Aurora Glass</span></button>
+                                <button onClick={() => changeTheme('light')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localTheme==='light' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Sun size={24}/> <span className="text-[10px] font-black uppercase">Clinical Light</span></button>
+                                <button onClick={() => changeTheme('executive')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localTheme==='executive' ? 'bg-yellow-700 border-yellow-500 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Crown size={24}/> <span className="text-[10px] font-black uppercase">Executive Gold</span></button>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-[10px] font-black text-theme-muted mb-3 uppercase tracking-widest mt-6">Izgled Ekrana</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => changeLayout('sidebar')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localLayout==='sidebar' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><MonitorSmartphone size={24}/> <span className="text-[10px] font-black uppercase">Sidebar</span></button>
+                                <button onClick={() => changeLayout('topnav')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localLayout==='topnav' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><AlignJustify size={24}/> <span className="text-[10px] font-black uppercase">Top Nav</span></button>
+                                <button onClick={() => changeLayout('bento')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localLayout==='bento' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><Menu size={24}/> <span className="text-[10px] font-black uppercase text-center">Bento</span></button>
+                                <button onClick={() => changeLayout('kiosk')} className={`p-4 rounded-2xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${localLayout==='kiosk' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text'}`}><LayoutDashboard size={24}/> <span className="text-[10px] font-black uppercase">Kiosk</span></button>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+
     const renderSidebarLayout = () => (
         <div className="flex w-full min-h-screen relative">
-            {/* MOBILNI TOP-BAR ZA SIDEBAR LAYOUT */}
             <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-theme-card border-b border-theme-border flex items-center justify-between px-4 z-40 backdrop-blur-md">
                 <button onClick={() => setMobileMenuOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Menu size={20}/></button>
-                <LogoDisplay mobile={true} />
+                {renderLogoDisplay(true)}
                 <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Settings size={20}/></button>
             </div>
 
-            {/* GLAVNI SIDEBAR (DESKTOP) */}
             <motion.aside initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="w-64 fixed h-screen bg-theme-card border-r border-theme-border flex flex-col p-4 backdrop-blur-[var(--glass-blur)] z-40 hidden md:flex">
-                <LogoDisplay />
+                {renderLogoDisplay()}
                 <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
-                    <MenuContent />
+                    {renderMenuContent()}
                 </nav>
                 <div className="border-t border-theme-border pt-4 mt-auto">
                     <div className="flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
                         <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
-                        <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate">{user?.ime_prezime || 'Korisnik'}</p></div>
+                        <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[140px]">{user?.ime_prezime || 'Korisnik'}</p></div>
                     </div>
-                    <button onClick={() => setIsSettingsOpen(true)} className="flex w-full items-center justify-center gap-2 p-4 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-xs font-black uppercase border border-theme-border"><Settings size={16}/> Postavke</button>
+                    <button onClick={() => setIsSettingsOpen(true)} className="flex w-full items-center justify-center gap-2 p-4 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-xs font-black uppercase border border-theme-border"><Settings size={16}/> Postavke uređaja</button>
                 </div>
             </motion.aside>
 
-            {/* SLIDING MOBILNA FIOKA (DRAWER) */}
             <AnimatePresence>
                 {mobileMenuOpen && (
                     <>
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileMenuOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9000] md:hidden" />
                         <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed top-0 left-0 bottom-0 w-[80%] max-w-[300px] bg-theme-card border-r border-theme-border z-[9001] p-4 flex flex-col md:hidden shadow-2xl">
                             <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
-                                <LogoDisplay mobile={true} />
+                                {renderLogoDisplay(true)}
                                 <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-theme-panel rounded-lg text-theme-muted hover:text-white border border-theme-border"><X size={20}/></button>
                             </div>
                             <div className="flex items-center gap-3 p-3 mb-6 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
@@ -166,7 +193,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                                 <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[150px]">{user?.ime_prezime || 'Korisnik'}</p></div>
                             </div>
                             <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pb-10">
-                                <MenuContent />
+                                {renderMenuContent()}
                             </nav>
                         </motion.div>
                     </>
@@ -177,13 +204,17 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         </div>
     );
 
-    const TopNavLayout = () => (
+    const renderTopNavLayout = () => (
         <div className="flex flex-col w-full min-h-screen relative">
             <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-16 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Menu size={20}/></button>
-                    <LogoDisplay mobile={true} />
+                <div className="flex items-center gap-3 w-full justify-between md:w-auto md:justify-start">
+                    <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2.5 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm active:scale-95 transition-transform"><Menu size={20}/></button>
+                    {renderLogoDisplay(true)}
+                    <div className="md:hidden flex items-center gap-2">
+                         <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
+                    </div>
                 </div>
+                
                 <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
                     <button onClick={() => onModuleChange('home')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all text-[10px] tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
                         <LayoutDashboard size={13} /> POČETNA
@@ -194,8 +225,9 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                         </button>
                     ))}
                 </nav>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border shadow-sm">
+                
+                <div className="hidden md:flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border shadow-sm">
                         <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
                         <span className="text-[10px] font-black text-theme-text uppercase tracking-widest truncate max-w-[100px]">{user?.ime_prezime || 'Korisnik'}</span>
                     </div>
@@ -203,18 +235,21 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                 </div>
             </motion.header>
 
-            {/* MOBILNA FIOKA ZA TOPNAV */}
             <AnimatePresence>
                 {mobileMenuOpen && (
                     <>
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileMenuOpen(false)} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9000] md:hidden" />
                         <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed top-0 left-0 bottom-0 w-[80%] max-w-[300px] bg-theme-card border-r border-theme-border z-[9001] p-4 flex flex-col md:hidden shadow-2xl">
                             <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
-                                <LogoDisplay mobile={true} />
+                                {renderLogoDisplay(true)}
                                 <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-theme-panel rounded-lg text-theme-muted hover:text-white border border-theme-border"><X size={20}/></button>
                             </div>
+                            <div className="flex items-center gap-3 p-3 mb-6 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
+                                <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
+                                <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[150px]">{user?.ime_prezime || 'Korisnik'}</p></div>
+                            </div>
                             <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pb-10">
-                                <MenuContent />
+                                {renderMenuContent()}
                             </nav>
                         </motion.div>
                     </>
@@ -246,7 +281,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
     const renderKioskLayout = () => (
         <div className="flex flex-col w-full min-h-screen relative">
             <motion.header initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-20 w-full bg-theme-card border-b border-theme-border px-6 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
-                <LogoDisplay mobile={true} />
+                {renderLogoDisplay(true)}
                 <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto custom-scrollbar pb-1">
                     <button onClick={() => onModuleChange('home')} className={`px-4 py-3 rounded-xl font-black uppercase transition-all text-xs tracking-widest border whitespace-nowrap ${activeModule === 'home' ? 'bg-theme-accent border-theme-accent text-white shadow-glow' : 'bg-theme-panel border-theme-border text-theme-muted hover:text-theme-text hidden sm:block'}`}>
                         POČETNA
@@ -264,23 +299,24 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         </div>
     );
 
+    if (!isLoaded) return <div className="min-h-screen bg-theme-main flex items-center justify-center"><div className="animate-pulse text-slate-500 font-bold tracking-widest uppercase">Učitavam interfejs...</div></div>;
+
     return (
         <div style={accentColor ? { '--theme-accent': accentColor } : {}} className="w-full min-h-screen bg-theme-main text-theme-text transition-colors duration-300 relative font-sans">
             <div className="hidden md:block">
-                {layout === 'sidebar' && renderSidebarLayout()}
-                {layout === 'kiosk' && renderKioskLayout()}
-                {layout === 'bento' && renderBentoLayout()}
-                {layout === 'topnav' && <TopNavLayout />}
-            </div>
-            <div className="md:hidden">
-                <TopNavLayout />
+                {localLayout === 'sidebar' && renderSidebarLayout()}
+                {localLayout === 'kiosk' && renderKioskLayout()}
+                {localLayout === 'bento' && renderBentoLayout()}
+                {localLayout === 'topnav' && renderTopNavLayout()}
             </div>
             
-            <Toaster theme={theme === 'light' ? 'light' : 'dark'} richColors position="top-right" expand={true}/>
+            <div className="md:hidden">
+                {renderTopNavLayout()}
+            </div>
+            
+            <Toaster theme={localTheme === 'light' ? 'light' : 'dark'} richColors position="top-right" expand={true}/>
+            
             {renderSettingsPanel()}
-            <AnimatePresence>
-                {isSettingsOpen && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[4000]" />}
-            </AnimatePresence>
         </div>
     );
 }
