@@ -94,7 +94,10 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     
     const saas = useSaaS('prorez_modul', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16', naslov_skenera: 'SKENIRAJ TRUPAC NA BRENTI',
-        polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (GLAVNI)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
+        polja_radnici: [ 
+            { id: 'brentista', label: '👨‍🔧 BRENTISTA (GLAVNI)', span: 'col-span-1' }, 
+            { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }
+        ],
         polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1', customWidth: '100%', span: 'col-span-4' } ]
     });
 
@@ -123,14 +126,25 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
     const scanTimerRef = useRef(null); 
+    const inputRef = useRef(null); 
+    const btnPotvrdiRef = useRef(null); 
 
     const [brentista, setBrentista] = useState('');
     const [viljuskarista, setViljuskarista] = useState('');
     const [radniciList, setRadniciList] = useState([]);
 
-    const emitRadniciUpdate = (brentistaIme, viljuskaristaIme) => {
+    // 🟢 CENTRALNI TRAGAČ SVIH AKTIVNOSTI
+    const zapisiU_Log = async (akcija, detalji) => {
+        await supabase.from('sistem_audit_log').insert([{ 
+            korisnik: user?.ime_prezime || 'Nepoznat', 
+            akcija: akcija, 
+            detalji: detalji 
+        }]);
+    };
+
+    const emitRadniciUpdate = (b, v) => {
         window.dispatchEvent(new CustomEvent('radnici_updated', {
-            detail: { brentista: brentistaIme, viljuskarista: viljuskaristaIme }
+            detail: { brentista: b, viljuskarista: v }
         }));
     };
 
@@ -138,8 +152,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'brentista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
-            setBrentista(novoIme);
-            localStorage.setItem('zajednicki_brentista', novoIme);
+            setBrentista(novoIme); localStorage.setItem('zajednicki_brentista', novoIme);
             emitRadniciUpdate(novoIme, viljuskarista);
         }
     };
@@ -148,109 +161,255 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
-            setViljuskarista(novoIme);
-            localStorage.setItem('zajednicki_viljuskarista', novoIme);
+            setViljuskarista(novoIme); localStorage.setItem('zajednicki_viljuskarista', novoIme);
             emitRadniciUpdate(brentista, novoIme);
         }
     };
 
     useEffect(() => {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>({naziv: r.ime_prezime})) : []));
-        if (header?.masina) loadProrezani();
+        if (header?.masina && header?.datum) loadProrezani();
 
         const ucitajDezurneRadnike = async () => {
             if (!header?.masina) return;
             const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-            let locBrentista = localStorage.getItem('zajednicki_brentista') || '';
-            let locViljuskarista = localStorage.getItem('zajednicki_viljuskarista') || '';
+            
+            let locB = localStorage.getItem('zajednicki_brentista') || '';
+            let locV = localStorage.getItem('zajednicki_viljuskarista') || '';
 
             if (data && data.length > 0) {
                 const b = data.find(r => r.uloga === 'brentista');
                 const v = data.find(r => r.uloga === 'viljuskarista');
-                if (b) { locBrentista = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
-                if (v) { locViljuskarista = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
+                if (b) { locB = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
+                if (v) { locV = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
             }
             
-            setBrentista(locBrentista);
-            setViljuskarista(locViljuskarista);
-            emitRadniciUpdate(locBrentista, locViljuskarista);
+            setBrentista(locB); setViljuskarista(locV);
+            emitRadniciUpdate(locB, locV);
         };
         ucitajDezurneRadnike();
 
         const handleRadniciUpdate = (event) => { 
             if (event.detail) {
-                setBrentista(event.detail.brentista);
-                setViljuskarista(event.detail.viljuskarista);
-            } else {
-                 ucitajDezurneRadnike();
-            }
+                setBrentista(event.detail.brentista); setViljuskarista(event.detail.viljuskarista);
+            } else { ucitajDezurneRadnike(); }
         };
         window.addEventListener('radnici_updated', handleRadniciUpdate);
         return () => window.removeEventListener('radnici_updated', handleRadniciUpdate);
-    }, [header?.masina]);
+    }, [header?.masina, header?.datum]);
 
+    // 🟢 LOAD PROREZANI - SA PAMETNIM FILTRIRANJEM PO SESIJI SMJENE
     const loadProrezani = async () => {
         if(!header?.masina) return;
-        const now = new Date();
-        const past12h = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
-        const { data } = await supabase.from('prorez_log').select('*').eq('masina', header.masina).gte('created_at', past12h).order('created_at', { ascending: false });
-        if(data) setProrezaniLista(data);
+        
+        const { data, error } = await supabase.from('prorez_log')
+            .select('*')
+            .eq('masina', header.masina)
+            .order('id', { ascending: false })
+            .limit(200);
+            
+        if (error) {
+            console.error("Greška pri povlačenju liste prorezanih:", error);
+            return;
+        }
+
+        if (data) {
+            const odabraniDatum = header.datum || new Date().toISOString().split('T')[0];
+            const filtriranoZaDanas = data.filter(log => {
+                if (log.datum) return log.datum === odabraniDatum;
+                const logDate = new Date(log.created_at);
+                const y = logDate.getFullYear();
+                const m = String(logDate.getMonth() + 1).padStart(2, '0');
+                const d = String(logDate.getDate()).padStart(2, '0');
+                const logLokalniString = `${y}-${m}-${d}`;
+                return logLokalniString === odabraniDatum;
+            });
+            
+            // FILTRIRANJE SESIJE: Sakrij logove ako je smjena nedavno završena
+            const sessionTime = localStorage.getItem('prorez_session_start_' + header.masina);
+            if (sessionTime) {
+                const sessionDate = new Date(sessionTime);
+                const filteredBySession = filtriranoZaDanas.filter(log => new Date(log.created_at) >= sessionDate);
+                setProrezaniLista(filteredBySession);
+            } else {
+                setProrezaniLista(filtriranoZaDanas);
+            }
+        }
     };
+
+    useEffect(() => {
+        const channel = supabase.channel(`prorez_live_${Math.random()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'prorez_log' }, () => {
+                loadProrezani();
+            }).subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [header?.masina, header?.datum]);
 
     const handleScanInput = (val, isEnter = false) => {
         setScan(val);
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-        if (!val) return;
+        if (!val.trim()) return;
         
         if (isEnter) {
             processTrupacScan(val);
         } else {
-            scanTimerRef.current = setTimeout(() => processTrupacScan(val), 2000);
+            scanTimerRef.current = setTimeout(() => processTrupacScan(val), 1000);
         }
     };
 
     const processTrupacScan = async (val) => {
         const id = val.toUpperCase().trim();
-        if (id.length < 3) return; 
+        // 🟢 DOZVOLJEN UNOS QR KODA OD 1 KARAKTERA
+        if (id.length < 1) return; 
         
         const { data } = await supabase.from('trupci').select('*').eq('id', id).maybeSingle();
         if (data) {
-            if(data.prorezan_at) return prikaziDialog({ tip: 'upozorenje', naslov: 'Iskorišten Trupac', poruka: `Trupac ${id} je VEĆ PROREZAN!\nSkenirajte drugi.`, onCancel: zatvoriDialog });
+            if(data.status === 'prorezano' || data.status === 'PREKROJENO') {
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Iskorišten Trupac', poruka: `Trupac ${id} je VEĆ PROREZAN!\nSkenirajte drugi.`, onCancel: zatvoriDialog });
+            }
+            
             setTrupac(data); 
             setScan('');
-            if (window.navigator.vibrate) window.navigator.vibrate(50);
+            if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(50);
+            
+            setTimeout(() => { btnPotvrdiRef.current?.focus(); }, 100);
         } else {
             prikaziDialog({ tip: 'greska', naslov: 'Nepoznat Trupac', poruka: `Trupac sa ID kodom "${id}" ne postoji na lageru!`, onCancel: zatvoriDialog });
             setScan('');
         }
     };
 
+    // 🟢 OPTIMISTIC UI + LOGIKA ZA NASTAVLJANJE PREKINUTE SMJENE
     const zavrsiProrez = async () => {
         if(!trupac) return;
-        if(!brentista) return prikaziDialog({ tip: 'upozorenje', naslov: 'Obavezno Polje', poruka: "ZABRANJENO:\nMorate odabrati Brentistu kako bi se prorez evidentirao!", onCancel: zatvoriDialog });
+        
+        if(!brentista) {
+            // PROVJERA: Da li danas već imamo izrezanih trupaca na ovoj mašini?
+            const odabraniDatum = header.datum || new Date().toISOString().split('T')[0];
+            const { data: zadnjiLog } = await supabase.from('prorez_log')
+                .select('*')
+                .eq('masina', header.masina)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            // Ako imamo zadnji log i on je od danas, pitaj korisnika za nastavak smjene
+            if (zadnjiLog && zadnjiLog.length > 0 && zadnjiLog[0].datum === odabraniDatum) {
+                const zadnji = zadnjiLog[0];
+                return prikaziDialog({
+                    tip: 'info',
+                    naslov: 'Započeta Smjena',
+                    poruka: `Pronađen je započet prorez za danas (Brentista: ${zadnji.brentista}).\n\nŽelite li nastaviti tu smjenu i učitati prethodnu listu, ili započeti novu smjenu od nule?`,
+                    confirmText: '▶️ NASTAVI SMJENU',
+                    cancelText: '🆕 NOVA SMJENA',
+                    onConfirm: async () => {
+                        localStorage.removeItem('prorez_session_start_' + header.masina);
+                        await handleBrentistaChange(zadnji.brentista);
+                        if (zadnji.viljuskarista) await handleViljuskaristaChange(zadnji.viljuskarista);
+                        await loadProrezani(); 
+                        zatvoriDialog();
+                        // Triggere actual save after confirming!
+                        zavrsiProrezPravi(zadnji.brentista, zadnji.viljuskarista); 
+                    },
+                    onCancel: () => {
+                        zatvoriDialog();
+                        setTimeout(() => {
+                            prikaziDialog({ tip: 'upozorenje', naslov: 'Novi Brentista', poruka: "Započinjete novu smjenu. Molimo odaberite Brentistu iz padajućeg menija da biste potvrdili rezanje!", onCancel: zatvoriDialog });
+                        }, 300);
+                    }
+                });
+            } else {
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Obavezno Polje', poruka: "ZABRANJENO:\nMorate odabrati Brentistu kako bi se prorez evidentirao!", onCancel: zatvoriDialog });
+            }
+        }
+        
+        zavrsiProrezPravi(brentista, viljuskarista);
+    };
+
+    const zavrsiProrezPravi = async (brentistaZaSpasiti, viljuskaristaZaSpasiti) => {
+        const sviRadniciProrez = [brentistaZaSpasiti, viljuskaristaZaSpasiti].filter(Boolean).join(', ');
+        
+        const logPayload = {
+            trupac_id: trupac.id, 
+            zapremina: trupac.zapremina,
+            mjesto: header.mjesto, 
+            masina: header.masina,
+            datum: header.datum || new Date().toISOString().split('T')[0], 
+            brentista: brentistaZaSpasiti, 
+            viljuskarista: viljuskaristaZaSpasiti, 
+            svi_radnici_imena: sviRadniciProrez,
+            snimio_korisnik: user?.ime_prezime || 'Sistem', 
+            korisnik: user?.ime_prezime || 'Sistem', 
+            vrsta_drveta: trupac.vrsta || 'N/A'
+        };
+
+        const tempId = Date.now();
+        const optimisticLog = { ...logPayload, id: tempId, created_at: new Date().toISOString() };
+        setProrezaniLista(prev => [optimisticLog, ...prev]);
+        
+        setTrupac(null);
+        setScan(''); 
+        setTimeout(() => inputRef.current?.focus(), 100);
+
+        await supabase.from('trupci').update({ status: 'prorezano' }).eq('id', logPayload.trupac_id);
+        
+        const { data: insertedData, error: errInsert } = await supabase.from('prorez_log').insert([logPayload]).select().single();
+        
+        if (errInsert) {
+            setProrezaniLista(prev => prev.filter(p => p.id !== tempId));
+            prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: errInsert.message, onCancel: zatvoriDialog });
+        } else if (insertedData) {
+            setProrezaniLista(prev => prev.map(p => p.id === tempId ? insertedData : p));
+            zapisiU_Log('PROREZ_EVIDENTIRAN', `Izrezan trupac ${logPayload.trupac_id} (${logPayload.zapremina} m³). Brentista: ${brentistaZaSpasiti}`);
+        }
+    };
+
+    // 🟢 POPRAVLJENO: Pametni Dialog za vraćanje na stanje
+    const vratiNaStanje = async (p) => {
         prikaziDialog({
-            tip: 'info', naslov: 'Potvrda',
-            poruka: `Da li ste sigurni da je trupac ${trupac.id} izrezan i želite ga skinuti sa zaliha?`,
-            confirmText: '✅ DA, IZREZANO', cancelText: '✕ PREKINI',
+            tip: 'upozorenje',
+            naslov: 'Vraćanje na zalihe',
+            poruka: `Da li ste sigurni da želite poništiti prorez za trupac ${p.trupac_id} i vratiti ga na lager?`,
+            confirmText: '✅ DA, VRATI NA STANJE',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                setProrezaniLista(prev => prev.filter(item => item.id !== p.id));
+                await supabase.from('prorez_log').delete().eq('id', p.id);
+                await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', p.trupac_id);
+                zapisiU_Log('STORNO_PROREZA', `Korisnik je poništio prorez za trupac ${p.trupac_id}. Trupac je vraćen nazad na zalihe.`);
+                zatvoriDialog();
+                setTimeout(() => inputRef.current?.focus(), 100);
+            },
+            onCancel: zatvoriDialog
+        });
+    };
+
+    // 🟢 NOVA FUNKCIJA: ZAVRŠI SMJENU (Odjava radnika i čišćenje ekrana)
+    const zavrsiSmjenu = async () => {
+        if(prorezaniLista.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Prazno', poruka: "Nema izrezanih trupaca u trenutnoj smjeni.", onCancel: zatvoriDialog });
+        
+        prikaziDialog({
+            tip: 'info',
+            naslov: 'Završi Smjenu?',
+            poruka: `U ovoj smjeni je izrezano: ${totalIzrezanoM3.toFixed(3)} m³ (${prorezaniLista.length} trupaca).\n\nDa li želite završiti smjenu i odjaviti radnike sa mašine? Lista će biti obrisana sa ekrana.`,
+            confirmText: '🏁 ZAVRŠI SMJENU',
+            cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 const now = new Date().toISOString();
-                const { error: errUpdate } = await supabase.from('trupci').update({ status: 'prorezano', prorezan_at: now }).eq('id', trupac.id);
-                if (errUpdate) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: errUpdate.message, onCancel: zatvoriDialog });
-
-                const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
-                const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
-                const sviRadniciProrez = [brentista, viljuskarista, ...ostaliRadnici].filter(Boolean).join(', ');
+                await supabase.from('aktivni_radnici').update({ vrijeme_odjave: now })
+                    .eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
                 
-                const logPayload = {
-                    trupac_id: trupac.id, zapremina: trupac.zapremina,
-                    mjesto: header.mjesto, masina: header.masina,
-                    brentista, viljuskarista, svi_radnici_imena: sviRadniciProrez,
-                    snimio_korisnik: user.ime_prezime, vrsta_drveta: trupac.vrsta || 'N/A'
-                };
+                setBrentista('');
+                setViljuskarista('');
+                localStorage.removeItem('zajednicki_brentista');
+                localStorage.removeItem('zajednicki_viljuskarista');
+                emitRadniciUpdate('', '');
                 
-                await supabase.from('prorez_log').insert([logPayload]);
-                setTrupac(null);
-                setScan(''); loadProrezani(); zatvoriDialog();
+                // 🟢 Označi novu sesiju od trenutka klika kako bi se sakrili prethodni rezovi
+                localStorage.setItem('prorez_session_start_' + header.masina, now);
+                loadProrezani(); 
+                
+                zatvoriDialog();
+                prikaziDialog({ tip: 'uspjeh', naslov: 'Smjena Završena', poruka: 'Radnici su odjavljeni i lista je očišćena za sljedeću smjenu.', onCancel: zatvoriDialog });
             },
             onCancel: zatvoriDialog
         });
@@ -317,7 +476,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                         <label className="text-[9px] text-theme-muted uppercase block mb-4 font-black tracking-widest text-center" style={{ color: saas.ui.boja_teksta, fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_skenera}</label>
                         <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-red-500/50 focus-within:border-red-500'}`}>
                             
-                            <input value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleScanInput(scan, true) }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="ČEKAM SKEN..." />
+                            <input 
+                                ref={inputRef}
+                                value={scan} 
+                                onChange={e => handleScanInput(e.target.value)} 
+                                onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleScanInput(scan, true); } }} 
+                                className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" 
+                                placeholder="ČEKAM SKEN..." 
+                            />
                             
                             <button onClick={() => setIsScanning(true)} className="shrink-0 px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
                         </div>
@@ -336,8 +502,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.promjer} cm</span></div>
                                 </div>
                                 <div className="flex gap-4 relative z-10">
-                                    <button onClick={() => {setTrupac(null); setScan('');}} className="flex-1 py-5 bg-theme-card text-slate-400 font-black rounded-2xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-sm">✕ Otkazivanje</button>
-                                    <button onClick={zavrsiProrez} className="flex-[2] py-5 bg-red-600 text-white font-black rounded-2xl uppercase shadow-[0_0_30px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all text-sm tracking-widest hover:scale-[1.02]">✅ POTVRDI KAO IZREZANO</button>
+                                    <button onClick={() => {setTrupac(null); setScan(''); setTimeout(() => inputRef.current?.focus(), 100);}} className="flex-1 py-5 bg-theme-card text-slate-400 font-black rounded-2xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-sm">✕ Otkazivanje</button>
+                                    <button 
+                                        ref={btnPotvrdiRef}
+                                        onClick={zavrsiProrez} 
+                                        className="flex-[2] py-5 bg-red-600 text-white font-black rounded-2xl uppercase shadow-[0_0_30px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all text-sm tracking-widest hover:scale-[1.02] focus:ring-4 ring-red-400 outline-none"
+                                    >
+                                        ✅ POTVRDI KAO IZREZANO
+                                    </button>
                                 </div>
                             </div>
                         ) : (
@@ -352,18 +524,40 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 <div className="lg:col-span-5 space-y-6">
                     <div className="bg-theme-card/80 backdrop-blur-md p-6 rounded-[2.5rem] border border-theme-border shadow-xl flex flex-col h-full" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-end border-b border-theme-border pb-4 mb-4">
-                            <div><h3 className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Dnevni Učinak (Izrezano)</h3><p className="text-3xl font-black text-red-500 drop-shadow-md">{totalIzrezanoM3.toFixed(3)} <span className="text-sm text-red-700">m³</span></p></div>
-                            <div className="text-right"><p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">Broj Trupaca</p><p className="text-xl font-black text-theme-text">{prorezaniLista.length} <span className="text-xs text-slate-500">kom</span></p></div>
+                            <div>
+                                <h3 className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Dnevni Učinak (Izrezano)</h3>
+                                <p className="text-3xl font-black text-red-500 drop-shadow-md">{totalIzrezanoM3.toFixed(3)} <span className="text-sm text-red-700">m³</span></p>
+                            </div>
+                            <div className="text-right flex flex-col items-end gap-2">
+                                <div>
+                                    <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">Broj Trupaca</p>
+                                    <p className="text-xl font-black text-theme-text">{prorezaniLista.length} <span className="text-xs text-slate-500">kom</span></p>
+                                </div>
+                                <button onClick={zavrsiSmjenu} className="bg-slate-800 hover:bg-red-600 hover:text-white text-slate-300 border border-slate-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all shadow-md">
+                                    🏁 Završi Smjenu
+                                </button>
+                            </div>
                         </div>
                         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 max-h-[500px]">
-                            {prorezaniLista.length === 0 && <div className="text-center text-xs text-slate-500 py-10 italic">Nema izrezanih trupaca u zadnjih 12 sati.</div>}
+                            {prorezaniLista.length === 0 && <div className="text-center text-xs text-slate-500 py-10 italic">Nema izrezanih trupaca u trenutnoj smjeni.</div>}
                             {prorezaniLista.map((p, i) => (
-                                <div key={p.id} className="bg-theme-panel p-4 rounded-2xl border border-theme-border/50 flex justify-between items-center hover:border-red-500/50 transition-colors shadow-sm">
+                                <div key={p.id} className="bg-theme-panel p-4 rounded-2xl border border-theme-border/50 flex flex-col md:flex-row justify-between md:items-center hover:border-red-500/50 transition-colors shadow-sm gap-3">
                                     <div className="flex items-center gap-4">
                                         <div className="text-[10px] font-black text-slate-500 w-4">{prorezaniLista.length - i}.</div>
-                                        <div><p className="text-theme-text text-sm font-black">{p.trupac_id}</p><p className="text-[9px] text-slate-400 mt-1 uppercase font-bold tracking-widest">{new Date(p.created_at).toLocaleTimeString('de-DE')} | {p.vrsta_drveta}</p></div>
+                                        <div>
+                                            <p className="text-theme-text text-sm font-black">{p.trupac_id}</p>
+                                            <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold tracking-widest">
+                                                {p.created_at ? new Date(p.created_at).toLocaleTimeString('de-DE') : new Date().toLocaleTimeString('de-DE')} | {p.vrsta_drveta}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="text-right"><p className="text-red-400 font-black text-lg">{parseFloat(p.zapremina||0).toFixed(3)}</p><p className="text-[8px] text-red-700 uppercase font-black">m³</p></div>
+                                    <div className="flex items-center justify-between md:justify-end gap-4 border-t md:border-none border-theme-border pt-3 md:pt-0">
+                                        <div className="text-right"><p className="text-red-400 font-black text-lg">{parseFloat(p.zapremina||0).toFixed(3)}</p><p className="text-[8px] text-red-700 uppercase font-black">m³</p></div>
+                                        
+                                        <button onClick={() => vratiNaStanje(p)} className="text-amber-500 font-black px-4 py-3 bg-amber-900/20 rounded-xl hover:bg-amber-500 hover:text-black transition-all text-[10px] uppercase shadow-sm flex items-center gap-2">
+                                            ↩ Vrati na stanje
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>

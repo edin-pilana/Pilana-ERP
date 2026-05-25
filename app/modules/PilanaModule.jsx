@@ -39,6 +39,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
+
     const obrisiLog = async (id) => { if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); } };
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
@@ -83,7 +84,6 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 
 export default function PilanaModule({ user, header, setHeader, onExit }) {
     
-    // PAMETNA SELEKCIJA MAŠINE
     useEffect(() => {
         const postaviMasinu = async () => {
             const { data } = await supabase.from('masine').select('naziv').ilike('dozvoljeni_moduli', '%Pilana%');
@@ -101,7 +101,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         postaviMasinu();
     }, [header?.masina]);
     
-    // ZAJEDNIČKI MODUL U UI
     const saas = useSaaS('pilana_izlaz', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16',
         naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET',
@@ -153,7 +152,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [rnStavke, setRnStavke] = useState([]);
     const [katalog, setKatalog] = useState([]);
     const [aktivniNalozi, setAktivniNalozi] = useState([]);
-    const [activeIzlazIds, setActiveIzlazIds] = useState([]);
+    
+    // 🟢 LISTA ZAPOČETIH PAKETA (Objekti sa dimenzijama i m3)
+    const [aktivniPaketiInfo, setAktivniPaketiInfo] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     const [activeEditItem, setActiveEditItem] = useState(null);
@@ -174,11 +175,18 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [odabraneOznake, setOdabraneOznake] = useState([]);
     const timerRef = useRef(null);
 
-    // REFERENCE ZA LIVE UPDATE (Tako da Realtime uvijek zna šta je trenutno odabrano)
     const selectedIzlazIdRef = useRef(selectedIzlazId);
     const radniNalogRef = useRef(radniNalog);
     useEffect(() => { selectedIzlazIdRef.current = selectedIzlazId; }, [selectedIzlazId]);
     useEffect(() => { radniNalogRef.current = radniNalog; }, [radniNalog]);
+
+    const zapisiU_Log = async (akcija, detalji) => {
+        await supabase.from('sistem_audit_log').insert([{ 
+            korisnik: user?.ime_prezime || 'Nepoznat', 
+            akcija: akcija, 
+            detalji: detalji 
+        }]);
+    };
 
     const emitRadniciUpdate = (brentistaIme, viljuskaristaIme) => {
         window.dispatchEvent(new CustomEvent('radnici_updated', {
@@ -190,6 +198,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>({naziv: r.ime_prezime})) : []));
         supabase.from('katalog_proizvoda').select('*').then(({data}) => setKatalog(data || []));
         supabase.from('radni_nalozi').select('id, kupac_naziv, status, tip_naloga, stavke_jsonb, tehnologija_jsonb').neq('status', 'ZAVRŠENO').then(({data}) => setAktivniNalozi(data || []));
+        
+        // Povuče pakete pri prvom renderu
         ucitajSveZapoocetePakete();
 
         const ucitajDezurneRadnike = async () => {
@@ -221,20 +231,16 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         };
         window.addEventListener('radnici_updated', handleRadniciUpdate);
 
-        // 🟢 REALTIME LIVE SYNC (Uživo Osvježavanje bez refresha)
         const channel = supabase.channel(`pilana_live_sync_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, (payload) => {
-                // Ako neko ažurira paket koji ja trenutno gledam, osvježi prikaz na ekranu!
                 if (selectedIzlazIdRef.current && payload.new?.paket_id === selectedIzlazIdRef.current) {
                     fetchIzlaz(selectedIzlazIdRef.current);
                 }
-                // Ako neko kreira ili završi paket, osvježi donju listu aktivnih paketa
                 if (payload.new?.masina === header?.masina || payload.old?.masina === header?.masina) {
                     ucitajSveZapoocetePakete();
                 }
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'radni_nalozi' }, (payload) => {
-                // Ako radimo na istom nalogu i neko drugi je promijenio količinu, ažuriraj i moj ekran!
                 if (radniNalogRef.current && payload.new?.id === radniNalogRef.current) {
                     handleNalogSelect(radniNalogRef.current);
                 }
@@ -268,11 +274,42 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         emitRadniciUpdate(brentista, novoIme);
     };
 
+    // 🟢 DEEP DB SCAN - Povlači detalje nezaključenih paketa
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) return;
-        const { data } = await supabase.from('paketi').select('paket_id').is('closed_at', null).eq('masina', header.masina);
-        if (data && data.length > 0) setActiveIzlazIds([...new Set(data.map(p => p.paket_id))]);
-        else setActiveIzlazIds([]);
+        
+        const { data, error } = await supabase.from('paketi')
+            .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+            .is('closed_at', null)
+            .eq('masina', header.masina);
+
+        if (error) {
+            console.error("Greška pri povlačenju paketa:", error);
+            return;
+        }
+
+        if (data && data.length > 0) {
+            // Grupisanje stavki unutar istog paketa
+            const grouped = data.reduce((acc, curr) => {
+                if (!acc[curr.paket_id]) {
+                    acc[curr.paket_id] = { 
+                        id: curr.paket_id, 
+                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina}`, 
+                        proizvod: curr.naziv_proizvoda,
+                        m3: 0, 
+                        stavke: 0 
+                    };
+                }
+                acc[curr.paket_id].m3 += parseFloat(curr.kolicina_final || curr.kolicina_m3 || 0);
+                acc[curr.paket_id].stavke += 1;
+                return acc;
+            }, {});
+            
+            // Sortiranje opadajuće po ID-u
+            setAktivniPaketiInfo(Object.values(grouped).sort((a,b) => b.id.localeCompare(a.id)));
+        } else {
+            setAktivniPaketiInfo([]);
+        }
     };
 
     useEffect(() => {
@@ -306,6 +343,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     if (isFazni) {
                         const fazaZaOvuMasinu = (tehnologija[s.id] || []).find(f => f.masina?.toUpperCase() === header.masina?.toUpperCase());
                         if (!fazaZaOvuMasinu) return; 
+ 
                         dimenzije = fazaZaOvuMasinu.dimenzija || dimenzije;
                         naruceno = parseFloat(fazaZaOvuMasinu.kolicina || 0);
                         jm = fazaZaOvuMasinu.jm || jm;
@@ -354,34 +392,39 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
     const processIzlaz = async (val) => {
         const id = val.toUpperCase().trim();
-        if (!activeIzlazIds.includes(id)) {
-            const { data: existing } = await supabase.from('paketi').select('*').eq('paket_id', id);
-            if (existing && existing.length > 0) {
-                const spisak = existing.map(i => `- ${i.naziv_proizvoda}: ${i.kolicina_final} ${i.jm}`).join('\n');
-                return prikaziDialog({
-                    tip: 'info', naslov: 'Paket Pronađen', poruka: `PAKET JE PRONAĐEN U BAZI: ${id}\n\nTrenutno sadrži:\n${spisak}\n\nŽelite li nastaviti rad na ovom paketu?`,
-                    confirmText: '✅ DA, AŽURIRAJ', cancelText: '✕ PONIŠTI',
-                    onConfirm: () => { setActiveIzlazIds(p => [...p, id]); setSelectedIzlazId(id); fetchIzlaz(id); setIzlazScan(''); zatvoriDialog(); },
-                    onCancel: () => { setIzlazScan(''); zatvoriDialog(); }
-                });
-            }
-            setActiveIzlazIds(p => [...p, id]);
-        }
         setSelectedIzlazId(id); fetchIzlaz(id); setIzlazScan('');
     };
 
     const handleIzlazInput = (val, isEnter = false) => {
-        setIzlazScan(val); if(timerRef.current) clearTimeout(timerRef.current);
-        if(!val) return;
-        if (isEnter) processIzlaz(val); else timerRef.current = setTimeout(() => processIzlaz(val), 2000);
+        setIzlazScan(val);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (!val) return;
+        if (isEnter) processIzlaz(val);
+        else timerRef.current = setTimeout(() => processIzlaz(val), 2000);
     };
 
     const toggleOznaka = (o) => { setOdabraneOznake(prev => prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o]); };
+
+    const livePreracunM3 = useMemo(() => {
+        if(!form.kolicina_ulaz || isNaN(form.kolicina_ulaz)) return 0;
+        const v = parseFloat(form.debljina) || 1;
+        const s = parseFloat(form.sirina) || 1;
+        const d = parseFloat(form.duzina) || 1;
+        const unosKol = parseFloat(form.kolicina_ulaz);
+        
+        let komada = unosKol;
+        if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
+        else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
+        else if (form.jm === 'm1') komada = unosKol / (d/100);
+        
+        return (komada * (v/100) * (s/100) * (d/100)).toFixed(3);
+    }, [form.kolicina_ulaz, form.jm, form.debljina, form.sirina, form.duzina]);
 
     const save = async () => {
         if (!brentista) return prikaziDialog({ tip: 'greska', naslov: 'Blokada', poruka: "ZABRANJENO: Molimo odaberite Brentistu prije snimanja paketa!", onCancel: zatvoriDialog });
         if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Paket', poruka: "Prvo skenirajte ili unesite ID za IZLAZNI PAKET!", onCancel: zatvoriDialog });
         if (!form.kolicina_ulaz) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Količina', poruka: "Unesite količinu prije snimanja!", onCancel: zatvoriDialog });
+        
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);
         let komada = unosKol;
@@ -434,29 +477,39 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const currentTrupciIds = logs ? [...new Set(logs.map(l => l.trupac_id))] : [];
 
         if (activeEditItem) {
-            // ATOMSKO AŽURIRANJE PREKO BAZE (Sprječava sudar sa drugim radnikom na istom tabletu/paketu)
             if (updateMode === 'dodaj') {
                 await supabase.rpc('dodaj_u_paket', { p_id: activeEditItem.id, kolicina_za_dodati: qtyZaPaket });
             } else {
                 await supabase.rpc('oduzmi_iz_paketa', { p_id: activeEditItem.id, kolicina_za_oduzeti: qtyZaPaket });
             }
 
-            // Ažuriramo samo tekstualne podatke standardnim putem
             const { error } = await supabase.from('paketi').update({ 
                 vrijeme_tekst: timeNow, snimio_korisnik: user?.ime_prezime,
                 brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
-                broj_veze: radniNalog || activeEditItem.broj_veze, ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids 
+                broj_veze: radniNalog || activeEditItem.broj_veze, 
+                rn_id: radniNalog || activeEditItem.broj_veze,
+                stavka_id: form.rn_stavka_id || activeEditItem.stavka_id, // 🟢 DODANO ZA OKIDAČ
+                ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids 
             }).eq('id', activeEditItem.id);
+            
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+            
+            await zapisiU_Log('IZMJENA_U_PAKETU', `Paket: ${selectedIzlazId}, Proizvod: ${activeEditItem.naziv_proizvoda}, Korekcija: ${qtyZaPaket} m³ (${updateMode})`);
         } else {
             const payload = {
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: v, sirina: s, duzina: d,
-                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, mjesto: header.mjesto, masina: header.masina,
+                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, kolicina_m3: qtyZaPaket, 
+                mjesto: header.mjesto, masina: header.masina,
                 snimio_korisnik: user?.ime_prezime, brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, 
-                ulaz_trupci_ids: currentTrupciIds, broj_veze: radniNalog, vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, oznake: odabraneOznake, je_nusproizvod: isNusProizvod
+                ulaz_trupci_ids: currentTrupciIds, broj_veze: radniNalog, 
+                rn_id: radniNalog, 
+                stavka_id: form.rn_stavka_id, // 🟢 DODANO ZA OKIDAČ
+                vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, oznake: odabraneOznake, je_nusproizvod: isNusProizvod
             };
             const { error } = await supabase.from('paketi').insert([payload]);
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+            
+            await zapisiU_Log('DODANA_STAVKA_U_PAKET', `Paket: ${selectedIzlazId}, Proizvod: ${form.naziv}, Količina: ${qtyZaPaket.toFixed(3)} m³`);
             
             if(currentRnStavka && !isNusProizvod) {
                 const rn_jm = form.rn_jm || 'm3'; let napravljenoZaRN = komada;
@@ -464,7 +517,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 else if (rn_jm === 'm2') napravljenoZaRN = komada * (s/100) * (d/100);
                 else if (rn_jm === 'm1') napravljenoZaRN = komada * (d/100);
 
-                // Izvlačimo apsolutno najnovije stanje Naloga prije dodavanja
                 const {data: rn_latest} = await supabase.from('radni_nalozi').select('stavke_jsonb, tip_naloga').eq('id', radniNalog.toUpperCase()).maybeSingle();
                 if (rn_latest && rn_latest.stavke_jsonb) {
                     const isFazni = rn_latest.tip_naloga === 'FAZNI';
@@ -483,8 +535,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 }
             }
         }
-        // Ostavljamo Live Sync-u da sam osvježi listu, ali radi sigurnosti možemo okinuti i lokalno
+        
         fetchIzlaz(selectedIzlazId);
+        ucitajSveZapoocetePakete(); 
         setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
     };
 
@@ -494,14 +547,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             tip: 'upozorenje', naslov: 'Brisanje Stavke',
             poruka: `Da li ste sigurni da želite OBRISATI stavku iz ovog paketa?\n(Napomena: Količina na Radnom Nalogu se neće automatski umanjiti, korigujte je ručno po potrebi!)`,
             confirmText: '🗑️ OBRIŠI', cancelText: '✕ ODUSTANI',
-            onConfirm: async () => { await supabase.from('paketi').delete().eq('id', item.id); fetchIzlaz(selectedIzlazId); zatvoriDialog(); },
+            onConfirm: async () => { 
+                await supabase.from('paketi').delete().eq('id', item.id); 
+                await zapisiU_Log('OBRISANA_STAVKA_IZ_PAKETA', `Paket: ${selectedIzlazId}, Proizvod: ${item.naziv_proizvoda}, Količina: ${item.kolicina_final} m³`);
+                fetchIzlaz(selectedIzlazId); 
+                ucitajSveZapoocetePakete(); // 🟢 Osvježi pločice nakon brisanja
+                zatvoriDialog(); 
+            },
             onCancel: zatvoriDialog
         });
     };
 
     const zakljuciPaket = async (pid) => {
         if(izlazPackageItems.length === 0) {
-            setActiveIzlazIds(p => p.filter(x => x !== pid));
             if (selectedIzlazId === pid) setSelectedIzlazId('');
             return prikaziDialog({ tip: 'info', naslov: 'Prazan Paket', poruka: `Prazan paket ${pid} je zatvoren i oslobođen.`, onCancel: zatvoriDialog });
         }
@@ -511,7 +569,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             confirmText: '🏁 ZAKLJUČI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
-                setActiveIzlazIds(p => p.filter(x => x !== pid)); if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
+                await zapisiU_Log('ZAKLJUČEN_PAKET', `Paket: ${pid} je uspješno zaključen.`);
+                
+                if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
+                ucitajSveZapoocetePakete(); // 🟢 Skloni sa liste započetih
                 zatvoriDialog();
                 
                 prikaziDialog({
@@ -535,16 +596,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    const otkaziPaket = (pid) => {
-        prikaziDialog({
-            tip: 'upozorenje', naslov: 'Ukloniti sa ekrana?',
-            poruka: `Da li želite ukloniti paket ${pid} sa ekrana? (Ostat će u bazi kao Započet i moći ćete ga ponovo skenirati)`,
-            confirmText: '🗑️ UKLONI', cancelText: '✕ ZADRŽI',
-            onConfirm: () => { setActiveIzlazIds(p => p.filter(x => x !== pid)); if(selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); } zatvoriDialog(); },
-            onCancel: zatvoriDialog
-        });
-    };
-
     if (!header?.masina) {
         return (
             <div className="p-4 max-w-2xl mx-auto space-y-6 font-bold animate-in fade-in">
@@ -562,7 +613,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="pilana" saas={saas} />
             
-            {/* Oznaka da je sistem povezan UŽIVO na server */}
             <div className="absolute top-4 left-4 z-[9999] pointer-events-none flex items-center gap-2">
                 <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
                 <span className="text-[8px] text-emerald-500 uppercase font-black tracking-widest hidden md:block">LIVE SYNC</span>
@@ -580,11 +630,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            <div className="text-center mb-6">
-                <h2 className="text-theme-accent font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3">
-                    🪵 Pilana - Izlaz Daske
-                </h2>
-            </div>
+            <h2 className="text-theme-accent text-center font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3">
+                🪵 Pilana - Izlaz Daske
+            </h2>
             
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 space-y-6 flex flex-col">
@@ -676,18 +724,28 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         <label className={`uppercase text-theme-accent block mb-4 font-black tracking-widest text-center`} style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>
                             {saas.ui.naslov_skenera || "SKENIRAJ ILI UPIŠI NOVI PAKET"}
                         </label>
-                        <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
+                        <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
                             <input value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleIzlazInput(izlazScan, true) }} className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ GOTOV PAKET..." />
                             <button onClick={() => {setScanTarget('izlaz'); setIsScanning(true);}} className="shrink-0 px-6 md:px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
                         </div>
+                        
                         <div className="mt-8 pt-6 border-t border-theme-border">
                             <label className="text-[10px] text-theme-muted uppercase font-black tracking-widest mb-3 block flex items-center gap-2">📦 Započeti Paketi (Spremni za nastavak):</label>
-                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                                {activeIzlazIds.length === 0 && <span className="text-xs text-theme-muted italic border border-dashed border-theme-border p-4 rounded-xl w-full text-center">Trenutno nema započetih paketa na ovoj mašini...</span>}
-                                {activeIzlazIds.map(id => (
-                                    <div key={id} className={`flex items-center rounded-xl border-2 transition-all shrink-0 shadow-md h-12 ${selectedIzlazId === id ? 'bg-theme-accent border-theme-accent font-black shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/50'}`}>
-                                        <button onClick={() => {setSelectedIzlazId(id); fetchIzlaz(id);}} className={`px-5 py-2 font-black h-full flex items-center ${selectedIzlazId === id ? 'text-white' : 'text-theme-text'}`}>{id}</button>
-                                        <button onClick={() => otkaziPaket(id)} className={`px-4 py-2 font-black h-full flex items-center border-l rounded-r-xl transition-colors ${selectedIzlazId === id ? 'border-white/20 text-white hover:bg-white/20' : 'border-theme-border text-red-400 hover:bg-red-500 hover:text-white'}`} title="Skloni sa ekrana">✕</button>
+                            
+                            {/* 🟢 OVDJE SU SADA PLOČICE ZAPOČETIH PAKETA */}
+                            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
+                                {aktivniPaketiInfo.length === 0 && <div className="col-span-full text-xs text-theme-muted italic border border-dashed border-theme-border p-6 rounded-xl text-center">Trenutno nema započetih paketa na ovoj mašini...</div>}
+                                {aktivniPaketiInfo.map(p => (
+                                    <div key={p.id} onClick={() => {setSelectedIzlazId(p.id); fetchIzlaz(p.id);}} className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group ${selectedIzlazId === p.id ? 'bg-theme-accent border-theme-accent shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/60'}`}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-xl font-black ${selectedIzlazId === p.id ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
+                                            <span className="text-[10px] bg-black/30 px-2 py-1 rounded border border-white/10 text-theme-muted font-bold">{p.stavke} {p.stavke===1?'stavka':'stavki'}</span>
+                                        </div>
+                                        <div className={`text-xs font-black mb-1 line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/90' : 'text-theme-accent'}`}>{p.dimenzija}</div>
+                                        <div className={`text-[10px] font-bold line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/70' : 'text-slate-400'}`}>{p.proizvod}</div>
+                                        <div className={`text-right mt-auto pt-2 text-[10px] font-black uppercase tracking-widest ${selectedIzlazId === p.id ? 'text-white/80' : 'text-slate-400'}`}>
+                                            Ukupno: <span className={selectedIzlazId === p.id ? 'text-white text-sm' : 'text-emerald-400 text-sm'}>{p.m3.toFixed(3)} m³</span>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -735,7 +793,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                 <div className="flex flex-col sm:flex-row gap-3 items-stretch">
                                     <div className="flex-1 relative">
                                         <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Količina</label>
-                                        <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') save()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="w-full p-5 bg-theme-panel border-2 border-theme-accent/50 rounded-2xl text-2xl text-center text-theme-accent font-black focus:border-theme-accent transition-all placeholder:text-theme-accent/30 shadow-inner outline-none" placeholder="0" />
+                                        <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') save()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="w-full p-5 bg-theme-panel border-2 border-theme-accent/50 rounded-2xl text-2xl text-center text-theme-accent font-black focus:border-theme-accent transition-all placeholder:text-theme-accent/30 shadow-inner outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                     </div>
                                     <div className="sm:w-32 relative">
                                         <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Jedinica</label>
@@ -744,6 +802,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         </select>
                                     </div>
                                 </div>
+                                
+                                {form.kolicina_ulaz && (
+                                    <div className="text-[10px] text-emerald-400 bg-emerald-900/20 p-2 rounded-lg border border-emerald-500/20 text-center uppercase animate-in zoom-in-95 mt-2">
+                                        Automatski preračunato: <span className="text-theme-text text-sm ml-1 font-black">{livePreracunM3} m³</span>
+                                    </div>
+                                )}
 
                                 {dostupneOznake.length > 0 && (
                                     <div className="bg-theme-panel p-4 rounded-2xl border border-theme-border shadow-inner">
@@ -783,7 +847,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         }
 
                                         return (
-                                        <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); }} className="flex flex-col sm:flex-row justify-between sm:items-center p-5 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-theme-accent transition-all shadow-md group gap-4">
+                                        <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); setOdabraneOznake(item.oznake || []); }} className="flex flex-col sm:flex-row justify-between sm:items-center p-5 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-theme-accent transition-all shadow-md group gap-4">
                                             <div className="flex-1">
                                                 <div className="text-theme-accent text-lg font-black tracking-tighter drop-shadow-md">
                                                     {item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-theme-muted ml-1">cm</span>
