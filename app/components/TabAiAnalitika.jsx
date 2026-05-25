@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
-const GEMINI_API_KEY = "AIzaSyCE7adoYNwq9tM-xJLS-2_Q_IvsAKEs13M";
+const GEMINI_API_KEY = "AIzaSyCyeUKgsarf4v-pu8KgcagQbYfvF-GXAEE";
 // Fiksiramo najbolji i najbrži model sa tvoje liste za analizu velike količine podataka
 const ODABRANI_MODEL = "gemini-2.5-flash"; 
 
