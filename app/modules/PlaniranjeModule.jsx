@@ -6,7 +6,7 @@ import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
 import { ChevronLeft, ChevronRight, X, CheckCircle2 } from 'lucide-react';
 
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
+const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -22,6 +22,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const [masine, setMasine] = useState([]);
     const [odabranaMasina, setOdabranaMasina] = useState('');
     const [kapacitetMasine, setKapacitetMasine] = useState(30);
+    const [katalog, setKatalog] = useState([]);
 
     const [nerasporedjeniNalozi, setNerasporedjeniNalozi] = useState([]);
     const [raspored, setRaspored] = useState([]);
@@ -36,42 +37,34 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const [pregledNaloga, setPregledNaloga] = useState(null); 
     const [planiranjeModal, setPlaniranjeModal] = useState(null); 
     const [stavkeZaPlaniranje, setStavkeZaPlaniranje] = useState([]); 
-// 🟢 PREMIUM DEEP LINKING: Lociranje i blinkanje naloga
-useEffect(() => {
-    const autoId = localStorage.getItem('erp_auto_open_id');
-    const autoAction = localStorage.getItem('erp_auto_action');
-    
-    // Čekamo da se nalozi učitaju
-    if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
-        setHighlightedRN(autoId);
-        localStorage.removeItem('erp_auto_open_id');
-        localStorage.removeItem('erp_auto_action');
-        
-        // Naredi browseru da kliza do tog naloga
-        setTimeout(() => {
-            const el = document.getElementById(`rn_card_${autoId}`);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 300);
 
-        // Ukloni blinkanje nakon 4 sekunde
-        setTimeout(() => { setHighlightedRN(null); }, 4000);
-    }
-}, [nerasporedjeniNalozi]);
-    useEffect(() => { loadInitialData(); }, []);
-    useEffect(() => { if (odabranaMasina) loadRaspored(); }, [odabranaMasina, pocetakSedmice]);
-// 🟢 PREMIUM DEEP LINKING: Automatsko otvaranje modala za zakazivanje naloga
-useEffect(() => {
-    const autoId = localStorage.getItem('erp_auto_open_id');
-    const autoAction = localStorage.getItem('erp_auto_action');
-    if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
-        const nToPlan = nerasporedjeniNalozi.find(n => n.id === autoId);
-        if (nToPlan) {
-            otvoriPlaniranjeModal(nToPlan);
+    useEffect(() => {
+        const autoId = localStorage.getItem('erp_auto_open_id');
+        const autoAction = localStorage.getItem('erp_auto_action');
+        
+        if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
+            setHighlightedRN(autoId);
+            
+            const nToPlan = nerasporedjeniNalozi.find(n => n.id === autoId);
+            if (nToPlan) {
+                otvoriPlaniranjeModal(nToPlan);
+            }
+            
             localStorage.removeItem('erp_auto_open_id');
             localStorage.removeItem('erp_auto_action');
+            
+            setTimeout(() => {
+                const el = document.getElementById(`rn_card_${autoId}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+
+            setTimeout(() => { setHighlightedRN(null); }, 4000);
         }
-    }
-}, [nerasporedjeniNalozi]);
+    }, [nerasporedjeniNalozi]);
+
+    useEffect(() => { loadInitialData(); }, []);
+    useEffect(() => { if (odabranaMasina && katalog.length > 0) loadRaspored(); }, [odabranaMasina, pocetakSedmice, katalog]);
+
     function getStartOfWeek(date) {
         const d = new Date(date);
         const day = d.getDay();
@@ -94,6 +87,8 @@ useEffect(() => {
                 setKapacitetMasine(parseFloat(mData[0].dnevni_kapacitet_m3) || 30);
             }
         }
+        const { data: kData } = await supabase.from('katalog_proizvoda').select('*');
+        if (kData) setKatalog(kData);
     };
 
     const loadRaspored = async () => {
@@ -119,39 +114,64 @@ useEffect(() => {
             let stavkeZaMasinu = [];
 
             (rn.stavke_jsonb || []).forEach(st => {
-                let ukupnoZaUraditi = 0;
+                let ukupnoZaUraditiM3 = 0;
                 let jm_unos = st.jm_unos || 'kom';
                 let originalKol = parseFloat(st.kolicina_unos || 0);
+
+                const katItem = katalog.find(k => k.sifra === st.sifra) || {};
+                const v = parseFloat(katItem.visina) || 0; 
+                const sir = parseFloat(katItem.sirina) || 0; 
+                const d = parseFloat(katItem.duzina) || 0;
+                
+                // 🟢 MATEMATIKA ZA CENTIMETRE (dijelimo sa 100)
+                const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
+                const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
+                const len1kom = (d > 0) ? (d/100) : 0;
 
                 if (rn.tip_naloga === 'FAZNI') {
                     const faza = (rn.tehnologija_jsonb?.[st.id] || []).find(f => f.masina === odabranaMasina);
                     if (faza) {
-                        ukupnoZaUraditi = parseFloat(faza.kolicina || 0);
-                        originalKol = ukupnoZaUraditi; 
+                        originalKol = parseFloat(faza.kolicina || 0); 
                         jm_unos = faza.jm || jm_unos;
-                    }
+                        
+                        let komada = originalKol;
+                        if (jm_unos === 'm3' && vol1kom > 0) komada = originalKol / vol1kom;
+                        else if (jm_unos === 'm2' && area1kom > 0) komada = originalKol / area1kom;
+                        else if (jm_unos === 'm1' && len1kom > 0) komada = originalKol / len1kom;
+
+                        ukupnoZaUraditiM3 = komada * vol1kom;
+                        if (jm_unos === 'm3') ukupnoZaUraditiM3 = originalKol;
+                    } else return; 
                 } else {
-                    ukupnoZaUraditi = parseFloat(st.kolicina_obracun || 0);
+                    ukupnoZaUraditiM3 = parseFloat(st.kolicina_obracun || 0);
+                    
+                    // 🟢 PRISILNI AUTO-FIX ZA KORUMPIRANU BAZU (Ignoriše bazu ako postoje dimenzije)
+                    if (vol1kom > 0) {
+                        if (jm_unos === 'kom') ukupnoZaUraditiM3 = originalKol * vol1kom;
+                        else if (jm_unos === 'm2' && area1kom > 0) ukupnoZaUraditiM3 = (originalKol / area1kom) * vol1kom;
+                        else if (jm_unos === 'm1' && len1kom > 0) ukupnoZaUraditiM3 = (originalKol / len1kom) * vol1kom;
+                    }
                 }
 
-                if (ukupnoZaUraditi > 0) {
-                    // Oduzimamo ono što je ISPLANIRANO i ono što je već PROIZVEDENO na ovoj stavci
+                if (ukupnoZaUraditiM3 > 0) {
                     const vecZauzetoIliGotovo = (sviPlanovi || []).filter(p => p.rn_id === rn.id && p.stavka_id === st.id).reduce((s, p) => s + parseFloat(p.planirano_m3 || 0) + parseFloat(p.proizvedeno_m3 || 0), 0);
-                    const preostalo = ukupnoZaUraditi - vecZauzetoIliGotovo;
+                    const preostaloM3 = ukupnoZaUraditiM3 - vecZauzetoIliGotovo;
 
-                    if (preostalo > 0.001) {
+                    if (preostaloM3 > 0.001) {
                         imaNerasporedjeno = true;
-                        const ratio = preostalo / ukupnoZaUraditi;
+                        const ratio = preostaloM3 / ukupnoZaUraditiM3;
                         const preostaloOriginal = (originalKol * ratio).toFixed(2);
                         const dim = st.dimenzije || (st.visina ? `${st.visina}x${st.sirina}x${st.duzina}` : '') || (st.debljina ? `${st.debljina}x${st.sirina}x${st.duzina}` : 'BEZ DIMENZIJE');
 
                         stavkeZaMasinu.push({ 
                             ...st, 
-                            preostalo: preostalo.toFixed(3), 
+                            preostalo: preostaloM3.toFixed(4), 
                             preostaloOriginal,
                             jm_unos, 
                             dimenzije_prikaz: dim,
-                            ukupnoZaUraditi 
+                            ukupnoZaUraditiM3,
+                            vol1kom, area1kom, len1kom,
+                            maxKolicinaM3: ukupnoZaUraditiM3
                         });
                     }
                 }
@@ -192,7 +212,12 @@ useEffect(() => {
         if(isReadOnly) return;
         const pocetnoStanjeStavki = nalog.stavkeZaPlaniranje.map(st => ({
             id: st.id, naziv: st.naziv, dimenzije: st.dimenzije_prikaz, sifra: st.sifra, jm_unos: st.jm_unos, 
-            maxKolicina: st.preostalo, preostaloOriginal: st.preostaloOriginal, kolicinaZaUnos: st.preostalo, checked: true 
+            maxKolicina: st.preostalo, 
+            preostaloOriginal: st.preostaloOriginal, 
+            kolicinaZaUnos: st.preostaloOriginal, 
+            kolicinaM3: st.preostalo, 
+            vol1kom: st.vol1kom, area1kom: st.area1kom, len1kom: st.len1kom,
+            checked: true 
         }));
         let finalniDatum = datum;
         if (!finalniDatum) { finalniDatum = izracunajPreporuku(nalog.rok_isporuke).toISOString().split('T')[0]; }
@@ -201,7 +226,31 @@ useEffect(() => {
     };
 
     const toggleStavkaPlaniranje = (id) => { setStavkeZaPlaniranje(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s)); };
-    const promjeniKolicinuPlaniranja = (id, novaKol) => { setStavkeZaPlaniranje(prev => prev.map(s => s.id === id ? { ...s, kolicinaZaUnos: novaKol } : s)); };
+    
+    // 🟢 MATEMATIKA PLANIRANJA
+    const promjeniKolicinuPlaniranja = (id, novaKolOriginal) => { 
+        setStavkeZaPlaniranje(prev => prev.map(s => {
+            if (s.id === id) {
+                const unos = parseFloat(novaKolOriginal) || 0;
+                let komada = unos;
+                if (s.jm_unos === 'm3' && s.vol1kom > 0) komada = unos / s.vol1kom;
+                else if (s.jm_unos === 'm2' && s.area1kom > 0) komada = unos / s.area1kom;
+                else if (s.jm_unos === 'm1' && s.len1kom > 0) komada = unos / s.len1kom;
+
+                let novim3 = (komada * s.vol1kom).toFixed(4);
+                if (s.jm_unos === 'm3') novim3 = unos.toFixed(4);
+                
+                // Fallback u slučaju da ne postoje dimenzije u katalogu (vol1kom == 0)
+                if (s.vol1kom === 0 && s.jm_unos === 'kom') {
+                    const ratio = unos / parseFloat(s.preostaloOriginal);
+                    novim3 = (parseFloat(s.maxKolicina) * ratio).toFixed(4);
+                }
+
+                return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: isNaN(novim3) ? 0 : novim3 };
+            }
+            return s;
+        })); 
+    };
 
     const potvrdiPlaniranje = async () => {
         const stavkeZaBazu = stavkeZaPlaniranje.filter(s => s.checked);
@@ -212,9 +261,10 @@ useEffect(() => {
         let validno = true; let ukupnoNovihKubika = 0;
         stavkeZaBazu.forEach(s => {
             const kol = parseFloat(s.kolicinaZaUnos);
+            const m3ZaDodati = parseFloat(s.kolicinaM3);
             if (isNaN(kol) || kol <= 0) { alert(`Količina za ${s.naziv} nije ispravna!`); validno = false; }
-            if (kol > parseFloat(s.maxKolicina)) { if(!window.confirm(`Stavka ${s.naziv}:\nUnijeli ste više nego što je preostalo (${s.maxKolicina}). Sigurno želite nastaviti?`)) validno = false; }
-            ukupnoNovihKubika += kol;
+            if (kol > parseFloat(s.preostaloOriginal)) { if(!window.confirm(`Stavka ${s.naziv}:\nUnijeli ste više nego što je preostalo u nalogu. Sigurno želite nastaviti?`)) validno = false; }
+            ukupnoNovihKubika += m3ZaDodati;
         });
         if(!validno) return;
 
@@ -227,7 +277,8 @@ useEffect(() => {
 
         const payload = stavkeZaBazu.map(s => ({
             rn_id: planiranjeModal.nalog.id, stavka_id: s.id, proizvod_naziv: s.naziv, dimenzije: s.dimenzije,
-            masina: odabranaMasina, datum_plana: planiranjeModal.datum, planirano_m3: parseFloat(s.kolicinaZaUnos), proizvedeno_m3: 0, status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
+            masina: odabranaMasina, datum_plana: planiranjeModal.datum, 
+            planirano_m3: parseFloat(s.kolicinaM3), proizvedeno_m3: 0, status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
         }));
 
         await supabase.from('raspored_proizvodnje').insert(payload);
@@ -268,7 +319,6 @@ useEffect(() => {
                 </div>
             )}
 
-            {/* MODAL 1: PREGLED NALOGA */}
             {pregledNaloga && (
                 <div className="fixed inset-0 z-[10000] bg-[#090e17]/95 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
                     <div className="bg-theme-card border-2 border-blue-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col relative mt-10 md:mt-0">
@@ -319,7 +369,6 @@ useEffect(() => {
                 </div>
             )}
 
-            {/* MODAL 2: PLANIRANJE */}
             {planiranjeModal && !isReadOnly && (
                 <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
                     <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col mt-10 md:mt-0 relative">
@@ -349,13 +398,14 @@ useEffect(() => {
                                                 <span className="text-amber-500">{st.dimenzije}</span> <span className="opacity-50 mx-1">|</span> {st.naziv}
                                             </p>
                                             <p className="text-[8px] md:text-[10px] text-emerald-400 font-bold uppercase mt-1 tracking-widest">
-                                                Na čekanju: <span className="text-white bg-emerald-900/40 px-1 md:px-2 py-0.5 rounded border border-emerald-500/30">{st.maxKolicina} m³</span> <span className="text-slate-500 ml-1">(~ {st.preostaloOriginal} {st.jm_unos})</span>
+                                                Na čekanju: <span className="text-white bg-emerald-900/40 px-1 md:px-2 py-0.5 rounded border border-emerald-500/30">{st.preostaloOriginal} {st.jm_unos}</span> <span className="text-slate-500 ml-1">(~ {st.maxKolicina} m³)</span>
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="w-full sm:w-28 shrink-0 bg-black/30 p-2 rounded-lg sm:bg-transparent sm:p-0">
-                                        <label className="text-[7px] md:text-[8px] text-slate-400 uppercase block mb-1 text-center font-bold">Količina (m³)</label>
+                                    <div className="w-full sm:w-32 shrink-0 bg-black/30 p-2 rounded-lg sm:bg-transparent sm:p-0">
+                                        <label className="text-[7px] md:text-[8px] text-slate-400 uppercase block mb-1 text-center font-bold">Količina ({st.jm_unos})</label>
                                         <input type="number" disabled={!st.checked} value={st.kolicinaZaUnos} onChange={(e) => promjeniKolicinuPlaniranja(st.id, e.target.value)} className="w-full p-2 md:p-3 bg-black border border-theme-border rounded-lg text-center font-black text-amber-400 outline-none focus:border-amber-500 disabled:opacity-50 text-base md:text-xl shadow-inner" />
+                                        <div className="text-center text-[9px] text-slate-500 mt-1 font-mono">Preračunato: <b className="text-amber-300">~ {st.kolicinaM3} m³</b></div>
                                     </div>
                                 </div>
                             ))}
@@ -369,7 +419,6 @@ useEffect(() => {
                 </div>
             )}
 
-            {/* HEADER CONTROLS */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 md:gap-4 shrink-0">
                 <div className="flex items-center gap-2 w-full md:w-auto justify-center md:justify-start">
                     <h2 className="text-amber-500 font-black tracking-widest uppercase text-xs md:text-sm flex items-center gap-2"><span>📅</span> Planer Proizvodnje</h2>
@@ -388,10 +437,8 @@ useEffect(() => {
                 </div>
             </div>
 
-            {/* MAIN CONTENT AREA */}
             <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-hidden">
                 
-                {/* LIJEVI PANEL - NERASPOREĐENO */}
                 <div className="w-full lg:w-[350px] max-h-[40vh] lg:max-h-none bg-theme-card backdrop-blur-[var(--glass-blur)] border border-theme-border rounded-xl md:rounded-2xl flex flex-col shadow-2xl shrink-0">
                     <div className="p-3 md:p-4 border-b border-theme-border bg-theme-card/90 sticky top-0 z-10">
                         <h3 className="text-[10px] md:text-xs text-slate-400 font-black uppercase tracking-widest flex justify-between items-center">
@@ -444,16 +491,15 @@ useEffect(() => {
                                         {!isReadOnly && <button onClick={() => otvoriPlaniranjeModal(rn)} className="flex-[2] bg-amber-600 text-white py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase hover:bg-amber-500 transition-colors shadow-md">📅 Zakaži</button>}
                                     </div>
                                 </div>
-                            );
+                        );
                         })}
                     </div>
                 </div>
 
-                {/* DESNI PANEL - KANBAN / GANTT SEDMICA */}
                 <div className="flex-1 bg-theme-card/50 backdrop-blur-[var(--glass-blur)] border border-theme-border rounded-xl md:rounded-2xl shadow-2xl flex overflow-x-auto snap-x snap-mandatory custom-scrollbar min-h-[300px]">
                     {DaniUSedmici.map((dan) => {
                         const stavkeZaDan = raspored.filter(r => r.datum_plana === dan.iso);
-                        const ukupnoDanas = stavkeZaDan.reduce((sum, r) => sum + parseFloat(r.planirano_m3 || 0), 0); // Planirano se smanjuje kad se proizvodi!
+                        const ukupnoDanas = stavkeZaDan.reduce((sum, r) => sum + parseFloat(r.planirano_m3 || 0), 0);
                         const isPrekoKapaciteta = ukupnoDanas > kapacitetMasine;
                         const procenat = Math.min(100, (ukupnoDanas / kapacitetMasine) * 100);
 
@@ -504,7 +550,6 @@ useEffect(() => {
                                                     <span className="text-amber-500">{st.dimenzije || 'N/A'}</span> <span className="opacity-50 mx-1">|</span> {st.proizvod_naziv}
                                                 </p>
                                                 
-                                                {/* VIZUELNI LOADING BAR ZA ZAVRŠENOST ZADATKA */}
                                                 <div className="mt-3 bg-black/40 p-1.5 rounded-lg border border-slate-700/50">
                                                     <div className="flex justify-between text-[7px] md:text-[8px] text-slate-400 uppercase font-black mb-1">
                                                         <span>{proizvedeno.toFixed(2)} m³ ODRADIO</span>

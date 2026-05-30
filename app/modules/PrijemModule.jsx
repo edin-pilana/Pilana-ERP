@@ -15,87 +15,6 @@ const shiftDateString = (isoStr, days) => {
     const d = new Date(isoStr); d.setDate(d.getDate() + days); return d.toISOString().split('T')[0];
 };
 
-// 🟢 CUSTOM DROPDOWN (Prikazuje sve na klik/strelicu, filtrira na kucanje, NEPROZIRAN)
-function CustomDropdown({ val, setVal, listToUse, inputRef, nextRef, placeholder }) {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState(val || '');
-    const [selIdx, setSelIdx] = useState(0);
-    const wrapperRef = useRef(null);
-
-    useEffect(() => { setSearch(val || ''); }, [val]);
-    useEffect(() => { setSelIdx(0); }, [search]);
-
-    useEffect(() => {
-        const handleClickOutside = (e) => { 
-            if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-                setOpen(false); 
-                setSearch(val || ''); 
-            } 
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [val]);
-
-    const prikaznaLista = open && search === val 
-        ? listToUse 
-        : listToUse.filter(item => item.naziv.toUpperCase().includes((search || '').toUpperCase()));
-
-    const handleKeyDown = (e) => {
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (!open) setOpen(true);
-            else setSelIdx(prev => (prev < prikaznaLista.length - 1 ? prev + 1 : prev));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            if (open) setSelIdx(prev => (prev > 0 ? prev - 1 : 0));
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (open && prikaznaLista.length > 0) {
-                const odabrano = prikaznaLista[selIdx].naziv;
-                setVal(odabrano); setSearch(odabrano); setOpen(false);
-                setTimeout(() => nextRef?.current?.focus(), 50);
-            } else {
-                setVal(search); setOpen(false);
-                setTimeout(() => nextRef?.current?.focus(), 50);
-            }
-        } else if (e.key === 'Escape') {
-            setOpen(false); setSearch(val || '');
-        } else if (e.key === 'Tab') {
-            setOpen(false); setVal(search);
-        }
-    };
-
-    return (
-        <div ref={wrapperRef} className="relative w-full h-full font-black">
-            <input
-                ref={inputRef}
-                value={search}
-                onChange={e => { setSearch(e.target.value); setOpen(true); }}
-                onClick={() => setOpen(true)}
-                onFocus={() => setOpen(true)}
-                onKeyDown={handleKeyDown}
-                placeholder={placeholder}
-                className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-theme-accent uppercase shadow-inner"
-            />
-            {open && (
-                <div className="absolute top-full mt-1 left-0 w-full bg-[#0f172a] border-2 border-slate-600 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] max-h-48 overflow-y-auto z-[9999] custom-scrollbar opacity-100">
-                    {prikaznaLista.length === 0 && <div className="p-3 text-slate-500 text-xs italic text-center">Nema rezultata</div>}
-                    {prikaznaLista.map((item, i) => (
-                        <div 
-                            key={i} 
-                            onClick={() => { setVal(item.naziv); setSearch(item.naziv); setOpen(false); setTimeout(() => nextRef?.current?.focus(), 50); }} 
-                            onMouseEnter={() => setSelIdx(i)}
-                            className={`p-3 text-xs uppercase cursor-pointer border-b border-slate-700/50 transition-all ${i === selIdx ? 'bg-theme-accent text-white' : 'hover:bg-slate-700 text-slate-200'}`}
-                        >
-                            {item.naziv}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
 export default function PrijemModule({ user, header, setHeader, onExit }) {
     
     const saas = useSaaS('prijem_trupaca', {
@@ -142,12 +61,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const [scan, setScan] = useState('');
     const [isScanning, setIsScanning] = useState(false);
     const [scanTarget, setScanTarget] = useState('unos'); 
-    
-    const [form, setForm] = useState({ 
-        plocica: '', redni: '', vrsta: '', klasa: '', duzina: '', promjer: '', 
-        isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: '' 
-    });
-    
+    const [form, setForm] = useState({ broj_plocice: '', redni_broj: '', vrsta: '', klasa: '', duzina: '', promjer: '', isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: '' });
     const [listaPrijema, setListaPrijema] = useState([]);
     const scanTimerRef = useRef(null);
 
@@ -158,27 +72,18 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const [dodajKaloKaoTrupac, setDodajKaloKaoTrupac] = useState(false);
     const [kaloPlocica, setKaloPlocica] = useState('');
 
-    const sumarijaRef = useRef(null);
-    const podruznicaRef = useRef(null);
-    const prevoznikRef = useRef(null);
-    const odjelRef = useRef(null);
-    const otpremnica_datumRef = useRef(null);
-    const otpremnica_brojRef = useRef(null);
-    const scanRef = useRef(null);
-    const duzinaRef = useRef(null);
-    const promjerRef = useRef(null);
-    const btn_dodajRef = useRef(null);
-
+    // 🟢 PAMETNE REFERENCE ZA NAVIGACIJU (FOCUS PATH)
     const refs = {
-        sumarija: sumarijaRef, podruznica: podruznicaRef, prevoznik: prevoznikRef,
-        odjel: odjelRef, otpremnica_datum: otpremnica_datumRef, otpremnica_broj: otpremnica_brojRef,
-        scan: scanRef, duzina: duzinaRef, promjer: promjerRef, btn_dodaj: btn_dodajRef
-    };
-
-    const nextMap = {
-        'sumarija': podruznicaRef, 'podruznica': prevoznikRef, 'prevoznik': odjelRef,
-        'odjel': otpremnica_datumRef, 'otpremnica_datum': otpremnica_brojRef, 'otpremnica_broj': scanRef,
-        'scan': duzinaRef, 'duzina': promjerRef, 'promjer': btn_dodajRef
+        sumarija: useRef(null),
+        podruznica: useRef(null),
+        prevoznik: useRef(null),
+        odjel: useRef(null),
+        otpremnica_datum: useRef(null),
+        otpremnica_broj: useRef(null),
+        scan: useRef(null),
+        duzina: useRef(null),
+        promjer: useRef(null),
+        btn_dodaj: useRef(null)
     };
 
     const handleEnter = (e, nextRef) => {
@@ -188,16 +93,28 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
     };
 
+    useEffect(() => {
+        if (majkaTrupac) {
+            const arr = Array.from({ length: brojDjece }).map((_, i) => djecaTrupci[i] || { id: '', duzina: '', promjer: '' });
+            setDjecaTrupci(arr);
+        }
+    }, [brojDjece, majkaTrupac]);
+
     const calcVol = (l, d) => {
         if (!l || !d) return 0;
         const r = parseFloat(d) / 200;
         return (r * r * Math.PI * parseFloat(l));
     };
 
-    const trenutnaDjecaVolume = djecaTrupci.reduce((sum, dj) => sum + calcVol(dj.duzina, dj.promjer), 0);
-    const kaloVolume = majkaTrupac ? Math.max(0, parseFloat(majkaTrupac.zapremina || 0) - trenutnaDjecaVolume) : 0;
-    const calculatedZapremina = (!form.duzina || !form.promjer) ? "0.00" : calcVol(form.duzina, form.promjer).toFixed(2);
-    const calculatedKontrolnaZapremina = (!form.kontrolna_duzina || !form.kontrolni_promjer) ? "0.00" : calcVol(form.kontrolna_duzina, form.kontrolni_promjer).toFixed(2);
+    const trenutnaDjecaVolume = useMemo(() => {
+        return djecaTrupci.reduce((sum, dj) => sum + calcVol(dj.duzina, dj.promjer), 0);
+    }, [djecaTrupci]);
+
+    const kaloVolume = useMemo(() => {
+        if (!majkaTrupac) return 0;
+        const vol = parseFloat(majkaTrupac.zapremina || 0) - trenutnaDjecaVolume;
+        return vol > 0 ? vol : 0;
+    }, [majkaTrupac, trenutnaDjecaVolume]);
 
     useEffect(() => {
         const channel = supabase.channel(`prijem_live_sync_${Math.random()}`)
@@ -209,12 +126,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     }, [pHeader.otpremnica_broj]);
 
     useEffect(() => {
+        // 🟢 ALGORITAM ZA NAJKORIŠTENIJE VRIJEDNOSTI
         const fetchMostUsed = async () => {
-            const { data } = await supabase.from('trupci')
-                .select('sumarija, podruznica, prevoznik')
-                .order('created_at', { ascending: false })
-                .limit(100);
-
+            const { data } = await supabase.from('trupci').select('sumarija, podruznica, prevoznik').order('created_at', { ascending: false }).limit(100);
             if (data && data.length > 0) {
                 const sCounts = {}; const pCounts = {}; const prvCounts = {};
                 data.forEach(d => {
@@ -230,21 +144,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                 setPHeader(prev => {
                     let hasChanges = false;
                     const newHeader = { ...prev };
-                    if (!prev.sumarija && topSumarija) { 
-                        newHeader.sumarija = topSumarija; 
-                        localStorage.setItem('pr_sumarija', topSumarija); 
-                        hasChanges = true; 
-                    }
-                    if (!prev.podruznica && topPodruznica) { 
-                        newHeader.podruznica = topPodruznica; 
-                        localStorage.setItem('pr_podruznica', topPodruznica); 
-                        hasChanges = true; 
-                    }
-                    if (!prev.prevoznik && topPrevoznik) { 
-                        newHeader.prevoznik = topPrevoznik; 
-                        localStorage.setItem('pr_prevoznik', topPrevoznik); 
-                        hasChanges = true; 
-                    }
+                    if (!prev.sumarija && topSumarija) { newHeader.sumarija = topSumarija; hasChanges = true; }
+                    if (!prev.podruznica && topPodruznica) { newHeader.podruznica = topPodruznica; hasChanges = true; }
+                    if (!prev.prevoznik && topPrevoznik) { newHeader.prevoznik = topPrevoznik; hasChanges = true; }
                     return hasChanges ? newHeader : prev;
                 });
             }
@@ -275,17 +177,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const loadPrijemList = async () => {
         if(!pHeader.otpremnica_broj) return;
         const cleanBroj = pHeader.otpremnica_broj.trim();
-        
-        const { data, error } = await supabase.from('trupci').select('*')
-            .eq('otpremnica_broj', cleanBroj)
-            .eq('zakljucen_prijem', false)
-            .order('created_at', { ascending: false });
-            
-        if (error) {
-            console.error("Greška pri učitavanju liste:", error);
-            return;
-        }
-        
+        const { data } = await supabase.from('trupci').select('*').eq('otpremnica_broj', cleanBroj).eq('zakljucen_prijem', false).order('created_at', { ascending: false });
         setListaPrijema(data || []);
     };
 
@@ -295,26 +187,35 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         localStorage.setItem(`pr_${key}`, val);
     };
 
+    const calculatedZapremina = useMemo(() => {
+        if(!form.duzina || !form.promjer) return "0.00";
+        return calcVol(form.duzina, form.promjer).toFixed(2);
+    }, [form.duzina, form.promjer]);
+
+    const calculatedKontrolnaZapremina = useMemo(() => {
+        if(!form.kontrolna_duzina || !form.kontrolni_promjer) return "0.00";
+        return calcVol(form.kontrolna_duzina, form.kontrolni_promjer).toFixed(2);
+    }, [form.kontrolna_duzina, form.kontrolni_promjer]);
+
     const handleScanInput = (val, isEnter = false) => {
         setScan(val);
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         if (!val) return;
         
-        const processScan = async (scanVal) => {
-            const id = scanVal.toUpperCase().trim();
-            const { data: existing } = await supabase.from('trupci').select('id, status, otpremnica_broj').eq('id', id).maybeSingle();
-            if(existing) {
-                prikaziDialog({ tip: 'greska', naslov: 'Iskorišten Kod', poruka: `QR KOD JE VEĆ ISKORIŠTEN!\nTrenutni status: ${existing.status}\nOtpremnica: ${existing.otpremnica_broj}\nSkenirajte drugu pločicu.`, onCancel: zatvoriDialog });
-                setScan(''); 
-            } else {
-                refs.duzina.current?.focus(); 
-            }
-        };
-
+        // 🟢 AUTOMATSKI PRELAZAK NA DUŽINU NAKON SKENIRANJA
         if (isEnter) {
-            processScan(val);
+            refs.duzina.current?.focus();
         } else if (val.length >= 3) {
-            scanTimerRef.current = setTimeout(() => processScan(val), 1000); 
+            scanTimerRef.current = setTimeout(async () => {
+                const id = val.toUpperCase();
+                const { data: existing } = await supabase.from('trupci').select('id, status, otpremnica_broj').eq('id', id).maybeSingle();
+                if(existing) {
+                    prikaziDialog({ tip: 'greska', naslov: 'Iskorišten Kod', poruka: `QR KOD JE VEĆ ISKORIŠTEN!\nTrenutni status: ${existing.status}\nOtpremnica: ${existing.otpremnica_broj}\nSkenirajte drugu pločicu.`, onCancel: zatvoriDialog });
+                    setScan(''); 
+                } else {
+                    refs.duzina.current?.focus(); // Automatski fokusiraj dužinu nakon validnog skeniranja
+                }
+            }, 1000); 
         }
     };
 
@@ -341,86 +242,43 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    // 🟢 FUNKCIJA ZA SNIMANJE TRUPCA U OTPREMNICU
     const snimiTrupac = async () => {
-        try {
-            if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-            
-            if (!pHeader.sumarija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Šumarija', poruka: "Molimo odaberite Šumariju u zaglavlju na lijevoj strani!", onCancel: zatvoriDialog });
-            if (!pHeader.otpremnica_broj) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Broj Otpremnice', poruka: "Unesite broj Otpremnice u zaglavlju da biste mogli dodavati trupce!", onCancel: zatvoriDialog });
-            
-            if(!scan || !form.duzina || !form.promjer) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Skeniraj QR, unesi dužinu i prečnik.", onCancel: zatvoriDialog });
-            
-            if (form.isKontrola && (!form.kontrolna_duzina || !form.kontrolni_promjer)) {
-                return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale kontrolni podaci', poruka: "Uključili ste kontrolno mjerenje. Morate unijeti stvarnu dužinu i prečnik!", onCancel: zatvoriDialog });
-            }
-
-            const trupacID = scan.toUpperCase().trim();
-            const zapreminaZaObracun = form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : parseFloat(calculatedZapremina);
-            const podrObj = podruzniceBaza.find(p => p.naziv === pHeader.podruznica && p.sumarija_naziv === pHeader.sumarija);
-            const prevozPoKubiku = podrObj ? parseFloat(podrObj.cijena_prevoza_po_m3 || 0) : 0;
-            const cjenObj = cjenovnikBaza.find(c => c?.sumarije?.naziv === pHeader.sumarija && c?.vrste_drveta?.naziv === form.vrsta && c?.klase_trupaca?.naziv === form.klasa);
-            const cijenaTrupcaPoKubiku = cjenObj ? parseFloat(cjenObj.cijena_po_m3 || 0) : 0;
-            const konacna_nabavna_vrijednost = (cijenaTrupcaPoKubiku + prevozPoKubiku) * zapreminaZaObracun;
-
-            const trupacData = {
-                id: trupacID, 
-                broj_plocice: form.plocica || null, 
-                redni_broj: form.redni || null, 
-                vrsta: form.vrsta, 
-                klasa: form.klasa, 
-                duzina: parseFloat(form.duzina), 
-                promjer: parseFloat(form.promjer), 
-                zapremina: parseFloat(calculatedZapremina), 
-                kontrolna_duzina: form.isKontrola ? parseFloat(form.kontrolna_duzina) : null,
-                kontrolni_promjer: form.isKontrola ? parseFloat(form.kontrolni_promjer) : null, 
-                kontrolna_zapremina: form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : null,
-                sumarija: pHeader.sumarija, 
-                podruznica: pHeader.podruznica || null, 
-                otpremnica_broj: pHeader.otpremnica_broj.trim(),
-                otpremnica_datum: pHeader.otpremnica_datum, 
-                prevoznik: pHeader.prevoznik || null, 
-                odjel: pHeader.odjel || null,         
-                snimio_korisnik: user?.ime_prezime || 'Nepoznat', 
-                datum_prijema: new Date().toISOString().split('T')[0], 
-                zakljucen_prijem: false, 
-                status: 'na_lageru', 
-                nabavna_vrijednost: konacna_nabavna_vrijednost,
-                created_at: new Date().toISOString()
-            };
-
-            // Momentalno dodavanje na vrh liste za super brzi UI
-            setListaPrijema(prev => [trupacData, ...prev]);
-
-            // Upisivanje u bazu
-            const { error } = await supabase.from('trupci').upsert([trupacData]);
-            if (error) {
-                setListaPrijema(prev => prev.filter(t => t.id !== trupacID)); // Skloni sa liste ako baza odbije
-                return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
-            }
-
-            try { if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) window.navigator.vibrate(100); } catch(e){}
-
-            // Pražnjenje forme za idući unos
-            setScan(''); 
-            setForm(prev => ({
-                ...prev,
-                plocica: '', 
-                redni: '', 
-                duzina: '', 
-                promjer: '', 
-                isKontrola: false, 
-                kontrolna_duzina: '', 
-                kontrolni_promjer: ''
-            }));
-            
-            // Fokusiraj skener
-            setTimeout(() => { refs.scan.current?.focus(); }, 100);
-
-        } catch (err) {
-            console.error("Greška pri snimanju:", err);
-            prikaziDialog({ tip: 'greska', naslov: 'Neočekivana Greška', poruka: err.message, onCancel: zatvoriDialog });
+        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+        if(!pHeader.otpremnica_broj || !pHeader.sumarija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Popunite Šumariju i Broj Otpremnice u Zaglavlju!", onCancel: zatvoriDialog });
+        if(!scan || !form.duzina || !form.promjer) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Skeniraj QR, unesi dužinu i prečnik.", onCancel: zatvoriDialog });
+        
+        if (form.isKontrola && (!form.kontrolna_duzina || !form.kontrolni_promjer)) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale kontrolni podaci', poruka: "Uključili ste kontrolno mjerenje. Morate unijeti stvarnu dužinu i prečnik!", onCancel: zatvoriDialog });
         }
+
+        const trupacID = scan.toUpperCase();
+        const zapreminaZaObracun = form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : parseFloat(calculatedZapremina);
+        const podrObj = podruzniceBaza.find(p => p.naziv === pHeader.podruznica && p.sumarija_naziv === pHeader.sumarija);
+        const prevozPoKubiku = podrObj ? parseFloat(podrObj.cijena_prevoza_po_m3 || 0) : 0;
+        const cjenObj = cjenovnikBaza.find(c => c.sumarije?.naziv === pHeader.sumarija && c.vrste_drveta?.naziv === form.vrsta && c.klase_trupaca?.naziv === form.klasa);
+        const cijenaTrupcaPoKubiku = cjenObj ? parseFloat(cjenObj.cijena_po_m3 || 0) : 0;
+        const konacna_nabavna_vrijednost = (cijenaTrupcaPoKubiku + prevozPoKubiku) * zapreminaZaObracun;
+
+        const trupacData = {
+            id: trupacID, broj_plocice: form.broj_plocice || null, redni_broj: form.redni_broj || null, 
+            vrsta: form.vrsta, klasa: form.klasa, duzina: parseFloat(form.duzina), promjer: parseFloat(form.promjer), 
+            zapremina: parseFloat(calculatedZapremina), kontrolna_duzina: form.isKontrola ? parseFloat(form.kontrolna_duzina) : null,
+            kontrolni_promjer: form.isKontrola ? parseFloat(form.kontrolni_promjer) : null, kontrolna_zapremina: form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : null,
+            sumarija: pHeader.sumarija, podruznica: pHeader.podruznica || null, otpremnica_broj: pHeader.otpremnica_broj.trim(),
+            otpremnica_datum: pHeader.otpremnica_datum, prevoznik: pHeader.prevoznik || null, odjel: pHeader.odjel || null,         
+            snimio_korisnik: user?.ime_prezime || 'Nepoznat', datum_prijema: new Date().toISOString().split('T')[0], 
+            zakljucen_prijem: false, status: 'na_lageru', nabavna_vrijednost: konacna_nabavna_vrijednost
+        };
+
+        const { error } = await supabase.from('trupci').upsert([trupacData]);
+        if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
+
+        if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(100); 
+        setScan(''); setForm({ broj_plocice: '', redni_broj: '', vrsta: vrsteList[0] || '', klasa: klaseList[0] || '', duzina: '', promjer: '', isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: '' }); 
+        await loadPrijemList();
+        
+        // Vrati fokus nazad na skener za sljedeći trupac
+        refs.scan.current?.focus();
     };
 
     const izvrsiKrojenje = async () => {
@@ -519,6 +377,18 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         const val = formData[actualId] || '';
         const setVal = (v) => setFormData(actualId, v);
 
+        // 🟢 MAPIRANJE REFOVA ZA KONTROLU TOKA (FOCUS PATH)
+        const nextMap = {
+            'sumarija': refs.podruznica,
+            'podruznica': refs.prevoznik,
+            'prevoznik': refs.odjel,
+            'odjel': refs.otpremnica_datum,
+            'otpremnica_datum': refs.otpremnica_broj,
+            'otpremnica_broj': refs.scan,
+            'duzina': refs.promjer,
+            'promjer': refs.btn_dodaj
+        };
+
         if (['sumarija', 'podruznica', 'prevoznik', 'odjel'].includes(actualId)) {
             let listToUse = [];
             if(actualId === 'sumarija') listToUse = sumarijeList;
@@ -528,35 +398,31 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
             return (
                 <div className="w-full h-full min-h-[45px]">
-                    <CustomDropdown 
-                        val={val} 
-                        setVal={setVal} 
-                        listToUse={listToUse} 
-                        inputRef={refs[actualId]} 
-                        nextRef={nextMap[actualId]} 
-                        placeholder={`Odaberi...`}
-                    />
+                    <select ref={refs[actualId]} value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] px-3 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-theme-accent cursor-pointer uppercase font-black shadow-inner">
+                        <option value="">-- Odaberi --</option>
+                        {listToUse.map(s => <option key={s.naziv} value={s.naziv}>{s.naziv}</option>)}
+                    </select>
                 </div>
             );
         }
         
         if (actualId === 'otpremnica_datum') return (
             <div className="flex items-center gap-1 bg-theme-panel border border-theme-border rounded-xl p-1 focus-within:border-theme-accent h-full w-full shadow-inner">
-                <button tabIndex="-1" type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">-</button>
+                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">-</button>
                 <input ref={refs.otpremnica_datum} type="date" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="flex-1 w-full bg-transparent text-xs text-theme-text outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:invert font-black" />
-                <button tabIndex="-1" type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">+</button>
+                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">+</button>
             </div>
         );
         if (actualId === 'otpremnica_broj') return <input ref={refs.otpremnica_broj} type="text" value={val} onChange={e => setVal(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-theme-accent shadow-inner uppercase font-black" placeholder="Unesi broj..." />;
         
-        // 🟢 INFORMATIVNA POLJA IMAJU tabIndex="-1" KAKO BI IH TASTATURA (Tab/Enter) PRESKOČILA U BRZOM RADU
+        // 🟢 INFORMATIVNA POLJA IMAJU tabIndex="-1" KAKO BI IH ENTER PRESKOČIO
         if (actualId === 'plocica') return <input tabIndex="-1" ref={refs.plocica} type="text" value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent text-center text-sm font-black shadow-inner" placeholder="12345" />;
         if (actualId === 'redni') return <input tabIndex="-1" ref={refs.redni} type="text" value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent text-center text-sm shadow-inner" placeholder="npr. 1" />;
         if (actualId === 'vrsta') return <select tabIndex="-1" ref={refs.vrsta} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] px-3 py-0 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none uppercase text-center text-sm font-black shadow-inner cursor-pointer">{vrsteList.map(v => <option key={v} value={v} className="bg-slate-800 text-white">{v}</option>)}</select>;
         if (actualId === 'klasa') return <select tabIndex="-1" ref={refs.klasa} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] px-3 py-0 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none uppercase text-center text-sm font-black shadow-inner cursor-pointer">{klaseList.map(k => <option key={k} value={k} className="bg-slate-800 text-white">{k}</option>)}</select>;
         
         if (actualId === 'duzina') return <input ref={refs.duzina} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent text-center text-xl font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />;
-        if (actualId === 'promjer') return <input ref={refs.promjer} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); refs.btn_dodaj.current?.focus(); } }} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent text-center text-xl font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />;
+        if (actualId === 'promjer') return <input ref={refs.promjer} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent text-center text-xl font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />;
         
         return null;
     };
@@ -566,6 +432,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} hideMasina={true} modulIme="prijem" saas={saas} />
 
+            {/* Oznaka da je sistem povezan UŽIVO na server */}
             <div className="absolute top-4 left-4 z-[9999] pointer-events-none flex items-center gap-2">
                 <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
                 <span className="text-[8px] text-emerald-500 uppercase font-black tracking-widest hidden md:block">LIVE SYNC</span>
@@ -621,26 +488,27 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-theme-accent to-transparent opacity-50"></div>
                                 <label className="uppercase text-theme-accent block mb-4 font-black tracking-widest text-center" style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_skenera}</label>
                                 <div className="flex bg-theme-panel border-2 border-theme-accent/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-theme-accent transition-all h-20 mb-6">
-                                    <input ref={refs.scan} value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleScanInput(scan, true); } }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase placeholder:text-theme-muted/30 font-black tracking-widest" placeholder="ČEKAM SKEN..." />
+                                    <input ref={refs.scan} value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); refs.duzina.current?.focus(); } }} className="flex-1 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase placeholder:text-theme-muted/30 font-black tracking-widest" placeholder="ČEKAM SKEN..." />
                                     <button onClick={() => {setScanTarget('unos'); setIsScanning(true);}} className="px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative mb-6 overflow-visible">
                                     {aktivnaPoljaUnosa.map((polje, index) => (
                                         <div key={polje.id} className={`relative ${polje.span} transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
                                             {polje.label && <label className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest text-center">{polje.label}</label>}
-                                            <div className="h-14 w-full overflow-visible">{renderPolje(polje, form, (key, val) => setForm(prev => ({...prev, [key]: val})))}</div>
+                                            <div className="h-14 w-full overflow-visible">{renderPolje(polje, form, (key, val) => setForm({...form, [key]: val}))}</div>
                                         </div>
                                     ))}
                                 </div>
                                 
+                                {/* DEKLARISANO (PAPIR) */}
                                 <div className="flex justify-between items-center bg-theme-panel p-5 rounded-2xl border border-theme-border shadow-inner mb-4">
                                     <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest">Deklarisano (Papir):</span>
                                     <span className="text-3xl text-theme-accent font-black drop-shadow-md">{calculatedZapremina} <span className="text-lg">m³</span></span>
                                 </div>
 
+                                {/* PREKIDAČ I POLJA ZA KONTROLNO MJERENJE */}
                                 <div className="mb-6">
                                     <button 
-                                        tabIndex="-1"
                                         onClick={() => setForm({...form, isKontrola: !form.isKontrola})}
                                         className={`w-full py-3 rounded-xl uppercase text-[10px] font-black tracking-widest border transition-all flex items-center justify-center gap-2 ${form.isKontrola ? 'bg-amber-600 border-amber-500 text-white shadow-lg' : 'bg-transparent border-theme-border text-theme-muted hover:text-white hover:border-theme-accent'}`}
                                     >
@@ -667,49 +535,52 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     )}
                                 </div>
 
-                                <button ref={refs.btn_dodaj} onClick={snimiTrupac} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); snimiTrupac(); } }} className="w-full py-6 bg-theme-accent text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90 transition-all text-sm tracking-widest focus:ring-4 ring-theme-accent">➕ DODAJ NA OTPREMNICU</button>
+                                <button ref={refs.btn_dodaj} onClick={snimiTrupac} className="w-full py-6 bg-theme-accent text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90 transition-all text-sm tracking-widest">➕ DODAJ NA OTPREMNICU</button>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[var(--radius-box)] border border-theme-border shadow-xl animate-in fade-in" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-6 px-2 border-b border-theme-border pb-4 gap-4">
-                            <div>
-                                <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block">Otpremnica: <span className="text-theme-accent text-sm">{pHeader.otpremnica_broj || 'Nije upisana'}</span></span>
-                                <span className="text-xs text-theme-text font-black mt-1 block">Ukupno trupaca: {listaPrijema.length} kom ({listaPrijema.reduce((s,t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0).toFixed(2)} m³)</span>
+                    {/* VRAĆENI LISTA BLOK TAKO DA SE UVIJEK VIDI KAD JE UPISANA OTPREMNICA */}
+                    {pHeader.otpremnica_broj && (
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[var(--radius-box)] border border-theme-border shadow-xl animate-in fade-in" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 px-2 border-b border-theme-border pb-4 gap-4">
+                                <div>
+                                    <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block">Otpremnica: <span className="text-theme-accent text-sm">{pHeader.otpremnica_broj}</span></span>
+                                    <span className="text-xs text-theme-text font-black mt-1 block">Ukupno trupaca: {listaPrijema.length} kom ({listaPrijema.reduce((s,t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0).toFixed(2)} m³)</span>
+                                </div>
+                                <button onClick={zakljuciOtpremnicu} disabled={listaPrijema.length === 0} className={`w-full md:w-auto px-8 py-4 text-white font-black rounded-xl text-xs uppercase shadow-[0_0_20px_rgba(var(--theme-accent-rgb),0.5)] transition-all ${listaPrijema.length === 0 ? 'bg-slate-600 opacity-50 cursor-not-allowed' : 'bg-theme-accent hover:opacity-80'}`}>🏁 ZAKLJUČI OTPREMNICU</button>
                             </div>
-                            <button onClick={zakljuciOtpremnicu} disabled={listaPrijema.length === 0} className={`w-full md:w-auto px-8 py-4 text-white font-black rounded-xl text-xs uppercase shadow-[0_0_20px_rgba(var(--theme-accent-rgb),0.5)] transition-all ${listaPrijema.length === 0 ? 'bg-slate-600 opacity-50 cursor-not-allowed' : 'bg-theme-accent hover:opacity-80'}`}>🏁 ZAKLJUČI OTPREMNICU</button>
-                        </div>
 
-                        <div className="space-y-3 max-h-[500px] overflow-y-auto mb-4 custom-scrollbar pr-2">
-                            {listaPrijema.length === 0 && <div className="text-center p-8 border-2 border-dashed border-theme-border rounded-2xl text-slate-500 font-bold uppercase tracking-widest text-xs bg-theme-panel/50">Nema skeniranih trupaca za ovu otpremnicu.</div>}
-                            {listaPrijema.map(t => (
-                                <div key={t.id} className={`flex flex-col p-5 bg-theme-panel border rounded-2xl shadow-md transition-all hover:scale-[1.01] border-theme-border hover:border-theme-accent/50 ${t.kontrolna_zapremina ? 'border-amber-500/50 bg-amber-900/10' : ''}`}>
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="text-sm text-theme-text font-black flex items-center gap-3">
-                                                <span className="text-theme-accent text-lg drop-shadow-md">{t.id}</span> 
-                                                <span className="text-theme-text text-[10px] bg-theme-card px-3 py-1 rounded-lg border border-theme-border shadow-inner">Pločica: {t.broj_plocice || '-'}</span>
-                                                {t.kontrolna_zapremina && <span className="text-[8px] bg-amber-600 text-white px-2 py-0.5 rounded uppercase font-black tracking-widest">Kontrola</span>}
+                            <div className="space-y-3 max-h-[500px] overflow-y-auto mb-4 custom-scrollbar pr-2">
+                                {listaPrijema.length === 0 && <div className="text-center p-8 border-2 border-dashed border-theme-border rounded-2xl text-slate-500 font-bold uppercase tracking-widest text-xs bg-theme-panel/50">Nema skeniranih trupaca za ovu otpremnicu.</div>}
+                                {listaPrijema.map(t => (
+                                    <div key={t.id} className={`flex flex-col p-5 bg-theme-panel border rounded-2xl shadow-md transition-all hover:scale-[1.01] border-theme-border hover:border-theme-accent/50 ${t.kontrolna_zapremina ? 'border-amber-500/50 bg-amber-900/10' : ''}`}>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <div className="text-sm text-theme-text font-black flex items-center gap-3">
+                                                    <span className="text-theme-accent text-lg drop-shadow-md">{t.id}</span> 
+                                                    <span className="text-theme-text text-[10px] bg-theme-card px-3 py-1 rounded-lg border border-theme-border shadow-inner">Pločica: {t.broj_plocice || '-'}</span>
+                                                    {t.kontrolna_zapremina && <span className="text-[8px] bg-amber-600 text-white px-2 py-0.5 rounded uppercase font-black tracking-widest">Kontrola</span>}
+                                                </div>
+                                                <div className="text-[10px] text-theme-muted uppercase mt-2 font-bold tracking-widest">
+                                                    {t.vrsta} | Klasa {t.klasa} | Papir: L:{t.duzina}m Ø:{t.promjer}cm
+                                                    {t.kontrolna_duzina && <span className="text-amber-500 ml-2 block sm:inline mt-1 sm:mt-0">| Stvarno: L:{t.kontrolna_duzina}m Ø:{t.kontrolni_promjer}cm</span>}
+                                                </div>
                                             </div>
-                                            <div className="text-[10px] text-theme-muted uppercase mt-2 font-bold tracking-widest">
-                                                {t.vrsta} | Klasa {t.klasa} | Papir: L:{t.duzina}m Ø:{t.promjer}cm
-                                                {t.kontrolna_duzina && <span className="text-amber-500 ml-2 block sm:inline mt-1 sm:mt-0">| Stvarno: L:{t.kontrolna_duzina}m Ø:{t.kontrolni_promjer}cm</span>}
+                                            <div className="text-right flex flex-col items-end">
+                                                <div className="text-2xl text-theme-text font-black drop-shadow-md">{t.kontrolna_zapremina ? t.kontrolna_zapremina : t.zapremina} <span className="text-sm text-theme-accent">m³</span></div>
+                                                <button onClick={async () => { if(window.confirm("Brisati trupac?")) { await supabase.from('trupci').delete().eq('id', t.id); loadPrijemList(); } }} className="text-[10px] text-red-400 uppercase font-black hover:text-white bg-red-900/20 hover:bg-red-600 px-4 py-1.5 rounded-lg mt-2 transition-all shadow-sm">Obriši ×</button>
                                             </div>
-                                        </div>
-                                        <div className="text-right flex flex-col items-end">
-                                            <div className="text-2xl text-theme-text font-black drop-shadow-md">{t.kontrolna_zapremina ? t.kontrolna_zapremina : t.zapremina} <span className="text-sm text-theme-accent">m³</span></div>
-                                            <button onClick={async () => { if(window.confirm("Brisati trupac?")) { await supabase.from('trupci').delete().eq('id', t.id); loadPrijemList(); } }} className="text-[10px] text-red-400 uppercase font-black hover:text-white bg-red-900/20 hover:bg-red-600 px-4 py-1.5 rounded-lg mt-2 transition-all shadow-sm">Obriši ×</button>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-
+                    )}
                 </div>
             )}
 
+            {/* TAB 2: KROJENJE TRUPACA */}
             {tab === 'krojenje' && (
                 <div className="animate-in slide-in-from-right space-y-6 max-w-4xl mx-auto">
                     

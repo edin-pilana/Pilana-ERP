@@ -354,34 +354,24 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             });
         }
 
-        let sysLogsRaw = []; let auditLogsRaw = [];
+        let sysLogsRaw = [];
         const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
         
-        const [sLogs, aLogs] = await Promise.all([
-            orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] },
-            cistiIdovi.length > 0 ? supabase.from('audit_log').select('*').in('zapis_id', cistiIdovi) : { data: [] }
-        ]);
-
-        if (sLogs.data) sysLogsRaw = sLogs.data;
-        if (aLogs.data) auditLogsRaw = aLogs.data;
+        const { data: sLogs } = await (orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] });
+        if (sLogs) sysLogsRaw = sLogs;
 
         const reklamacijskiLogovi = (rekPodaci || []).map(r => ({
-            id: 'rek_log_' + r.id,
-            created_at: new Date(r.created_at).getTime(),
-            datum_prikaz: formatirajTacanDatum(r.created_at),
-            korisnik: r.snimio_korisnik,
-            akcija: `⚠️ STATUS REKLAMACIJE: [${r.status}]`,
+            id: 'rek_log_' + r.id, created_at: new Date(r.created_at).getTime(), datum_prikaz: formatirajTacanDatum(r.created_at),
+            korisnik: r.snimio_korisnik, akcija: `⚠️ STATUS REKLAMACIJE: [${r.status}]`,
             detalji: `Zahtjev za povrat/otpis. Količina: ${r.kolicina} m³. Razlog: ${r.razlog}. ${r.napomena || '-'}`
         }));
 
         const sviLogovi = [
             ...sysLogsRaw.map(l => ({ id: 'sys_' + l.id, created_at: getSortableTime(l.created_at, l.vrijeme, l.datum), datum_prikaz: formatirajTacanDatum(l.created_at, l.vrijeme, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || 'Zapis sistema.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
-            ...auditLogsRaw.map(l => ({ id: 'aud_' + l.id, created_at: getSortableTime(l.vrijeme, l.created_at, l.datum), datum_prikaz: formatirajTacanDatum(l.vrijeme, l.created_at, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || l.opis || 'Ažuriranje.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
             ...reklamacijskiLogovi
         ];
 
         dataChain.logovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values()).filter(l => l.created_at > 0).sort((a, b) => a.created_at - b.created_at);
-
         setForenzika(dataChain); setLoading(false); setSken(val); 
     };
 

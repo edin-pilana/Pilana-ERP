@@ -498,7 +498,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         } else {
             const payload = {
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: v, sirina: s, duzina: d,
-                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, kolicina_m3: qtyZaPaket, 
+                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket,  
                 mjesto: header.mjesto, masina: header.masina,
                 snimio_korisnik: user?.ime_prezime, brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, 
                 ulaz_trupci_ids: currentTrupciIds, broj_veze: radniNalog, 

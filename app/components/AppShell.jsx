@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
 export default function AppShell({ children, user, activeModule = "home", onModuleChange, accentColor, dynamicModules = [] }) {
     const { initSettings, setTheme, setLayout } = useAppStore();
@@ -11,22 +14,40 @@ export default function AppShell({ children, user, activeModule = "home", onModu
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false); 
     const [appBranding, setAppBranding] = useState({ name: 'SmartERP', logo: '' });
 
-    // 🟢 LOKALNO ČUVANJE DIZAJNA ZA SVAKI UREĐAJ ZASEBNO
-    const [localLayout, setLocalLayout] = useState('sidebar'); // ZAKUCAN DEFAULT
+    const [localLayout, setLocalLayout] = useState('sidebar'); 
     const [localTheme, setLocalTheme] = useState('industrial'); 
     const [isLoaded, setIsLoaded] = useState(false);
 
     useEffect(() => {
-        const fetchSaaSSettings = () => {
-            setAppBranding({
-                name: localStorage.getItem('saas_app_name') || 'SmartERP',
-                logo: localStorage.getItem('saas_app_logo') || ''
-            });
-        };
-        fetchSaaSSettings(); 
-        window.addEventListener('saas_updated', fetchSaaSSettings);
+        const fetchGlobalBranding = async () => {
+            let nameToUse = localStorage.getItem('saas_app_name') || 'SmartERP';
+            let logoToUse = localStorage.getItem('saas_app_logo') || '';
+            
+            try {
+                // 🟢 PRISILNO VADI LOGO IZ BAZE KAKO BI PREGAZIO STARU MEMORIJU
+                const { data: bData } = await supabase.from('brending').select('*');
+                if (bData && bData.length > 0) {
+                    let logoObj = bData.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)'));
+                    if (!logoObj) logoObj = bData[0]; // Ako nema tačne lokacije, uzmi prvi logo
+                    
+                    if (logoObj && logoObj.url_slike) {
+                        logoToUse = logoObj.url_slike;
+                        localStorage.setItem('saas_app_logo', logoToUse);
+                    }
+                }
+                const { data: fData } = await supabase.from('postavke_firme').select('app_name').eq('id', 1).maybeSingle();
+                if (fData && fData.app_name) {
+                    nameToUse = fData.app_name;
+                    localStorage.setItem('saas_app_name', nameToUse);
+                }
+            } catch(e) {}
 
-        // Učitavanje dizajna sa specifičnog uređaja
+            setAppBranding({ name: nameToUse, logo: logoToUse });
+        };
+        
+        fetchGlobalBranding(); 
+        window.addEventListener('saas_updated', fetchGlobalBranding);
+
         const savedLayout = localStorage.getItem('erp_device_layout');
         if (savedLayout) setLocalLayout(savedLayout);
         
@@ -35,7 +56,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
         setIsLoaded(true);
 
-        return () => window.removeEventListener('saas_updated', fetchSaaSSettings);
+        return () => window.removeEventListener('saas_updated', fetchGlobalBranding);
     }, []);
 
     const changeLayout = (noviLayout) => {
@@ -94,7 +115,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
     const renderLogoDisplay = (mobile = false) => (
         <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
             {appBranding.logo ? (
-                <img src={appBranding.logo} alt="ERP Logo" className={`${mobile ? 'h-7' : 'h-12'} object-contain`} />
+                <img src={appBranding.logo} alt="ERP Logo" className={`${mobile ? 'h-7' : 'h-12'} object-contain`} crossOrigin="anonymous" />
             ) : (
                 <>
                     <div className={`${mobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-base'} rounded-lg bg-theme-accent flex items-center justify-center font-black text-white`}>

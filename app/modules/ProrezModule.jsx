@@ -338,7 +338,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             viljuskarista: viljuskaristaZaSpasiti, 
             svi_radnici_imena: sviRadniciProrez,
             snimio_korisnik: user?.ime_prezime || 'Sistem', 
-            korisnik: user?.ime_prezime || 'Sistem', 
             vrsta_drveta: trupac.vrsta || 'N/A'
         };
 

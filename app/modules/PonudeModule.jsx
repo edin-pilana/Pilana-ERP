@@ -281,7 +281,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         if (polje.id === 'kupac') return (
             <div className="flex gap-2 items-center w-full h-full">
                 <div className="flex-1 min-w-0 h-full">
-                    <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => handleKupacSelect(k.naziv)} placeholder="Odaberi kupca..." />
+                <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => { setForm({...form, kupac_naziv: k.naziv}); setOdabraniKupac(k); }} placeholder="Odaberi kupca..." />
                 </div>
                 {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-theme-text px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
             </div>

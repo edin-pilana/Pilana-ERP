@@ -453,7 +453,7 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
 };
 
 // ==========================================
-// 3. FAZNA (WIP) A5 DEKLARACIJA PAKETA
+// 3. FAZNA A5 DEKLARACIJA PAKETA (SA NAREDNIM KORACIMA)
 // ==========================================
 export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, tehnologija) => {
     const stariNaslov = document.title;
@@ -479,12 +479,25 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
 
     let tehnologijaHtml = '<p style="font-size: 12px; color: #64748b;">Nema definisanih faza.</p>';
     if (tehnologija && tehnologija.length > 0) {
+        const fazaIndex = tehnologija.findIndex(f => f.masina.toUpperCase() === masina.toUpperCase());
+        
         tehnologijaHtml = tehnologija.map((f, i) => {
-            const isTrenutna = f.masina.toUpperCase() === masina.toUpperCase();
+            const isTrenutna = i === fazaIndex;
+            const isBuduca = i > fazaIndex;
+            const isProsla = i < fazaIndex;
+            
+            let boja = '#cbd5e1';
+            let bg = 'transparent';
+            let dodatak = '';
+            
+            if (isTrenutna) { boja = '#d97706'; bg = '#fffbeb'; dodatak = '(TRENUTNI KORAK)'; }
+            else if (isBuduca) { boja = '#3b82f6'; dodatak = '(SLJEDEĆA FAZA)'; }
+            else if (isProsla) { boja = '#10b981'; dodatak = '(ZAVRŠENO)'; }
+
             return `
-                <div style="padding: 6px; margin-bottom: 4px; border-left: 4px solid ${isTrenutna ? '#d97706' : '#cbd5e1'}; background: ${isTrenutna ? '#fffbeb' : 'transparent'};">
-                    <b style="color: ${isTrenutna ? '#d97706' : '#475569'}; font-size: 12px;">${i+1}. ${f.masina} ${isTrenutna ? '(TRENUTNI KORAK)' : ''}</b><br/>
-                    <span style="font-size: 10px;">Cilj: ${f.dimenzija} | Faktor: ${f.kolicina} ${f.jm}</span>
+                <div style="padding: 6px; margin-bottom: 4px; border-left: 4px solid ${boja}; background: ${bg}; opacity: ${isProsla ? '0.6' : '1'};">
+                    <b style="color: ${boja}; font-size: 12px;">${i+1}. ${f.masina} <span style="font-size: 9px; margin-left: 4px;">${dodatak}</span></b><br/>
+                    <span style="font-size: 10px;">Cilj: ${f.dimenzija} | ${f.kolicina} ${f.jm}</span>
                 </div>
             `;
         }).join('');
@@ -521,7 +534,7 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
                 <div class="header">
                     <div>
                         <h2 style="color: #d97706; margin: 0; font-size: 28px; text-transform: uppercase;">⚠️ FAZNI PAKET</h2>
-                        <p style="margin: 2px 0 0 0; font-size: 12px; font-weight: bold; color: #0f172a;">NE IDE NA LAGER GOTOVE ROBE!</p>
+                        <p style="margin: 2px 0 0 0; font-size: 12px; font-weight: bold; color: #0f172a;">OVO NIJE GOTOVA ROBA ZA KUPCA!</p>
                     </div>
                     <div class="header-info">
                         <p style="margin: 0; font-size: 12px; color: #475569;">Radni Nalog:</p>
@@ -547,7 +560,7 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
                         </div>
                     </div>
                     <div class="right-pane">
-                        <h4 style="margin: 0 0 10px 0; font-size: 14px; color: #0f172a; text-transform: uppercase;">Procesi obrade:</h4>
+                        <h4 style="margin: 0 0 10px 0; font-size: 14px; color: #0f172a; text-transform: uppercase;">Hronologija obrade:</h4>
                         ${tehnologijaHtml}
                     </div>
                 </div>

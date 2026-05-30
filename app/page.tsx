@@ -11,6 +11,7 @@ import PametniDialog from './components/PametniDialog';
 import { useAppStore } from './store/useAppStore'; 
 
 // Import moduli
+// Import moduli
 import ProrezModule from './modules/ProrezModule';
 import PrijemModule from './modules/PrijemModule';
 import PilanaModule from './modules/PilanaModule';
@@ -128,7 +129,7 @@ export default function Page() {
                 supabase.from('radni_nalozi').select('*').neq('status', 'ISPORUČENO'), 
                 supabase.from('sistem_audit_log').select('*').order('vrijeme', { ascending: false }).limit(8),
                 supabase.from('paketi').select('datum_yyyy_mm, kolicina_final').gte('datum_yyyy_mm', sedamDanaNazad).lte('datum_yyyy_mm', danas),
-                supabase.from('trupci').select('duzina, zapremina').eq('status', 'na_lageru').eq('zakljucen_prijem', true),
+                supabase.from('trupci').select('duzina, zapremina').is('prorezan_at', null).eq('zakljucen_prijem', true),
                 supabase.from('paketi').select('broj_veze, naziv_proizvoda, kolicina_final').not('closed_at', 'is', null).is('otpremnica_id', null)
             ]);
 

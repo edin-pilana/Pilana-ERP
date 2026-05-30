@@ -556,7 +556,26 @@ function TabKatalog() {
     const [kategorijaZaMijenjanje, setKategorijaZaMijenjanje] = useState('');
     const [kategorijaNovaDestinacija, setKategorijaNovaDestinacija] = useState('');
 
+    // 🟢 STATE ZA PRETRAGU ARTIKALA
+    const [pretragaKataloga, setPretragaKataloga] = useState('');
+
     useEffect(() => { load(); }, []);
+    
+    const load = async () => { 
+        const {data} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); 
+        setKatalog(data||[]); 
+    };
+
+    // 🟢 LIVE FILTRIRANJE ARTIKALA PREKO MEMO LOGIKE (Brza pretraga po šifri, nazivu ili kategoriji)
+    const filtriraniKatalog = useMemo(() => {
+        if (!pretragaKataloga) return katalog;
+        const term = pretragaKataloga.toLowerCase().trim();
+        return katalog.filter(k => 
+            k.sifra.toLowerCase().includes(term) || 
+            k.naziv.toLowerCase().includes(term) || 
+            (k.kategorija || '').toLowerCase().includes(term)
+        );
+    }, [katalog, pretragaKataloga]);
 
     const masovnoPrebaciKategoriju = async () => {
         if (!kategorijaZaMijenjanje || !kategorijaNovaDestinacija) return alert("Odaberite staru i unesite novu kategoriju!");
@@ -574,11 +593,6 @@ function TabKatalog() {
         alert("✅ Kategorije uspješno prebačene!");
         setKategorijaZaMijenjanje(''); setKategorijaNovaDestinacija('');
         load();
-    };
-    
-    const load = async () => { 
-        const {data} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); 
-        setKatalog(data||[]); 
     };
 
     const jedinstveneKategorije = useMemo(() => Array.from(new Set(katalog.map(k=>k.kategorija).filter(Boolean))), [katalog]);
@@ -598,7 +612,7 @@ function TabKatalog() {
 
     const pokreniIzmjenu = (proizvod) => {
         setForm({
-            sifra: proizvod.sifra, naziv: proizvod.naziv, dimenzije: proizvod.dimenzije || '', kategorija: proizvod.kategorija || '',
+            sifra: proizvod.sifra, naziv: proizvod.naziv, kategorija: proizvod.kategorija || '',
             default_jedinica: proizvod.default_jedinica || 'm3', cijena: proizvod.cijena || '', m3: proizvod.m3 || '', 
             m2: proizvod.m2 || '', m1: proizvod.m1 || '', duzina: proizvod.duzina || '', sirina: proizvod.sirina || '', visina: proizvod.visina || ''
         });
@@ -606,7 +620,7 @@ function TabKatalog() {
     };
 
     const ponistiIzmjenu = () => {
-        setForm({ sifra: '', naziv: '', dimenzije: '', kategorija: '', default_jedinica: 'm3', cijena: '', m3: '', m2: '', m1: '', duzina: '', sirina: '', visina: '' });
+        setForm({ sifra: '', naziv: '', kategorija: '', default_jedinica: 'm3', cijena: '', m3: '', m2: '', m1: '', duzina: '', sirina: '', visina: '' });
         setIsEditing(false);
     };
 
@@ -621,7 +635,7 @@ function TabKatalog() {
             );
             if (duplikatDimenzija) {
                 if (!window.confirm(`⚠️ UPOZORENJE: Proizvod sa potpuno istim dimenzijama (${v}x${s}x${d}) već postoji u bazi!\n\nŠifra postojećeg: ${duplikatDimenzija.sifra}\nNaziv postojećeg: ${duplikatDimenzija.naziv}\n\nDa li ste sigurni da želite ignorisati ovo i svejedno snimiti ovaj proizvod?`)) {
-                    return; 
+                    return;
                 }
             }
         }
@@ -740,6 +754,8 @@ function TabKatalog() {
                         </button>
                     </div>
                 </div>
+                
+                {/* FORMA ZA UNOS / EDIT */}
                 <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border shadow-2xl space-y-4 transition-all ${isEditing ? 'border-amber-500/50' : 'border-theme-border'}`}>
                     <div className="flex justify-between items-center mb-4">
                         <h3 className={`${isEditing ? 'text-amber-500' : 'text-blue-500'} font-black uppercase text-xs`}>{isEditing ? '✏️ Ažuriranje Proizvoda' : '➕ Dodaj Proizvod Ručno'}</h3>
@@ -756,7 +772,7 @@ function TabKatalog() {
                             <input value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner" />
                         </div>
                         <div className="col-span-2 md:col-span-4 relative z-40">
-                            <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, kategorija: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
+                            <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, category: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
                         </div>
 
                         <div className="col-span-2">
@@ -782,16 +798,37 @@ function TabKatalog() {
                 </div>
             </div>
 
+            {/* 🟢 DESNI PANEL SA NOVOM INTEGRISANOM UKREŠTENOM PRETRAGOM */}
             <div className="lg:col-span-7 bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl">
-                <h3 className="text-[10px] text-slate-400 font-black uppercase mb-4 tracking-widest">Trenutni Katalog ({katalog.length} proizvoda)</h3>
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-theme-border pb-4 mb-4">
+                    <div>
+                        <h3 className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Trenutni Katalog ({filtriraniKatalog.length} / {katalog.length} proizvoda)</h3>
+                    </div>
+                    <div className="w-full sm:w-64">
+                        <input 
+                            type="text" 
+                            value={pretragaKataloga} 
+                            onChange={e => setPretragaKataloga(e.target.value)} 
+                            placeholder="🔍 PRETRAŽI PO ŠIFRI ILI NAZIVU..." 
+                            className="w-full p-3 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black outline-none focus:border-blue-500 uppercase placeholder:text-slate-600 tracking-wider shadow-inner"
+                            autoComplete="off"
+                        />
+                    </div>
+                </div>
+
                 <div className="space-y-3 max-h-[850px] overflow-y-auto pr-2 custom-scrollbar">
-                    {katalog.map(k => (
-                        <div key={k.sifra} onClick={() => pokreniIzmjenu(k)} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-blue-500/50 transition-all shadow-sm">
+                    {filtriraniKatalog.length === 0 && (
+                        <div className="text-center p-12 border-2 border-dashed border-theme-border rounded-2xl text-slate-500 font-bold uppercase tracking-widest text-xs bg-theme-panel/50">
+                            Nema pronađenih artikala pod ovim kriterijem...
+                        </div>
+                    )}
+                    {filtriraniKatalog.map(k => (
+                        <div key={k.sifra} onClick={() => pokreniIzmjenu(k)} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-blue-500/50 transition-all shadow-sm group">
                             <div>
-                                <p className="text-theme-text text-sm font-black">{k.sifra} <span className="text-theme-accent ml-2">{k.naziv}</span></p>
+                                <p className="text-theme-text text-sm font-black group-hover:text-theme-accent transition-colors">{k.sifra} <span className="text-theme-accent ml-2 group-hover:text-white transition-colors">{k.naziv}</span></p>
                                 <p className="text-[10px] text-slate-400 uppercase mt-2 font-bold tracking-widest">Kat: {k.kategorija} <span className="mx-2 opacity-50">|</span> Dim: {k.visina}x{k.sirina}x{k.duzina} <span className="mx-2 opacity-50">|</span> Cijena: <b className="text-emerald-500 text-sm ml-1">{k.cijena} KM</b>/{k.default_jedinica}</p>
                             </div>
-                            <button onClick={(e) => obrisiProizvod(k.sifra, k.naziv, e)} className="mt-3 sm:mt-0 text-red-500 font-black px-4 py-3 bg-red-900/20 hover:bg-red-500 hover:text-theme-text rounded-xl transition-all uppercase text-[10px] shadow-sm">✕ Obriši</button>
+                            <button onClick={(e) => obrisiProizvod(k.sifra, k.naziv, e)} className="mt-3 sm:mt-0 text-red-500 font-black px-4 py-3 bg-red-900/20 hover:bg-red-600 hover:text-theme-text rounded-xl transition-all uppercase text-[10px] shadow-sm">✕ Obriši</button>
                         </div>
                     ))}
                 </div>
