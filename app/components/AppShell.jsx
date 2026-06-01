@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify } from 'lucide-react';
+import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify, LogOut } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster } from 'sonner';
 import { createClient } from '@supabase/supabase-js';
@@ -24,11 +24,10 @@ export default function AppShell({ children, user, activeModule = "home", onModu
             let logoToUse = localStorage.getItem('saas_app_logo') || '';
             
             try {
-                // 🟢 PRISILNO VADI LOGO IZ BAZE KAKO BI PREGAZIO STARU MEMORIJU
                 const { data: bData } = await supabase.from('brending').select('*');
                 if (bData && bData.length > 0) {
                     let logoObj = bData.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)'));
-                    if (!logoObj) logoObj = bData[0]; // Ako nema tačne lokacije, uzmi prvi logo
+                    if (!logoObj) logoObj = bData[0]; 
                     
                     if (logoObj && logoObj.url_slike) {
                         logoToUse = logoObj.url_slike;
@@ -69,6 +68,14 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         setLocalTheme(novaTema);
         localStorage.setItem('erp_device_theme', novaTema);
         setTheme(novaTema);
+    };
+
+    // 🟢 FUNKCIJA ZA GLOBALNU ODJAVU
+    const handleLogout = () => {
+        if (window.confirm("Da li ste sigurni da se želite odjaviti sa ERP sistema?")) {
+            localStorage.removeItem('smart_timber_user');
+            window.location.reload();
+        }
     };
 
     useEffect(() => { initSettings(user?.ime_prezime || 'Korisnik'); }, [user, initSettings]);
@@ -194,7 +201,11 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                         <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
                         <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[140px]">{user?.ime_prezime || 'Korisnik'}</p></div>
                     </div>
-                    <button onClick={() => setIsSettingsOpen(true)} className="flex w-full items-center justify-center gap-2 p-4 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-xs font-black uppercase border border-theme-border"><Settings size={16}/> Postavke uređaja</button>
+                    {/* 🟢 DUGME ZA ODJAVU DODANO U SIDEBAR */}
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsSettingsOpen(true)} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border"><Settings size={14}/> Postavke</button>
+                        <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-[9px] font-black uppercase border border-red-500/30"><LogOut size={14}/> Odjava</button>
+                    </div>
                 </div>
             </motion.aside>
 
@@ -211,6 +222,13 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                                 <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
                                 <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[150px]">{user?.ime_prezime || 'Korisnik'}</p></div>
                             </div>
+                            
+                            {/* 🟢 DUGME ZA ODJAVU DODANO U MOBILNI MENI */}
+                            <div className="flex gap-2 mb-6">
+                                <button onClick={() => { setIsSettingsOpen(true); setMobileMenuOpen(false); }} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border"><Settings size={14}/> Postavke</button>
+                                <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-[9px] font-black uppercase border border-red-500/30"><LogOut size={14}/> Odjava</button>
+                            </div>
+
                             <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pb-10">
                                 {renderMenuContent()}
                             </nav>
@@ -230,7 +248,8 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2.5 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm active:scale-95 transition-transform"><Menu size={20}/></button>
                     {renderLogoDisplay(true)}
                     <div className="md:hidden flex items-center gap-2">
-                         <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
+                        <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
+                        <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm"><LogOut size={18}/></button>
                     </div>
                 </div>
                 
@@ -245,12 +264,14 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     ))}
                 </nav>
                 
+                {/* 🟢 DUGME ZA ODJAVU DODANO U TOP NAV */}
                 <div className="hidden md:flex items-center gap-2 flex-shrink-0">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border shadow-sm">
                         <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
                         <span className="text-[10px] font-black text-theme-text uppercase tracking-widest truncate max-w-[100px]">{user?.ime_prezime || 'Korisnik'}</span>
                     </div>
-                    <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
+                    <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm" title="Postavke"><Settings size={18}/></button>
+                    <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm" title="Odjava"><LogOut size={18}/></button>
                 </div>
             </motion.header>
 
@@ -292,7 +313,9 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     </button>
                 ))}
                 <div className="w-px h-8 bg-theme-border mx-2"></div>
-                <button onClick={() => setIsSettingsOpen(true)} className="p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all"><Settings size={20}/></button>
+                {/* 🟢 DUGME ZA ODJAVU DODANO U BENTO MENI */}
+                <button onClick={() => setIsSettingsOpen(true)} className="p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all" title="Postavke"><Settings size={20}/></button>
+                <button onClick={handleLogout} className="p-4 rounded-2xl text-red-500 hover:bg-red-500 hover:text-white transition-all" title="Odjava sa sistema"><LogOut size={20}/></button>
             </motion.div>
         </div>
     );
@@ -312,6 +335,7 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     ))}
                     <div className="h-8 w-px bg-theme-border mx-2"></div>
                     <button onClick={() => setIsSettingsOpen(true)} className="w-12 h-12 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all shadow-sm"><Settings size={20}/></button>
+                    <button onClick={handleLogout} className="w-12 h-12 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm" title="Odjava"><LogOut size={20}/></button>
                 </div>
             </motion.header>
             <main className="flex-1 p-2 sm:p-6 relative z-10 w-full overflow-x-hidden">{children}</main>
