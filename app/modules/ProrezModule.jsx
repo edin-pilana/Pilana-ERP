@@ -74,7 +74,6 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 
 export default function ProrezModule({ user, header, setHeader, onExit }) {
     
-    // PAMETNA SELEKCIJA MAŠINE
     useEffect(() => {
         const postaviMasinu = async () => {
             const { data } = await supabase.from('masine').select('naziv').ilike('dozvoljeni_moduli', '%Prorez%');
@@ -126,14 +125,13 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
     const scanTimerRef = useRef(null); 
-    const inputRef = useRef(null); 
+    const inputRef = useRef(null);
     const btnPotvrdiRef = useRef(null); 
 
     const [brentista, setBrentista] = useState('');
     const [viljuskarista, setViljuskarista] = useState('');
     const [radniciList, setRadniciList] = useState([]);
 
-    // 🟢 CENTRALNI TRAGAČ SVIH AKTIVNOSTI
     const zapisiU_Log = async (akcija, detalji) => {
         await supabase.from('sistem_audit_log').insert([{ 
             korisnik: user?.ime_prezime || 'Nepoznat', 
@@ -198,7 +196,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         return () => window.removeEventListener('radnici_updated', handleRadniciUpdate);
     }, [header?.masina, header?.datum]);
 
-    // 🟢 LOAD PROREZANI - SA PAMETNIM FILTRIRANJEM PO SESIJI SMJENE
     const loadProrezani = async () => {
         if(!header?.masina) return;
         
@@ -225,7 +222,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 return logLokalniString === odabraniDatum;
             });
             
-            // FILTRIRANJE SESIJE: Sakrij logove ako je smjena nedavno završena
             const sessionTime = localStorage.getItem('prorez_session_start_' + header.masina);
             if (sessionTime) {
                 const sessionDate = new Date(sessionTime);
@@ -259,7 +255,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
     const processTrupacScan = async (val) => {
         const id = val.toUpperCase().trim();
-        // 🟢 DOZVOLJEN UNOS QR KODA OD 1 KARAKTERA
         if (id.length < 1) return; 
         
         const { data } = await supabase.from('trupci').select('*').eq('id', id).maybeSingle();
@@ -279,12 +274,10 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    // 🟢 OPTIMISTIC UI + LOGIKA ZA NASTAVLJANJE PREKINUTE SMJENE
     const zavrsiProrez = async () => {
         if(!trupac) return;
         
         if(!brentista) {
-            // PROVJERA: Da li danas već imamo izrezanih trupaca na ovoj mašini?
             const odabraniDatum = header.datum || new Date().toISOString().split('T')[0];
             const { data: zadnjiLog } = await supabase.from('prorez_log')
                 .select('*')
@@ -292,7 +285,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 .order('created_at', { ascending: false })
                 .limit(1);
 
-            // Ako imamo zadnji log i on je od danas, pitaj korisnika za nastavak smjene
             if (zadnjiLog && zadnjiLog.length > 0 && zadnjiLog[0].datum === odabraniDatum) {
                 const zadnji = zadnjiLog[0];
                 return prikaziDialog({
@@ -307,7 +299,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                         if (zadnji.viljuskarista) await handleViljuskaristaChange(zadnji.viljuskarista);
                         await loadProrezani(); 
                         zatvoriDialog();
-                        // Triggere actual save after confirming!
                         zavrsiProrezPravi(zadnji.brentista, zadnji.viljuskarista); 
                     },
                     onCancel: () => {
@@ -362,7 +353,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    // 🟢 POPRAVLJENO: Pametni Dialog za vraćanje na stanje
     const vratiNaStanje = async (p) => {
         prikaziDialog({
             tip: 'upozorenje',
@@ -382,7 +372,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    // 🟢 NOVA FUNKCIJA: ZAVRŠI SMJENU (Odjava radnika i čišćenje ekrana)
     const zavrsiSmjenu = async () => {
         if(prorezaniLista.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Prazno', poruka: "Nema izrezanih trupaca u trenutnoj smjeni.", onCancel: zatvoriDialog });
         
@@ -394,8 +383,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 const now = new Date().toISOString();
-                await supabase.from('aktivni_radnici').update({ vrijeme_odjave: now })
-                    .eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
+                await supabase.from('aktivni_radnici').update({ vrijeme_odjave: now }).eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
                 
                 setBrentista('');
                 setViljuskarista('');
@@ -403,7 +391,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 localStorage.removeItem('zajednicki_viljuskarista');
                 emitRadniciUpdate('', '');
                 
-                // 🟢 Označi novu sesiju od trenutka klika kako bi se sakrili prethodni rezovi
                 localStorage.setItem('prorez_session_start_' + header.masina, now);
                 loadProrezani(); 
                 
@@ -468,13 +455,11 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
-                
                 <div className="lg:col-span-7 space-y-6">
                     <div className="bg-theme-card/80 backdrop-blur-md p-8 rounded-[2.5rem] border border-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.1)] relative group overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50"></div>
                         <label className="text-[9px] text-theme-muted uppercase block mb-4 font-black tracking-widest text-center" style={{ color: saas.ui.boja_teksta, fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_skenera}</label>
                         <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-red-500/50 focus-within:border-red-500'}`}>
-                            
                             <input 
                                 ref={inputRef}
                                 value={scan} 
@@ -483,7 +468,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                 className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" 
                                 placeholder="ČEKAM SKEN..." 
                             />
-                            
                             <button onClick={() => setIsScanning(true)} className="shrink-0 px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
                         </div>
 
@@ -491,8 +475,18 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                             <div className="bg-theme-panel p-6 rounded-3xl border border-red-500/50 shadow-2xl relative overflow-hidden animate-in zoom-in-95">
                                 <div className="absolute -right-10 -top-10 text-9xl opacity-5">🪵</div>
                                 <div className="flex justify-between items-start mb-6 border-b border-theme-border/50 pb-4 relative z-10">
-                                    <div><span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">ID Trupca (Pločica)</span><h3 className="text-3xl text-theme-text font-black drop-shadow-md">{trupac.id}</h3></div>
-                                    <div className="text-right"><span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Zapremina</span><h3 className="text-4xl text-red-500 font-black drop-shadow-lg">{parseFloat(trupac.zapremina || 0).toFixed(3)} <span className="text-lg text-red-700">m³</span></h3></div>
+                                    <div>
+                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Skenirani Trupac</span>
+                                        <div className="flex items-center gap-3">
+                                            <h3 className="text-3xl text-theme-text font-black drop-shadow-md">{trupac.id}</h3>
+                                            {/* 🟢 EKSPLICITNI PRIKAZ PLOČICE (DODANO!) */}
+                                            {trupac.broj_plocice && <span className="bg-red-900/30 border border-red-500/30 text-red-400 px-3 py-1 rounded-xl text-sm font-black uppercase">Pločica: {trupac.broj_plocice}</span>}
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Zapremina</span>
+                                        <h3 className="text-4xl text-red-500 font-black drop-shadow-lg">{parseFloat(trupac.zapremina || 0).toFixed(3)} <span className="text-lg text-red-700">m³</span></h3>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 relative z-10">
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Vrsta</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.vrsta || 'N/A'}</span></div>
@@ -544,7 +538,9 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                     <div className="flex items-center gap-4">
                                         <div className="text-[10px] font-black text-slate-500 w-4">{prorezaniLista.length - i}.</div>
                                         <div>
-                                            <p className="text-theme-text text-sm font-black">{p.trupac_id}</p>
+                                            <p className="text-theme-text text-sm font-black flex items-center gap-2">
+                                                {p.trupac_id}
+                                            </p>
                                             <p className="text-[9px] text-slate-400 mt-1 uppercase font-bold tracking-widest">
                                                 {p.created_at ? new Date(p.created_at).toLocaleTimeString('de-DE') : new Date().toLocaleTimeString('de-DE')} | {p.vrsta_drveta}
                                             </p>
