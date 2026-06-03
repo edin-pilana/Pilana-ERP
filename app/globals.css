@@ -30,7 +30,7 @@
   }
 
   [data-theme="light"] {
-    /* 3. CLINICAL LIGHT */
+    /* 3. CLINICAL LIGHT BAZA */
     --bg-main: #f8fafc; --bg-card: #ffffff; --bg-panel: #f1f5f9; 
     --text-primary: #0f172a; --text-muted: #64748b; 
     --border-color: #e2e8f0; --border-glow: 0 10px 15px -3px rgba(0,0,0,0.05); 
@@ -138,25 +138,7 @@ body[data-theme="executive"]::after {
   background: radial-gradient(circle, rgba(180,140,70,0.05) 0%, transparent 60%);
   z-index: -1; pointer-events: none;
 }
-/* ==================================================== */
-/* 📊 FORSIRANJE TREMOR GRAFIKA DA BUDU STAKLENI */
-/* ==================================================== */
-.tremor-Card-root {
-  background-color: var(--bg-card) !important;
-  border-color: var(--border-color) !important;
-  backdrop-filter: var(--glass-blur) !important;
-  box-shadow: var(--border-glow) !important;
-  border-radius: var(--radius-box) !important;
-}
 
-/* Tooltipovi unutar grafika (da ne budu jarko bijeli na tamnoj temi) */
-body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-tooltip {
-  background-color: var(--bg-panel) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: 0.75rem !important;
-  backdrop-filter: blur(8px) !important;
-  color: var(--text-primary) !important;
-}
 /* ==================================================== */
 /* 📊 FORSIRANJE TREMOR GRAFIKA DA BUDU STAKLENI */
 /* ==================================================== */
@@ -188,6 +170,7 @@ body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-toolt
 body:not([data-theme="light"]) .recharts-tooltip-item {
   color: var(--text-primary) !important;
 }
+
 /* FORSIRANJE VELIKIH SLOVA U SVIM POLJIMA ZA UNOS */
 input[type="text"],
 input[type="search"],
@@ -201,4 +184,97 @@ textarea {
   border: 1px solid var(--border-color);
   z-index: 9999 !important; /* Uvijek iznad svega */
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* ========================================================= */
+/* 🌞 CLINICAL LIGHT TEMA - GLOBALNI OVERRIDE SVIH MODULA    */
+/* ========================================================= */
+
+[data-theme="light"] {
+  /* 1. Prisilno svijetla pozadina za cijelu aplikaciju */
+  --theme-main: #f1f5f9 !important;
+  --theme-card: #ffffff !important;
+  --theme-panel: #f8fafc !important;
+  --theme-text: #0f172a !important;
+  --theme-muted: #475569 !important;
+}
+
+/* 2. Gaženje inline SaaS tamnih boja (kartica i pozadina) iz baze */
+[data-theme="light"] body,
+[data-theme="light"] [style*="background-color: #090e17"],
+[data-theme="light"] [style*="background-color: #1e293b"],
+[data-theme="light"] [style*="background-color: #111827"],
+[data-theme="light"] [style*="background-color: rgb(9, 14, 23)"],
+[data-theme="light"] [style*="background-color: rgb(30, 41, 59)"],
+[data-theme="light"] [style*="background-color: rgb(17, 24, 39)"] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* 3. Bijele kartice na SVIM modulima */
+[data-theme="light"] .bg-theme-card,
+[data-theme="light"] [class*="bg-theme-card"],
+[data-theme="light"] .bg-theme-panel,
+[data-theme="light"] [class*="bg-theme-panel"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* 4. OBRUBI POLJA U BOJI TRENUTNOG MODULA (--theme-accent) */
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 2px solid var(--theme-accent, #cbd5e1) !important; 
+  border-radius: 0.75rem !important;
+  box-shadow: none !important;
+}
+
+/* Jači obrub i sjena kada se klikne na polje */
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  outline: none !important;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-accent, rgba(0,0,0,0.1)) 40%, transparent) !important;
+}
+
+/* Rješavanje Dropdowna na svijetloj temi */
+[data-theme="light"] select option {
+background-color: #ffffff !important;
+color: #0f172a !important;
+}
+
+/* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini) */
+[data-theme="light"] .text-white,
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400,
+[data-theme="light"] .text-slate-500 {
+  color: #334155 !important;
+}
+
+/* Prisilno gaženje hardkodiranih bijelih slova iz Reacta (style="color: #ffffff") */
+[data-theme="light"] [style*="color: #ffffff"],
+[data-theme="light"] [style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] [style*="color: #f8fafc"] {
+  color: #0f172a !important;
+}
+
+/* Zadržavamo bijeli tekst SAAAAMO na dugmadima (jer su obojena) */
+[data-theme="light"] button.text-white,
+[data-theme="light"] button .text-white {
+  color: #ffffff !important;
+}
+
+/* 6. POPRAVAK ZA BEDŽEVE I OSTATAK TAMNIH POLJA */
+[data-theme="light"] .bg-black,
+[data-theme="light"] [class*="bg-black"],
+[data-theme="light"] [class*="bg-slate-800"],
+[data-theme="light"] [class*="bg-slate-900"],
+[data-theme="light"] [class*="bg-slate-950"] {
+  background-color: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
 }

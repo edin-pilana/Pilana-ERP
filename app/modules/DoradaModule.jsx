@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
@@ -429,7 +429,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             .eq('paket_id', `${id}-R`)
             .gt('kolicina_final', 0)
             .maybeSingle();
-            
+           
         if (checkR) {
             id = `${id}-R`; 
         }
@@ -759,7 +759,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-theme-card border border-red-500 p-6 rounded-[2.5rem] shadow-2xl max-w-sm w-full relative">
                         <button onClick={() => setRazduziZapis(null)} className="absolute top-4 right-4 bg-slate-800 text-slate-400 hover:text-theme-text hover:bg-red-500 w-8 h-8 rounded-box font-black flex items-center justify-center transition-all">✕</button>
                         <h3 className="text-red-400 font-black uppercase text-sm mb-4 border-b border-theme-border pb-3">Razduživanje Stavke</h3>
-                        
                         <div className="mb-4 text-xs text-slate-300">
                             <p className="mb-1">Paket: <b className="text-theme-text bg-slate-800 px-2 py-0.5 rounded">{razduziZapis.paket_id}</b></p>
                             <p className="mb-1">Proizvod: <b className="text-theme-text">{razduziZapis.naziv_proizvoda}</b></p>
@@ -906,7 +905,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
 
                         <div className="relative font-black">
                             <label className={`text-[10px] uppercase text-red-500 block mb-2 tracking-widest text-center`} style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_ulaz}</label>
-                            <div className="flex bg-theme-panel border border-red-500/50 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 relative z-10">
+                            <div className="flex bg-theme-panel border-2 border-red-500/50 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 relative z-10">
                                 <input type="text" value={ulazScan} onChange={e => handleUlazInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleUlazInput(ulazScan, true)}} placeholder="UČITAJ PAKET SIROVINE..." className="flex-1 p-5 bg-transparent text-center text-theme-text outline-none uppercase text-lg font-black min-w-0" />
                                 <button onClick={() => {setScanTarget('ulaz'); setIsScanning(true);}} className="px-6 bg-red-600/30 text-red-400 font-bold hover:bg-red-500 hover:text-theme-text transition-all text-2xl border-l border-red-500/50 shrink-0 backdrop-blur-sm">📷</button>
                             </div>
@@ -1021,7 +1020,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                 placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..."
                                                 renderItem={(k) => (
                                                     <div>
-                                                        <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-emerald-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                                        <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-purple-400 ml-2">(Šifra: {k.sifra})</span></div>
                                                         <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
                                                     </div>
                                                 )}
@@ -1052,7 +1051,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                 {dostupneOznake.map(o => {
                                                     const isSelected = odabraneOznake.includes(o);
                                                     return (
-                                                        <button key={o} onClick={() => toggleOznaka(o)} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border ${isSelected ? 'bg-amber-600 border-amber-400 text-theme-text shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500'}`}>
+                                                        <button key={o} onClick={() => toggleOznaka(o)} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border ${isSelected ? 'bg-amber-600 border-amber-400 text-white shadow-lg scale-105' : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500'}`}>
                                                             {isSelected ? '✓ ' : '+ '} {o}
                                                         </button>
                                                     )
@@ -1110,7 +1109,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
                 </div>
-
             </div>
             
             <SaaS_DnevnikMasine 
