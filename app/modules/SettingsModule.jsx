@@ -32,13 +32,13 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
                 placeholder={placeholder} 
             />
             {open && list.length > 0 && (
-                <div className="absolute z-[5000] w-full mt-1 bg-slate-800 border border-theme-border rounded-xl shadow-2xl max-h-40 overflow-y-auto custom-scrollbar">
+                <div className="absolute z-[5000] w-full mt-1 bg-theme-card border border-theme-border rounded-xl shadow-2xl max-h-40 overflow-y-auto custom-scrollbar">
                     {list.filter(i => i.toUpperCase().includes((value||'').toUpperCase())).map((item, idx) => (
-                        <div key={idx} onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-theme-border hover:bg-theme-accent uppercase cursor-pointer text-slate-200 hover:text-white">
+                        <div key={idx} onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-theme-border hover:bg-theme-accent uppercase cursor-pointer text-theme-text hover:text-white transition-colors">
                             {item}
                         </div>
                     ))}
-                    <div onClick={() => setOpen(false)} className="p-3 text-center text-[9px] text-red-400 font-black uppercase cursor-pointer hover:bg-red-500 hover:text-white transition-colors">
+                    <div onClick={() => setOpen(false)} className="p-3 text-center text-[9px] text-red-500 font-black uppercase cursor-pointer hover:bg-red-500 hover:text-white transition-colors">
                         ✕ Zatvori
                     </div>
                 </div>
@@ -556,7 +556,6 @@ function TabKatalog() {
     const [kategorijaZaMijenjanje, setKategorijaZaMijenjanje] = useState('');
     const [kategorijaNovaDestinacija, setKategorijaNovaDestinacija] = useState('');
 
-    // 🟢 STATE ZA PRETRAGU ARTIKALA
     const [pretragaKataloga, setPretragaKataloga] = useState('');
 
     useEffect(() => { load(); }, []);
@@ -566,7 +565,6 @@ function TabKatalog() {
         setKatalog(data||[]); 
     };
 
-    // 🟢 LIVE FILTRIRANJE ARTIKALA PREKO MEMO LOGIKE (Brza pretraga po šifri, nazivu ili kategoriji)
     const filtriraniKatalog = useMemo(() => {
         if (!pretragaKataloga) return katalog;
         const term = pretragaKataloga.toLowerCase().trim();
@@ -692,8 +690,8 @@ function TabKatalog() {
                         <div>
                             <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-2">1. Odaberi Kategoriju</label>
                             <select value={odabranaKategorija} onChange={e=>setOdabranaKategorija(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-amber-500 uppercase font-black cursor-pointer shadow-inner">
-                                <option value="">-- Odaberi --</option>
-                                {jedinstveneKategorije.map(k => <option key={k} value={k}>{k}</option>)}
+                                <option value="" className="bg-theme-card text-theme-text">-- Odaberi --</option>
+                                {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
                             </select>
                         </div>
                         {odabranaKategorija && (
@@ -741,8 +739,8 @@ function TabKatalog() {
                         <div className="flex-1 w-full">
                             <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">1. Iz stare kategorije</label>
                             <select value={kategorijaZaMijenjanje} onChange={e=>setKategorijaZaMijenjanje(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-blue-500 uppercase font-black cursor-pointer shadow-inner">
-                                <option value="">-- Odaberi Staru --</option>
-                                {jedinstveneKategorije.map(k => <option key={k} value={k}>{k}</option>)}
+                                <option value="" className="bg-theme-card text-theme-text">-- Odaberi Staru --</option>
+                                {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
                             </select>
                         </div>
                         <span className="hidden md:block text-slate-500 font-black text-xl mb-3">→</span>
@@ -772,13 +770,16 @@ function TabKatalog() {
                             <input value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner" />
                         </div>
                         <div className="col-span-2 md:col-span-4 relative z-40">
-                            <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, category: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
+                            <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, kategorija: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
                         </div>
 
                         <div className="col-span-2">
                             <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Def. Jedinica</label>
                             <select value={form.default_jedinica} onChange={e=>setForm({...form, default_jedinica:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs font-black text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner cursor-pointer">
-                                <option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option>
+                                <option value="m3" className="bg-theme-card text-theme-text">m³</option>
+                                <option value="m2" className="bg-theme-card text-theme-text">m²</option>
+                                <option value="m1" className="bg-theme-card text-theme-text">m1</option>
+                                <option value="kom" className="bg-theme-card text-theme-text">kom</option>
                             </select>
                         </div>
                         <div className="col-span-2">
