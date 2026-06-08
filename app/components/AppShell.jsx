@@ -17,6 +17,9 @@ export default function AppShell({ children, user, activeModule = "home", onModu
     const [localLayout, setLocalLayout] = useState('sidebar'); 
     const [localTheme, setLocalTheme] = useState('industrial'); 
     const [isLoaded, setIsLoaded] = useState(false);
+    
+    // 🟢 Sidebar kontrola prebačena ovdje kako bi radila na desktopu
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     useEffect(() => {
         const fetchGlobalBranding = async () => {
@@ -70,7 +73,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
         setTheme(novaTema);
     };
 
-    // 🟢 FUNKCIJA ZA GLOBALNU ODJAVU
     const handleLogout = () => {
         if (window.confirm("Da li ste sigurni da se želite odjaviti sa ERP sistema?")) {
             localStorage.removeItem('smart_timber_user');
@@ -119,35 +121,44 @@ export default function AppShell({ children, user, activeModule = "home", onModu
 
     const visibleMenuItems = dynamicModules.filter(item => hasPermission(item.id));
 
-    const renderLogoDisplay = (mobile = false) => (
-        <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : 'mb-10 px-2 mt-4'}`}>
+    // 🟢 HIRURŠKI DODANA OPCIJA 'collapsed' DA SAKRIJE TEKST LOGOTIPA KAD JE MENI SKUPLJEN
+    const renderLogoDisplay = (mobile = false, collapsed = false) => (
+        <div className={`flex items-center gap-3 ${mobile ? 'flex-shrink-0' : (collapsed ? 'mb-10 px-0 mt-4 justify-center w-full' : 'mb-10 px-2 mt-4')}`}>
             {appBranding.logo ? (
-                <img src={appBranding.logo} alt="ERP Logo" className={`${mobile ? 'h-7' : 'h-12'} object-contain`} crossOrigin="anonymous" />
+                <img src={appBranding.logo} alt="ERP Logo" className={`${mobile ? 'h-7' : (collapsed ? 'h-6' : 'h-12')} object-contain transition-all`} crossOrigin="anonymous" />
             ) : (
                 <>
-                    <div className={`${mobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-base'} rounded-lg bg-theme-accent flex items-center justify-center font-black text-white`}>
+                    <div className={`${mobile ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-base'} rounded-lg bg-theme-accent flex items-center justify-center font-black text-white shrink-0`}>
                         {appBranding.name.charAt(0).toUpperCase()}
                     </div>
-                    <h1 className={`${mobile ? 'text-xs hidden sm:block' : 'text-xl'} font-black tracking-widest text-theme-text`}>
-                        {appBranding.name}
-                    </h1>
+                    {!collapsed && (
+                        <h1 className={`${mobile ? 'text-xs hidden sm:block' : 'text-xl'} font-black tracking-widest text-theme-text whitespace-nowrap overflow-hidden`}>
+                            {appBranding.name}
+                        </h1>
+                    )}
                 </>
             )}
         </div>
     );
 
-    const renderMenuContent = () => (
-        <>
-            <button onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
-                <LayoutDashboard size={18} /> POČETNA
-            </button>
-            {visibleMenuItems.map(item => (
-                <button key={item.id} onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === item.id ? 'text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
-                    {item.slika_url ? <img src={item.slika_url} className="w-5 h-5 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 18)} {item.naziv}
+    // 🟢 HIRURŠKI DODANA DETEKCIJA STANJA MENIJA DA SAKRIJE TEKST MODULA I CENTRIRA IKONE
+    const renderMenuContent = () => {
+        const isCollapsed = !isSidebarOpen && localLayout === 'sidebar';
+        return (
+            <>
+                <button title={isCollapsed ? 'POČETNA' : ''} onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'} ${isCollapsed ? 'justify-center px-0' : ''}`}>
+                    <div className="shrink-0"><LayoutDashboard size={18} /></div>
+                    {!isCollapsed && <span className="whitespace-nowrap">POČETNA</span>}
                 </button>
-            ))}
-        </>
-    );
+                {visibleMenuItems.map(item => (
+                    <button title={isCollapsed ? item.naziv : ''} key={item.id} onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} className={`flex items-center gap-3 p-4 rounded-xl font-bold uppercase transition-all text-xs tracking-widest ${activeModule === item.id ? 'text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'} ${isCollapsed ? 'justify-center px-0' : ''}`} style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '' }}>
+                        <div className="shrink-0">{item.slika_url ? <img src={item.slika_url} className="w-5 h-5 object-contain" alt={item.naziv}/> : renderIcon(item.ikona, 18)}</div>
+                        {!isCollapsed && <span className="whitespace-nowrap">{item.naziv}</span>}
+                    </button>
+                ))}
+            </>
+        );
+    };
 
     const renderSettingsPanel = () => (
         <AnimatePresence>
@@ -191,20 +202,31 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                 <button onClick={() => setIsSettingsOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Settings size={20}/></button>
             </div>
 
-            <motion.aside initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="w-64 fixed h-screen bg-theme-card border-r border-theme-border flex flex-col p-4 backdrop-blur-[var(--glass-blur)] z-40 hidden md:flex">
-                {renderLogoDisplay()}
-                <nav className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar pr-2">
+            {/* 🟢 DINAMIČKA ŠIRINA SIDEBARA: Mijenja se između w-64 i w-20 */}
+            <motion.aside initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className={`${isSidebarOpen ? 'w-64' : 'w-20'} fixed h-screen bg-theme-card border-r border-theme-border flex flex-col p-4 backdrop-blur-[var(--glass-blur)] z-40 hidden md:flex transition-all duration-300`}>
+                
+                {/* 🟢 DUGME ZA SKLAPANJE (Hamburger Menu) PORED LOGA */}
+                <div className={`flex items-start ${isSidebarOpen ? 'justify-between' : 'justify-center flex-col items-center'}`}>
+                    {renderLogoDisplay(false, !isSidebarOpen)}
+                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`p-2 rounded-xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all ${isSidebarOpen ? '-mt-2' : 'mb-8'}`} title={isSidebarOpen ? "Skupi meni" : "Proširi meni"}>
+                        <Menu size={20}/>
+                    </button>
+                </div>
+
+                <nav className={`flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar ${isSidebarOpen ? 'pr-2' : ''}`}>
                     {renderMenuContent()}
                 </nav>
                 <div className="border-t border-theme-border pt-4 mt-auto">
-                    <div className="flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
-                        <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16}/></div>
-                        <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[140px]">{user?.ime_prezime || 'Korisnik'}</p></div>
+                    <div className={`flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner ${!isSidebarOpen ? 'justify-center' : ''}`}>
+                        <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black shrink-0"><User size={16}/></div>
+                        {isSidebarOpen && (
+                            <div className="text-left overflow-hidden"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[140px]">{user?.ime_prezime || 'Korisnik'}</p></div>
+                        )}
                     </div>
-                    {/* 🟢 DUGME ZA ODJAVU DODANO U SIDEBAR */}
-                    <div className="flex gap-2">
-                        <button onClick={() => setIsSettingsOpen(true)} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border"><Settings size={14}/> Postavke</button>
-                        <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-[9px] font-black uppercase border border-red-500/30"><LogOut size={14}/> Odjava</button>
+                    {/* DUGME ZA ODJAVU DODANO U SIDEBAR */}
+                    <div className={`flex ${isSidebarOpen ? 'gap-2' : 'flex-col gap-2'}`}>
+                        <button onClick={() => setIsSettingsOpen(true)} className={`flex-1 flex items-center justify-center gap-1.5 p-3 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border ${!isSidebarOpen ? 'px-0' : ''}`} title={!isSidebarOpen ? "Postavke" : ""}><Settings size={14}/> {isSidebarOpen && "Postavke"}</button>
+                        <button onClick={handleLogout} className={`flex-1 flex items-center justify-center gap-1.5 p-3 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-[9px] font-black uppercase border border-red-500/30 ${!isSidebarOpen ? 'px-0' : ''}`} title={!isSidebarOpen ? "Odjava" : ""}><LogOut size={14}/> {isSidebarOpen && "Odjava"}</button>
                     </div>
                 </div>
             </motion.aside>
@@ -223,7 +245,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                                 <div className="text-left"><p className="text-[9px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate max-w-[150px]">{user?.ime_prezime || 'Korisnik'}</p></div>
                             </div>
                             
-                            {/* 🟢 DUGME ZA ODJAVU DODANO U MOBILNI MENI */}
                             <div className="flex gap-2 mb-6">
                                 <button onClick={() => { setIsSettingsOpen(true); setMobileMenuOpen(false); }} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border"><Settings size={14}/> Postavke</button>
                                 <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-1.5 p-3 bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all text-[9px] font-black uppercase border border-red-500/30"><LogOut size={14}/> Odjava</button>
@@ -237,7 +258,8 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                 )}
             </AnimatePresence>
 
-            <main className="flex-1 md:ml-64 pt-20 md:pt-8 p-4 md:p-8 min-h-screen relative z-10 w-full overflow-x-hidden">{children}</main>
+            {/* 🟢 DINAMIČKA MARGINA GLAVNOG EKRANA: Sada pušta Katalog da diše kada je meni skupljen */}
+            <main className={`flex-1 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'} pt-20 md:pt-8 p-4 md:p-8 min-h-screen relative z-10 w-full overflow-x-hidden transition-all duration-300`}>{children}</main>
         </div>
     );
 
@@ -264,7 +286,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     ))}
                 </nav>
                 
-                {/* 🟢 DUGME ZA ODJAVU DODANO U TOP NAV */}
                 <div className="hidden md:flex items-center gap-2 flex-shrink-0">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-panel rounded-lg border border-theme-border shadow-sm">
                         <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11}/></div>
@@ -313,7 +334,6 @@ export default function AppShell({ children, user, activeModule = "home", onModu
                     </button>
                 ))}
                 <div className="w-px h-8 bg-theme-border mx-2"></div>
-                {/* 🟢 DUGME ZA ODJAVU DODANO U BENTO MENI */}
                 <button onClick={() => setIsSettingsOpen(true)} className="p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all" title="Postavke"><Settings size={20}/></button>
                 <button onClick={handleLogout} className="p-4 rounded-2xl text-red-500 hover:bg-red-500 hover:text-white transition-all" title="Odjava sa sistema"><LogOut size={20}/></button>
             </motion.div>

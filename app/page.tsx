@@ -6,11 +6,10 @@ import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck, Hammer } from 'lucide-react';
 
-import AppShell from './components/AppShell'; 
+import AppShell from './components/AppShell';
 import PametniDialog from './components/PametniDialog';
 import { useAppStore } from './store/useAppStore'; 
 
-// Import moduli
 // Import moduli
 import ProrezModule from './modules/ProrezModule';
 import PrijemModule from './modules/PrijemModule';
@@ -29,6 +28,8 @@ import PlaniranjeModule from './modules/PlaniranjeModule';
 import ReklamacijeModule from './modules/ReklamacijeModule';
 import KioskModule from './modules/KioskModule';
 import HrDashboardModule from './modules/HrDashboardModule';
+// 🟢 DODAN NADZOR MODUL
+import NadzorModule from './modules/NadzorModule';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
@@ -53,6 +54,8 @@ const defaultModuli = [
     { id: 'kiosk', naziv: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
     { id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
     { id: 'reklamacije', naziv: 'Reklamacije', ikona: '⚠️', hex_boja: '#ef4444' },
+    // 🟢 DODAN TAJNI NADZORNI CENTAR
+    { id: 'nadzor', naziv: 'Nadzorni Centar', ikona: '🛡️', hex_boja: '#dc2626' }
 ];
 
 const DOSTUPNI_WIDGETI = [
@@ -86,9 +89,7 @@ export default function Page() {
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    // 🟢 STATE ZA KONTEKSTNI MENI (ACTION HUB)
     const [kontekstniMeni, setKontekstniMeni] = useState(null);
-
     const [header, setHeader] = useState({
         mjesto: typeof window !== 'undefined' ? localStorage.getItem('last_loc') || '' : '',
         datum: new Date().toISOString().split('T')[0],
@@ -104,11 +105,11 @@ export default function Page() {
 
     const [isEditMode, setIsEditMode] = useState(false);
     const [backupPostavke, setBackupPostavke] = useState(null);
-    
-    // Drag & Drop
+
     const dragItem = useRef(null); const dragOverItem = useRef(null);
-    const widgetDragItem = useRef(null); const widgetDragOverItem = useRef(null);
-    const [isDraggingWidget, setIsDraggingWidget] = useState(false); // Za smooth efekat
+    const widgetDragItem = useRef(null);
+    const widgetDragOverItem = useRef(null);
+    const [isDraggingWidget, setIsDraggingWidget] = useState(false); 
 
     const [dashboardData, setDashboardData] = useState({ 
         kpi: {}, feed: [], trend: [], trupciChart: [], paketiChart: [], 
@@ -120,7 +121,6 @@ export default function Page() {
         setDashLoading(true);
         const danas = new Date().toISOString().split('T')[0];
         const sedamDanaNazad = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-
         try {
             const [trupciRes, paketiRes, racuniRes, naloziRes, feedRes, trendRes, trupciLagerRes, paketiLagerRes] = await Promise.all([
                 supabase.from('trupci').select('zapremina').eq('datum_prijema', danas),
@@ -132,7 +132,6 @@ export default function Page() {
                 supabase.from('trupci').select('duzina, zapremina').is('prorezan_at', null).eq('zakljucen_prijem', true),
                 supabase.from('paketi').select('broj_veze, naziv_proizvoda, kolicina_final').not('closed_at', 'is', null).is('otpremnica_id', null)
             ]);
-
             const sumUlaz = (trupciRes.data || []).reduce((a,b)=>a+parseFloat(b.zapremina||0), 0);
             const sumIzlaz = (paketiRes.data || []).reduce((a,b)=>a+parseFloat(b.kolicina_final||0), 0);
             
@@ -144,31 +143,28 @@ export default function Page() {
             const topDuznici = Object.keys(kupciDug).map(k => ({ name: k, dug: parseFloat(kupciDug[k].toFixed(2)) })).sort((a,b) => b.dug - a.dug).slice(0, 5);
 
             const trendMap = {};
-            for(let i=6; i>=0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0]; trendMap[d] = { dan: d.substring(5,10).replace('-', '.'), m3: 0 }; }
+            for(let i=6; i>=0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+            trendMap[d] = { dan: d.substring(5,10).replace('-', '.'), m3: 0 }; }
             (trendRes.data || []).forEach(p => { if(trendMap[p.datum_yyyy_mm]) trendMap[p.datum_yyyy_mm].m3 += parseFloat(p.kolicina_final||0); });
-
             const trupciMap = {};
             (trupciLagerRes.data || []).forEach(t => { const l = parseFloat(t.duzina).toFixed(1); trupciMap[l] = (trupciMap[l] || 0) + parseFloat(t.zapremina || 0); });
             const trupciChart = Object.keys(trupciMap).map(k => ({ duzina: k + 'm', m3: parseFloat(trupciMap[k].toFixed(2)) })).sort((a,b) => parseFloat(a.duzina) - parseFloat(b.duzina));
-
             const paketiMap = {};
             (paketiLagerRes.data || []).forEach(p => { const n = p.naziv_proizvoda; paketiMap[n] = (paketiMap[n] || 0) + parseFloat(p.kolicina_final || 0); });
             const paketiChart = Object.keys(paketiMap).map(k => ({ naziv: k, m3: parseFloat(paketiMap[k].toFixed(2)) })).sort((a,b) => b.m3 - a.m3).slice(0, 8);
-
             const sviNalozi = naloziRes.data || [];
             
             const naloziCekanje = sviNalozi.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO').map(n => ({
                 id: n.id, kupac: n.kupac_naziv, rok: n.rok_isporuke, status: n.status, stavki: (n.stavke_jsonb||[]).length
             })).sort((a,b) => new Date(a.rok) - new Date(b.rok));
-
             const naloziProgres = sviNalozi.filter(n => n.status === 'U PROIZVODNJI').map(n => {
                 const stavke = n.stavke_jsonb || [];
                 const cilj = stavke.reduce((s, st) => s + parseFloat(st.kolicina_obracun || st.kolicina_unos || 0), 0);
                 const uradjeno = stavke.reduce((s, st) => s + parseFloat(st.napravljeno || 0), 0);
+             
                 const procenat = cilj > 0 ? Math.min(100, Math.round((uradjeno / cilj) * 100)) : 0;
                 return { id: n.id, kupac: n.kupac_naziv, cilj: cilj.toFixed(2), uradjeno: uradjeno.toFixed(2), procenat };
             }).sort((a,b) => b.procenat - a.procenat);
-
             const spremnoMap = {};
             (paketiLagerRes.data || []).filter(p => p.broj_veze).forEach(p => {
                 spremnoMap[p.broj_veze] = (spremnoMap[p.broj_veze] || 0) + parseFloat(p.kolicina_final || 0);
@@ -177,7 +173,6 @@ export default function Page() {
                 const nalogInfo = sviNalozi.find(n => n.id === rn);
                 return { id: rn, kupac: nalogInfo ? nalogInfo.kupac_naziv : 'Nepoznat Kupac', kolicina: spremnoMap[rn].toFixed(2) };
             }).sort((a,b) => b.kolicina - a.kolicina);
-
             setDashboardData({
                 kpi: { ulaz: sumUlaz.toFixed(1), izlaz: sumIzlaz.toFixed(1), potrazivanja: sumFakturisano.toLocaleString('bs-BA') },
                 feed: feedRes.data || [], trend: Object.values(trendMap), trupciChart, paketiChart, naloziCekanje, naloziProgres, spremnoZaIsporuku, topDuznici
@@ -185,28 +180,22 @@ export default function Page() {
         } catch(e) {}
         setDashLoading(false);
     };
-
+    
     useEffect(() => { if (activeModule === 'home' && loggedUser) ucitajDashboardPodatke(); }, [activeModule, loggedUser]);
 
-    const pokreniEdit = () => { setBackupPostavke(JSON.parse(JSON.stringify(uiPostavke))); setIsEditMode(true); };
+    const pokreniEdit = () => { setBackupPostavke(JSON.parse(JSON.stringify(uiPostavke)));
+        setIsEditMode(true); };
     const odustaniOdEdita = () => { if (backupPostavke) setUiPostavke(backupPostavke); setIsEditMode(false); };
-
-    // --- PAMETNI DEEP LINKING (Skakanje u module sa namjerom) ---
-    // --- PAMETNI DEEP LINKING (Skakanje u module) ---
+    
     const handleDeepLink = (modulId, targetId, action = null) => {
-        // 1. Očisti stare komande
         localStorage.removeItem('erp_auto_open_id');
         localStorage.removeItem('erp_auto_action');
-
-        // 2. Postavi nove komande
         if (targetId) localStorage.setItem('erp_auto_open_id', targetId);
         if (action) localStorage.setItem('erp_auto_action', action);
-        
         setActiveModule(modulId);
         setKontekstniMeni(null);
     };
 
-    // --- DRAG AND DROP LOGIKA ---
     const handleWidgetDragStart = (e, index) => { widgetDragItem.current = index; setIsDraggingWidget(true); };
     const handleWidgetDragEnter = (e, index) => { widgetDragOverItem.current = index; };
     const handleWidgetDrop = () => {
@@ -214,24 +203,24 @@ export default function Page() {
         if(widgetDragItem.current === null || widgetDragOverItem.current === null) return;
         const novaLista = [...(uiPostavke.widget_layout || [])];
         const premjesteniItem = novaLista[widgetDragItem.current];
-        novaLista.splice(widgetDragItem.current, 1); 
+        novaLista.splice(widgetDragItem.current, 1);
         novaLista.splice(widgetDragOverItem.current, 0, premjesteniItem); 
         widgetDragItem.current = null; widgetDragOverItem.current = null;
         setUiPostavke({ ...uiPostavke, widget_layout: novaLista });
     };
-
+    
     const addWidget = (type) => {
         const noviWidget = { id: `w_${Date.now()}_${Math.random()}`, type, span: 'col-span-12 lg:col-span-6', allowedRoles: ['superadmin', 'admin'] };
         setUiPostavke(prev => ({ ...prev, widget_layout: [...(prev.widget_layout || []), noviWidget] }));
     };
-
+    
     const updateWidgetSpan = (index) => {
         const novaLista = [...(uiPostavke.widget_layout || [])];
         const curr = novaLista[index].span;
         novaLista[index].span = curr === 'col-span-12 lg:col-span-4' ? 'col-span-12 lg:col-span-6' : (curr === 'col-span-12 lg:col-span-6' ? 'col-span-12' : 'col-span-12 lg:col-span-4');
         setUiPostavke({ ...uiPostavke, widget_layout: novaLista });
     };
-
+    
     const deleteWidget = (index) => {
         prikaziDialog({
             tip: 'upozorenje', naslov: 'Uklanjanje Widgeta',
@@ -262,10 +251,15 @@ export default function Page() {
         const premjesteniItem = novaLista[dragItem.current];
         novaLista.splice(dragItem.current, 1); 
         novaLista.splice(dragOverItem.current, 0, premjesteniItem); 
-        dragItem.current = null; dragOverItem.current = null;
+        dragItem.current = null;
+        dragOverItem.current = null;
         setUiPostavke({ ...uiPostavke, moduli: novaLista });
     };
-    const updateModul = (index, polje, vrijednost) => { const novaLista = [...(uiPostavke.moduli || [])]; novaLista[index][polje] = vrijednost; setUiPostavke({ ...uiPostavke, moduli: novaLista }); };
+    
+    const updateModul = (index, polje, vrijednost) => { 
+        const novaLista = [...(uiPostavke.moduli || [])];
+        novaLista[index][polje] = vrijednost; setUiPostavke({ ...uiPostavke, moduli: novaLista }); 
+    };
     
     const obrisiModulPotpuno = (index) => {
         prikaziDialog({
@@ -281,11 +275,12 @@ export default function Page() {
             onCancel: zatvoriDialog
         });
     };
-
+    
     const spasiDizajn = async () => {
         const { error } = await supabase.from('ui_postavke').update({ postavke_jsonb: uiPostavke }).eq('modul_ime', 'dashboard');
         if(error) { toast.error("Greška pri snimanju dizajna: " + error.message); } 
-        else { toast.success("Dizajn i dozvole uspješno spašeni!"); setIsEditMode(false); setBackupPostavke(null); }
+        else { toast.success("Dizajn i dozvole uspješno spašeni!");
+        setIsEditMode(false); setBackupPostavke(null); }
     };
 
     useEffect(() => {
@@ -309,34 +304,35 @@ export default function Page() {
         };
         initApp();
     }, []);
-
+    
     const handleLogin = async (e) => {
         e.preventDefault();
-        const username = e.target.user.value.trim(); const password = e.target.pass.value.trim();
+        const username = e.target.user.value.trim();
+        const password = e.target.pass.value.trim();
         const { data, error } = await supabase.rpc('provjeri_login', { uneseni_user: username, unesena_sifra: password });
         if (error) { toast.error("Greška pri komunikaciji sa serverom!"); } 
-        else if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data)); setLoggedUser(data); toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`); } 
-        else { toast.error("Pogrešan Username ili Password!"); }
+        else if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data));
+        setLoggedUser(data); toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`); } 
+        else { toast.error("Pogrešan Username ili Password!");
+        }
     };
 
     const hasPermission = (modulId) => {
         if (!loggedUser) return false;
         if (loggedUser.uloga === 'superadmin' || loggedUser.uloga === 'admin') return true;
-        
         const mapaDozvola = {
             'prijem': 'Prijem trupaca', 'prorez': 'Prorez (Trupci)', 'pilana': 'Pilana (Izlaz)', 'dorada': 'Dorada (Ulaz/Izlaz)',
             'planiranje': 'Planiranje Proizvodnje', 'lager': 'Lager Paketa', 'ponude': 'Ponude', 'radni_nalozi': 'Radni Nalozi',
             'otpremnice': 'Otpremnice i Izdatnice', 'racuni': 'Računi', 'blagajna': 'Blagajna (Keš)', 'toranj': 'Kontrolni Toranj',
-            'analitika': 'Analitika', 'podesavanja': 'Podešavanja', 'kiosk': 'Prijava na Rad', 'hr': 'HR Dashboard', 'reklamacije': 'Reklamacije i Povrati'
+            'analitika': 'Analitika', 'podesavanja': 'Podešavanja', 'kiosk': 'Prijava na Rad', 'hr': 'HR Dashboard', 'reklamacije': 'Reklamacije i Povrati',
+            'nadzor': 'Superadmin'
         };
         if (modulId === 'planiranje' && (loggedUser.dozvole || []).includes('Planiranje (Samo Pregled)')) return true;
         return (loggedUser.dozvole || []).includes(mapaDozvola[modulId]);
     };
 
-    // 🟢 RENDER ENGINE ZA WIDGETE
     const renderWidgetContent = (widget, index) => {
         if (dashLoading && widget.type !== 'brzi_moduli') return <div className="h-full w-full flex items-center justify-center animate-pulse text-slate-500 font-bold text-xs uppercase">Učitavam podatke...</div>;
-
         switch (widget.type) {
             case 'rezime_proizvodnja':
                 return (
@@ -424,7 +420,7 @@ export default function Page() {
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
-                    </div>
+                     </div>
                 );
             case 'trend_proizvodnje':
                 return (
@@ -458,7 +454,7 @@ export default function Page() {
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
-                    </div>
+                     </div>
                 );
             case 'stanje_daske':
                 return (
@@ -472,11 +468,11 @@ export default function Page() {
                                     </Pie>
                                     <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
                                     <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#cbd5e1'}} />
-                                </PieChart>
+                                 </PieChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
-                );
+                 );
             case 'live_feed':
                 return (
                     <div className="flex flex-col h-full">
@@ -551,7 +547,6 @@ export default function Page() {
     };
 
     if (authLoading) return <div className="min-h-screen bg-theme-main" />;
-
     if (!loggedUser) {
         return (
             <div className="min-h-screen bg-theme-main flex items-center justify-center p-6 font-bold relative z-50">
@@ -571,8 +566,7 @@ export default function Page() {
     }
 
     const aktivniModulKonfig = (uiPostavke.moduli || []).find(m => m.id === activeModule);
-    const modulBoja = aktivniModulKonfig?.hex_boja || ''; 
-
+    const modulBoja = aktivniModulKonfig?.hex_boja || '';
     const finalniModuliZaMeni = defaultModuli.map(dm => {
         const override = (uiPostavke.moduli || []).find(m => m.id === dm.id);
         return override ? { ...dm, ...override } : dm;
@@ -582,7 +576,7 @@ export default function Page() {
         <AppShell user={loggedUser} activeModule={activeModule} onModuleChange={setActiveModule} accentColor={modulBoja} dynamicModules={finalniModuliZaMeni}>
             <PametniDialog {...dialog} />
             
-            {/* 🟢 ACTION HUB / KONTEKSTNI MENI MODAL */}
+            {/* ACTION HUB / KONTEKSTNI MENI MODAL */}
             {kontekstniMeni && (
                 <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-theme-card border-2 border-theme-accent p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(var(--theme-accent-rgb),0.3)] max-w-sm w-full relative">
@@ -593,7 +587,6 @@ export default function Page() {
 
                         <div className="space-y-3">
                             {kontekstniMeni.actions.map(akcija => {
-                                // Provjeravamo da li korisnik ima dozvolu za modul prije nego sto mu ponudimo dugme
                                 if (!hasPermission(akcija.module)) return null;
                                 return (
                                     <button 
@@ -605,7 +598,8 @@ export default function Page() {
                                     </button>
                                 );
                             })}
-                            <button onClick={() => { navigator.clipboard.writeText(kontekstniMeni.id); toast.success("Kopirano!"); setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
+                            <button onClick={() => { navigator.clipboard.writeText(kontekstniMeni.id);
+                            toast.success("Kopirano!"); setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
                         </div>
                     </div>
                 </div>
@@ -744,6 +738,10 @@ export default function Page() {
                 : activeModule === 'hr' ? <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'reklamacije' ? <ReklamacijeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'podesavanja' ? <SettingsModule onExit={() => setActiveModule('home')} />
+                
+                // 🟢 OVDJE JE DODAN RENDER NADZORNOG MODULA ZA SUPERADMINA
+                : activeModule === 'nadzor' && loggedUser?.uloga === 'superadmin' ? <NadzorModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                
                 : null}
             </div>
         </AppShell>

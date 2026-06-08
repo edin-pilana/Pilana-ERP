@@ -12,8 +12,39 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const [aktivniRadnici, setAktivniRadnici] = useState([]);
     const [otvorenTab, setOtvorenTab] = useState(false);
     const [noviRadnik, setNoviRadnik] = useState('');
+    
+    // 🔔 NOVO: State za nepročitane superadmin alarme
+    const [brojAlarma, setBrojAlarma] = useState(0);
 
     const currentUser = user?.ime_prezime ? user : JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
+    const isSuperadmin = currentUser?.uloga === 'superadmin';
+
+    // 🔔 NOVO: Efekat za slušanje alarma u realnom vremenu (Samo za Superadmina)
+    useEffect(() => {
+        if (!isSuperadmin) return;
+
+        const ucitajBroj = async () => {
+            const { count } = await supabase
+                .from('sistem_audit_log')
+                .select('*', { count: 'exact', head: true })
+                .eq('pregledano', false)
+                .in('nivo_alarma', ['CRVENO', 'ŽUTO']);
+            setBrojAlarma(count || 0);
+        };
+
+        ucitajBroj();
+
+        const unikatanKanal = `alarmi_sync_${Math.random().toString(36).substring(2)}`;
+
+        const channel = supabase.channel(unikatanKanal)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'sistem_audit_log' }, () => {
+                ucitajBroj(); // Osvježi brojač ako neko sa brente pošalje alarm
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [isSuperadmin]);
+
 
     useEffect(() => {
         const fetchMasine = async () => {
@@ -69,6 +100,8 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     return (
         <div className="flex flex-col gap-3 w-full mb-6">
             <div className={`flex flex-wrap lg:flex-nowrap justify-between items-center bg-theme-card p-3 lg:p-4 rounded-[var(--radius-box)] border border-theme-border shadow-glow backdrop-blur-[var(--glass-blur)] gap-4 relative z-[100] ${saas?.isEditMode ? 'ring-2 ring-amber-500' : ''}`}>
+                
+                {/* LIJEVA STRANA: Izlaz, Modul i Live indikator */}
                 <div className="flex items-center gap-3">
                     <button onClick={onExit} className="bg-theme-panel border border-theme-border text-[10px] px-4 py-3 rounded-xl uppercase text-theme-text font-black hover:bg-red-500 hover:border-red-500 transition-all shadow-md">← Meni</button>
                     {modulIme && (
@@ -86,6 +119,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                     )}
                 </div>
                 
+                {/* SREDINA: Datum, Mašine i Radnici */}
                 {header && (
                     <div className="flex flex-wrap items-center justify-center gap-2 lg:gap-3 flex-1 lg:flex-none">
                         <input type="date" value={header.datum || ''} onChange={e => setHeader({...header, datum: e.target.value})} className="!p-3 text-xs font-black cursor-pointer w-full sm:w-auto bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent" />
@@ -111,7 +145,25 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                     </div>
                 )}
 
+                {/* DESNA STRANA: God Mode, Zvonce i Korisnik */}
                 <div className="flex flex-wrap items-center gap-3 justify-center lg:justify-end w-full lg:w-auto">
+                    
+                    {/* 🔔 NOVO: ZVONCE ZA NADZORNI CENTAR */}
+                    {isSuperadmin && modulIme !== 'Nadzorni Centar' && (
+                        <button 
+                            onClick={() => { if(setHeader) setHeader(prev => ({...prev, modul: 'nadzor'})); }} 
+                            className="relative w-10 h-10 rounded-xl bg-theme-panel border border-theme-border flex items-center justify-center text-lg hover:scale-105 transition-transform shadow-inner cursor-pointer"
+                            title="Otvori Nadzorni Centar"
+                        >
+                            🔔
+                            {brojAlarma > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
+                                    {brojAlarma > 99 ? '99+' : brojAlarma}
+                                </span>
+                            )}
+                        </button>
+                    )}
+
                     {(currentUser?.uloga === 'superadmin' || currentUser?.uloga === 'admin') && saas && (
                         <div className="flex gap-2">
                             {saas.isEditMode ? (
@@ -127,11 +179,15 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
 
                     <div className="bg-theme-panel px-4 py-2 rounded-xl border border-theme-border flex flex-col items-end shadow-inner w-full sm:w-auto">
                         <span className="text-[9px] text-theme-muted uppercase font-black">Prijavljen:</span>
-                        <span className="text-xs text-theme-text font-bold whitespace-nowrap">{currentUser?.ime_prezime || 'Korisnik'}</span>
+                        <span className="text-xs text-theme-text font-bold whitespace-nowrap">
+                            {currentUser?.ime_prezime || 'Korisnik'}
+                            {isSuperadmin && <span className="text-amber-500 ml-1" title="Superadmin">★</span>}
+                        </span>
                     </div>
                 </div>
             </div>
 
+            {/* UPRAVLJANJE RADNICIMA */}
             {otvorenTab && header?.masina && !hideMasina && (
                 <div className="bg-theme-panel p-5 rounded-[var(--radius-box)] border border-theme-accent shadow-glow animate-in slide-in-from-top-4 flex flex-col md:flex-row gap-4 items-start md:items-center relative z-40 mt-1 backdrop-blur-[var(--glass-blur)]">
                     <div className="flex-1 flex gap-2 w-full">
