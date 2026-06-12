@@ -47,10 +47,11 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
                     <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
                         {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
                         {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
-                        <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
+                        <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
                     </div>
                 ))}
-                <button onClick={snimiZastojIliRad} className={`w-full py-3 bg-red-600 text-theme-text font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-red-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-4' : 'col-span-4 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis</button>
+                {/* 🟢 POPRAVLJENO: col-span-1 na mobitelu, col-span-4 na kompu za dugme */}
+                <button onClick={snimiZastojIliRad} className={`w-full py-3 bg-red-600 text-theme-text font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-red-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis</button>
             </div>
             
             <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
@@ -441,13 +442,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             <h2 className="text-red-500 text-center font-black tracking-widest uppercase text-xl md:text-2xl mt-2 mb-6 drop-shadow-md">🪚 PROREZ TRUPACA</h2>
             
             <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-red-500/20 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                <div className="flex gap-4 w-full md:w-auto flex-1 flex-wrap overflow-visible">
+                {/* 🟢 POPRAVLJENO: Grid koji ide u 1 kolonu na mobitelu, 2 na desktopu */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
-                        <div key={polje.id} className={`relative flex-1 min-w-[200px] flex items-center bg-black/40 rounded-xl border border-slate-800/50 p-2 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
+                        <div key={polje.id} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
                             {saas.isEditMode && (<div className="absolute -top-3 -right-2 z-[60] flex gap-1"><span className="text-[10px] text-amber-500 bg-theme-card px-2 py-1 rounded-box cursor-move border border-amber-500/50 shadow-lg">☰ POMICANJE</span></div>)}
-                            <div className="flex-1 flex items-center overflow-visible">
-                                {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_radnici')} className="w-24 bg-theme-card text-amber-400 p-1 rounded border border-amber-500/50 text-[8px] uppercase font-black shrink-0 mr-2" placeholder="Naslov..." />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase mx-2 whitespace-nowrap shrink-0 w-24 overflow-hidden text-ellipsis">{polje.label}</label>)}
-                                <div className="flex-1 border-l border-theme-border/50 pl-2 relative overflow-visible z-[100]">{renderRadnikPolje(polje)}</div>
+                            <div className="flex-1 flex flex-col sm:flex-row sm:items-center w-full overflow-visible gap-2 sm:gap-0">
+                                {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_radnici')} className="w-full sm:w-24 bg-theme-card text-amber-400 p-1 rounded border border-amber-500/50 text-[8px] uppercase font-black shrink-0 mr-2" placeholder="Naslov..." />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase sm:mx-2 whitespace-nowrap shrink-0 sm:w-24 overflow-hidden text-ellipsis mb-1 sm:mb-0">{polje.label}</label>)}
+                                <div className="w-full sm:flex-1 sm:border-l border-theme-border/50 sm:pl-2 relative overflow-visible z-[100]">{renderRadnikPolje(polje)}</div>
                             </div>
                         </div>
                     ))}
@@ -465,10 +467,10 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                 value={scan} 
                                 onChange={e => handleScanInput(e.target.value)} 
                                 onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleScanInput(scan, true); } }} 
-                                className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" 
+                                className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" 
                                 placeholder="ČEKAM SKEN..." 
                             />
-                            <button onClick={() => setIsScanning(true)} className="shrink-0 px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
+                            <button onClick={() => setIsScanning(true)} className="shrink-0 px-6 md:px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
                         </div>
 
                         {trupac ? (
@@ -494,7 +496,8 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Dužina</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.duzina} m</span></div>
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.promjer} cm</span></div>
                                 </div>
-                                <div className="flex gap-4 relative z-10">
+                                {/* 🟢 POPRAVLJENO: flex-col na mobitelu za dugmad */}
+                                <div className="flex flex-col sm:flex-row gap-4 relative z-10">
                                     <button onClick={() => {setTrupac(null); setScan(''); setTimeout(() => inputRef.current?.focus(), 100);}} className="flex-1 py-5 bg-theme-card text-slate-400 font-black rounded-2xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-sm">✕ Otkazivanje</button>
                                     <button 
                                         ref={btnPotvrdiRef}
@@ -516,17 +519,17 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
                 <div className="lg:col-span-5 space-y-6">
                     <div className="bg-theme-card/80 backdrop-blur-md p-6 rounded-[2.5rem] border border-theme-border shadow-xl flex flex-col h-full" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <div className="flex justify-between items-end border-b border-theme-border pb-4 mb-4">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-end border-b border-theme-border pb-4 mb-4 gap-4">
                             <div>
                                 <h3 className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Dnevni Učinak (Izrezano)</h3>
                                 <p className="text-3xl font-black text-red-500 drop-shadow-md">{totalIzrezanoM3.toFixed(3)} <span className="text-sm text-red-700">m³</span></p>
                             </div>
-                            <div className="text-right flex flex-col items-end gap-2">
+                            <div className="text-left sm:text-right flex flex-col sm:items-end gap-2">
                                 <div>
                                     <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1">Broj Trupaca</p>
                                     <p className="text-xl font-black text-theme-text">{prorezaniLista.length} <span className="text-xs text-slate-500">kom</span></p>
                                 </div>
-                                <button onClick={zavrsiSmjenu} className="bg-slate-800 hover:bg-red-600 hover:text-white text-slate-300 border border-slate-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all shadow-md">
+                                <button onClick={zavrsiSmjenu} className="bg-slate-800 hover:bg-red-600 hover:text-white text-slate-300 border border-slate-600 px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all shadow-md mt-2 w-full sm:w-auto">
                                     🏁 Završi Smjenu
                                 </button>
                             </div>

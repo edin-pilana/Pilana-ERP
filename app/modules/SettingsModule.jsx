@@ -557,6 +557,8 @@ function TabKatalog() {
     const [kategorijaNovaDestinacija, setKategorijaNovaDestinacija] = useState('');
 
     const [pretragaKataloga, setPretragaKataloga] = useState('');
+    // 🟢 DODAN STATE ZA RADIO BUTTONE
+    const [aktivniAlat, setAktivniAlat] = useState('dodavanje'); // 'dodavanje', 'cijene', 'kategorije'
 
     useEffect(() => { load(); }, []);
     
@@ -682,121 +684,139 @@ function TabKatalog() {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in">
             <div className="lg:col-span-5 space-y-6">
-                
-                {/* BRZA IZMJENA CIJENA */}
-                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-amber-500/30 shadow-2xl">
-                    <h3 className="text-amber-500 font-black uppercase text-xs mb-6">📈 Brza izmjena cijena (Kategorije)</h3>
-                    <div className="grid grid-cols-1 gap-4 items-end border-b border-theme-border pb-6 mb-4">
-                        <div>
-                            <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-2">1. Odaberi Kategoriju</label>
-                            <select value={odabranaKategorija} onChange={e=>setOdabranaKategorija(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-amber-500 uppercase font-black cursor-pointer shadow-inner">
-                                <option value="" className="bg-theme-card text-theme-text">-- Odaberi --</option>
-                                {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
-                            </select>
-                        </div>
-                        {odabranaKategorija && (
-                            <div className="flex gap-2 items-center bg-theme-panel p-3 rounded-2xl border border-theme-border shadow-inner mt-2">
-                                <div className="flex-1">
-                                    <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Cijena za SVE u ovoj kategoriji</label>
-                                    <input type="number" value={novaGlobalnaCijena} onChange={e=>setNovaGlobalnaCijena(e.target.value)} placeholder="0.00" className="w-full p-2 bg-transparent text-amber-400 font-black outline-none text-xl" />
+                {/* 🟢 OVDJE SU SADA RADIO KONTROLE */}
+                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-2 rounded-2xl border border-theme-border shadow-md flex justify-between gap-1 overflow-x-auto custom-scrollbar">
+                    <label className={`flex-1 flex justify-center items-center gap-2 px-3 py-3 rounded-xl cursor-pointer transition-all text-[10px] uppercase font-black whitespace-nowrap ${aktivniAlat === 'dodavanje' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-theme-panel'}`}>
+                        <input type="radio" name="katalog_alat" value="dodavanje" checked={aktivniAlat === 'dodavanje'} onChange={() => setAktivniAlat('dodavanje')} className="hidden" />
+                        ➕ Dodaj/Uredi
+                    </label>
+                    <label className={`flex-1 flex justify-center items-center gap-2 px-3 py-3 rounded-xl cursor-pointer transition-all text-[10px] uppercase font-black whitespace-nowrap ${aktivniAlat === 'cijene' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400 hover:bg-theme-panel'}`}>
+                        <input type="radio" name="katalog_alat" value="cijene" checked={aktivniAlat === 'cijene'} onChange={() => setAktivniAlat('cijene')} className="hidden" />
+                        📈 Cijene
+                    </label>
+                    <label className={`flex-1 flex justify-center items-center gap-2 px-3 py-3 rounded-xl cursor-pointer transition-all text-[10px] uppercase font-black whitespace-nowrap ${aktivniAlat === 'kategorije' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-theme-panel'}`}>
+                        <input type="radio" name="katalog_alat" value="kategorije" checked={aktivniAlat === 'kategorije'} onChange={() => setAktivniAlat('kategorije')} className="hidden" />
+                        🔀 Kategorije
+                    </label>
+                </div>
+
+                {aktivniAlat === 'cijene' && (
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-amber-500/30 shadow-2xl animate-in slide-in-from-top-4">
+                        <h3 className="text-amber-500 font-black uppercase text-xs mb-6">📈 Brza izmjena cijena (Kategorije)</h3>
+                        <div className="grid grid-cols-1 gap-4 items-end border-b border-theme-border pb-6 mb-4">
+                            <div>
+                                <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-2">1. Odaberi Kategoriju</label>
+                                <select value={odabranaKategorija} onChange={e=>setOdabranaKategorija(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-amber-500 uppercase font-black cursor-pointer shadow-inner">
+                                    <option value="" className="bg-theme-card text-theme-text">-- Odaberi --</option>
+                                    {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
+                                </select>
+                            </div>
+                            {odabranaKategorija && (
+                                <div className="flex gap-2 items-center bg-theme-panel p-3 rounded-2xl border border-theme-border shadow-inner mt-2">
+                                    <div className="flex-1">
+                                        <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Cijena za SVE u ovoj kategoriji</label>
+                                        <input type="number" value={novaGlobalnaCijena} onChange={e=>setNovaGlobalnaCijena(e.target.value)} placeholder="0.00" className="w-full p-2 bg-transparent text-amber-400 font-black outline-none text-xl" />
+                                    </div>
+                                    <button onClick={primijeniNaSveIspod} className="bg-theme-card text-amber-500 border border-amber-500/30 hover:bg-amber-500 hover:text-theme-text px-5 py-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-md">👇 Primijeni na sve</button>
                                 </div>
-                                <button onClick={primijeniNaSveIspod} className="bg-theme-card text-amber-500 border border-amber-500/30 hover:bg-amber-500 hover:text-theme-text px-5 py-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-md">👇 Primijeni na sve</button>
+                            )}
+                        </div>
+                        {odabranaKategorija && proizvodiUKategoriji.length > 0 && (
+                            <div className="animate-in slide-in-from-top-4">
+                                <div className="max-h-60 overflow-y-auto pr-2 space-y-2 mb-4 custom-scrollbar">
+                                    {proizvodiUKategoriji.map(p => (
+                                        <div key={p.sifra} className="flex flex-col md:flex-row justify-between md:items-center bg-theme-panel p-3 rounded-xl border border-theme-border hover:border-slate-500 transition-all gap-3 shadow-sm">
+                                            <div className="flex-1">
+                                                <p className="text-theme-text text-xs font-black uppercase">{p.sifra}</p>
+                                                <p className="text-[10px] text-slate-400 mt-1">{p.naziv}</p>
+                                            </div>
+                                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                                <div className="text-right">
+                                                    <p className="text-[8px] text-slate-500 uppercase">Trenutna</p>
+                                                    <p className="text-slate-300 font-bold text-xs">{p.cijena} KM</p>
+                                                </div>
+                                                <span className="text-slate-600">→</span>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold">NOVA:</span>
+                                                    <input type="number" value={cijeneEditMap[p.sifra] || ''} onChange={e => setCijeneEditMap({...cijeneEditMap, [p.sifra]: e.target.value})} className="w-32 pl-12 pr-3 py-3 bg-theme-card border border-amber-500/50 rounded-lg text-amber-400 font-black outline-none focus:border-amber-400 shadow-inner" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={snimiNoveCijeneBaza} className="w-full py-4 bg-amber-600 text-theme-text px-6 rounded-xl font-black text-xs uppercase shadow-lg hover:bg-amber-500 transition-all border border-amber-400">💾 Spasi sve nove cijene u bazu</button>
                             </div>
                         )}
                     </div>
-                    {odabranaKategorija && proizvodiUKategoriji.length > 0 && (
-                        <div className="animate-in slide-in-from-top-4">
-                            <div className="max-h-60 overflow-y-auto pr-2 space-y-2 mb-4 custom-scrollbar">
-                                {proizvodiUKategoriji.map(p => (
-                                    <div key={p.sifra} className="flex flex-col md:flex-row justify-between md:items-center bg-theme-panel p-3 rounded-xl border border-theme-border hover:border-slate-500 transition-all gap-3 shadow-sm">
-                                        <div className="flex-1">
-                                            <p className="text-theme-text text-xs font-black uppercase">{p.sifra}</p>
-                                            <p className="text-[10px] text-slate-400 mt-1">{p.naziv}</p>
-                                        </div>
-                                        <div className="flex items-center gap-3 w-full md:w-auto">
-                                            <div className="text-right">
-                                                <p className="text-[8px] text-slate-500 uppercase">Trenutna</p>
-                                                <p className="text-slate-300 font-bold text-xs">{p.cijena} KM</p>
-                                            </div>
-                                            <span className="text-slate-600">→</span>
-                                            <div className="relative">
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-500 font-bold">NOVA:</span>
-                                                <input type="number" value={cijeneEditMap[p.sifra] || ''} onChange={e => setCijeneEditMap({...cijeneEditMap, [p.sifra]: e.target.value})} className="w-32 pl-12 pr-3 py-3 bg-theme-card border border-amber-500/50 rounded-lg text-amber-400 font-black outline-none focus:border-amber-400 shadow-inner" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <button onClick={snimiNoveCijeneBaza} className="w-full py-4 bg-amber-600 text-theme-text px-6 rounded-xl font-black text-xs uppercase shadow-lg hover:bg-amber-500 transition-all border border-amber-400">💾 Spasi sve nove cijene u bazu</button>
-                        </div>
-                    )}
-                </div>
+                )}
 
-                {/* MASOVNO PREBACIVANJE KATEGORIJA */}
-                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-xl mb-6">
-                    <h3 className="text-blue-500 font-black uppercase text-xs mb-4">🔀 Masovno Prebacivanje Kategorija</h3>
-                    <div className="flex flex-col md:flex-row gap-4 items-end">
-                        <div className="flex-1 w-full">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">1. Iz stare kategorije</label>
-                            <select value={kategorijaZaMijenjanje} onChange={e=>setKategorijaZaMijenjanje(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-blue-500 uppercase font-black cursor-pointer shadow-inner">
-                                <option value="" className="bg-theme-card text-theme-text">-- Odaberi Staru --</option>
-                                {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
-                            </select>
+                {aktivniAlat === 'kategorije' && (
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-xl mb-6 animate-in slide-in-from-top-4">
+                        <h3 className="text-emerald-500 font-black uppercase text-xs mb-4">🔀 Masovno Prebacivanje Kategorija</h3>
+                        <div className="flex flex-col md:flex-row gap-4 items-end">
+                            <div className="flex-1 w-full">
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">1. Iz stare kategorije</label>
+                                <select value={kategorijaZaMijenjanje} onChange={e=>setKategorijaZaMijenjanje(e.target.value)} className="w-full p-4 bg-theme-panel rounded-xl text-sm text-theme-text border border-theme-border outline-none focus:border-emerald-500 uppercase font-black cursor-pointer shadow-inner">
+                                    <option value="" className="bg-theme-card text-theme-text">-- Odaberi Staru --</option>
+                                    {jedinstveneKategorije.map(k => <option key={k} value={k} className="bg-theme-card text-theme-text">{k}</option>)}
+                                </select>
+                            </div>
+                            <span className="hidden md:block text-slate-500 font-black text-xl mb-3">→</span>
+                            <div className="flex-1 w-full relative z-50">
+                                <SettingsSearchable label="2. U novu kategoriju" value={kategorijaNovaDestinacija} onChange={setKategorijaNovaDestinacija} list={jedinstveneKategorije} placeholder="Unesi ili odaberi novu..." />
+                            </div>
+                            <button onClick={masovnoPrebaciKategoriju} className="bg-emerald-600 hover:bg-emerald-500 text-white w-full md:w-auto px-6 py-4 rounded-xl text-[10px] font-black uppercase shadow-lg transition-all h-[52px]">
+                                Prebaci Sve
+                            </button>
                         </div>
-                        <span className="hidden md:block text-slate-500 font-black text-xl mb-3">→</span>
-                        <div className="flex-1 w-full relative z-50">
-                            <SettingsSearchable label="2. U novu kategoriju" value={kategorijaNovaDestinacija} onChange={setKategorijaNovaDestinacija} list={jedinstveneKategorije} placeholder="Unesi ili odaberi novu..." />
+                    </div>
+                )}
+                
+                {aktivniAlat === 'dodavanje' && (
+                    <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border shadow-2xl space-y-4 transition-all animate-in slide-in-from-top-4 ${isEditing ? 'border-amber-500/50' : 'border-theme-border'}`}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className={`${isEditing ? 'text-amber-500' : 'text-blue-500'} font-black uppercase text-xs`}>{isEditing ? '✏️ Ažuriranje Proizvoda' : '➕ Dodaj Proizvod Ručno'}</h3>
+                            {isEditing && <button onClick={ponistiIzmjenu} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl hover:bg-red-500 hover:text-theme-text">Odustani ✕</button>}
                         </div>
-                        <button onClick={masovnoPrebaciKategoriju} className="bg-blue-600 hover:bg-blue-500 text-white w-full md:w-auto px-6 py-4 rounded-xl text-[10px] font-black uppercase shadow-lg transition-all h-[52px]">
-                            Prebaci Sve
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="col-span-2 md:col-span-4">
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* ŠIFRA</label>
+                                <input value={form.sifra} disabled={isEditing} onChange={e=>setForm({...form, sifra: e.target.value.toUpperCase()})} className={`w-full p-4 rounded-xl text-sm text-theme-text uppercase font-black outline-none shadow-inner ${isEditing ? 'bg-theme-panel border border-theme-border opacity-50 cursor-not-allowed' : 'bg-theme-panel border border-blue-500/50 focus:border-blue-400'}`} />
+                            </div>
+                            <div className="col-span-2 md:col-span-4">
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* NAZIV</label>
+                                <input value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner" />
+                            </div>
+                            <div className="col-span-2 md:col-span-4 relative z-40">
+                                <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, kategorija: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
+                            </div>
+
+                            <div className="col-span-2">
+                                <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Def. Jedinica</label>
+                                <select value={form.default_jedinica} onChange={e=>setForm({...form, default_jedinica:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs font-black text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner cursor-pointer">
+                                    <option value="m3" className="bg-theme-card text-theme-text">m³</option>
+                                    <option value="m2" className="bg-theme-card text-theme-text">m²</option>
+                                    <option value="m1" className="bg-theme-card text-theme-text">m1</option>
+                                    <option value="kom" className="bg-theme-card text-theme-text">kom</option>
+                                </select>
+                            </div>
+                            <div className="col-span-2">
+                                <label className="text-[8px] text-emerald-500 uppercase ml-2 block mb-1 font-black">Cijena (KM)</label>
+                                <input type="number" value={form.cijena} onChange={e=>setForm({...form, cijena:e.target.value})} className="w-full p-3 bg-emerald-900/20 border border-emerald-500/50 rounded-xl text-sm text-emerald-400 font-black outline-none text-center shadow-inner" />
+                            </div>
+                            
+                            <div className="col-span-2 md:col-span-4 pt-3 border-t border-theme-border grid grid-cols-3 gap-3">
+                                <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Deb/Vis (cm)</label><input type="number" value={form.visina} onChange={e=>setForm({...form, visina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
+                                <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Širina (cm)</label><input type="number" value={form.sirina} onChange={e=>setForm({...form, sirina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
+                                <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Dužina (cm)</label><input type="number" value={form.duzina} onChange={e=>setForm({...form, duzina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
+                            </div>
+                        </div>
+                        <button onClick={snimiProizvod} className={`w-full py-5 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase transition-all mt-4 ${isEditing ? 'bg-amber-600 hover:bg-amber-500' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                            {isEditing ? '✅ Ažuriraj Proizvod' : '➕ Snimi u Katalog'}
                         </button>
                     </div>
-                </div>
-                
-                {/* FORMA ZA UNOS / EDIT */}
-                <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border shadow-2xl space-y-4 transition-all ${isEditing ? 'border-amber-500/50' : 'border-theme-border'}`}>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className={`${isEditing ? 'text-amber-500' : 'text-blue-500'} font-black uppercase text-xs`}>{isEditing ? '✏️ Ažuriranje Proizvoda' : '➕ Dodaj Proizvod Ručno'}</h3>
-                        {isEditing && <button onClick={ponistiIzmjenu} className="text-xs text-red-500 font-black bg-red-900/20 px-3 py-1 rounded-xl hover:bg-red-500 hover:text-theme-text">Odustani ✕</button>}
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="col-span-2 md:col-span-4">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* ŠIFRA</label>
-                            <input value={form.sifra} disabled={isEditing} onChange={e=>setForm({...form, sifra: e.target.value.toUpperCase()})} className={`w-full p-4 rounded-xl text-sm text-theme-text uppercase font-black outline-none shadow-inner ${isEditing ? 'bg-theme-panel border border-theme-border opacity-50 cursor-not-allowed' : 'bg-theme-panel border border-blue-500/50 focus:border-blue-400'}`} />
-                        </div>
-                        <div className="col-span-2 md:col-span-4">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">* NAZIV</label>
-                            <input value={form.naziv} onChange={e=>setForm({...form, naziv:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner" />
-                        </div>
-                        <div className="col-span-2 md:col-span-4 relative z-40">
-                            <SettingsSearchable label="Kategorija (Odaberi ili Upiši novu)" value={form.kategorija} onChange={val => setForm({...form, kategorija: val})} list={jedinstveneKategorije} placeholder="Pronađi ili unesi novu..." />
-                        </div>
-
-                        <div className="col-span-2">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Def. Jedinica</label>
-                            <select value={form.default_jedinica} onChange={e=>setForm({...form, default_jedinica:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs font-black text-theme-text border border-theme-border outline-none focus:border-blue-500 shadow-inner cursor-pointer">
-                                <option value="m3" className="bg-theme-card text-theme-text">m³</option>
-                                <option value="m2" className="bg-theme-card text-theme-text">m²</option>
-                                <option value="m1" className="bg-theme-card text-theme-text">m1</option>
-                                <option value="kom" className="bg-theme-card text-theme-text">kom</option>
-                            </select>
-                        </div>
-                        <div className="col-span-2">
-                            <label className="text-[8px] text-emerald-500 uppercase ml-2 block mb-1 font-black">Cijena (KM)</label>
-                            <input type="number" value={form.cijena} onChange={e=>setForm({...form, cijena:e.target.value})} className="w-full p-3 bg-emerald-900/20 border border-emerald-500/50 rounded-xl text-sm text-emerald-400 font-black outline-none text-center shadow-inner" />
-                        </div>
-                        
-                        <div className="col-span-2 md:col-span-4 pt-3 border-t border-theme-border grid grid-cols-3 gap-3">
-                            <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Deb/Vis (cm)</label><input type="number" value={form.visina} onChange={e=>setForm({...form, visina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
-                            <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Širina (cm)</label><input type="number" value={form.sirina} onChange={e=>setForm({...form, sirina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
-                            <div><label className="text-[8px] text-amber-500 uppercase ml-2 block mb-1 font-black text-center">Dužina (cm)</label><input type="number" value={form.duzina} onChange={e=>setForm({...form, duzina:e.target.value})} className="w-full p-3 bg-theme-panel rounded-xl text-xs text-center text-amber-400 font-black border border-theme-border outline-none focus:border-amber-500 shadow-inner" /></div>
-                        </div>
-                    </div>
-                    <button onClick={snimiProizvod} className={`w-full py-5 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase transition-all mt-4 ${isEditing ? 'bg-amber-600 hover:bg-amber-500' : 'bg-theme-accent hover:opacity-80'}`}>
-                        {isEditing ? '✅ Ažuriraj Proizvod' : '➕ Snimi u Katalog'}
-                    </button>
-                </div>
+                )}
             </div>
 
             {/* 🟢 DESNI PANEL SA NOVOM INTEGRISANOM UKREŠTENOM PRETRAGOM */}
