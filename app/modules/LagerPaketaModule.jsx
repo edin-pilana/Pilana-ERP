@@ -40,24 +40,25 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
     const [fPaket, setFPaket] = useState({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' });
 
-   // STATE ZA RUČNI (SLOBODNI) ULAZ
-   const [rucniUlazForm, setRucniUlazForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina: '', jm: 'kom', klasa: 'Standard' });
-   const generisiIDPaketa = () => `RUČNO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    // STATE ZA RUČNI (SLOBODNI) ULAZ
+    const [rucniUlazForm, setRucniUlazForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina: '', jm: 'kom', klasa: 'Standard' });
+    const generisiIDPaketa = () => `RUČNO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-   const livePreracunRucniM3 = useMemo(() => {
-       if(!rucniUlazForm.kolicina || isNaN(rucniUlazForm.kolicina)) return 0;
-       const v = parseFloat(rucniUlazForm.debljina) || 1;
-       const s = parseFloat(rucniUlazForm.sirina) || 1;
-       const d = parseFloat(rucniUlazForm.duzina) || 1;
-       const unosKol = parseFloat(rucniUlazForm.kolicina);
-       
-       let komada = unosKol;
-       if (rucniUlazForm.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
-       else if (rucniUlazForm.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
-       else if (rucniUlazForm.jm === 'm1') komada = unosKol / (d/100);
-       
-       return (komada * (v/100) * (s/100) * (d/100)).toFixed(3);
-   }, [rucniUlazForm]);
+    const livePreracunRucniM3 = useMemo(() => {
+        if(!rucniUlazForm.kolicina || isNaN(rucniUlazForm.kolicina)) return 0;
+        const v = parseFloat(rucniUlazForm.debljina) || 1;
+        const s = parseFloat(rucniUlazForm.sirina) || 1;
+        const d = parseFloat(rucniUlazForm.duzina) || 1;
+        const unosKol = parseFloat(rucniUlazForm.kolicina);
+        
+        let komada = unosKol;
+        if (rucniUlazForm.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
+        else if (rucniUlazForm.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
+        else if (rucniUlazForm.jm === 'm1') komada = unosKol / (d/100);
+        
+        return (komada * (v/100) * (s/100) * (d/100)).toFixed(3);
+    }, [rucniUlazForm]);
+
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -168,7 +169,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             snimio_korisnik: user?.ime_prezime || 'Nepoznat',
             datum_yyyy_mm: new Date().toISOString().split('T')[0],
             vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
-            closed_at: new Date().toISOString(), // Paket je automatski zatvoren i spreman za prodaju
+            closed_at: new Date().toISOString(),
             oznake: [rucniUlazForm.klasa]
         };
 
@@ -179,7 +180,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
         await zapisiU_Log('SLOBODNI_ULAZ_LAGER', `Ubačen paket: ${noviIdPaketa} (${izracunatM3} m³). Proizvod: ${rucniUlazForm.naziv}`);
         
-        setRucniUlazForm({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina: '', klasa: 'Standard' });
+        setRucniUlazForm({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina: '', jm: 'kom', klasa: 'Standard' });
         loadData();
         
         prikaziDialog({
@@ -337,34 +338,34 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         </div>
                         <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Dužina (cm)</label>
-                            <input type="number" value={rucniUlazForm.duzina} onChange={e=>setRucniUlazForm({...form, duzina:e.target.value})} className="w-full bg-transparent text-theme-text text-xl font-black text-center outline-none" placeholder="0" />
+                            <input type="number" value={rucniUlazForm.duzina} onChange={e=>setRucniUlazForm({...rucniUlazForm, duzina:e.target.value})} className="w-full bg-transparent text-theme-text text-xl font-black text-center outline-none" placeholder="0" />
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
-    <div className="md:col-span-2 bg-amber-900/10 p-4 rounded-xl border border-amber-500/30 text-center flex flex-col justify-center">
-        <label className="text-[9px] text-amber-500 uppercase font-black block mb-2">Količina</label>
-        <input type="number" value={rucniUlazForm.kolicina} onChange={e=>setRucniUlazForm({...rucniUlazForm, kolicina:e.target.value})} className="w-full bg-transparent text-amber-400 text-3xl font-black text-center outline-none" placeholder="0" />
-    </div>
-    <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
-        <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Jedinica</label>
-        <select value={rucniUlazForm.jm} onChange={e=>setRucniUlazForm({...rucniUlazForm, jm:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
-            <option value="kom">kom</option>
-            <option value="m3">m³</option>
-            <option value="m2">m²</option>
-            <option value="m1">m1</option>
-        </select>
-    </div>
-    <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
-        <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Klasa</label>
-        <select value={rucniUlazForm.klasa} onChange={e=>setRucniUlazForm({...rucniUlazForm, klasa:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
-            <option value="I Klasa">I Klasa</option>
-            <option value="II Klasa">II Klasa</option>
-            <option value="III Klasa">III Klasa</option>
-            <option value="Standard">Standard</option>
-        </select>
-    </div>
-</div>
+                        <div className="md:col-span-2 bg-amber-900/10 p-4 rounded-xl border border-amber-500/30 text-center flex flex-col justify-center">
+                            <label className="text-[9px] text-amber-500 uppercase font-black block mb-2">Količina</label>
+                            <input type="number" value={rucniUlazForm.kolicina} onChange={e=>setRucniUlazForm({...rucniUlazForm, kolicina:e.target.value})} className="w-full bg-transparent text-amber-400 text-3xl font-black text-center outline-none" placeholder="0" />
+                        </div>
+                        <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
+                            <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Jedinica</label>
+                            <select value={rucniUlazForm.jm} onChange={e=>setRucniUlazForm({...rucniUlazForm, jm:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
+                                <option value="kom">kom</option>
+                                <option value="m3">m³</option>
+                                <option value="m2">m²</option>
+                                <option value="m1">m1</option>
+                            </select>
+                        </div>
+                        <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
+                            <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Klasa</label>
+                            <select value={rucniUlazForm.klasa} onChange={e=>setRucniUlazForm({...rucniUlazForm, klasa:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
+                                <option value="I Klasa">I Klasa</option>
+                                <option value="II Klasa">II Klasa</option>
+                                <option value="III Klasa">III Klasa</option>
+                                <option value="Standard">Standard</option>
+                            </select>
+                        </div>
+                    </div>
 
                     {rucniUlazForm.kolicina && (
                         <div className="text-[10px] text-emerald-400 bg-emerald-900/20 p-2 rounded-lg border border-emerald-500/20 text-center uppercase animate-in zoom-in-95 mt-2 relative z-10">
@@ -446,20 +447,20 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         ) : (glavniTab === 'paketi' ? filtriraniPaketi : filtriraniTrupci).map(item => {
                             const norm = normalizujDimenzije(item);
                             return (
-                                <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className="p-5 rounded-box border border-theme-border bg-[#111827] hover:border-blue-500 hover:-translate-y-1 cursor-pointer transition-all shadow-xl group relative overflow-hidden">
+                                <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className="p-5 rounded-box border border-theme-border bg-theme-panel hover:border-theme-accent hover:-translate-y-1 cursor-pointer transition-all shadow-xl group relative overflow-hidden">
                                     {glavniTab === 'paketi' ? (
                                         <>
                                             {item.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>}
                                             <div className="flex justify-between items-start mb-3">
                                                 <div className="flex-1 pr-2">
                                                     <p className="text-theme-accent font-black text-lg font-mono">{item.paket_id}</p>
-                                                    <p className="text-white text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>
+                                                    <p className="text-theme-text text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>
                                                     <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest font-mono">{norm.debljina}x{norm.sirina}x{norm.duzina} <span className="text-[9px] lowercase text-slate-500">mm</span></p>
                                                     <div className="flex flex-wrap gap-1 mt-2">
                                                         {item.broj_veze === 'SLOBODNA_ROBA' ? (
-                                                            <span className="text-[9px] bg-amber-900/30 text-amber-400 px-2 py-0.5 rounded font-black border border-amber-500/30">📦 SLOBODNI ULAZ</span>
+                                                            <span className="text-[9px] bg-amber-900/30 text-amber-500 px-2 py-0.5 rounded font-black border border-amber-500/30">📦 SLOBODNI ULAZ</span>
                                                         ) : item.broj_veze ? (
-                                                            <span className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded font-black border border-blue-500/20">RN: {item.broj_veze}</span>
+                                                            <span className="text-[9px] bg-theme-accent/20 text-theme-accent px-2 py-0.5 rounded font-black border border-theme-accent/30">RN: {item.broj_veze}</span>
                                                         ) : null}
                                                     </div>
                                                 </div>
@@ -467,8 +468,8 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                                     <div className="bg-emerald-900/20 border border-emerald-500/30 px-3 py-2 rounded-xl text-right mb-1">
                                                         <p className="text-emerald-400 font-black text-xl font-mono leading-none">{item.kolicina_final} <span className="text-[10px]">m³</span></p>
                                                     </div>
-                                                    <div className="bg-theme-panel border border-theme-border px-3 py-1.5 rounded-xl text-right">
-                                                        <p className="text-white font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-400">kom</span></p>
+                                                    <div className="bg-theme-card border border-theme-border px-3 py-1.5 rounded-xl text-right shadow-inner">
+                                                        <p className="text-theme-text font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-500">kom</span></p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -477,13 +478,13 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex-1 pr-2">
                                                 <p className="text-amber-500 font-black text-lg font-mono">QR: {item.id}</p>
-                                                <p className="text-white font-bold text-xs uppercase mt-1">{item.vrsta} | Klasa: {item.klasa}</p>
+                                                <p className="text-theme-text font-bold text-xs uppercase mt-1">{item.vrsta} | Klasa: {item.klasa}</p>
                                                 <div className="flex gap-2 mt-2">
-                                                    <span className="text-[9px] bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-600 font-black uppercase">L: {item.duzina}m</span>
-                                                    <span className="text-[9px] bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-600 font-black uppercase">Ø: {item.promjer}cm</span>
+                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">L: {item.duzina}m</span>
+                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">Ø: {item.promjer}cm</span>
                                                 </div>
-                                                <p className="text-[9px] text-slate-500 mt-3 font-bold uppercase">Šumarija: <span className="text-slate-300">{item.sumarija}</span></p>
-                                                <p className="text-[9px] text-slate-500 mt-1 font-bold uppercase">Otpremnica: <span className="text-slate-300">{item.otpremnica_broj}</span></p>
+                                                <p className="text-[9px] text-slate-500 mt-3 font-bold uppercase">Šumarija: <span className="text-theme-text">{item.sumarija}</span></p>
+                                                <p className="text-[9px] text-slate-500 mt-1 font-bold uppercase">Otpremnica: <span className="text-theme-text">{item.otpremnica_broj}</span></p>
                                             </div>
                                             <div className="text-right flex flex-col items-end shrink-0">
                                                 <div className="bg-emerald-900/20 border border-emerald-500/30 px-3 py-2 rounded-xl text-right">
