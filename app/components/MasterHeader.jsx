@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
@@ -13,37 +13,72 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const [otvorenTab, setOtvorenTab] = useState(false);
     const [noviRadnik, setNoviRadnik] = useState('');
     
-    // 🔔 NOVO: State za nepročitane superadmin alarme
+    // 🔔 State za Nadzorni Centar / Alarme
     const [brojAlarma, setBrojAlarma] = useState(0);
+    const [listaAlarma, setListaAlarma] = useState([]);
+    const [otvorenoZvonce, setOtvorenoZvonce] = useState(false);
+    
+    const dropdownRef = useRef(null);
 
     const currentUser = user?.ime_prezime ? user : JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
     const isSuperadmin = currentUser?.uloga === 'superadmin';
 
-    // 🔔 NOVO: Efekat za slušanje alarma u realnom vremenu (Samo za Superadmina)
+    // Zatvaranje dropdowna na klik izvan njega
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setOtvorenoZvonce(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // 🔔 Efekat za slušanje alarma u realnom vremenu (Samo za Superadmina)
     useEffect(() => {
         if (!isSuperadmin) return;
 
-        const ucitajBroj = async () => {
-            const { count } = await supabase
+        const ucitajAlarme = async () => {
+            const { data, count } = await supabase
                 .from('sistem_audit_log')
-                .select('*', { count: 'exact', head: true })
+                .select('*', { count: 'exact' })
                 .eq('pregledano', false)
-                .in('nivo_alarma', ['CRVENO', 'ŽUTO']);
+                .in('nivo_alarma', ['CRVENO', 'ŽUTO'])
+                .order('created_at', { ascending: false })
+                .limit(10); // Povlači zadnjih 10 za brzi pregled
+            
+            setListaAlarma(data || []);
             setBrojAlarma(count || 0);
         };
 
-        ucitajBroj();
+        ucitajAlarme();
 
-        const unikatanKanal = `alarmi_sync_${Math.random().toString(36).substring(2)}`;
+        const unikatanKanal = `alarmi_sync_header_${Math.random().toString(36).substring(2)}`;
 
         const channel = supabase.channel(unikatanKanal)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'sistem_audit_log' }, () => {
-                ucitajBroj(); // Osvježi brojač ako neko sa brente pošalje alarm
+                ucitajAlarme(); 
             })
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
     }, [isSuperadmin]);
+
+    // Funkcija za brzo označavanje jednog alarma kao pročitanog
+    const oznaciKaoProcitano = async (id, e) => {
+        e.stopPropagation();
+        await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
+        // Ne moramo ručno ažurirati state jer će supabase realtime trigger (iznad) sam osvježiti listu
+    };
+
+    // Funkcija za brzo zatvaranje/čitanje svih trenutnih alarma u padajućem meniju
+    const oznaciSveKaoProcitano = async (e) => {
+        e.stopPropagation();
+        const ids = listaAlarma.map(a => a.id);
+        if (ids.length === 0) return;
+        
+        await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', ids);
+    };
 
 
     useEffect(() => {
@@ -97,6 +132,13 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         window.dispatchEvent(new Event('radnici_updated'));
     };
 
+    // Pomoćna funkcija za formatiranje datuma alarma
+    const formatirajVrijeme = (isoString) => {
+        if (!isoString) return '';
+        const datum = new Date(isoString);
+        return datum.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    };
+
     return (
         <div className="flex flex-col gap-3 w-full mb-6">
             <div className={`flex flex-wrap lg:flex-nowrap justify-between items-center bg-theme-card p-3 lg:p-4 rounded-[var(--radius-box)] border border-theme-border shadow-glow backdrop-blur-[var(--glass-blur)] gap-4 relative z-[100] ${saas?.isEditMode ? 'ring-2 ring-amber-500' : ''}`}>
@@ -148,20 +190,85 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 {/* DESNA STRANA: God Mode, Zvonce i Korisnik */}
                 <div className="flex flex-wrap items-center gap-3 justify-center lg:justify-end w-full lg:w-auto">
                     
-                    {/* 🔔 NOVO: ZVONCE ZA NADZORNI CENTAR */}
+                    {/* 🔔 ZVONCE ZA NADZORNI CENTAR (PADAJUĆI MENI) */}
                     {isSuperadmin && modulIme !== 'Nadzorni Centar' && (
-                        <button 
-                            onClick={() => { if(setHeader) setHeader(prev => ({...prev, modul: 'nadzor'})); }} 
-                            className="relative w-10 h-10 rounded-xl bg-theme-panel border border-theme-border flex items-center justify-center text-lg hover:scale-105 transition-transform shadow-inner cursor-pointer"
-                            title="Otvori Nadzorni Centar"
-                        >
-                            🔔
-                            {brojAlarma > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
-                                    {brojAlarma > 99 ? '99+' : brojAlarma}
-                                </span>
+                        <div className="relative" ref={dropdownRef}>
+                            <button 
+                                onClick={() => setOtvorenoZvonce(!otvorenoZvonce)} 
+                                className={`relative w-10 h-10 rounded-xl border flex items-center justify-center text-lg transition-transform shadow-inner cursor-pointer ${otvorenoZvonce ? 'bg-theme-accent text-white border-theme-accent scale-105' : 'bg-theme-panel border-theme-border hover:scale-105'}`}
+                                title="Otvori upozorenja"
+                            >
+                                🔔
+                                {brojAlarma > 0 && (
+                                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
+                                        {brojAlarma > 99 ? '99+' : brojAlarma}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* PADAJUĆI MENI */}
+                            {otvorenoZvonce && (
+                                <div className="absolute top-[120%] right-0 w-80 sm:w-96 bg-theme-card border border-theme-border rounded-[1.5rem] shadow-2xl overflow-hidden z-[999] animate-in slide-in-from-top-2">
+                                    <div className="flex justify-between items-center p-4 border-b border-theme-border bg-theme-panel/50">
+                                        <h4 className="text-xs font-black uppercase text-theme-text flex items-center gap-2">
+                                            <span>🚨</span> Nedavna upozorenja
+                                        </h4>
+                                        {listaAlarma.length > 0 && (
+                                            <button onClick={oznaciSveKaoProcitano} className="text-[9px] text-theme-muted hover:text-emerald-400 uppercase font-black transition-colors">
+                                                ✓ Pročitaj sve
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="max-h-72 overflow-y-auto custom-scrollbar">
+                                        {listaAlarma.length === 0 ? (
+                                            <div className="p-8 text-center text-slate-500 text-[10px] uppercase font-black">
+                                                Nema novih upozorenja. Sve je čisto! ✅
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col">
+                                                {listaAlarma.map(alarm => (
+                                                    <div key={alarm.id} className={`p-4 border-b border-theme-border/50 transition-colors hover:bg-slate-800/50 flex gap-3 items-start relative group ${alarm.nivo_alarma === 'CRVENO' ? 'bg-red-950/10' : 'bg-amber-950/10'}`}>
+                                                        <div className={`mt-1 shrink-0 w-2 h-2 rounded-full ${alarm.nivo_alarma === 'CRVENO' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]'}`}></div>
+                                                        <div className="flex-1 min-w-0 pr-6">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="text-[10px] font-black text-theme-text uppercase">{alarm.akcija}</span>
+                                                                <span className="text-[9px] text-slate-500">{formatirajVrijeme(alarm.created_at)}</span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-400 font-medium leading-snug">{alarm.detalji}</p>
+                                                            <p className="text-[9px] text-slate-500 mt-2 font-bold">👤 {alarm.korisnik}</p>
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => oznaciKaoProcitano(alarm.id, e)} 
+                                                            className="absolute top-1/2 -translate-y-1/2 right-3 w-6 h-6 flex items-center justify-center rounded-md bg-theme-panel border border-theme-border text-slate-400 hover:text-emerald-400 hover:border-emerald-500 transition-all opacity-0 group-hover:opacity-100"
+                                                            title="Označi pročitano"
+                                                        >
+                                                            ✓
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="p-3 bg-theme-panel/50 border-t border-theme-border text-center">
+                                    <button 
+    onClick={() => { 
+        setOtvorenoZvonce(false); 
+        // 👇 UMJESTO DISPATCH EVENTA, KORISTIMO POSTOJEĆU METODU IZNAD 👇
+        if(typeof setHeader === 'function') {
+           // Okinut ćemo fake "header" update, ali glavno čitanje će biti u page.tsx
+           window.dispatchEvent(new CustomEvent('navigacija_na_nadzor'));
+        }
+    }} 
+    className="text-[10px] text-theme-accent uppercase font-black tracking-widest hover:underline w-full"
+>
+    → Otvori Nadzorni Centar
+</button>
+                                    </div>
+                                </div>
                             )}
-                        </button>
+                        </div>
                     )}
 
                     {(currentUser?.uloga === 'superadmin' || currentUser?.uloga === 'admin') && saas && (

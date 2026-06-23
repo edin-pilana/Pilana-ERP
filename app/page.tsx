@@ -117,6 +117,17 @@ export default function Page() {
     });
     const [dashLoading, setDashLoading] = useState(true);
 
+    // 🟢 GLOBALNI SLUŠAOC ZA ZVONCE (NADZORNI CENTAR)
+    useEffect(() => {
+        const handleNadzorNavigacija = () => {
+            setActiveModule('nadzor');
+        };
+        // Osluškujemo signal iz MasterHeader.jsx
+        window.addEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
+        
+        return () => window.removeEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
+    }, []);
+
     const ucitajDashboardPodatke = async () => {
         setDashLoading(true);
         const danas = new Date().toISOString().split('T')[0];

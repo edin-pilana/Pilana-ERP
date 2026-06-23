@@ -150,12 +150,11 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    const [duplikatDialog, setDuplikatDialog] = useState(null);
-    const [greskaDialog, setGreskaDialog] = useState(null);
-    const [uspjesnoDialog, setUspjesnoDialog] = useState(null);
+    const [brisanjeNaloga, setBrisanjeNaloga] = useState(null);
+    const [razlogBrisanja, setRazlogBrisanja] = useState('');
 
     const generisiID = () => `RN-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
-    const [form, setForm] = useState({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI', modifikovan: false });
+    const [form, setForm] = useState({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI' });
     const [stavke, setStavke] = useState([]);
     const [originalneStavke, setOriginalneStavke] = useState(null);
     const [isEditingNalog, setIsEditingNalog] = useState(false);
@@ -194,7 +193,8 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         supabase.from('katalog_proizvoda').select('*').order('sifra').then(({data}) => setKatalog(data||[]));
         supabase.from('masine').select('naziv, atributi_paketa').order('naziv').then(({data}) => setMasineList(data||[]));
         supabase.from('radni_nalozi').select('*').order('datum', { ascending: false }).then(({data}) => setNalozi(data||[]));
-        supabase.from('ponude').select('id, kupac_naziv, status, stavke_jsonb, napomena').neq('status', 'REALIZOVANA ✅').then(({data}) => setAktivnePonude(data||[]));
+        // 🟢 OSIGURAČ: Povlačimo i stavke i stavke_jsonb da izbjegnemo tihe greške
+        supabase.from('ponude').select('id, kupac_naziv, status, stavke_jsonb, stavke, napomena').neq('status', 'REALIZOVANA ✅').then(({data}) => setAktivnePonude(data||[]));
     };
 
     const zapisiU_Log = async (akcija, detalji) => { await supabase.from('sistem_audit_log').insert([{ korisnik: currentUser.ime_prezime || 'Sistem', akcija, detalji }]); };
@@ -205,66 +205,88 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const ucitajPonuduIzBaze = async (broj) => {
-        const cistBroj = broj.toUpperCase().trim();
-        const ponuda = aktivnePonude.find(p => p.id === cistBroj);
+        try {
+            const cistBroj = broj.toUpperCase().trim();
+            const ponuda = aktivnePonude.find(p => p.id === cistBroj);
 
-        if(!ponuda) {
-            setGreskaDialog(`Ponuda ${cistBroj} nije pronađena u listi aktivnih ponuda! Možda je već realizovana, ili je broj pogrešan.`);
-            setSkenerInput('');
-            return;
-        }
+            if(!ponuda) {
+                prikaziDialog({ tip: 'greska', naslov: 'Nije pronađeno', poruka: `Ponuda ${cistBroj} nije pronađena! Moguće da je već realizovana, ili je broj pogrešan.`, onCancel: zatvoriDialog });
+                setSkenerInput('');
+                return;
+            }
 
-        const { data: postojeciRN } = await supabase.from('radni_nalozi').select('*').eq('broj_ponude', cistBroj).limit(1);
-        if (postojeciRN && postojeciRN.length > 0) {
-            setDuplikatDialog({ nalog: postojeciRN[0] });
-            setSkenerInput('');
-            return;
-        }
+            const { data: postojeciRN } = await supabase.from('radni_nalozi').select('id').eq('broj_ponude', cistBroj).limit(1);
+            if (postojeciRN && postojeciRN.length > 0) {
+                prikaziDialog({ tip: 'upozorenje', naslov: 'Duplikat', poruka: `Za ovu ponudu je VEĆ KREIRAN Radni Nalog (${postojeciRN[0].id})!`, onCancel: zatvoriDialog });
+                setSkenerInput('');
+                return;
+            }
 
-        if (ponuda.status === 'NA ODLUČIVANJU') {
-            setGreskaDialog(`UPOZORENJE:\nPonuda ${cistBroj} je još uvijek u statusu "NA ODLUČIVANJU".\n\nMorate je prvo prebaciti u "POTVRĐENA ✅" unutar modula Ponuda da biste započeli proizvodnju!`);
-            setSkenerInput('');
-            return;
-        }
+            if (ponuda.status === 'NA ODLUČIVANJU') {
+                prikaziDialog({ tip: 'upozorenje', naslov: 'Upozorenje', poruka: `Ponuda ${cistBroj} je još uvijek u statusu "NA ODLUČIVANJU".\n\nMorate je prvo prebaciti u "POTVRĐENA ✅" unutar modula Ponuda da biste započeli proizvodnju!`, onCancel: zatvoriDialog });
+                setSkenerInput('');
+                return;
+            }
 
-        const prepravljeneStavke = (ponuda.stavke_jsonb || []).map(s => {
-            const katItem = katalog.find(k => k.sifra === s.sifra) || {};
-            const v = parseFloat(katItem.visina) || 0; 
-            const sir = parseFloat(katItem.sirina) || 0; 
-            const d = parseFloat(katItem.duzina) || 0;
+            let currentKatalog = katalog;
+            if (!currentKatalog || currentKatalog.length === 0) {
+                const { data: kData } = await supabase.from('katalog_proizvoda').select('*');
+                if (kData) { setKatalog(kData); currentKatalog = kData; }
+            }
+
+            let ponudaStavke = ponuda.stavke_jsonb || ponuda.stavke || [];
+            if (typeof ponudaStavke === 'string') {
+                try { ponudaStavke = JSON.parse(ponudaStavke); } catch(e) { ponudaStavke = []; }
+            }
+            if (!Array.isArray(ponudaStavke)) {
+                ponudaStavke = typeof ponudaStavke === 'object' && ponudaStavke !== null ? Object.values(ponudaStavke) : [];
+            }
+
+            const prepravljeneStavke = ponudaStavke.map((s, index) => {
+                const katItem = currentKatalog.find(k => k.sifra === s.sifra) || {};
+                const v = parseFloat(katItem.visina) || 0; 
+                const sir = parseFloat(katItem.sirina) || 0; 
+                const d = parseFloat(katItem.duzina) || 0;
+                
+                const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
+                const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
+                const len1kom = (d > 0) ? (d/100) : 0;
+
+                const unosKol = parseFloat(s.kolicina_unos !== undefined ? s.kolicina_unos : s.kolicina) || 0; 
+                const jmUnos = (s.jm_unos || s.jm || 'kom').toLowerCase();
+                
+                let komada = unosKol;
+                if (jmUnos === 'm3' && vol1kom > 0) komada = unosKol / vol1kom;
+                else if (jmUnos === 'm2' && area1kom > 0) komada = unosKol / area1kom;
+                else if (jmUnos === 'm1' && len1kom > 0) komada = unosKol / len1kom;
+
+                let obracunM3 = unosKol;
+                if (jmUnos === 'm3') obracunM3 = unosKol;
+                else if (vol1kom > 0) obracunM3 = komada * vol1kom;
+                
+                return { 
+                    id: `stavka_${index}_${Math.random().toString(36).substring(7)}`, 
+                    sifra: s.sifra, 
+                    naziv: s.naziv || katItem.naziv, 
+                    kolicina_unos: unosKol, 
+                    jm_unos: jmUnos, 
+                    kolicina_obracun: obracunM3 > 0 ? parseFloat(obracunM3.toFixed(4)) : 0, 
+                    jm_obracun: 'm3', 
+                    dimenzije: v > 0 ? `${v}x${sir}x${d}` : '' 
+                };
+            });
+
+            setForm({ ...form, kupac_naziv: ponuda.kupac_naziv, broj_ponude: ponuda.id, napomena: ponuda.napomena });
+            setStavke(prepravljeneStavke); 
             
-            const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
-            const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
-            const len1kom = (d > 0) ? (d/100) : 0;
-
-            const unosKol = parseFloat(s.kolicina_unos) || 0; 
-            const jmUnos = (s.jm_unos || 'kom').toLowerCase();
-            
-            let komada = unosKol;
-            if (jmUnos === 'm3' && vol1kom > 0) komada = unosKol / vol1kom;
-            else if (jmUnos === 'm2' && area1kom > 0) komada = unosKol / area1kom;
-            else if (jmUnos === 'm1' && len1kom > 0) komada = unosKol / len1kom;
-
-            let obracunM3 = unosKol;
-            if (vol1kom > 0) obracunM3 = komada * vol1kom;
-            
-            return { 
-                id: Math.random().toString(), 
-                sifra: s.sifra, 
-                naziv: s.naziv, 
-                kolicina_unos: unosKol, 
-                jm_unos: s.jm_unos, 
-                kolicina_obracun: obracunM3 > 0 ? parseFloat(obracunM3.toFixed(4)) : 0, 
-                jm_obracun: 'm3', 
-                dimenzije: v > 0 ? `${v}x${sir}x${d}` : '' 
-            };
-        });
-
-        setForm({ ...form, kupac_naziv: ponuda.kupac_naziv, broj_ponude: ponuda.id, napomena: ponuda.napomena });
-        setStavke(prepravljeneStavke); setOriginalneStavke(JSON.stringify(prepravljeneStavke)); setSkenerInput('');
+            const orgStavke = prepravljeneStavke.map(s => ({ sifra: s.sifra, kolicina_obracun: s.kolicina_obracun }));
+            setOriginalneStavke(JSON.stringify(orgStavke)); 
+            setSkenerInput('');
+        } catch (error) {
+            prikaziDialog({ tip: 'greska', naslov: 'Kritična greška', poruka: error.message, onCancel: zatvoriDialog });
+            setSkenerInput('');
+        }
     };
-
-    const provjeriModifikacije = (noveStavke) => { if(originalneStavke && JSON.stringify(noveStavke) !== originalneStavke) setForm(f => ({...f, modifikovan: true})); };
     
     const handleProizvodSelect = (sifraVal, tekstZaPolje) => { 
         const nadjeni = katalog.find(k => k.sifra === sifraVal); 
@@ -308,13 +330,10 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : "0.0000"}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
-    // 🟢 FUNKCIJA KASAKDNOG SPAŠAVANJA KOJA AŽURIRA I GLAVNU STAVKU I BOM!
     const zavrsiDodavanjeStavke = (novaStavka) => {
         let noveStavke = []; 
         if (stavkaForm.id) {
             noveStavke = stavke.map(s => s.id === stavkaForm.id ? novaStavka : s); 
-            
-            // Kaskadno ažuriranje u BOM (Tehnologiji) ako postoji
             if (tehnologija[stavkaForm.id]) {
                 const noveFaze = tehnologija[stavkaForm.id].map(f => ({
                     ...f,
@@ -329,7 +348,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         }
         
         setStavke(noveStavke); 
-        provjeriModifikacije(noveStavke); 
         setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3' }); 
         setTrenutniProizvod(null);
     };
@@ -338,7 +356,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return prikaziDialog({ tip: 'upozorenje', naslov: 'Greška', poruka: "Odaberite proizvod i provjerite količine!", onCancel: zatvoriDialog });
         const dim = trenutniProizvod ? `${parseFloat(trenutniProizvod.visina)||0}x${parseFloat(trenutniProizvod.sirina)||0}x${parseFloat(trenutniProizvod.duzina)||0}` : '';
         const novaStavka = { 
-            id: stavkaForm.id || Math.random().toString(), 
+            id: stavkaForm.id || `stavka_nova_${Math.random().toString(36).substring(7)}`, 
             sifra: trenutniProizvod.sifra, 
             naziv: trenutniProizvod.naziv, 
             kolicina_unos: parseFloat(stavkaForm.kolicina_unos), 
@@ -357,7 +375,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                 return prikaziDialog({
                     tip: 'upozorenje',
                     naslov: 'Prekoračenje količine iz Ponude!',
-                    poruka: `U originalnoj ponudi stoji: ${orgStavka.kolicina_obracun} ${orgStavka.jm_obracun}.\nVi pokušavate dodati ukupno: ${pokusaj.toFixed(4)} ${orgStavka.jm_obracun}.\n\nDa li ste sigurni da želite prekršiti dogovorenu količinu iz ponude?`,
+                    poruka: `U originalnoj ponudi stoji: ${orgStavka.kolicina_obracun} m³.\nVi pokušavate dodati ukupno: ${pokusaj.toFixed(4)} m³.\n\nDa li ste sigurni da želite prekršiti dogovorenu količinu iz ponude?`,
                     confirmText: '✅ DA, NASTAVI',
                     cancelText: '✕ ODUSTANI',
                     onConfirm: () => { zavrsiDodavanjeStavke(novaStavka); zatvoriDialog(); },
@@ -369,15 +387,19 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const urediStavku = (stavka) => { const nadjeni = katalog.find(k => k.sifra === stavka.sifra); setTrenutniProizvod(nadjeni || null); const tekstZaPolje = nadjeni ? `${nadjeni.sifra} | ${nadjeni.naziv}` : stavka.sifra; setStavkaForm({ id: stavka.id, sifra_unos: tekstZaPolje, kolicina_unos: stavka.kolicina_unos, jm_unos: stavka.jm_unos, kolicina_obracun: stavka.kolicina_obracun, jm_obracun: stavka.jm_obracun }); window.scrollTo({ top: 300, behavior: 'smooth' }); };
-    const ukloniStavku = (id) => { const noveStavke = stavke.filter(s => s.id !== id); setStavke(noveStavke); provjeriModifikacije(noveStavke); };
+    const ukloniStavku = (id) => { const noveStavke = stavke.filter(s => s.id !== id); setStavke(noveStavke); };
 
     const otvoriRazradu = async () => {
         setTab('razrada'); const noveTeh = { ...tehnologija };
         for (let s of stavke) {
             if (!noveTeh[s.id] || noveTeh[s.id].length === 0) {
-                const { data } = await supabase.from('tehnologija_katalog').select('faze_jsonb').eq('finalna_sifra', s.sifra).maybeSingle();
-                if (data && data.faze_jsonb && data.faze_jsonb.length > 0) { 
-                    noveTeh[s.id] = data.faze_jsonb.map(f => ({ ...f, id: Math.random().toString(), kolicina: f.kolicina || s.kolicina_unos, dimenzija: f.dimenzija || s.dimenzije, jm: f.jm || s.jm_unos })); 
+                const { data } = await supabase.from('tehnologija_katalog').select('faze_jsonb, faze').eq('finalna_sifra', s.sifra).maybeSingle();
+                
+                let dbFaze = data?.faze_jsonb || data?.faze;
+                if (typeof dbFaze === 'string') { try { dbFaze = JSON.parse(dbFaze); } catch(e) { dbFaze = []; } }
+                
+                if (dbFaze && Array.isArray(dbFaze) && dbFaze.length > 0) { 
+                    noveTeh[s.id] = dbFaze.map(f => ({ ...f, id: Math.random().toString(), kolicina: f.kolicina || s.kolicina_unos, dimenzija: f.dimenzija || s.dimenzije, jm: f.jm || s.jm_unos })); 
                 } 
                 else { 
                     noveTeh[s.id] = [{ id: Math.random().toString(), masina: '', dimenzija: s.dimenzije, napomena: '', kolicina: s.kolicina_unos, jm: s.jm_unos, oznake: [] }]; 
@@ -391,7 +413,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const ukloniFazu = (stavkaId, fazaId) => { const trenutne = tehnologija[stavkaId] || []; setTehnologija({ ...tehnologija, [stavkaId]: trenutne.filter(f => f.id !== fazaId) }); };
     const updateFazu = (stavkaId, fazaId, field, value) => { const trenutne = tehnologija[stavkaId] || []; if (field === 'masina') { setTehnologija({ ...tehnologija, [stavkaId]: trenutne.map(f => f.id === fazaId ? { ...f, masina: value, oznake: [] } : f) }); } else { setTehnologija({ ...tehnologija, [stavkaId]: trenutne.map(f => f.id === fazaId ? { ...f, [field]: value } : f) }); } };
     const toggleOznakaUFazi = (stavkaId, fazaId, oznaka) => { const trenutne = tehnologija[stavkaId] || []; setTehnologija({ ...tehnologija, [stavkaId]: trenutne.map(f => { if (f.id === fazaId) { const postojeca = f.oznake || []; const nove = postojeca.includes(oznaka) ? postojeca.filter(x => x !== oznaka) : [...postojeca, oznaka]; return { ...f, oznake: nove }; } return f; })}); };
-    const spasiSamoU_Nalog = () => { setUspjesnoDialog({ poruka: "Faze su privremeno sačuvane za ovaj Radni Nalog.", isFazni: false, nalog: form }); setTab('novi'); };
+    const spasiSamoU_Nalog = () => { prikaziDialog({ tip: 'uspjeh', naslov: 'Sačuvano', poruka: "Faze su privremeno sačuvane za ovaj Radni Nalog.", onCancel: zatvoriDialog }); setTab('novi'); };
 
     const snimiPraviloKaoSablon = async (sifra, faze) => {
         if(faze.length === 0 || !faze[0].masina || !faze[0].dimenzija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Podataka', poruka: "Unesite bar jednu ispravnu fazu prije snimanja šablona!", onCancel: zatvoriDialog });
@@ -408,18 +430,17 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             let imaFaze = false;
             let upozorenjeM3 = 0;
             let prekrsenaStavka = '';
-            const orgList = originalneStavke ? JSON.parse(originalneStavke) : [];
+            
+            let orgList = [];
+            try { if (originalneStavke) orgList = JSON.parse(originalneStavke); } catch(e) { }
 
             for (let s of stavke) {
                 const faze = tehnologija[s.id] || [];
                 if (faze.length > 0 && faze[0].masina) {
                     imaFaze = true;
-                    
-                    // 🟢 KONTROLA PREKORAČENJA ZA BOM (Zadnja faza)
                     const orgStavka = orgList.find(o => o.sifra === s.sifra);
                     if (orgStavka && form.broj_ponude) {
                         const zadnjaFaza = faze[faze.length - 1];
-                        
                         const katItem = katalog.find(k => k.sifra === s.sifra) || {};
                         const v = parseFloat(katItem.visina) || 0; const sir = parseFloat(katItem.sirina) || 0; const d = parseFloat(katItem.duzina) || 0;
                         const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
@@ -473,19 +494,15 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const zavrsiSnimanjeNaloga = async () => {
         const payload = {
             id: form.id.toUpperCase(), broj_ponude: form.broj_ponude, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_isporuke: form.rok_isporuke, napomena: form.napomena,
-            stavke_jsonb: stavke, tehnologija_jsonb: form.tip_naloga === 'FAZNI' ? tehnologija : {}, status: form.status, modifikovan: form.modifikovan, tip_naloga: form.tip_naloga, snimio_korisnik: currentUser.ime_prezime
+            stavke_jsonb: stavke, tehnologija_jsonb: form.tip_naloga === 'FAZNI' ? tehnologija : {}, status: form.status, tip_naloga: form.tip_naloga, snimio_korisnik: currentUser.ime_prezime
         };
 
         let res; if (isEditingNalog) { res = await supabase.from('radni_nalozi').update(payload).eq('id', form.id); } else { res = await supabase.from('radni_nalozi').insert([payload]); }
         if(res.error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: res.error.message, onCancel: zatvoriDialog });
         
-        if (form.broj_ponude && form.modifikovan) {
-            await supabase.from('ponude').update({ rn_modifikovan: true }).eq('id', form.broj_ponude.toUpperCase());
-            await zapisiU_Log('ALARM_PONUDE', `Ponuda ${form.broj_ponude} označena kao neusklađena sa RN ${form.id}`);
-        }
         await zapisiU_Log(isEditingNalog ? 'IZMJENA_RN' : 'KREIRAN_RN', `Radni Nalog ${form.id}`);
 
-        setUspjesnoDialog({ nalog: payload, isFazni: form.tip_naloga === 'FAZNI', poruka: isEditingNalog ? "Radni nalog uspješno ažuriran!" : "Radni nalog uspješno kreiran!" });
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Uspješno', poruka: isEditingNalog ? "Radni nalog uspješno ažuriran!" : "Radni nalog uspješno kreiran!", onCancel: zatvoriDialog });
         resetFormu(); load(); setTab('lista');
     };
 
@@ -525,55 +542,98 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    // 🟢 FUNKCIJA KOJA OTVARA POSTOJEĆI NALOG I VUČE "ORIGINALNE" STAVKE SA PONUDE RADI UPOZORENJA
-    const pokreniIzmjenuNaloga = async (n) => { 
-        setForm({ id: n.id, broj_ponude: n.broj_ponude || '', kupac_naziv: n.kupac_naziv, datum: n.datum, rok_isporuke: n.rok_isporuke || '', napomena: n.napomena || '', status: n.status || 'U PROIZVODNJI', tip_naloga: n.tip_naloga || 'OBIČNI', modifikovan: n.modifikovan || false }); 
-        setStavke(n.stavke_jsonb || []); 
-        setTehnologija(n.tehnologija_jsonb || {}); 
-        setIsEditingNalog(true); 
-        setTab('novi'); 
-        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+    const potvrdiBrisanjeNaloga = async () => {
+        if (!razlogBrisanja.trim()) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Razlog obavezan', poruka: "Morate unijeti razlog brisanja radnog naloga!", onCancel: zatvoriDialog });
+        }
+        const { error } = await supabase.from('radni_nalozi').update({ status: 'OBRISANO' }).eq('id', brisanjeNaloga.id);
+        if (error) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: error.message, onCancel: zatvoriDialog });
+        }
+        
+        await zapisiU_Log('OBRISAN_RADNI_NALOG', `Korisnik je obrisao Radni Nalog ${brisanjeNaloga.id}. Razlog: ${razlogBrisanja}`);
+        
+        setBrisanjeNaloga(null);
+        setRazlogBrisanja('');
+        load();
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Nalog Obrisan', poruka: `Radni nalog ${brisanjeNaloga.id} je uspješno uklonjen iz prikaza.`, onCancel: zatvoriDialog });
+    };
 
-        // Ako je nalog napravljen od ponude, moramo saznati koliko je tačno bilo naručeno na ponudi
-        if (n.broj_ponude) {
-            const { data: ponuda } = await supabase.from('ponude').select('stavke_jsonb').eq('id', n.broj_ponude).maybeSingle();
-            let katalogData = katalog;
-            if (katalogData.length === 0) {
-                const { data: kData } = await supabase.from('katalog_proizvoda').select('*');
-                if (kData) katalogData = kData;
+    const pokreniIzmjenuNaloga = async (n) => { 
+        try {
+            setForm({ id: n.id, broj_ponude: n.broj_ponude || '', kupac_naziv: n.kupac_naziv, datum: n.datum, rok_isporuke: n.rok_isporuke || '', napomena: n.napomena || '', status: n.status || 'U PROIZVODNJI', tip_naloga: n.tip_naloga || 'OBIČNI' }); 
+            
+            let currentKatalog = katalog;
+            if (!currentKatalog || currentKatalog.length === 0) {
+                const { data } = await supabase.from('katalog_proizvoda').select('*');
+                currentKatalog = data || [];
+                setKatalog(currentKatalog);
             }
 
-            if (ponuda && ponuda.stavke_jsonb) {
-                const prepravljeneStavke = ponuda.stavke_jsonb.map(s => {
-                    const katItem = katalogData.find(k => k.sifra === s.sifra) || {};
+            let loadedStavke = n.stavke_jsonb || n.stavke || [];
+            if (typeof loadedStavke === 'string') { try { loadedStavke = JSON.parse(loadedStavke); } catch(e) { loadedStavke = []; } }
+            if (!Array.isArray(loadedStavke)) { loadedStavke = typeof loadedStavke === 'object' && loadedStavke !== null ? Object.values(loadedStavke) : []; }
+
+            const safeStavke = loadedStavke.map((s, i) => ({ ...s, id: s.id || `stavka_${i}` }));
+
+            let loadedTeh = n.tehnologija_jsonb || n.tehnologija || {};
+            if (typeof loadedTeh === 'string') { try { loadedTeh = JSON.parse(loadedTeh); } catch(e) { loadedTeh = {}; } }
+
+            const safeTeh = {};
+            if (Array.isArray(loadedTeh)) {
+                safeStavke.forEach((s, i) => {
+                    safeTeh[s.id] = i === 0 ? loadedTeh.map((f, fi) => ({ ...f, id: f.id || `faza_${fi}` })) : [];
+                });
+            } else {
+                safeStavke.forEach((s, i) => {
+                    let faze = loadedTeh[s.id];
+                    if (!faze || faze.length === 0) faze = loadedTeh[s.sifra];
+                    if (!faze || faze.length === 0) {
+                        const keys = Object.keys(loadedTeh);
+                        if (keys.length > i) faze = loadedTeh[keys[i]];
+                    }
+                    if (!Array.isArray(faze)) faze = [];
+                    
+                    safeTeh[s.id] = faze.map((f, fi) => ({ ...f, id: f.id || `faza_${fi}` }));
+                });
+            }
+
+            if (n.broj_ponude) {
+                const { data: ponuda } = await supabase.from('ponude').select('stavke_jsonb, stavke').eq('id', n.broj_ponude).maybeSingle();
+                let ponudaStavke = ponuda?.stavke_jsonb || ponuda?.stavke || [];
+                if (typeof ponudaStavke === 'string') { try { ponudaStavke = JSON.parse(ponudaStavke); } catch(e) { ponudaStavke = []; } }
+                if (!Array.isArray(ponudaStavke)) { ponudaStavke = typeof ponudaStavke === 'object' && ponudaStavke !== null ? Object.values(ponudaStavke) : []; }
+
+                const org = ponudaStavke.map(s => {
+                    const katItem = currentKatalog.find(k => k.sifra === s.sifra) || {};
                     const v = parseFloat(katItem.visina) || 0; const sir = parseFloat(katItem.sirina) || 0; const d = parseFloat(katItem.duzina) || 0;
                     const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
-                    const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
-                    const len1kom = (d > 0) ? (d/100) : 0;
-                    const unosKol = parseFloat(s.kolicina_unos) || 0; 
-                    const jmUnos = (s.jm_unos || 'kom').toLowerCase();
+                    
+                    const unosKol = parseFloat(s.kolicina_unos !== undefined ? s.kolicina_unos : s.kolicina) || 0; 
+                    const jmUnos = (s.jm_unos || s.jm || 'kom').toLowerCase();
                     
                     let obracunM3 = parseFloat(s.kolicina_obracun || 0);
-                    // FORCE AUTO-FIX AKO JE BAZA STARA I POKVARENA
                     if (jmUnos === 'kom' && vol1kom > 0 && Math.abs(obracunM3 - unosKol) < 0.01) {
                         obracunM3 = unosKol * vol1kom;
                     }
-                    return { sifra: s.sifra, kolicina_obracun: obracunM3 > 0 ? parseFloat(obracunM3.toFixed(4)) : 0, jm_obracun: 'm3' };
+                    return { sifra: s.sifra, kolicina_obracun: obracunM3 > 0 ? parseFloat(obracunM3.toFixed(4)) : 0 };
                 });
-                setOriginalneStavke(JSON.stringify(prepravljeneStavke));
+                setOriginalneStavke(JSON.stringify(org));
             } else {
-                setOriginalneStavke(JSON.stringify(n.stavke_jsonb || []));
+                setOriginalneStavke(null);
             }
-        } else {
-            setOriginalneStavke(null);
+
+            setStavke(safeStavke);
+            setTehnologija(safeTeh);
+            setIsEditingNalog(true); 
+            setTab('novi'); 
+            window.scrollTo({ top: 0, behavior: 'smooth' }); 
+        } catch (error) {
+            prikaziDialog({ tip: 'greska', naslov: 'Kritična Greška', poruka: error.message, onCancel: zatvoriDialog });
         }
     };
 
     const kreirajPDF = async () => {
-        if (form.broj_ponude && form.modifikovan) {
-            const { data } = await supabase.from('ponude').select('rn_modifikovan').eq('id', form.broj_ponude).maybeSingle();
-            if (data && data.rn_modifikovan) { return prikaziDialog({ tip: 'greska', naslov: 'Štampa Blokirana', poruka: "Ovaj Radni Nalog je izmijenjen u odnosu na ponudu. Prodaja/Finansije moraju prvo ODOBRITI ili ODBITI izmjene unutar modula 'PONUDE' da biste mogli štampati!", onCancel: zatvoriDialog }); }
-        }
         if (form.tip_naloga === 'FAZNI') {
             printRadniNalogSveFaze({...form, stavke_jsonb: stavke, tehnologija_jsonb: tehnologija});
         } else {
@@ -667,12 +727,40 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-')[0].length === 4 ? isoString.split('-') : isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
-    const resetFormu = () => { setForm({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI', modifikovan: false }); setStavke([]); setOriginalneStavke(null); setSkenerInput(''); setIsEditingNalog(false); setTehnologija({}); };
+    const resetFormu = () => { setForm({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI' }); setStavke([]); setOriginalneStavke(null); setSkenerInput(''); setIsEditingNalog(false); setTehnologija({}); };
+
+    const naloziZaPrikaz = nalozi.filter(n => n.status !== 'OBRISANO' && (
+        (subTab === 'U PROIZVODNJI' && n.status === 'U PROIZVODNJI') ||
+        (subTab === 'ZAVRŠENO' && n.status === 'ZAVRŠENO') ||
+        (subTab === 'NA ČEKANJU' && n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO')
+    ));
 
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in pb-20">
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-purple-500" user={user} modulIme="radni_nalog" saas={saas} hideMasina={true} />
             <PametniDialog {...dialog} />
+
+            {brisanjeNaloga && (
+                <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
+                    <div className="bg-theme-card border border-red-500 p-6 rounded-[2.5rem] shadow-2xl max-w-sm w-full relative">
+                        <button onClick={() => {setBrisanjeNaloga(null); setRazlogBrisanja('');}} className="absolute top-4 right-4 bg-slate-800 text-slate-400 hover:text-theme-text hover:bg-red-500 w-8 h-8 rounded-box font-black flex items-center justify-center transition-all">✕</button>
+                        <h3 className="text-red-400 font-black uppercase text-sm mb-4 border-b border-theme-border pb-3">🗑️ Brisanje Radnog Naloga</h3>
+                        <div className="mb-4 text-xs text-slate-300">
+                            <p className="mb-2">Da li ste sigurni da želite obrisati radni nalog <b className="text-white">{brisanjeNaloga.id}</b>?</p>
+                            <p className="text-red-400 font-bold mb-4">Nalog neće biti trajno izbrisan iz baze podataka (ostaće sačuvan u arhivi), ali će biti uklonjen sa svih ekrana za proizvodnju.</p>
+                            <label className="text-[10px] text-slate-400 uppercase font-black mb-2 block">Obavezan razlog brisanja (za Superadmina):</label>
+                            <textarea 
+                                value={razlogBrisanja} 
+                                onChange={e => setRazlogBrisanja(e.target.value)} 
+                                placeholder="Npr. Pogrešno unesene dimenzije, pogrešan unos..." 
+                                className="w-full p-3 bg-theme-panel border border-red-500/50 rounded-xl text-theme-text outline-none focus:border-red-400 text-xs"
+                                rows="3"
+                            ></textarea>
+                        </div>
+                        <button onClick={potvrdiBrisanjeNaloga} className="w-full py-4 bg-red-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-red-500 transition-all border border-red-400">🚨 Potvrdi Brisanje</button>
+                    </div>
+                </div>
+            )}
 
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
                 <button onClick={() => setTab('novi')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'novi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>➕ Glavni Nalog</button>
@@ -689,7 +777,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                         </div>
                     )}
 
-                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${form.modifikovan ? 'border-amber-500 bg-theme-card' : 'border-purple-500/30 bg-theme-card'}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] border-purple-500/30 bg-theme-card`} style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-center mb-4 pb-4 border-b border-theme-border/50">
                             <div>
                                 <h3 className="text-theme-accent font-black uppercase text-xs">1. Parametri Radnog Naloga</h3>
@@ -792,7 +880,9 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                             <div className="space-y-8">
                                 {stavke.map(s => {
                                     const faze = tehnologija[s.id] || [];
-                                    const orgList = originalneStavke ? JSON.parse(originalneStavke) : [];
+                                    
+                                    let orgList = [];
+                                    try { if (originalneStavke) orgList = JSON.parse(originalneStavke); } catch(e) {}
                                     const orgStavka = orgList.find(o => o.sifra === s.sifra);
 
                                     return (
@@ -804,7 +894,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                     const dostupneOznake = odabranaMasinaObj?.atributi_paketa || [];
                                                     const isZadnja = index === faze.length - 1;
                                                     
-                                                    // Vizuelno upozorenje u BOM-u
                                                     let visualWarning = false;
                                                     if (isZadnja && orgStavka && form.broj_ponude) {
                                                         const katItem = katalog.find(k => k.sifra === s.sifra) || {};
@@ -812,13 +901,17 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                         const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
                                                         const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
                                                         const len1kom = (d > 0) ? (d/100) : 0;
+
                                                         let komada = parseFloat(faza.kolicina || 0);
                                                         const jm = (faza.jm || 'kom').toLowerCase();
+                                                        
                                                         if (jm === 'm3' && vol1kom > 0) komada = parseFloat(faza.kolicina) / vol1kom;
                                                         else if (jm === 'm2' && area1kom > 0) komada = parseFloat(faza.kolicina) / area1kom;
                                                         else if (jm === 'm1' && len1kom > 0) komada = parseFloat(faza.kolicina) / len1kom;
+
                                                         let zadnjaFazaM3 = komada * vol1kom;
                                                         if (jm === 'm3') zadnjaFazaM3 = parseFloat(faza.kolicina);
+
                                                         if (zadnjaFazaM3 > parseFloat(orgStavka.kolicina_obracun) + 0.001) visualWarning = true;
                                                     }
 
@@ -859,26 +952,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                 className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all tracking-wider ${subTab === st ? 'bg-purple-600 text-white shadow-md scale-105' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                             >
                                 {st} ({
-                                    st === 'U PROIZVODNJI' ? nalozi.filter(n => n.status === 'U PROIZVODNJI').length :
-                                    st === 'ZAVRŠENO' ? nalozi.filter(n => n.status === 'ZAVRŠENO').length :
-                                    nalozi.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO').length
+                                    st === 'U PROIZVODNJI' ? naloziZaPrikaz.filter(n => n.status === 'U PROIZVODNJI').length :
+                                    st === 'ZAVRŠENO' ? naloziZaPrikaz.filter(n => n.status === 'ZAVRŠENO').length :
+                                    naloziZaPrikaz.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO').length
                                 })
                             </button>
                         ))}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[600px] overflow-y-auto custom-scrollbar pt-2">
-                        {nalozi.filter(n => {
-                            if (subTab === 'U PROIZVODNJI') return n.status === 'U PROIZVODNJI';
-                            if (subTab === 'ZAVRŠENO') return n.status === 'ZAVRŠENO';
-                            return n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO';
-                        }).length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-12 border-2 border-dashed border-theme-border rounded-xl uppercase font-black tracking-widest">Nema radnih naloga u ovoj rubrici.</p>}
+                        {naloziZaPrikaz.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-12 border-2 border-dashed border-theme-border rounded-xl uppercase font-black tracking-widest">Nema radnih naloga u ovoj rubrici.</p>}
                         
-                        {nalozi.filter(n => {
-                            if (subTab === 'U PROIZVODNJI') return n.status === 'U PROIZVODNJI';
-                            if (subTab === 'ZAVRŠENO') return n.status === 'ZAVRŠENO';
-                            return n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO';
-                        }).map(n => (
+                        {naloziZaPrikaz.map(n => (
                             <div key={n.id} onClick={() => pokreniIzmjenuNaloga(n)} className="bg-theme-panel border border-theme-border p-5 rounded-xl hover:border-purple-500 transition-all cursor-pointer relative group flex flex-col justify-between min-h-[180px] shadow-lg">
                                 {n.tip_naloga === 'FAZNI' && <div className="absolute top-0 right-0 bg-amber-500 text-black text-[8px] px-3 py-1 font-black rounded-bl-lg uppercase shadow-md flex items-center gap-1">🔄 FAZNI</div>}
                                 <div className="flex justify-between items-start mb-3">
@@ -901,6 +986,13 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                             <button onClick={(e) => printDirektnoIzListe(n, e)} className="flex-1 min-w-[70px] bg-theme-card hover:bg-white hover:text-black text-theme-text py-1.5 rounded text-[8px] font-black uppercase border border-slate-700 transition-colors">🖨️ PRINTAJ</button>
                                         )}
                                     </div>
+
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); setBrisanjeNaloga(n); }} 
+                                        className="w-full bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-white py-2 rounded-lg text-[9px] font-black uppercase transition-all shadow-md mt-1 border border-red-500/30"
+                                    >
+                                        🗑️ OBRIŠI NALOG
+                                    </button>
 
                                     {n.status !== 'ZAVRŠENO' && (
                                         <button 
