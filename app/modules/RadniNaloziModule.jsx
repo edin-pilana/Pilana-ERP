@@ -394,8 +394,14 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const urediStavku = (stavka) => { const nadjeni = katalog.find(k => k.sifra === stavka.sifra); setTrenutniProizvod(nadjeni || null); const tekstZaPolje = nadjeni ? `${nadjeni.sifra} | ${nadjeni.naziv}` : stavka.sifra; setStavkaForm({ id: stavka.id, sifra_unos: tekstZaPolje, kolicina_unos: stavka.kolicina_unos, jm_unos: stavka.jm_unos, kolicina_obracun: stavka.kolicina_obracun, jm_obracun: stavka.jm_obracun }); window.scrollTo({ top: 300, behavior: 'smooth' }); };
-    const ukloniStavku = (id) => { const noveStavke = stavke.filter(s => s.id !== id); setStavke(noveStavke); };
-
+    const ukloniStavku = (id) => {
+        const noveStavke = stavke.filter(s => s.id !== id);
+        setStavke(noveStavke);
+        if (stavkaForm.id === id) {
+            setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3' });
+            setTrenutniProizvod(null);
+        }
+    };
     const otvoriRazradu = async () => {
         setTab('razrada'); const noveTeh = { ...tehnologija };
         for (let s of stavke) {

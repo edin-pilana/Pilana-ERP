@@ -1,515 +1,939 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { preracunajKolicinu } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch'; 
-import PametniDialog from '../components/PametniDialog'; 
+import MasterSearch from '../components/MasterSearch';
+import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
+function OTP_SearchableNalog({ nalozi, ponude, value, onChange, onScanClick }) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState(value || '');
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const wrapperRef = useRef(null);
+
+    useEffect(() => { setSearch(value || ''); }, [value]);
+    useEffect(() => { setSelectedIndex(0); }, [search]);
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const kombinovanaLista = useMemo(() => {
+        const rnList = (nalozi || []).map(n => ({ id: n.id, kupac_naziv: n.kupac_naziv, status: n.status, tip: 'RADNI NALOG' }));
+        const ponList = (ponude || []).map(p => ({ id: p.id, kupac_naziv: p.kupac_naziv, status: p.status, tip: 'PONUDA' }));
+        return [...rnList, ...ponList];
+    }, [nalozi, ponude]);
+
+    const q = (search || '').toString().toUpperCase();
+    const filtered = kombinovanaLista.filter(item =>
+        (item.id || '').toUpperCase().includes(q) ||
+        (item.kupac_naziv || '').toUpperCase().includes(q)
+    );
+
+    const handleKeyDown = (e) => {
+        if (!open) {
+            if (e.key === 'ArrowDown') setOpen(true);
+            else if (e.key === 'Enter' && search) { onChange(search, true); setOpen(false); }
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setSelectedIndex(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filtered.length > 0 && filtered[selectedIndex]) {
+                const sel = filtered[selectedIndex];
+                onChange(sel.id, true);
+                setSearch(sel.id);
+                setOpen(false);
+            } else if (search) {
+                onChange(search, true);
+                setOpen(false);
+            }
+        } else if (e.key === 'Escape') {
+            setOpen(false);
+        }
+    };
+
+    return (
+        <div ref={wrapperRef} className="relative font-black w-full flex bg-theme-panel border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner min-h-[45px]">
+            <input
+                value={search}
+                onFocus={() => setOpen(true)}
+                onClick={() => setOpen(true)}
+                onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }}
+                onKeyDown={handleKeyDown}
+                placeholder="Skeniraj ili upiši broj Radnog Naloga / Ponude..."
+                className="flex-1 min-w-0 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10"
+            />
+            <button onClick={onScanClick} className="shrink-0 px-6 bg-orange-600 text-white text-xl hover:bg-orange-500 transition-all border-l border-orange-500/50 relative z-10">📷</button>
+            {open && search && (
+                <div className="absolute top-full left-0 z-[100] w-full mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+                    {filtered.length === 0 && <div className="p-3 text-xs text-slate-500 text-center italic">Nema rezultata...</div>}
+                    {filtered.map((item, idx) => (
+                        <div
+                            key={item.id}
+                            onMouseDown={(e) => { e.preventDefault(); onChange(item.id, true); setSearch(item.id); setOpen(false); }}
+                            onMouseEnter={() => setSelectedIndex(idx)}
+                            className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-orange-600 text-white' : 'hover:bg-theme-card text-theme-text'}`}
+                        >
+                            <div className="flex justify-between items-center">
+                                <span className="text-sm font-black">{item.id}</span>
+                                <span className="text-[9px] px-2 py-0.5 rounded bg-black/30 uppercase">{item.tip}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-300 mt-1">{item.kupac_naziv} | Status: {item.status}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function OtpremniceModule({ user, header, setHeader, onExit }) {
-    const currentUser = user?.ime_prezime ? user : JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
-    const isSuperadmin = currentUser.uloga === 'superadmin' || currentUser.uloga === 'admin';
-    const [tab, setTab] = useState('nova'); 
+    const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
+    const currentUser = user?.ime_prezime ? user : loggedUser;
+    const hasKupacEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Baza Kupaca (Edit)'));
+    const hasKatalogEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Katalog Proizvoda (Edit)'));
 
     const saas = useSaaS('otpremnice_zaglavlje', {
         boja_kartice: '#1e293b',
+        boja_slova: '#ffffff',
+        velicina_naslova: '16',
+        boja_naslova: 'text-orange-500',
         polja: [
-            { id: 'veza', label: 'Vezni Dokument (Istorija)', span: 'col-span-2' }, { id: 'broj', label: 'BROJ OTPREMNICE', span: 'col-span-2' },
-            { id: 'kupac', label: '* KUPAC', span: 'col-span-2' }, { id: 'datum', label: 'Datum isporuke', span: 'col-span-1' },
-            { id: 'status', label: 'Status', span: 'col-span-1' }, { id: 'vozac', label: 'Vozač', span: 'col-span-2' },
-            { id: 'registracija', label: 'Vozilo', span: 'col-span-2' }
+            { id: 'kupac', label: '* KUPAC (Primalac robe)', span: 'col-span-2' },
+            { id: 'broj', label: 'BROJ OTPREMNICE', span: 'col-span-1' },
+            { id: 'veza', label: 'Vezni RN / Ponuda', span: 'col-span-1' },
+            { id: 'datum', label: 'Datum Otpreme', span: 'col-span-1' },
+            { id: 'vozac', label: 'Ime Vozača / Prevoznik', span: 'col-span-1' },
+            { id: 'registracija', label: 'Registarske Tablice', span: 'col-span-1' },
+            { id: 'status', label: 'Status Otpremnice', span: 'col-span-1' }
         ]
     });
 
     const aktivnaPolja = saas.ui.polja?.length > 0 ? saas.ui.polja : saas.defaultConfig.polja;
-    const dragItem = useRef(null); const dragOverItem = useRef(null);
-    const handleDragStart = (e, index) => { dragItem.current = index; }; const handleDragEnter = (e, index) => { dragOverItem.current = index; };
-    const handleDrop = () => { if(dragItem.current === null || dragOverItem.current === null) return; const novaLista = [...aktivnaPolja]; const premjesteniItem = novaLista[dragItem.current]; novaLista.splice(dragItem.current, 1); novaLista.splice(dragOverItem.current, 0, premjesteniItem); dragItem.current = null; dragOverItem.current = null; saas.setUi({...saas.ui, polja: novaLista}); };
-    const updatePolje = (index, key, val) => { const novaLista = [...aktivnaPolja]; novaLista[index][key] = val; saas.setUi({...saas.ui, polja: novaLista}); };
-    const toggleVelicinaPolja = (index) => { const novaLista = [...aktivnaPolja]; const trenutno = novaLista[index].span; novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); saas.setUi({...saas.ui, polja: novaLista}); };
-    const spremiDimenzije = (e, index) => { if (!saas.isEditMode) return; const w = e.currentTarget.style.width; const h = e.currentTarget.style.height; if (w || h) { const novaLista = [...aktivnaPolja]; if (w) novaLista[index].customWidth = w; if (h) novaLista[index].customHeight = h; saas.setUi({...saas.ui, polja: novaLista}); } };
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
 
+    const handleDragStart = (e, index) => { dragItem.current = index; };
+    const handleDragEnter = (e, index) => { dragOverItem.current = index; };
+    const handleDrop = () => {
+        if (dragItem.current === null || dragOverItem.current === null) return;
+        const novaLista = [...aktivnaPolja];
+        const premjesteni = novaLista[dragItem.current];
+        novaLista.splice(dragItem.current, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteni);
+        dragItem.current = null;
+        dragOverItem.current = null;
+        saas.setUi({ ...saas.ui, polja: novaLista });
+    };
+    const updatePolje = (index, key, val) => {
+        const novaLista = [...aktivnaPolja];
+        novaLista[index][key] = val;
+        saas.setUi({ ...saas.ui, polja: novaLista });
+    };
+    const toggleVelicinaPolja = (index) => {
+        const novaLista = [...aktivnaPolja];
+        const tr = novaLista[index].span;
+        novaLista[index].span = tr === 'col-span-1' ? 'col-span-2' : (tr === 'col-span-2' ? 'col-span-4' : 'col-span-1');
+        saas.setUi({ ...saas.ui, polja: novaLista });
+    };
+    const spremiDimenzije = (e, index) => {
+        if (!saas.isEditMode) return;
+        const w = e.currentTarget.style.width;
+        const h = e.currentTarget.style.height;
+        if (w || h) {
+            const novaLista = [...aktivnaPolja];
+            if (w) novaLista[index].customWidth = w;
+            if (h) novaLista[index].customHeight = h;
+            saas.setUi({ ...saas.ui, polja: novaLista });
+        }
+    };
+
+    const [tab, setTab] = useState('nova');
     const [kupci, setKupci] = useState([]);
     const [katalog, setKatalog] = useState([]);
+    const [nalozi, setNalozi] = useState([]);
+    const [ponude, setPonude] = useState([]);
     const [otpremnice, setOtpremnice] = useState([]);
-    const [izdatnice, setIzdatnice] = useState([]); 
+    const [slobodniPaketi, setSlobodniPaketi] = useState([]);
+    const [loadingData, setLoadingData] = useState(false);
 
-    const generisiID = () => `OTP-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`;
+    const [showBrziKupac, setShowBrziKupac] = useState(false);
+    const [showBrziKatalog, setShowBrziKatalog] = useState(false);
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanTarget, setScanTarget] = useState('nalog'); // 'nalog' | 'paket'
 
-    const [form, setForm] = useState({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], vozac: '', registracija: '', napomena: '', status: 'KREIRANA' });
-    const [stavke, setStavke] = useState([]);
-    const [isEditing, setIsEditing] = useState(false);
-    
-    // LAGER MODAL I DJELIMIČNO UZIMANJE
-    const [dostupniPaketiLager, setDostupniPaketiLager] = useState([]);
-    const [prikaziLagerModal, setPrikaziLagerModal] = useState(false);
-    const [pretragaLagera, setPretragaLagera] = useState('');
-    const [samoSlobodnoFilter, setSamoSlobodnoFilter] = useState(true);
-    
-    const [paketModal, setPaketModal] = useState({ isOpen: false, paket: null, isWms: false });
-    const [djelimicnaKolicina, setDjelimicnaKolicina] = useState('');
-    const [djelimicnaJm, setDjelimicnaJm] = useState('m3');
-
-    const [dostupniDokumenti, setDostupniDokumenti] = useState([]);
-    
-    const [isScanningOverlay, setIsScanningOverlay] = useState(false);
-    const [scanTarget, setScanTarget] = useState('');
-    const [pretragaWms, setPretragaWms] = useState('');
-    
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_obracun: '', jm_obracun: 'm3' });
-    const [trenutniProizvod, setTrenutniProizvod] = useState(null);
-    const [wmsIzdatnica, setWmsIzdatnica] = useState(null); 
-    const [wmsStavke, setWmsStavke] = useState([]); 
-    const [wmsNovaSifra, setWmsNovaSifra] = useState('');
-    const [wmsNovaKol, setWmsNovaKol] = useState('');
+    // Modal za odabir paketa sa lagera i djelimično skidanje (rasturanje paketa)
+    const [showLagerModal, setShowLagerModal] = useState(false);
+    const [pretragaLagera, setPretragaLagera] = useState('');
+    const [odabraniPaketZaUtovar, setOdabraniPaketZaUtovar] = useState(null);
+    const [modUtovaraPaketa, setModUtovaraPaketa] = useState('CIJELI'); // 'CIJELI' | 'DJELIMICNO'
+    const [djelimicnaKolicina, setDjelimicnaKolicina] = useState('');
+    const [djelimicnaJm, setDjelimicnaJm] = useState('kom');
 
-    useEffect(() => { load(); }, []);
+    const generisiID = () => `OTP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const [form, setForm] = useState({
+        id: generisiID(),
+        broj_veze: '',
+        kupac_naziv: '',
+        datum: new Date().toISOString().split('T')[0],
+        vozac: '',
+        registracija: '',
+        napomena: '',
+        status: 'ISPORUČENO'
+    });
+
+    const [stavke, setStavke] = useState([]);
+    const [isEditingOtpremnica, setIsEditingOtpremnica] = useState(false);
+    const [skenerInput, setSkenerInput] = useState('');
+    const [paketScanInput, setPaketScanInput] = useState('');
+
+    const [stavkaForm, setStavkaForm] = useState({
+        id: null,
+        sifra_unos: '',
+        kolicina_unos: '',
+        jm_unos: 'kom',
+        kolicina_obracun: '',
+        jm_obracun: 'm3'
+    });
+    const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
     useEffect(() => {
-        const autoId = localStorage.getItem('erp_auto_open_id');
-        const autoAction = localStorage.getItem('erp_auto_action');
-        if (autoId && autoAction === 'nova' && dostupniDokumenti.length > 0) {
-            obradiSkeniraniKod(autoId);
-            localStorage.removeItem('erp_auto_open_id');
-            localStorage.removeItem('erp_auto_action');
-        }
-    }, [dostupniDokumenti]);
+        load();
+    }, []);
 
     const load = async () => {
-        const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
-        const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
-        const {data: otp} = await supabase.from('otpremnice').select('*').order('datum', { ascending: false }); setOtpremnice(otp||[]);
-        const {data: izd} = await supabase.from('izdatnice').select('*').order('created_at', { ascending: false }); setIzdatnice(izd||[]);
+        setLoadingData(true);
+        try {
+            const [kRes, catRes, rnRes, ponRes, otpRes, pakRes] = await Promise.all([
+                supabase.from('kupci').select('*').order('naziv'),
+                supabase.from('katalog_proizvoda').select('*').order('sifra'),
+                supabase.from('radni_nalozi').select('*').neq('status', 'OBRISANO').order('datum', { ascending: false }),
+                supabase.from('ponude').select('*').neq('status', 'OBRISANO').order('datum', { ascending: false }),
+                supabase.from('otpremnice').select('*').order('datum', { ascending: false }),
+                supabase.from('paketi').select('*').not('closed_at', 'is', null).is('otpremnica_id', null).gt('kolicina_final', 0).order('created_at', { ascending: false })
+            ]);
 
-        const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
-        const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
-        const { data: izdDrop } = await supabase.from('izdatnice').select('broj_izdatnice, kupac_naziv, status').eq('status', 'utovareno');
+            setKupci(kRes.data || []);
+            setKatalog(catRes.data || []);
+            setNalozi(rnRes.data || []);
+            setPonude(ponRes.data || []);
+            const sveOtp = otpRes.data || [];
+            setOtpremnice(sveOtp);
 
-        setDostupniDokumenti([
-            ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog', status: d.status })),
-            ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda', status: d.status })),
-            ...(izdDrop || []).map(d => ({ id: d.broj_izdatnice, kupac: d.kupac_naziv, tip: 'Izdatnica', status: d.status }))
-        ]);
-    };
+            // Grupiši slobodne pakete na lageru po paket_id
+            const siroviPaketi = pakRes.data || [];
+            const mapaPaketa = {};
+            siroviPaketi.forEach(p => {
+                const pid = p.paket_id;
+                if (!pid) return;
+                const deb = parseFloat(p.debljina || 0);
+                const sir = parseFloat(p.sirina || 0);
+                const duz = parseFloat(p.duzina || 0);
+                const vol1Kom = (deb > 0 && sir > 0 && duz > 0) ? (deb / 100) * (sir / 100) * (duz / 100) : 0;
+                const m3Red = parseFloat(p.kolicina_final || 0);
+                let komRed = parseFloat(p.kolicina_ulaz ?? p.komada ?? 0);
+                if ((p.jm || 'kom').toLowerCase() !== 'kom' && vol1Kom > 0) {
+                    komRed = Math.round(m3Red / vol1Kom);
+                }
 
-    const zapisiU_Log = async (akcija, detalji, nivo = 'INFO') => { 
-        await supabase.from('sistem_audit_log').insert([{ korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji, nivo_alarma: nivo, pregledano: false }]); 
-    };
-
-    // 🟢 PAMETNI SKENER (Učitava dokumente ILI pakete)
-    const obradiSkeniraniKod = async (kodRaw, isWmsContext = false) => {
-        const kod = (kodRaw || '').toUpperCase().trim();
-        if(!kod) return;
-        
-        const { data: paket } = await supabase.from('paketi').select('*').eq('paket_id', kod).is('otpremnica_id', null).maybeSingle();
-        if (paket) {
-            setPaketModal({ isOpen: true, paket, isWms: isWmsContext });
-            return;
-        }
-
-        if (isWmsContext) return prikaziDialog({ tip: 'greska', naslov: 'Nepoznat Kod', poruka: "Skenirani kod ne pripada dostupnom paketu sa lagera.", onCancel: zatvoriDialog });
-        
-        const { data: postojeceOtpData } = await supabase.from('otpremnice').select('*').eq('broj_veze', kod).limit(1);
-        if (postojeceOtpData && postojeceOtpData.length > 0) {
-            const otp = postojeceOtpData[0];
-            const { data: racun } = await supabase.from('racuni').select('id').eq('broj_veze', otp.id).limit(1);
-            return prikaziDialog({
-                tip: 'upozorenje', naslov: 'Otpremnica već postoji!', poruka: `Za ovaj nalog je već izdata otpremnica ${otp.id}.`,
-                confirmText: '🖨️ Isprintaj PDF', cancelText: '✏️ Uredi',
-                onConfirm: () => { setForm(otp); setStavke(otp.stavke_jsonb); setTimeout(() => kreirajPDFPrivremeni(otp), 300); zatvoriDialog(); },
-                onCancel: () => { if (racun && racun.length > 0) prikaziDialog({ tip: 'greska', naslov: 'Zabranjeno', poruka: 'Izdat račun. Mijenjanje zabranjeno.', onCancel: zatvoriDialog }); else { pokreniIzmjenu(otp); zatvoriDialog(); } }
+                if (!mapaPaketa[pid]) {
+                    mapaPaketa[pid] = {
+                        ...p,
+                        ukupno_m3: m3Red,
+                        ukupno_kom: komRed,
+                        redovi_baze: [p]
+                    };
+                } else {
+                    mapaPaketa[pid].ukupno_m3 += m3Red;
+                    mapaPaketa[pid].ukupno_kom += komRed;
+                    mapaPaketa[pid].redovi_baze.push(p);
+                }
             });
-        }
+            setSlobodniPaketi(Object.values(mapaPaketa));
 
-        let dokument = null; let prepravljeneStavke = [];
-
-        if (kod.startsWith('PON-')) {
-            const { data: ponuda } = await supabase.from('ponude').select('*').eq('id', kod).maybeSingle();
-            if(!ponuda) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Ponuda nije pronađena!`, onCancel: zatvoriDialog });
-            dokument = ponuda; prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
-        } 
-        else if (kod.startsWith('RN-')) {
-            const { data: nalog } = await supabase.from('radni_nalozi').select('*').eq('id', kod).maybeSingle();
-            if(!nalog) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Radni nalog nije pronađen!`, onCancel: zatvoriDialog });
-            dokument = nalog; prepravljeneStavke = (dokument.stavke_jsonb || []).map(s => ({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_obracun: s.kolicina_obracun, jm_obracun: s.jm_obracun }));
-        } 
-        else if (kod.startsWith('IZD-')) {
-            const { data: izdatnica } = await supabase.from('izdatnice').select('*').eq('broj_izdatnice', kod).maybeSingle();
-            if(!izdatnica) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Izdatnica nije pronađena!`, onCancel: zatvoriDialog });
-            if (izdatnica.status !== 'utovareno') return prikaziDialog({ tip: 'upozorenje', naslov: 'Utovar Nije Završen', poruka: `Sačekajte da skladište potvrdi utovar prije kreiranja Otpremnice!`, onCancel: zatvoriDialog }); 
-            const { data: izdStavke } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izdatnica.id);
-            dokument = izdatnica; prepravljeneStavke = (izdStavke || []).map(s => ({ id: Math.random().toString(), sifra: s.proizvod_sifra, naziv: s.proizvod_naziv, kolicina_obracun: s.izdata_kolicina > 0 ? s.izdata_kolicina : s.planirana_kolicina, jm_obracun: s.mjerna_jedinica }));
-        } 
-        else { return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: "Nepoznat format koda.", onCancel: zatvoriDialog }); }
-
-        setForm({ ...form, kupac_naziv: dokument.kupac_naziv, broj_veze: kod, napomena: dokument.napomena || '' });
-        setStavke(prepravljeneStavke); 
-        prikaziDialog({ tip: 'uspjeh', naslov: 'Učitano', poruka: `✅ Preuzeti podaci iz: ${kod}`, onCancel: zatvoriDialog });
-    };
-
-    // 🟢 OTVARANJE LAGER MODALA
-    const otvoriLagerZaDodavanje = async () => {
-        const { data, error } = await supabase.from('paketi').select('*').not('closed_at', 'is', null).is('otpremnica_id', null).order('created_at', { ascending: false });
-        if (error) return toast.error("Greška pri učitavanju lagera: " + error.message);
-        
-        const vecDodaniPaketi = stavke.map(s => s.originalni_paket?.paket_id || s.paket_id).filter(Boolean);
-        setDostupniPaketiLager((data || []).filter(p => !vecDodaniPaketi.includes(p.paket_id)));
-        setPrikaziLagerModal(true);
-    };
-
-    // 🟢 RASTURANJE ILI CIJELI PAKET
-    const izvrsiDodavanjePaketa = (isPartial) => {
-        const { paket, isWms } = paketModal;
-        const kolicinaUnos = parseFloat(djelimicnaKolicina);
-        const kolicinaFinalna = isPartial ? kolicinaUnos : paket.kolicina_final;
-        const jmFinalna = isPartial ? djelimicnaJm : 'm3';
-
-        if (isPartial && (!kolicinaUnos || isNaN(kolicinaUnos))) return toast.warning("Unesite ispravnu količinu!");
-        
-        const kat = katalog.find(k => k.naziv === paket.naziv_proizvoda || k.sifra === paket.naziv_proizvoda);
-        
-        if (isWms) {
-            const noviId = `novo_paket_${Date.now()}`;
-            setWmsStavke([...wmsStavke, { 
-                id: noviId, izdatnica_id: wmsIzdatnica.id, proizvod_sifra: kat ? kat.sifra : 'NEPOZNATO', 
-                proizvod_naziv: paket.naziv_proizvoda, planirana_kolicina: 0, 
-                izdata_kolicina: kolicinaFinalna, mjerna_jedinica: jmFinalna,
-                is_partial: isPartial, paket_ref_id: paket.paket_id, original_paket: paket
-            }]);
-        } else {
-            const novaStavka = {
-                id: Math.random().toString(),
-                paket_id: isPartial ? `${paket.paket_id} (DIO)` : paket.paket_id,
-                originalni_paket_id: paket.paket_id,
-                is_partial: isPartial,
-                sifra: kat ? kat.sifra : 'NEPOZNATO',
-                naziv: paket.naziv_proizvoda,
-                kolicina_obracun: kolicinaFinalna,
-                jm_obracun: jmFinalna,
-                originalni_paket: paket
-            };
-            setStavke([...stavke, novaStavka]);
-        }
-
-        setDostupniPaketiLager(dostupniPaketiLager.filter(p => p.id !== paket.id));
-        setPaketModal({ isOpen: false, paket: null, isWms: false });
-        setPrikaziLagerModal(false);
-        setDjelimicnaKolicina('');
-    };
-
-    const dodajStavkuRucno = () => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return toast.warning("Odaberite proizvod i unesite količinu!");
-        const novaStavka = { id: stavkaForm.id || Math.random().toString(), sifra: trenutniProizvod.sifra, naziv: trenutniProizvod.naziv, kolicina_obracun: parseFloat(stavkaForm.kolicina_obracun), jm_obracun: stavkaForm.jm_obracun };
-        if (stavkaForm.id) setStavke(stavke.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
-        setStavkaForm({ id: null, sifra_unos: '', kolicina_obracun: '', jm_obracun: 'm3' }); setTrenutniProizvod(null);
-    };
-
-    const ukloniStavku = (id) => setStavke(stavke.filter(s => s.id !== id));
-    const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
-
-    const stampajIzdatnicu = async (izdId, kupacNaziv, izvorId, datumIzd, napomena, stavkeZaPrint) => {
-        const odabraniKupac = kupci.find(k => k.naziv === kupacNaziv) || null;
-        let redovi = stavkeZaPrint.map((s, i) => {
-            const kat = katalog.find(k => k.sifra === (s.proizvod_sifra || s.sifra));
-            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : 'N/A';
-            return `<tr><td style="font-weight: bold; color: #64748b; text-align: center; font-size:16px;">${i+1}.</td><td style="padding: 10px 5px;"><b style="color: #0f172a; font-size: 18px;">${s.proizvod_sifra || s.sifra}</b><br/><span style="color: #475569; font-size: 14px;">${s.proizvod_naziv || s.naziv}</span><br/><span style="color: #dc2626; font-size: 16px; font-weight: 900; display: inline-block; margin-top: 4px; border: 1px solid #fca5a5; background-color: #fef2f2; padding: 2px 8px; border-radius: 4px;">DIM: ${dimenzije}</span></td><td style="text-align: center; font-size: 22px; font-weight: 900; color: #f59e0b; background-color:#fffbeb;">${s.planirana_kolicina || s.kolicina_obracun} <span style="color: #64748b; font-size: 14px; font-weight: 600;">${s.mjerna_jedinica || s.jm_obracun}</span></td><td style="text-align: center; font-size: 14px; font-weight: bold; color: #cbd5e1; border-left: 2px dashed #cbd5e1; vertical-align: middle;">________________</td></tr>`
-        }).join('');
-        const htmlSadrzajTabela = `<div class="info-grid" style="margin-bottom: 30px; border-bottom: 2px solid #f59e0b; padding-bottom: 20px;"><div class="info-col"><h4 style="color:#f59e0b; font-size: 14px; margin-bottom:10px; letter-spacing:1px;">NALOG ZA UTOVAR</h4><p style="font-size: 16px; font-weight: 900; margin-bottom: 5px; color:#0f172a;">Kupac: <span style="font-size: 20px;">${kupacNaziv}</span></p><p style="font-size: 12px; font-weight: 400; color: #475569;">Adresa: ${odabraniKupac?.adresa || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><p style="font-size: 12px; margin-bottom:5px;">Izvor naloga: <span style="font-weight: 600; color: #0f172a;">${izvorId || 'MJEŠOVITI UNOS'}</span></p><p style="font-size: 12px;">Status: <span style="font-weight: 900; color: #f59e0b; padding: 4px 8px; background-color: #fffbeb; border-radius: 4px;">ČEKA UTOVAR</span></p></div></div><div style="text-align: right; margin-top: -80px; margin-bottom: 20px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${izdId}" alt="QR Kod" style="border: 2px solid #f8fafc; border-radius: 4px;" /></div><table style="width: 100%; border-collapse: collapse;"><thead><tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;"><th style="width: 5%; text-align: center; padding: 10px;">R.B.</th><th style="text-align: left; padding: 10px; font-size: 12px;">ŠIFRA I NAZIV PROIZVODA</th><th style="text-align:center; padding: 10px; font-size: 12px; background-color:#fef3c7;">PLANIRANO</th><th style="text-align:center; width:25%; padding: 10px; font-size: 12px;">STVARNO UTOVARENO</th></tr></thead><tbody>${redovi}</tbody></table><div style="margin-top: 40px; padding: 15px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px;"><b style="color: #0f172a; font-size:12px;">Napomena / Instrukcija:</b><br/><span style="font-size: 12px; color: #475569;">${napomena || 'Pažljivo provjeriti količine.'}</span></div>`;
-        printDokument('IZDATNICA', izdId, formatirajDatum(datumIzd), htmlSadrzajTabela, '#f59e0b');
-    };
-
-    const kreirajIzdatnicu = async () => {
-        if(!form.kupac_naziv || stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Podaci Obavezni', poruka: "Unesite kupca i stavke!", onCancel: zatvoriDialog });
-        const brojIzd = `IZD-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const { data: izdData } = await supabase.from('izdatnice').insert([{ broj_izdatnice: brojIzd, kupac_naziv: form.kupac_naziv, status: 'u_pripremi', izvor_tip: form.broj_veze ? 'veza' : 'rucno', izvor_id: form.broj_veze, napomena: form.napomena, kreirao_korisnik: currentUser.ime_prezime }]).select().single();
-        if(izdData) {
-            const stavkePayload = stavke.map(s => ({ izdatnica_id: izdData.id, proizvod_sifra: s.sifra, proizvod_naziv: s.naziv, planirana_kolicina: s.kolicina_obracun, mjerna_jedinica: s.jm_obracun }));
-            await supabase.from('izdatnice_stavke').insert(stavkePayload);
-            stampajIzdatnicu(brojIzd, form.kupac_naziv, form.broj_veze, new Date().toISOString(), form.napomena, stavkePayload);
-            resetFormu(); load(); setTab('izdatnice');
-        }
-    };
-
-    const otvoriWmsUtovar = async (izd) => {
-        const { data } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izd.id);
-        setWmsIzdatnica(izd); setWmsStavke((data || []).map(s => ({ ...s, izdata_kolicina: parseFloat(s.izdata_kolicina) > 0 ? s.izdata_kolicina : s.planirana_kolicina })));
-    };
-
-    const handleWmsKolicina = (id, novaVrijednost) => {
-        setWmsStavke(prev => prev.map(s => s.id === id ? { ...s, izdata_kolicina: novaVrijednost } : s));
-    };
-
-    const dodajWmsStavkuNovu = () => {
-        if (!wmsNovaSifra || !wmsNovaKol) return toast.warning("Odaberite proizvod i unesite količinu!");
-        const [sifra, naziv] = wmsNovaSifra.split(' | ');
-        const kat = katalog.find(k => k.sifra === sifra);
-        const noviId = `novo_rucno_${Date.now()}`;
-        setWmsStavke(prev => [...prev, {
-            id: noviId,
-            izdatnica_id: wmsIzdatnica.id,
-            proizvod_sifra: sifra || wmsNovaSifra,
-            proizvod_naziv: naziv || kat?.naziv || wmsNovaSifra,
-            planirana_kolicina: 0,
-            izdata_kolicina: parseFloat(wmsNovaKol) || 0,
-            mjerna_jedinica: kat?.default_jedinica || 'm3'
-        }]);
-        setWmsNovaSifra('');
-        setWmsNovaKol('');
-    };
-
-    const obrisiWmsStavku = (id) => setWmsStavke(wmsStavke.filter(s => s.id !== id));
-
-    // 🟢 ZAVRŠETAK WMS UTOVARA SA AŽURIRANJEM PAKETA
-    const zavrsiIPotvrdiUtovar = async () => {
-        prikaziDialog({
-            tip: 'info', naslov: 'Potvrda Utovara', poruka: 'Želite li potvrditi unesene količine?',
-            onConfirm: async () => {
-                const zaInsert = []; const zaUpdate = [];
-                let odstupanjeText = [];
-                
-                for (let s of wmsStavke) {
-                    const izdata = parseFloat(s.izdata_kolicina) || 0;
-                    const planirana = parseFloat(s.planirana_kolicina) || 0;
-                    if (izdata !== planirana) odstupanjeText.push(`${s.proizvod_sifra} (Planirano: ${planirana} ➔ Utovareno: ${izdata})`);
-                    
-                    const payload = { izdatnica_id: wmsIzdatnica.id, proizvod_sifra: s.proizvod_sifra, proizvod_naziv: s.proizvod_naziv, planirana_kolicina: planirana, izdata_kolicina: izdata, mjerna_jedinica: s.mjerna_jedinica };
-                    if(String(s.id).startsWith('novo_')) zaInsert.push(payload); else zaUpdate.push({ ...payload, id: s.id });
-
-                    if (s.is_partial && s.original_paket) {
-                        const newKolM3 = Math.max(0, parseFloat(s.original_paket.kolicina_final) - izdata);
-                        await supabase.from('paketi').update({ kolicina_final: newKolM3 }).eq('paket_id', s.original_paket.paket_id);
-                        await zapisiU_Log('PAKET_RASTUREN', `Iz paketa ${s.original_paket.paket_id} izuzeto ${izdata} ${s.mjerna_jedinica} za nalog ${wmsIzdatnica.broj_izdatnice}`);
-                    } else if (!s.is_partial && s.original_paket) {
-                        await supabase.from('paketi').update({ broj_veze: wmsIzdatnica.broj_izdatnice }).eq('paket_id', s.original_paket.paket_id);
+            // 🟢 AUTOMATSKA SANACIJA: Ako postoji isporučena otpremnica kojoj djelimični paket još nije umanjen (npr. OTP-2026-2567 za RUČNO-2026-7375), odmah ga uskladi!
+            for (let otp of sveOtp) {
+                if (otp.status === 'ISPORUČENO' && Array.isArray(otp.stavke_jsonb)) {
+                    let biloIzmjene = false;
+                    const azuriraneStavke = [];
+                    for (let st of otp.stavke_jsonb) {
+                        const pid = st.paket_id || (st.sifra && mapaPaketa[st.sifra] ? st.sifra : null);
+                        if (pid && !st.lager_umanjen && mapaPaketa[pid]) {
+                            const pakNaLageru = mapaPaketa[pid];
+                            const uzetoM3 = parseFloat(st.kolicina_obracun || 0);
+                            const uzetoKom = parseFloat(st.kolicina_unos || 0);
+                            if (uzetoM3 > 0 && uzetoM3 < pakNaLageru.ukupno_m3 - 0.0005) {
+                                const prviRed = pakNaLageru.redovi_baze[0];
+                                const noviM3 = parseFloat(Math.max(0.001, pakNaLageru.ukupno_m3 - uzetoM3).toFixed(4));
+                                const noviKom = Math.max(1, Math.round(pakNaLageru.ukupno_kom - uzetoKom));
+                                await supabase.from('paketi').update({
+                                    kolicina_final: noviM3,
+                                    kubikaza: noviM3,
+                                    kolicina_m3: noviM3,
+                                    kolicina_ulaz: noviKom,
+                                    komada: noviKom
+                                }).eq('id', prviRed.id);
+                                pakNaLageru.ukupno_m3 = noviM3;
+                                pakNaLageru.ukupno_kom = noviKom;
+                                biloIzmjene = true;
+                                azuriraneStavke.push({ ...st, lager_umanjen: true });
+                            } else {
+                                azuriraneStavke.push(st);
+                            }
+                        } else {
+                            azuriraneStavke.push(st);
+                        }
+                    }
+                    if (biloIzmjene) {
+                        await supabase.from('otpremnice').update({ stavke_jsonb: azuriraneStavke }).eq('id', otp.id);
                     }
                 }
-                
-                if(zaInsert.length > 0) await supabase.from('izdatnice_stavke').insert(zaInsert);
-                if(zaUpdate.length > 0) await supabase.from('izdatnice_stavke').upsert(zaUpdate);
-                await supabase.from('izdatnice').update({ status: 'utovareno' }).eq('id', wmsIzdatnica.id);
-                
-                if (odstupanjeText.length > 0) await zapisiU_Log('ODSTUPANJE_UTOVAR_WMS', `Skladištar prijavio odstupanje za nalog ${wmsIzdatnica.broj_izdatnice}: ${odstupanjeText.join(', ')}`, 'ŽUTO');
-                else await zapisiU_Log('UTOVAR_ZAVRSEN', `Nalog ${wmsIzdatnica.broj_izdatnice} potvrdio: ${currentUser.ime_prezime}`);
-                
-                setWmsIzdatnica(null); load(); zatvoriDialog(); 
-            },
+            }
+        } catch (err) {
+            console.error("Greška pri učitavanju otpremnica:", err);
+        } finally {
+            setLoadingData(false);
+        }
+    };
+
+    const zapisiU_Log = async (akcija, detalji) => {
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: currentUser.ime_prezime || 'Sistem',
+            akcija,
+            detalji
+        }]);
+    };
+
+    const handleVezaInput = (val, isEnter = false) => {
+        setSkenerInput(val);
+        if (isEnter && val) ucitajVezniDokument(val);
+    };
+
+    const ucitajVezniDokument = async (broj) => {
+        const cist = (broj || '').toUpperCase().trim();
+        if (!cist) return;
+
+        let dok = nalozi.find(n => n.id === cist) || ponude.find(p => p.id === cist);
+        if (!dok) {
+            if (cist.startsWith('RN-')) {
+                const { data } = await supabase.from('radni_nalozi').select('*').ilike('id', cist).maybeSingle();
+                dok = data;
+            } else if (cist.startsWith('PON-')) {
+                const { data } = await supabase.from('ponude').select('*').ilike('id', cist).maybeSingle();
+                dok = data;
+            }
+        }
+
+        if (!dok) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Nije pronađeno', poruka: `Dokument ${cist} nije pronađen u bazi!`, onCancel: zatvoriDialog });
+        }
+
+        const stavkeDok = (dok.stavke_jsonb || []).map(s => ({
+            id: Math.random().toString(),
+            sifra: s.sifra,
+            naziv: s.naziv,
+            dimenzije: s.dimenzije || '',
+            kolicina_unos: parseFloat(s.kolicina_unos || s.kolicina_obracun || 0),
+            jm_unos: s.jm_unos || 'kom',
+            kolicina_obracun: parseFloat(s.kolicina_obracun || 0),
+            jm_obracun: s.jm_obracun || 'm3'
+        }));
+
+        setForm(prev => ({
+            ...prev,
+            broj_veze: dok.id,
+            kupac_naziv: dok.kupac_naziv || prev.kupac_naziv,
+            napomena: dok.napomena || prev.napomena
+        }));
+        setStavke(stavkeDok);
+        setSkenerInput('');
+        toast.success(`Učitani podaci iz dokumenta ${dok.id}!`);
+    };
+
+    // 🟢 OTVARANJE PAKETA SA LAGERA (CIJELI ILI DJELIMIČNO RASTURANJE)
+    const klikniNaPaketSaLagera = (paket) => {
+        setOdabraniPaketZaUtovar(paket);
+        setModUtovaraPaketa('CIJELI');
+        setDjelimicnaKolicina('');
+        setDjelimicnaJm(paket.jm || 'kom');
+    };
+
+    const izracunajDjelimicniM3 = useMemo(() => {
+        if (!odabraniPaketZaUtovar || !djelimicnaKolicina) return 0;
+        const kol = parseFloat(djelimicnaKolicina);
+        if (isNaN(kol) || kol <= 0) return 0;
+        const pr = preracunajKolicinu(
+            kol,
+            djelimicnaJm,
+            'm3',
+            odabraniPaketZaUtovar.debljina,
+            odabraniPaketZaUtovar.sirina,
+            odabraniPaketZaUtovar.duzina
+        );
+        return pr.m3 > 0 ? pr.m3 : kol;
+    }, [odabraniPaketZaUtovar, djelimicnaKolicina, djelimicnaJm]);
+
+    const potvrdiUtovarPaketa = () => {
+        if (!odabraniPaketZaUtovar) return;
+        const p = odabraniPaketZaUtovar;
+        const dimStr = `${p.debljina}x${p.sirina}x${p.duzina}`;
+
+        if (modUtovaraPaketa === 'CIJELI') {
+            const novaStavka = {
+                id: Math.random().toString(),
+                paket_id: p.paket_id,
+                tip_utovara: 'CIJELI',
+                lager_umanjen: false,
+                sifra: p.sifra_proizvoda || p.paket_id,
+                naziv: `${p.naziv_proizvoda} [Paket: ${p.paket_id}]`,
+                dimenzije: dimStr,
+                debljina: p.debljina,
+                sirina: p.sirina,
+                duzina: p.duzina,
+                kolicina_unos: p.ukupno_kom || p.kolicina_ulaz || 1,
+                jm_unos: p.jm || 'kom',
+                kolicina_obracun: parseFloat(p.ukupno_m3.toFixed(4)),
+                jm_obracun: 'm3'
+            };
+            setStavke(prev => [...prev, novaStavka]);
+            setOdabraniPaketZaUtovar(null);
+            setShowLagerModal(false);
+            toast.success(`Cijeli paket ${p.paket_id} (${p.ukupno_m3.toFixed(3)} m³) dodan na otpremnicu!`);
+        } else {
+            const kol = parseFloat(djelimicnaKolicina);
+            const m3ZaSkinuti = izracunajDjelimicniM3;
+
+            if (isNaN(kol) || kol <= 0 || m3ZaSkinuti <= 0) {
+                return toast.error("Unesite ispravnu količinu veću od 0 za djelimično preuzimanje!");
+            }
+            if (m3ZaSkinuti > p.ukupno_m3 + 0.001) {
+                return toast.error(`Ne možete skinuti ${m3ZaSkinuti.toFixed(3)} m³ jer paket ima ukupno ${p.ukupno_m3.toFixed(3)} m³!`);
+            }
+
+            const jeZapravoCijeli = Math.abs(m3ZaSkinuti - p.ukupno_m3) < 0.0005;
+
+            const novaStavka = {
+                id: Math.random().toString(),
+                paket_id: p.paket_id,
+                tip_utovara: jeZapravoCijeli ? 'CIJELI' : 'DJELIMICNO',
+                lager_umanjen: false,
+                sifra: p.sifra_proizvoda || p.paket_id,
+                naziv: `${p.naziv_proizvoda} [Dio paketa: ${p.paket_id}]`,
+                dimenzije: dimStr,
+                debljina: p.debljina,
+                sirina: p.sirina,
+                duzina: p.duzina,
+                kolicina_unos: kol,
+                jm_unos: djelimicnaJm,
+                kolicina_obracun: parseFloat(m3ZaSkinuti.toFixed(4)),
+                jm_obracun: 'm3'
+            };
+
+            setStavke(prev => [...prev, novaStavka]);
+            setOdabraniPaketZaUtovar(null);
+            setShowLagerModal(false);
+            toast.success(`Dodano ${kol} ${djelimicnaJm} (${m3ZaSkinuti.toFixed(3)} m³) iz paketa ${p.paket_id}!`);
+        }
+    };
+
+    const skenirajPaketDirektno = async (kod) => {
+        const pid = (kod || '').toUpperCase().trim();
+        if (!pid) return;
+        const nadjeni = slobodniPaketi.find(p => p.paket_id.toUpperCase() === pid);
+        if (nadjeni) {
+            klikniNaPaketSaLagera(nadjeni);
+            setShowLagerModal(true);
+            setPaketScanInput('');
+        } else {
+            prikaziDialog({ tip: 'greska', naslov: 'Paket nije na stanju', poruka: `Paket "${pid}" nije pronađen među slobodnim zaključanim paketima na lageru!`, onCancel: zatvoriDialog });
+            setPaketScanInput('');
+        }
+    };
+
+    const handleProizvodSelect = (nadjeni) => {
+        setTrenutniProizvod(nadjeni || null);
+        if (nadjeni) {
+            setStavkaForm({
+                id: null,
+                sifra_unos: `${nadjeni.sifra} | ${nadjeni.naziv}`,
+                kolicina_unos: '',
+                jm_unos: 'kom',
+                kolicina_obracun: '',
+                jm_obracun: nadjeni.default_jedinica || 'm3'
+            });
+        }
+    };
+
+    useEffect(() => {
+        if (!trenutniProizvod || !stavkaForm.kolicina_unos) return;
+        const pr = preracunajKolicinu(
+            stavkaForm.kolicina_unos,
+            stavkaForm.jm_unos,
+            stavkaForm.jm_obracun,
+            trenutniProizvod.visina,
+            trenutniProizvod.sirina,
+            trenutniProizvod.duzina
+        );
+        setStavkaForm(prev => ({
+            ...prev,
+            kolicina_obracun: pr.ciljnaKolicina > 0 ? pr.ciljnaKolicina.toFixed(4) : stavkaForm.kolicina_unos
+        }));
+    }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
+
+    const dodajRucnuStavku = () => {
+        if (!trenutniProizvod || !stavkaForm.kolicina_obracun || parseFloat(stavkaForm.kolicina_obracun) <= 0 || parseFloat(stavkaForm.kolicina_unos) <= 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Odaberite proizvod i unesite pozitivnu količinu veću od 0!", onCancel: zatvoriDialog });
+        }
+
+        const nova = {
+            id: stavkaForm.id || Math.random().toString(),
+            sifra: trenutniProizvod.sifra,
+            naziv: trenutniProizvod.naziv,
+            dimenzije: `${trenutniProizvod.visina}x${trenutniProizvod.sirina}x${trenutniProizvod.duzina}`,
+            kolicina_unos: parseFloat(stavkaForm.kolicina_unos),
+            jm_unos: stavkaForm.jm_unos,
+            kolicina_obracun: parseFloat(stavkaForm.kolicina_obracun),
+            jm_obracun: stavkaForm.jm_obracun
+        };
+
+        if (stavkaForm.id) {
+            setStavke(stavke.map(s => s.id === stavkaForm.id ? nova : s));
+        } else {
+            setStavke([...stavke, nova]);
+        }
+
+        setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3' });
+        setTrenutniProizvod(null);
+    };
+
+    const urediStavku = (s) => {
+        const kat = katalog.find(k => k.sifra === s.sifra) || null;
+        setTrenutniProizvod(kat);
+        setStavkaForm({
+            id: s.id,
+            sifra_unos: kat ? `${kat.sifra} | ${kat.naziv}` : s.naziv,
+            kolicina_unos: s.kolicina_unos,
+            jm_unos: s.jm_unos || 'kom',
+            kolicina_obracun: s.kolicina_obracun,
+            jm_obracun: s.jm_obracun || 'm3'
+        });
+    };
+
+    const ukloniStavku = (id) => {
+        setStavke(stavke.filter(s => s.id !== id));
+        if (stavkaForm.id === id) {
+            setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3' });
+            setTrenutniProizvod(null);
+        }
+    };
+
+    // 🟢 KLJUČNA FUNKCIJA ZA SKIDANJE SA LAGERA PRI STATUSU 'ISPORUČENO'
+    const izvrsiSkidanjeSaLageraZaStavke = async (otpId, listaStavki) => {
+        const azuriraneStavke = [];
+
+        for (let st of listaStavki) {
+            const pid = st.paket_id || (slobodniPaketi.some(sp => sp.paket_id === st.sifra) ? st.sifra : null);
+
+            if (!pid || st.lager_umanjen) {
+                azuriraneStavke.push(st);
+                continue;
+            }
+
+            // Dohvati svježe stanje tog paketa iz baze
+            const { data: redoviPaketa } = await supabase
+                .from('paketi')
+                .select('*')
+                .eq('paket_id', pid)
+                .is('otpremnica_id', null)
+                .gt('kolicina_final', 0)
+                .order('created_at', { ascending: true });
+
+            if (!redoviPaketa || redoviPaketa.length === 0) {
+                azuriraneStavke.push({ ...st, lager_umanjen: true });
+                continue;
+            }
+
+            const ukupnoUBaziM3 = redoviPaketa.reduce((s, r) => s + parseFloat(r.kolicina_final || 0), 0);
+            const uzetoM3 = parseFloat(st.kolicina_obracun || 0);
+
+            if (st.tip_utovara === 'CIJELI' || Math.abs(uzetoM3 - ukupnoUBaziM3) < 0.0005 || uzetoM3 >= ukupnoUBaziM3) {
+                // Cijeli paket se razdužuje sa lagera
+                await supabase.from('paketi').update({ otpremnica_id: otpId, status: 'ISPORUČENO' }).eq('paket_id', pid).is('otpremnica_id', null);
+                azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: true });
+            } else {
+                // Djelimično skidanje (npr. 5 kom / 0.048 m3 od 20 kom / 0.192 m3 -> ostaje 15 kom / 0.144 m3!)
+                const prviRed = redoviPaketa[0];
+                const deb = parseFloat(prviRed.debljina || st.debljina || 0);
+                const sir = parseFloat(prviRed.sirina || st.sirina || 0);
+                const duz = parseFloat(prviRed.duzina || st.duzina || 0);
+                const vol1Kom = (deb > 0 && sir > 0 && duz > 0) ? (deb / 100) * (sir / 100) * (duz / 100) : 0;
+
+                const noviM3 = parseFloat(Math.max(0.001, ukupnoUBaziM3 - uzetoM3).toFixed(4));
+                let stariKom = parseFloat(prviRed.kolicina_ulaz ?? prviRed.komada ?? 0);
+                if (stariKom <= 0 && vol1Kom > 0) stariKom = Math.round(ukupnoUBaziM3 / vol1Kom);
+
+                let uzetoKom = parseFloat(st.kolicina_unos || 0);
+                if ((st.jm_unos || 'kom').toLowerCase() !== 'kom' && vol1Kom > 0) {
+                    uzetoKom = Math.round(uzetoM3 / vol1Kom);
+                }
+                const noviKom = Math.max(1, Math.round(stariKom - uzetoKom));
+
+                await supabase.from('paketi').update({
+                    kolicina_final: noviM3,
+                    kubikaza: noviM3,
+                    kolicina_m3: noviM3,
+                    kolicina_ulaz: noviKom,
+                    komada: noviKom,
+                    last_modified_by: currentUser.ime_prezime || 'Otprema',
+                    last_modified_at: new Date().toISOString()
+                }).eq('id', prviRed.id);
+
+                azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: true });
+            }
+        }
+
+        return azuriraneStavke;
+    };
+
+    const snimiOtpremnicu = async () => {
+        if (!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Morate odabrati kupca!", onCancel: zatvoriDialog });
+        if (stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Otpremnica mora imati stavke!", onCancel: zatvoriDialog });
+
+        const otpId = form.id.toUpperCase().trim();
+        let konacneStavke = [...stavke];
+
+        // Ako je status ISPORUČENO, odmah skini pakete ili umanji djelimične pakete sa lagera!
+        if (form.status === 'ISPORUČENO') {
+            konacneStavke = await izvrsiSkidanjeSaLageraZaStavke(otpId, konacneStavke);
+        }
+
+        const payload = {
+            id: otpId,
+            broj_veze: form.broj_veze || null,
+            kupac_naziv: form.kupac_naziv,
+            datum: form.datum || new Date().toISOString().split('T')[0],
+            vozac: form.vozac || '',
+            registracija: form.registracija || '',
+            napomena: form.napomena || '',
+            stavke_jsonb: konacneStavke,
+            status: form.status,
+            snimio_korisnik: currentUser.ime_prezime || 'Sistem'
+        };
+
+        let res;
+        if (isEditingOtpremnica) {
+            res = await supabase.from('otpremnice').update(payload).eq('id', otpId);
+        } else {
+            res = await supabase.from('otpremnice').insert([payload]);
+        }
+
+        if (res.error) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Greška pri snimanju', poruka: res.error.message, onCancel: zatvoriDialog });
+        }
+
+        await zapisiU_Log(isEditingOtpremnica ? 'IZMJENA_OTPREMNICE' : 'KREIRANA_OTPREMNICA', `Otpremnica ${otpId} (${form.kupac_naziv}) - Status: ${form.status}`);
+
+        await load();
+        resetFormu();
+        setTab('lista');
+
+        prikaziDialog({
+            tip: 'uspjeh',
+            naslov: isEditingOtpremnica ? 'Otpremnica Ažurirana!' : 'Otpremnica Kreirana!',
+            poruka: `Otpremnica ${otpId} je uspješno sačuvana${form.status === 'ISPORUČENO' ? ' i stanje lagera je ažurirano' : ''}. Želite li isprintati otpremnicu?`,
+            confirmText: '🖨️ DA, ŠTAMPAJ',
+            cancelText: '✕ ZATVORI',
+            onConfirm: () => { kreirajPDFPrivremeni(payload); zatvoriDialog(); },
             onCancel: zatvoriDialog
         });
     };
 
-    // 🟢 SNIMANJE OTPREMNICE
-    const snimiOtpremnicu = async () => {
-        if(!form.kupac_naziv || stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Podaci Obavezni', poruka: "Unesite kupca i stavke!", onCancel: zatvoriDialog });
-
-        let detektovanoOdstupanje = false; let diffDetails = [];
-
-        if (form.broj_veze && form.broj_veze.startsWith('IZD-')) {
-            const { data: izd } = await supabase.from('izdatnice').select('id').eq('broj_izdatnice', form.broj_veze).maybeSingle();
-            if (izd) {
-                const { data: izdStavke } = await supabase.from('izdatnice_stavke').select('*').eq('izdatnica_id', izd.id);
-                (izdStavke || []).forEach(og => {
-                    const curr = stavke.find(s => s.sifra === og.proizvod_sifra);
-                    const origKol = parseFloat(og.izdata_kolicina) > 0 ? parseFloat(og.izdata_kolicina) : parseFloat(og.planirana_kolicina);
-                    if (!curr) { detektovanoOdstupanje = true; diffDetails.push(`Uklonjeno: ${og.proizvod_sifra} (Bilo: ${origKol})`); } 
-                    else if (parseFloat(curr.kolicina_obracun) !== origKol) { detektovanoOdstupanje = true; diffDetails.push(`Izmjena za ${og.proizvod_sifra}: sa ${origKol} na ${curr.kolicina_obracun}`); }
-                });
-            }
-        }
-
-        const izvrsiSnimanje = async () => {
-            const upisniId = form.id.toUpperCase();
-            const payload = { id: upisniId, broj_veze: form.broj_veze, kupac_naziv: form.kupac_naziv, datum: form.datum, vozac: form.vozac, registracija: form.registracija, napomena: form.napomena, stavke_jsonb: stavke, status: 'KREIRANA', snimio_korisnik: currentUser.ime_prezime };
-            
-            if (isEditing) await supabase.from('otpremnice').update(payload).eq('id', form.id);
-            else await supabase.from('otpremnice').insert([payload]);
-
-            if (detektovanoOdstupanje) await zapisiU_Log('ALARM_ODSTUPANJE_OTPREMNICE', `Faktura/Otpremnica ${upisniId} odstupila od utovara: ${diffDetails.join(' | ')}`, 'CRVENO');
-            else await zapisiU_Log('IZMJENA_OTPREMNICE', `Snimljena otpremnica ${upisniId}`);
-
-            for (let s of stavke) {
-                if (s.is_partial && s.originalni_paket_id) {
-                    const pkt = s.originalni_paket;
-                    const newKolM3 = Math.max(0, parseFloat(pkt.kolicina_final) - parseFloat(s.kolicina_obracun));
-                    await supabase.from('paketi').update({ kolicina_final: newKolM3 }).eq('paket_id', s.originalni_paket_id);
-                    await zapisiU_Log('PAKET_RASTUREN', `Iz paketa ${s.originalni_paket_id} izuzeto ${s.kolicina_obracun} ${s.jm_obracun} direktno na Otpremnici ${upisniId}`);
-                } else if (s.originalni_paket_id) {
-                    await supabase.from('paketi').update({ otpremnica_id: upisniId }).eq('paket_id', s.originalni_paket_id);
-                }
-            }
-
-            if (form.broj_veze) {
-                let pId = form.broj_veze;
-                if (pId.startsWith('IZD-')) {
-                    const {data: zIzd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', pId).maybeSingle();
-                    if (zIzd && zIzd.izvor_id) pId = zIzd.izvor_id;
-                }
-                await supabase.from('paketi').update({ otpremnica_id: upisniId }).eq('broj_veze', pId).is('otpremnica_id', null);
-            }
-
-            resetFormu(); load(); setTab('lista');
-            prikaziDialog({ tip: 'uspjeh', naslov: 'Uspješno snimljeno', poruka: "Otpremnica prohodna i sačuvana! Štampati PDF?", confirmText: '🖨️ ŠTAMPAJ PDF', cancelText: 'ZATVORI', onConfirm: () => { kreirajPDFPrivremeni(payload); zatvoriDialog(); }, onCancel: zatvoriDialog });
-        };
-
-        if (detektovanoOdstupanje) {
-            prikaziDialog({
-                tip: 'upozorenje', naslov: '⚠️ ODSTUPANJE!', poruka: `Količine se ne slažu sa skladištem! Sistem će poslati alarm Superadminu. Nastaviti?`, confirmText: '🚀 DA, SNIMI OTPREMNICU', cancelText: '✕ KORIGUJ', onConfirm: () => { zatvoriDialog(); izvrsiSnimanje(); }, onCancel: zatvoriDialog
-            });
-        } else { await izvrsiSnimanje(); }
+    const pokreniIzmjenuOtpremnice = (o) => {
+        setForm({
+            id: o.id,
+            broj_veze: o.broj_veze || '',
+            kupac_naziv: o.kupac_naziv || '',
+            datum: o.datum || new Date().toISOString().split('T')[0],
+            vozac: o.vozac || '',
+            registracija: o.registracija || '',
+            napomena: o.napomena || '',
+            status: o.status || 'ISPORUČENO'
+        });
+        setStavke(o.stavke_jsonb || []);
+        setIsEditingOtpremnica(true);
+        setTab('nova');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const kreirajPDFPrivremeni = async (podaci) => {
-        let parentId = podaci.broj_veze;
-        if (parentId && parentId.startsWith('IZD-')) {
-            const {data: izd} = await supabase.from('izdatnice').select('izvor_id').eq('broj_izdatnice', parentId).maybeSingle();
-            if (izd && izd.izvor_id) parentId = izd.izvor_id;
-        }
-        
-        let paketiPrikaz = {};
-        if (parentId) {
-            const { data: paks } = await supabase.from('paketi').select('paket_id, naziv_proizvoda').eq('broj_veze', parentId);
-            if (paks) { paks.forEach(p => { if (!paketiPrikaz[p.naziv_proizvoda]) paketiPrikaz[p.naziv_proizvoda] = []; paketiPrikaz[p.naziv_proizvoda].push(p.paket_id); }); }
-        }
-
-        const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
-        let redovi = (podaci.stavke_jsonb || stavke).map((s, i) => {
-            const kat = katalog.find(k => k.sifra === s.sifra);
-            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : '';
-            let paketiStr = '';
-            if (s.paket_id) paketiStr = `<br/><span style="color: #3b82f6; font-size: 10px; font-weight: bold;">📦 Paket: ${s.paket_id}</span>`;
-            else if (paketiPrikaz[s.naziv] && paketiPrikaz[s.naziv].length > 0) paketiStr = `<br/><span style="color: #3b82f6; font-size: 10px; font-weight: bold;">📦 Sadrži pakete: ${paketiPrikaz[s.naziv].join(', ')}</span>`;
-            
-            return `<tr><td style="font-weight: bold; color: #64748b; text-align: center;">${i+1}.</td><td><b style="color: #0f172a; font-size: 14px;">${dimenzije ? `${dimenzije} | ` : ''}${s.naziv}</b><br/><span style="color: #64748b; font-size: 11px;">Šifra: ${s.sifra}</span>${paketiStr}</td><td style="text-align: center; font-size: 18px; font-weight: 900; color: #f97316;">${s.kolicina_obracun} <span style="color: #64748b; font-size: 12px; font-weight: 600;">${s.jm_obracun}</span></td></tr>`
-        }).join('');
-
-        const htmlSadrzajTabela = `<div class="info-grid"><div class="info-col"><h4>Kupac / Primalac robe</h4><p style="font-size: 18px; font-weight: 900; margin-bottom: 5px;">${podaci.kupac_naziv}</p><p style="font-weight: 400; color: #475569;">${odabraniKupac?.adresa || ''}</p><p style="font-weight: 600; color: #0f172a; font-size: 12px; margin-top: 6px;">PDV / ID: ${odabraniKupac?.pdv_broj || 'N/A'}</p></div><div class="info-col" style="text-align: right;"><h4>Detalji Transporta</h4><p>Vezni Dokument: <span style="font-weight: 600; color: #0f172a;">${podaci.broj_veze || '-'}</span></p><p>Ime Vozača: <span style="font-weight: 600; color: #0f172a;">${podaci.vozac || '-'}</span></p><p>Vozilo (Reg): <span style="font-weight: 900; color: #f97316;">${podaci.registracija || '-'}</span></p></div></div><table><thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija (cm) i Naziv Proizvoda</th><th style="text-align:center;">Isporučena Količina</th></tr></thead><tbody>${redovi}</tbody></table><div style="display: flex; justify-content: space-between; margin-top: 100px; text-align: center; color: #0f172a; font-weight: 600;"><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Isporučio (Vozač)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Izdao (Magacin)</div><div style="width: 25%;"><div style="border-bottom: 1px solid #94a3b8; margin-bottom: 10px; height: 20px;"></div>Primio (Kupac)</div></div><div class="footer"><div style="width: 100%;"><b style="color: #0f172a;">Napomena uz isporuku:</b><br/>${podaci.napomena || 'Roba isporučena bez oštećenja.'}</div></div>`;
-        printDokument('OTPREMNICA', podaci.id, formatirajDatum(podaci.datum), htmlSadrzajTabela, '#f97316');
+    const resetFormu = () => {
+        setForm({
+            id: generisiID(),
+            broj_veze: '',
+            kupac_naziv: '',
+            datum: new Date().toISOString().split('T')[0],
+            vozac: '',
+            registracija: '',
+            napomena: '',
+            status: 'ISPORUČENO'
+        });
+        setStavke([]);
+        setIsEditingOtpremnica(false);
+        setSkenerInput('');
     };
 
-    const pokreniIzmjenu = (o) => { setForm({ id: o.id, broj_veze: o.broj_veze || '', kupac_naziv: o.kupac_naziv, datum: o.datum, vozac: o.vozac || '', registracija: o.registracija || '', napomena: o.napomena || '', status: o.status || 'KREIRANA' }); setStavke(o.stavke_jsonb || []); setIsEditing(true); setTab('nova'); };
-    const resetFormu = () => { setForm({ id: generisiID(), broj_veze: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], vozac: '', registracija: '', napomena: '', status: 'KREIRANA' }); setStavke([]); setIsEditing(false); };
+    const formatirajDatum = (isoString) => {
+        if (!isoString) return '';
+        const [y, m, d] = isoString.split('T')[0].split('-');
+        return `${d}.${m}.${y}.`;
+    };
 
-    const renderPoljeHeader = (polje) => {
-        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border focus:border-orange-500" placeholder="Nema veznog dokumenta" />;
-        if (polje.id === 'broj') return <input value={form.id} disabled className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border font-black disabled:opacity-50" />;
-        if (polje.id === 'kupac') return <div className="h-full min-h-[45px]"><MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => setForm({...form, kupac_naziv: k.naziv})} placeholder="Odaberi kupca..." /></div>;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none" />;
-        if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-accent font-black border border-orange-500/50 outline-none"><option value="KREIRANA">Kreirana</option><option value="ISPORUČENO">Isporučeno</option></select>;
-        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e=>setForm({...form, vozac:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="Ime vozača..." />;
-        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e=>setForm({...form, registracija:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-theme-text border border-theme-border outline-none focus:border-orange-500" placeholder="npr. A12-B-345" />;
+    const kreirajPDF = () => kreirajPDFPrivremeni({ ...form, stavke_jsonb: stavke });
+
+    const kreirajPDFPrivremeni = (podaci) => {
+        const stariNaslov = document.title;
+        document.title = `otpremnica_${podaci.id}_${(podaci.kupac_naziv || 'Kupac').replace(/\s+/g, '_')}`;
+        const listaStavki = podaci.stavke_jsonb || [];
+        const ukupnoM3 = listaStavki.reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0);
+
+        const redovi = listaStavki.map((s, i) => `
+            <tr>
+                <td style="text-align:center; font-weight:bold;">${i + 1}.</td>
+                <td><b>${s.sifra || '-'}</b> - ${s.naziv} ${s.dimenzije ? `<br/><span style="font-size:10px; color:#64748b;">Dimenzije: ${s.dimenzije} cm</span>` : ''}</td>
+                <td style="text-align:center;">${s.kolicina_unos} ${s.jm_unos || 'kom'}</td>
+                <td class="num" style="font-weight:900;">${parseFloat(s.kolicina_obracun || 0).toFixed(3)} ${s.jm_obracun || 'm3'}</td>
+            </tr>
+        `).join('');
+
+        const html = `
+            <div class="info-grid">
+                <div class="info-col-left">
+                    <h4>Kupac / Primalac</h4>
+                    <h2>${podaci.kupac_naziv}</h2>
+                    <p>Vezni dokument: <b>${podaci.broj_veze || 'N/A'}</b></p>
+                </div>
+                <div class="info-col-right">
+                    <p>Vozač / Prevoznik: <b>${podaci.vozac || '-'}</b></p>
+                    <p>Registracija: <b>${podaci.registracija || '-'}</b></p>
+                    <p>Status: <b>${podaci.status || 'ISPORUČENO'}</b></p>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:6%; text-align:center;">R.B.</th>
+                        <th>Proizvod / Paket (Dimenzije u cm)</th>
+                        <th style="text-align:center;">Količina (Unos)</th>
+                        <th class="num">Obračun (m³)</th>
+                    </tr>
+                </thead>
+                <tbody>${redovi}</tbody>
+            </table>
+            <div style="margin-top:15px; text-align:right; font-size:14px; font-weight:900;">
+                UKUPNO OTPREMLJENO: ${ukupnoM3.toFixed(3)} m³
+            </div>
+            <div class="footer" style="margin-top:30px; display:flex; justify-content:space-between;">
+                <div style="width:45%;"><b>Napomena:</b><br/>${podaci.napomena || 'Nema napomene.'}</div>
+                <div style="width:25%; text-align:center;"><div style="border-bottom:1px solid #94a3b8; height:35px; margin-bottom:5px;"></div>Robu izdao</div>
+                <div style="width:25%; text-align:center;"><div style="border-bottom:1px solid #94a3b8; height:35px; margin-bottom:5px;"></div>Robu preuzeo (Vozač)</div>
+            </div>
+        `;
+        printDokument('OTPREMNICA', podaci.id, formatirajDatum(podaci.datum), html, '#f97316');
+        setTimeout(() => { document.title = stariNaslov; }, 2000);
+    };
+
+    const renderPoljeZaglavlja = (polje) => {
+        if (polje.id === 'kupac') return (
+            <div className="flex gap-2 items-center w-full min-w-0 h-full">
+                <div className="flex-1 min-w-0 h-full">
+                    <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => setForm({ ...form, kupac_naziv: k.naziv })} placeholder="Odaberi kupca..." />
+                </div>
+                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-orange-600 hover:bg-orange-500 text-white px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+            </div>
+        );
+        if (polje.id === 'broj') return <input value={form.id} disabled={isEditingOtpremnica} onChange={e => setForm({ ...form, id: e.target.value.toUpperCase() })} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border font-black uppercase disabled:opacity-50" />;
+        if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e => setForm({ ...form, broj_veze: e.target.value.toUpperCase() })} placeholder="RN-... ili PON-..." className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-orange-400 outline-none border border-orange-500/30 font-black uppercase" />;
+        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e => setForm({ ...form, datum: e.target.value })} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'vozac') return <input value={form.vozac} onChange={e => setForm({ ...form, vozac: e.target.value })} placeholder="Ime vozača / Firma" className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'registracija') return <input value={form.registracija} onChange={e => setForm({ ...form, registracija: e.target.value.toUpperCase() })} placeholder="npr. A12-K-345" className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border uppercase" />;
+        if (polje.id === 'status') return (
+            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-orange-900/20 rounded-xl text-xs text-orange-400 font-black outline-none border border-orange-500/50 cursor-pointer">
+                <option value="KREIRANA">⏳ KREIRANA (U pripremi)</option>
+                <option value="ISPORUČENO">✅ ISPORUČENO (Razduži lager)</option>
+            </select>
+        );
         return null;
     };
 
+    const filtriraniSlobodniPaketi = useMemo(() => {
+        if (!pretragaLagera.trim()) return slobodniPaketi;
+        const q = pretragaLagera.toUpperCase().trim();
+        return slobodniPaketi.filter(p =>
+            (p.paket_id || '').toUpperCase().includes(q) ||
+            (p.naziv_proizvoda || '').toUpperCase().includes(q) ||
+            `${p.debljina}X${p.sirina}X${p.duzina}`.includes(q)
+        );
+    }, [slobodniPaketi, pretragaLagera]);
+
+    const ukupnoOtpremnicaM3 = useMemo(() => stavke.reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0), [stavke]);
+
     return (
-        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in pb-20">
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-orange-500" user={user} modulIme="otpremnice" saas={saas} hideMasina={true} />
+        <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova }}>
+            {showBrziKupac && <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md"><SettingsModule onExit={() => { setShowBrziKupac(false); load(); }} lockedTab="kupci" /></div>}
+            {showBrziKatalog && <div className="fixed inset-0 z-[200] bg-[#090e17]/95 flex flex-col p-4 overflow-y-auto backdrop-blur-md"><SettingsModule onExit={() => { setShowBrziKatalog(false); load(); }} lockedTab="katalog" /></div>}
             <PametniDialog {...dialog} />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-orange-500" user={user} modulIme="otpremnice" saas={saas} hideMasina={true} />
 
-            {/* 🟢 MODAL ZA ODABIR: CIJELI ILI DJELIMIČNO RASTURANJE (SA DINAMIČNIM OKVIROM ZA JEDINICU MJERE) */}
-            {paketModal.isOpen && paketModal.paket && (
-                <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-orange-500 p-8 rounded-[2.5rem] shadow-2xl max-w-lg w-full relative">
-                        <button onClick={() => setPaketModal({ isOpen: false, paket: null, isWms: false })} className="absolute top-6 right-6 text-slate-400 hover:text-white font-black text-xl z-10">✕</button>
-                        <h3 className="text-orange-500 font-black uppercase text-base mb-6 border-b border-theme-border pb-3">📦 Šta uzimate iz paketa?</h3>
-                        
-                        <div className="bg-theme-panel p-4 rounded-xl border border-theme-border mb-6">
-                            <p className="text-orange-400 font-black font-mono text-sm">{paketModal.paket.paket_id}</p>
-                            <p className="text-theme-text font-black uppercase mt-1">{paketModal.paket.naziv_proizvoda}</p>
-                            <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-700">
-                                <span className="text-xs text-slate-400 font-bold">Trenutno stanje u paketu:</span>
-                                <span className="text-lg text-emerald-400 font-black">{paketModal.paket.kolicina_final} <span className="text-xs">m³</span></span>
-                            </div>
-                        </div>
+            {/* MODAL ZA ODABIR PAKETA SA LAGERA I DJELIMIČNO RASTURANJE */}
+            {showLagerModal && (
+                <div className="fixed inset-0 z-[150] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-theme-card border-2 border-orange-500/50 rounded-[2rem] max-w-3xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col relative">
+                        <button onClick={() => { setShowLagerModal(false); setOdabraniPaketZaUtovar(null); }} className="absolute top-4 right-4 w-9 h-9 rounded-full bg-theme-panel border border-theme-border text-slate-400 hover:text-white flex items-center justify-center font-black">✕</button>
+                        <h3 className="text-orange-400 font-black uppercase text-sm mb-4">📦 Odaberi paket sa lagera za utovar (Dimenzije u cm)</h3>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <button onClick={() => izvrsiDodavanjePaketa(false)} className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg transition-all border border-emerald-400">
-                                📦 Uzimam cijeli paket
-                            </button>
-                            <div className="w-full bg-orange-900/10 p-4 rounded-xl border border-orange-500/30 flex flex-col gap-3 min-w-0">
-                                <label className="text-[10px] text-orange-400 font-black uppercase text-center">✂️ Rasturam (Djelimično)</label>
-                                <div className="grid grid-cols-12 gap-2 w-full">
-                                    <input type="number" value={djelimicnaKolicina} onChange={e=>setDjelimicnaKolicina(e.target.value)} placeholder="0.00" className="col-span-7 min-w-0 w-full p-3 bg-theme-panel text-theme-text font-black text-center outline-none rounded-lg border border-orange-500/50" />
-                                    <select value={djelimicnaJm} onChange={e=>setDjelimicnaJm(e.target.value)} className="col-span-5 min-w-0 w-full !px-1 py-3 bg-theme-card text-theme-text text-xs font-black text-center rounded-lg border border-theme-border outline-none uppercase">
-                                        <option value="m3">m³</option><option value="kom">kom</option>
-                                    </select>
+                        {!odabraniPaketZaUtovar ? (
+                            <>
+                                <input
+                                    type="text"
+                                    value={pretragaLagera}
+                                    onChange={e => setPretragaLagera(e.target.value)}
+                                    placeholder="🔍 Pretraži pakete po ID-u, nazivu ili dimenziji (npr. 2.4x10x400)..."
+                                    className="w-full p-3.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black uppercase outline-none focus:border-orange-500 mb-4"
+                                />
+                                <div className="flex-1 overflow-y-auto space-y-2.5 pr-2 custom-scrollbar">
+                                    {filtriraniSlobodniPaketi.length === 0 && <p className="text-center text-slate-500 text-xs py-10">Nema slobodnih paketa na lageru za ovaj upit.</p>}
+                                    {filtriraniSlobodniPaketi.map(p => (
+                                        <div key={p.paket_id} onClick={() => klikniNaPaketSaLagera(p)} className="p-4 bg-theme-panel border border-theme-border hover:border-orange-500 rounded-2xl cursor-pointer flex justify-between items-center transition-all shadow-md">
+                                            <div>
+                                                <span className="text-orange-400 font-black text-sm">{p.paket_id}</span>
+                                                <span className="text-theme-text font-bold text-xs ml-2">{p.naziv_proizvoda}</span>
+                                                <p className="text-[10px] text-amber-400 font-mono mt-1">Dimenzije: {p.debljina}x{p.sirina}x{p.duzina} cm | Na stanju: <b>{p.ukupno_kom} kom</b></p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-emerald-400 font-black text-lg">{p.ukupno_m3.toFixed(3)} m³</p>
+                                                <span className="text-[9px] text-slate-400 uppercase font-black">Klikni za odabir →</span>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                                <button onClick={() => izvrsiDodavanjePaketa(true)} className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-black uppercase text-[10px] transition-all">Dodaj Samo Ovo</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* MODAL LAGER (Odabir dostupnih) */}
-            {prikaziLagerModal && (
-                <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in">
-                    <div className="bg-theme-card border-2 border-orange-500 p-6 rounded-[2.5rem] shadow-2xl max-w-5xl w-full relative max-h-[85vh] flex flex-col">
-                        <button onClick={() => setPrikaziLagerModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-white font-black text-xl z-10">✕</button>
-                        <h3 className="text-orange-500 font-black uppercase text-sm mb-4 border-b border-theme-border pb-3">📦 Dodaj robu sa stanja lagera</h3>
-                        <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                            <div className="relative flex-1">
-                                <input type="text" value={pretragaLagera} onChange={e => setPretragaLagera(e.target.value.toUpperCase())} placeholder="Pretraži paket ili proizvod..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-orange-500 pr-16 text-xs" />
-                                <button onClick={() => { setScanTarget('lager'); setIsScanningOverlay(true); }} className="absolute right-2 top-2 bottom-2 px-4 bg-orange-600 rounded-xl text-white font-bold hover:bg-orange-500 transition-all text-xl shadow-md">📷</button>
-                            </div>
-                            <label className="flex items-center gap-2 bg-theme-panel border border-theme-border px-4 py-3 rounded-xl cursor-pointer">
-                                <input type="checkbox" checked={samoSlobodnoFilter} onChange={e => setSamoSlobodnoFilter(e.target.checked)} className="w-5 h-5 accent-orange-500" />
-                                <span className="text-[10px] text-slate-300 font-black uppercase tracking-widest">Samo Slobodna Roba (Zeleno)</span>
-                            </label>
-                        </div>
-                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                            {dostupniPaketiLager.filter(p => {
-                                const srch = (p.paket_id||'').toUpperCase().includes(pretragaLagera) || (p.naziv_proizvoda||'').toUpperCase().includes(pretragaLagera);
-                                const isSlobodan = p.broj_veze === 'SLOBODNA_ROBA';
-                                return samoSlobodnoFilter ? (srch && isSlobodan) : srch;
-                            }).map(p => {
-                                const isSlobodan = p.broj_veze === 'SLOBODNA_ROBA';
-                                return (
-                                <div key={p.id} onClick={() => setPaketModal({ isOpen: true, paket: p, isWms: false })} className={`p-4 bg-theme-panel border-2 rounded-xl cursor-pointer transition-all shadow-md group ${isSlobodan ? 'border-emerald-500/50 hover:border-emerald-400' : 'border-slate-700 hover:border-orange-500'}`}>
-                                    <div className="flex justify-between items-start mb-2"><p className="text-theme-text font-black text-xs font-mono">{p.paket_id}</p><p className="text-theme-text font-black text-sm">{p.kolicina_final} <span className="text-[10px] text-slate-500">m³</span></p></div>
-                                    <p className="text-theme-text text-[10px] font-black uppercase mb-1 line-clamp-1">{p.naziv_proizvoda}</p>
-                                    <p className="text-amber-400 text-[9px] font-mono font-black">{p.debljina}x{p.sirina}x{p.duzina} cm</p>
-                                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-700">
-                                        {isSlobodan ? <span className="text-[8px] bg-emerald-900/40 text-emerald-400 px-2 py-1 rounded font-black uppercase">✅ SLOBODNO</span> : <span className="text-[8px] bg-amber-900/40 text-amber-500 px-2 py-1 rounded font-black uppercase">🔒 RN: {p.broj_veze}</span>}
-                                        <button className="bg-theme-card border border-theme-border px-3 py-1 text-theme-text font-black text-[9px] uppercase rounded-lg group-hover:bg-orange-600 group-hover:text-white transition-colors">Odaberi →</button>
+                            </>
+                        ) : (
+                            <div className="space-y-5 animate-in zoom-in-95">
+                                <div className="p-4 bg-theme-panel rounded-2xl border border-orange-500/30 flex justify-between items-center">
+                                    <div>
+                                        <p className="text-orange-400 font-black text-base">{odabraniPaketZaUtovar.paket_id}</p>
+                                        <p className="text-xs text-theme-text font-bold">{odabraniPaketZaUtovar.naziv_proizvoda} ({odabraniPaketZaUtovar.debljina}x{odabraniPaketZaUtovar.sirina}x{odabraniPaketZaUtovar.duzina} cm)</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-emerald-400 font-black text-xl">{odabraniPaketZaUtovar.ukupno_m3.toFixed(3)} m³</p>
+                                        <p className="text-[10px] text-slate-400 font-bold">Na stanju: {odabraniPaketZaUtovar.ukupno_kom} kom</p>
                                     </div>
                                 </div>
-                            )})}
-                        </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setModUtovaraPaketa('CIJELI')}
+                                        className={`py-4 rounded-xl font-black text-xs uppercase border transition-all ${modUtovaraPaketa === 'CIJELI' ? 'bg-orange-600 text-white border-orange-400 shadow-lg' : 'bg-theme-panel text-slate-400 border-theme-border'}`}
+                                    >
+                                        📦 Uzimam cijeli paket ({odabraniPaketZaUtovar.ukupno_m3.toFixed(3)} m³)
+                                    </button>
+                                    <button
+                                        onClick={() => setModUtovaraPaketa('DJELIMICNO')}
+                                        className={`py-4 rounded-xl font-black text-xs uppercase border transition-all ${modUtovaraPaketa === 'DJELIMICNO' ? 'bg-amber-600 text-white border-amber-400 shadow-lg' : 'bg-theme-panel text-slate-400 border-theme-border'}`}
+                                    >
+                                        ✂️ Rasturam (Djelimično)
+                                    </button>
+                                </div>
+
+                                {modUtovaraPaketa === 'DJELIMICNO' && (
+                                    <div className="p-4 bg-amber-950/20 border border-amber-500/40 rounded-2xl space-y-3">
+                                        <label className="text-[10px] text-amber-400 uppercase font-black block">Koliko skidate sa ovog paketa?</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="number"
+                                                value={djelimicnaKolicina}
+                                                onChange={e => setDjelimicnaKolicina(e.target.value)}
+                                                placeholder="Unesi količinu (npr. 5)..."
+                                                className="flex-1 min-w-0 p-3.5 bg-theme-panel border border-amber-500/50 rounded-xl text-sm text-theme-text font-black text-center outline-none"
+                                            />
+                                            <select
+                                                value={djelimicnaJm}
+                                                onChange={e => setDjelimicnaJm(e.target.value)}
+                                                className="w-28 shrink-0 p-3.5 bg-theme-panel border border-amber-500/50 rounded-xl text-xs text-amber-400 font-black uppercase outline-none"
+                                            >
+                                                <option value="kom">kom</option>
+                                                <option value="m3">m³</option>
+                                                <option value="m2">m²</option>
+                                                <option value="m1">m1</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex justify-between text-xs pt-2 border-t border-amber-500/20">
+                                            <span className="text-slate-400">Obračun za otpremu: <b className="text-emerald-400">{izracunajDjelimicniM3.toFixed(3)} m³</b></span>
+                                            <span className="text-slate-400">Ostaje na lageru: <b className="text-amber-400">{Math.max(0, odabraniPaketZaUtovar.ukupno_m3 - izracunajDjelimicniM3).toFixed(3)} m³</b></span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setOdabraniPaketZaUtovar(null)} className="flex-1 py-3.5 bg-theme-panel text-slate-400 rounded-xl font-black text-xs uppercase border border-theme-border">← Nazad na listu</button>
+                                    <button onClick={potvrdiUtovarPaketa} className="flex-[2] py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-xs uppercase shadow-lg">✅ Dodaj na Otpremnicu</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
 
-            {/* TABOVI GLAVNI */}
-            <div className="grid grid-cols-3 bg-theme-panel p-1 rounded-2xl border border-theme-border shadow-inner w-full gap-1">
-                <button onClick={() => {setTab('nova'); if(!isEditing) resetFormu();}} className={`py-3.5 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'nova' ? 'bg-orange-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card'}`}>➕ Nova Otprema</button>
-                <button onClick={() => setTab('izdatnice')} className={`py-3.5 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'izdatnice' ? 'bg-amber-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card'}`}>🚚 Skladište (WMS)</button>
-                <button onClick={() => setTab('lista')} className={`py-3.5 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'lista' ? 'bg-emerald-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card'}`}>📋 Arhiva</button>
+            <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
+                <button onClick={() => { setTab('nova'); if (!isEditingOtpremnica) resetFormu(); }} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'nova' ? 'bg-orange-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>{isEditingOtpremnica ? '✏️ Ažuriranje Otpremnice' : '➕ Nova Otpremnica'}</button>
+                <button onClick={() => { setTab('lista'); load(); }} className={`flex-1 py-3 rounded-xl text-[10px] uppercase transition-all font-black ${tab === 'lista' ? 'bg-orange-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>📋 Arhiva Otpremnica ({otpremnice.length})</button>
             </div>
 
             {tab === 'nova' ? (
-                <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto w-full">
-                    {!isEditing && (
-                        <div className="bg-theme-card border border-orange-500/30 p-4 rounded-box shadow-2xl w-full relative z-[60]">
-                            <label className="text-[10px] text-theme-accent uppercase font-black block mb-2 ml-1">Pretraga/Skeniranje WMS Izdatnica i Naloga:</label>
-                            <MasterSearch data={dostupniDokumenti} poljaZaPretragu={['id', 'kupac']} onSelect={(d) => obradiSkeniraniKod(d.id)} placeholder="Ukucaj npr. IZD-2026-..." onScanClick={() => { setScanTarget('veza'); setIsScanningOverlay(true); }} />
+                <div className="space-y-4 animate-in slide-in-from-left max-w-4xl mx-auto">
+                    {!isEditingOtpremnica && (
+                        <div className="bg-theme-card border border-orange-500/40 p-6 rounded-box shadow-xl relative z-[60]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                            <label className="text-[10px] text-orange-400 uppercase font-black mb-2 block ml-2">⚡ Povuci podatke iz Radnog Naloga ili Ponude</label>
+                            <OTP_SearchableNalog nalozi={nalozi} ponude={ponude} value={skenerInput} onChange={handleVezaInput} onScanClick={() => { setScanTarget('nalog'); setIsScanning(true); }} />
                         </div>
                     )}
 
-                    <div className={`p-4 sm:p-6 rounded-box border bg-theme-card shadow-2xl relative z-[40] ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 bg-black/20' : 'border-theme-border/60'}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-start overflow-visible">
+                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : 'border-orange-500/30 bg-theme-card'}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <div className="flex justify-between items-center mb-2 border-b border-theme-border/50 pb-2">
+                            <h3 className="text-orange-500 font-black uppercase text-xs">1. Zaglavlje Otpremnice i Prevoz</h3>
+                            <div className="flex gap-2">
+                                {isEditingOtpremnica && <button onClick={kreirajPDF} className="text-[10px] bg-theme-panel text-theme-text border border-slate-600 px-4 py-1.5 rounded-xl uppercase hover:bg-white hover:text-black transition-all font-black">🖨️ Isprintaj PDF</button>}
+                                {isEditingOtpremnica && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-xl uppercase">Odustani ✕</button>}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-start">
                             {aktivnaPolja.map((polje, index) => {
-                                const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 sm:col-span-2' : 'col-span-1');
+                                const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 md:col-span-2' : 'col-span-1');
                                 return (
-                                    <div 
-                                        key={polje.id} 
-                                        className={`relative flex flex-col w-full ${responsiveSpan} overflow-visible transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`}
-                                        style={{ zIndex: 50 - index, maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }}
+                                    <div
+                                        key={polje.id}
+                                        className={`relative flex flex-col ${responsiveSpan} min-w-0 transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20' : ''}`}
+                                        style={{ zIndex: 50 - index }}
                                         draggable={saas.isEditMode}
                                         onDragStart={(e) => handleDragStart(e, index)}
                                         onDragEnter={(e) => handleDragEnter(e, index)}
@@ -517,146 +941,146 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                         onDragOver={(e) => e.preventDefault()}
                                         onMouseUp={(e) => spremiDimenzije(e, index)}
                                     >
-                                        {saas.isEditMode && (
-                                            <div className="flex justify-between items-center mb-2 shrink-0">
-                                                <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
-                                                <button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">
-                                                    ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}
-                                                </button>
-                                            </div>
-                                        )}
-                                        {saas.isEditMode ? (
-                                            <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />
-                                        ) : (
-                                            <label className="text-[8px] text-slate-500 uppercase ml-1 block mb-1 shrink-0">{polje.label}</label>
-                                        )}
-                                        <div className={`w-full min-h-[48px] flex-1 overflow-visible ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderPoljeHeader(polje)}</div>
+                                        {polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">{polje.label}</label>}
+                                        <div className="w-full min-w-0 flex-1">{renderPoljeZaglavlja(polje)}</div>
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    <div className="bg-theme-card p-4 sm:p-6 rounded-box border border-theme-border/60 shadow-xl w-full relative z-[30]">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-orange-500 font-black uppercase text-xs">2. Robni sadržaj isporuke (Dimenzije u cm)</h3>
-                            <button onClick={otvoriLagerZaDodavanje} className="bg-orange-900/30 text-orange-400 border border-orange-500/30 px-4 py-2 rounded-xl text-[9px] uppercase font-black hover:bg-orange-500 hover:text-white transition-all shadow-md">
-                                📦 + Dodaj sa lagera
+                    {/* DODAVANJE SA LAGERA ILI RUČNO */}
+                    <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-2xl space-y-4 relative z-[30]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-theme-border pb-4">
+                            <h3 className="text-orange-400 font-black uppercase text-xs">2. Utovar Paketa sa Lagera ili Ručni Unos (cm)</h3>
+                            <button onClick={() => setShowLagerModal(true)} className="px-5 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-black text-xs uppercase shadow-lg transition-all">
+                                📦 + Dodaj sa lagera ({slobodniPaketi.length} slobodnih)
                             </button>
                         </div>
-                        <div className="space-y-4 border-t border-slate-700 pt-4">
-                            <MasterSearch data={katalog} poljaZaPretragu={['sifra', 'naziv']} value={stavkaForm.sifra_unos} onSelect={(k) => { setTrenutniProizvod(k); setStavkaForm({ ...stavkaForm, id: null, sifra_unos: `${k.sifra} | ${k.naziv}`, jm_obracun: k.default_jedinica || 'm3' }); }} placeholder="Dodaj vanrednu stavku..." />
+
+                        <div className="flex gap-2">
+                            <input
+                                value={paketScanInput}
+                                onChange={e => setPaketScanInput(e.target.value.toUpperCase())}
+                                onKeyDown={e => { if (e.key === 'Enter') skenirajPaketDirektno(paketScanInput); }}
+                                placeholder="Ili direktno skeniraj / upiši ID paketa sa lagera (npr. RUČNO-2026-...) i pritisni Enter"
+                                className="flex-1 min-w-0 p-3.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black uppercase outline-none focus:border-orange-500"
+                            />
+                            <button onClick={() => skenirajPaketDirektno(paketScanInput)} className="px-5 bg-theme-panel border border-orange-500/40 text-orange-400 hover:bg-orange-600 hover:text-white rounded-xl text-xs font-black uppercase">Pronađi</button>
+                            <button onClick={() => { setScanTarget('paket'); setIsScanning(true); }} className="px-4 bg-orange-600/20 text-orange-400 rounded-xl text-lg">📷</button>
+                        </div>
+
+                        <div className="pt-2 border-t border-theme-border/50">
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Ručni odabir artikla iz kataloga (Dimenzije u cm)</label>
+                            <div className="flex gap-2 items-center w-full min-w-0">
+                                <div className="flex-1 min-w-0">
+                                    <MasterSearch
+                                        data={katalog}
+                                        poljaZaPretragu={['sifra', 'naziv']}
+                                        value={stavkaForm.sifra_unos}
+                                        onSelect={handleProizvodSelect}
+                                        placeholder="Pronađi šifru ili naziv..."
+                                    />
+                                </div>
+                                {hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-3 rounded-xl text-[10px] font-black shrink-0">➕ NOVI</button>}
+                            </div>
+
                             {trenutniProizvod && (
-                                <div className="p-4 bg-theme-panel border border-theme-border rounded-xl space-y-3 animate-in zoom-in-95 w-full">
-                                    {/* 🟢 POPRAVLJENO UKLAPANJE U OKVIR: grid-cols-12 sa min-w-0 */}
-                                    <div className="grid grid-cols-12 gap-2 w-full">
-                                        <input type="number" value={stavkaForm.kolicina_obracun} onChange={e=>setStavkaForm({...stavkaForm, kolicina_obracun:e.target.value})} placeholder="Količina..." className="col-span-8 min-w-0 w-full p-3 bg-theme-card text-theme-text font-black text-center rounded-xl outline-none border border-theme-border" />
-                                        <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="col-span-4 min-w-0 w-full !px-2 py-3 bg-theme-card text-theme-text font-black text-center rounded-xl outline-none border border-theme-border uppercase">
-                                            <option value="m3">m³</option><option value="kom">kom</option><option value="m2">m²</option><option value="m1">m1</option>
-                                        </select>
+                                <div className="mt-3 p-4 bg-orange-950/10 border border-orange-500/30 rounded-2xl grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                    <div className="md:col-span-5 min-w-0">
+                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Unos: Količina i Jedinica</label>
+                                        <div className="flex gap-1.5">
+                                            <input type="number" value={stavkaForm.kolicina_unos} onChange={e => setStavkaForm({ ...stavkaForm, kolicina_unos: e.target.value })} placeholder="Količina" className="flex-1 min-w-0 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center border border-theme-border outline-none" />
+                                            <select value={stavkaForm.jm_unos} onChange={e => setStavkaForm({ ...stavkaForm, jm_unos: e.target.value })} className="w-24 shrink-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black border border-theme-border uppercase">
+                                                <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <button onClick={dodajStavkuRucno} className="w-full py-3 bg-orange-600 text-white text-xs uppercase font-black rounded-xl hover:bg-orange-500 transition-all">Dodaj na dokument</button>
+                                    <div className="md:col-span-5 min-w-0">
+                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Obračun (m³)</label>
+                                        <div className="flex gap-1.5">
+                                            <input type="number" value={stavkaForm.kolicina_obracun} onChange={e => setStavkaForm({ ...stavkaForm, kolicina_obracun: e.target.value })} className="flex-1 min-w-0 p-3 bg-theme-panel rounded-xl text-sm text-emerald-400 font-black text-center border border-theme-border outline-none" />
+                                            <select value={stavkaForm.jm_obracun} onChange={e => setStavkaForm({ ...stavkaForm, jm_obracun: e.target.value })} className="w-24 shrink-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black border border-theme-border uppercase">
+                                                <option value="m3">m³</option><option value="kom">kom</option><option value="m2">m²</option><option value="m1">m1</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <button onClick={dodajRucnuStavku} className="w-full py-3.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-black text-xs uppercase shadow-lg">Dodaj +</button>
+                                    </div>
                                 </div>
                             )}
                         </div>
                     </div>
 
                     {stavke.length > 0 && (
-                        <div className="bg-theme-card p-4 sm:p-6 rounded-box border border-theme-border shadow-2xl space-y-4 animate-in fade-in">
-                            <span className="text-[10px] text-slate-400 uppercase tracking-widest block mb-1">Stavke spremne za otpremu:</span>
+                        <div className="bg-theme-card p-6 rounded-box border border-orange-500/30 shadow-2xl space-y-4" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-orange-400 font-black uppercase text-xs">3. Stavke na Otpremnici ({stavke.length})</h3>
+                                <span className="text-emerald-400 font-black text-base">Ukupno: {ukupnoOtpremnicaM3.toFixed(3)} m³</span>
+                            </div>
+
                             <div className="space-y-2">
-                                {stavke.map((s, i) => (
-                                    <div key={s.id} className={`flex justify-between items-center p-3 rounded-xl border border-theme-border/60 ${s.paket_id ? 'bg-orange-950/20 border-orange-500/40' : 'bg-theme-panel'}`}>
-                                        <div className="flex items-center gap-3"><span className="text-slate-500 text-xs">{i+1}.</span><div><p className="text-theme-text text-xs font-black">{s.naziv}</p><p className="text-[9px] text-slate-500 mt-0.5">{s.sifra} {s.paket_id && `| 📦 ${s.paket_id}`}</p></div></div>
-                                        <div className="flex items-center gap-4"><span className="text-orange-400 font-black text-base">{s.kolicina_obracun} {s.jm_obracun}</span><button onClick={()=>ukloniStavku(s.id)} className="text-red-500 p-2 text-xs">✕</button></div>
-                                    </div>
-                                ))}
-                            </div>
-                            <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Unesite internu napomenu za isporuku..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-orange-500 shadow-inner" rows="2" />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                                <button onClick={kreirajIzdatnicu} className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow-md transition-all">📦 Generiši Nalog (Izdatnica)</button>
-                                <button onClick={snimiOtpremnicu} className="w-full py-4 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all">🏁 SNIMI OTPREMNICU</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            ) : tab === 'izdatnice' ? (
-                <div className="bg-theme-card p-4 sm:p-6 rounded-box border border-theme-border shadow-xl max-w-4xl mx-auto w-full">
-                    {wmsIzdatnica ? (
-                        <div className="space-y-4 animate-in zoom-in-95">
-                            <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-theme-border pb-4 gap-2">
-                                <div><button onClick={()=>setWmsIzdatnica(null)} className="text-[9px] uppercase bg-slate-800 text-slate-400 px-3 py-1.5 rounded-lg mb-2 block">← Vrati se nazad</button><h2 className="text-2xl text-amber-500 font-black">{wmsIzdatnica.broj_izdatnice}</h2></div>
-                                <div className="text-left sm:text-right"><span className="bg-amber-900/30 text-amber-500 border border-amber-500/30 px-3 py-1 rounded-xl text-[10px] font-black uppercase">Utovar na kamionu</span></div>
-                            </div>
-                            <div className="space-y-2">
-                                {wmsStavke.map(s => (
-                                    <div key={s.id} className="bg-theme-panel p-4 rounded-xl border border-theme-border flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                {stavke.map((s, idx) => (
+                                    <div key={s.id || idx} onClick={() => urediStavku(s)} className="p-3.5 bg-theme-panel border border-theme-border rounded-xl flex justify-between items-center cursor-pointer hover:border-orange-500 transition-all group">
                                         <div>
-                                            <p className="text-theme-text text-sm font-black uppercase">{s.proizvod_naziv}</p>
-                                            <p className="text-[10px] text-slate-500 mt-1">Šifra: {s.proizvod_sifra} {s.paket_ref_id && <span className="ml-2 text-amber-500 font-black">📦 {s.paket_ref_id}</span>}</p>
+                                            <p className="text-theme-text text-xs font-black">{s.naziv}</p>
+                                            <p className="text-[10px] text-slate-400 uppercase mt-0.5">
+                                                Šifra/Paket: <b>{s.paket_id || s.sifra}</b> {s.dimenzije ? `| Dimenzije: ${s.dimenzije} cm` : ''} | Unos: {s.kolicina_unos} {s.jm_unos}
+                                            </p>
                                         </div>
-                                        <div className="flex items-center gap-4 justify-between sm:justify-end w-full sm:w-auto border-t sm:border-none pt-2 sm:pt-0">
-                                            <div className="text-center"><p className="text-[8px] text-slate-500 uppercase font-black">Plan</p><p className="text-slate-400 font-bold text-sm">{s.planirana_kolicina} {s.mjerna_jedinica}</p></div>
-                                            <div className="text-center"><p className="text-[8px] text-amber-500 uppercase font-black">Utovareno</p><input type="number" value={s.izdata_kolicina} onChange={(e) => handleWmsKolicina(s.id, e.target.value)} className="w-20 p-2 bg-theme-card text-amber-400 border border-amber-500/50 rounded-xl text-center font-black outline-none" /></div>
-                                            <button onClick={() => obrisiWmsStavku(s.id)} className="text-red-500 hover:bg-red-500/20 p-3 rounded-xl transition-all font-black ml-2">✕</button>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-emerald-400 font-black text-sm">{parseFloat(s.kolicina_obracun || 0).toFixed(3)} {s.jm_obracun || 'm3'}</span>
+                                            <button onClick={(e) => { e.stopPropagation(); ukloniStavku(s.id); }} className="text-red-500 hover:bg-red-500/20 px-2.5 py-1 rounded-lg font-black">✕</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            <div className="bg-blue-900/10 p-6 rounded-2xl border border-blue-500/20 mt-4 flex flex-col gap-4">
-                                <div className="flex justify-between items-center"><span className="text-[10px] text-blue-400 font-black uppercase">➕ Dodatni utovar (Kupac uzeo još nešto):</span><button onClick={() => { setScanTarget('wms_paket'); setIsScanningOverlay(true); }} className="bg-blue-600/30 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-[9px] uppercase font-black hover:bg-blue-500 hover:text-white transition-all">📷 Skeniraj Paket</button></div>
-                                <div className="flex gap-2 w-full flex-wrap sm:flex-nowrap"><div className="flex-1 min-w-[200px]"><MasterSearch data={katalog} poljaZaPretragu={['sifra', 'naziv']} value={wmsNovaSifra} onSelect={(k) => setWmsNovaSifra(`${k.sifra} | ${k.naziv}`)} placeholder="Ručna pretraga proizvoda..." /></div><input type="number" value={wmsNovaKol} onChange={e=>setWmsNovaKol(e.target.value)} placeholder="Kol" className="w-24 min-w-0 p-3 bg-theme-panel border border-theme-border rounded-xl text-center font-black text-theme-text outline-none focus:border-blue-500" /><button onClick={dodajWmsStavkuNovu} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-black uppercase text-[10px] hover:bg-blue-500 transition-all">Dodaj</button></div>
-                            </div>
-                            <button onClick={zavrsiIPotvrdiUtovar} className="w-full py-5 bg-emerald-600 text-white font-black rounded-xl uppercase text-xs tracking-widest mt-4 shadow-lg hover:bg-emerald-500 transition-all">✅ ZAVRŠI I POTVRDI UTOVAR SVE ROBE</button>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            <div className="w-full">
-                                <label className="text-[10px] text-slate-500 uppercase font-black mb-2 block">Skeniraj QR Kod ili unesi broj sa utovarnog lista:</label>
-                                <div className="relative">
-                                    <input type="text" value={pretragaWms} onChange={e => setPretragaWms(e.target.value.toUpperCase())} placeholder="Pretraži aktivne utovare..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-amber-500 pr-16 text-xs" />
-                                    <button onClick={() => { setScanTarget('wms'); setIsScanningOverlay(true); }} className="absolute right-2 top-2 bottom-2 px-4 bg-amber-600 rounded-xl text-white font-bold hover:bg-amber-500 transition-all text-xl shadow-md">📷</button>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
-                                {izdatnice.filter(i => i.broj_izdatnice.includes(pretragaWms) || i.kupac_naziv.toUpperCase().includes(pretragaWms)).map(izd => (
-                                    <div key={izd.id} className="bg-theme-panel border border-theme-border p-4 rounded-xl shadow-sm hover:border-amber-500 transition-all flex flex-col justify-between">
-                                        <div className="border-b border-slate-700 pb-2 mb-2"><p className="text-theme-accent font-mono text-base font-black">{izd.broj_izdatnice}</p><p className="text-theme-text text-[11px] font-black uppercase mt-1 break-words line-clamp-1">{izd.kupac_naziv}</p></div>
-                                        <div className="flex justify-between items-center text-[9px] text-slate-500 uppercase font-bold mb-3"><span>Izvor: {izd.izvor_id || 'RUČNO'}</span><span>{formatirajDatum(izd.created_at)}</span></div>
-                                        <div className="flex gap-2 mt-auto">{izd.status === 'utovareno' ? <button onClick={() => { obradiSkeniraniKod(izd.broj_izdatnice); setTab('nova'); }} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[9px] uppercase tracking-wider transition-all shadow-md">📑 Fakturiši</button> : <button onClick={() => otvoriWmsUtovar(izd)} className="w-full py-2.5 bg-amber-600/20 border border-amber-500/30 text-amber-400 font-black rounded-lg text-[9px] uppercase tracking-wider hover:bg-amber-500 hover:text-black transition-all">🚚 Pokreni utovar</button>}</div>
-                                    </div>
-                                ))}
-                            </div>
+
+                            <textarea value={form.napomena} onChange={e => setForm({ ...form, napomena: e.target.value })} placeholder="Napomena uz otpremnicu..." className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text outline-none" rows="2"></textarea>
+                            <button onClick={snimiOtpremnicu} className="w-full py-5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-2xl uppercase text-sm shadow-xl tracking-widest transition-all">
+                                {isEditingOtpremnica ? '✅ Snimi Izmjene Otpremnice' : '🚛 Snimi i Zaključi Otpremnicu'}
+                            </button>
                         </div>
                     )}
                 </div>
             ) : (
-                <div className="bg-theme-card p-4 sm:p-6 rounded-box border border-theme-border shadow-2xl animate-in slide-in-from-right w-full" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {otpremnice.map(o => (
-                            <div key={o.id} onClick={() => pokreniIzmjenu(o)} className="p-4 bg-theme-panel border border-theme-border rounded-xl hover:border-emerald-500 transition-all cursor-pointer shadow-md flex flex-col justify-between group">
-                                <div className="flex justify-between items-start border-b border-slate-700 pb-2 mb-2"><div className="min-w-0 flex-1"><p className="text-emerald-500 font-black text-sm">{o.id}</p><p className="text-theme-text text-[10px] font-black uppercase mt-1 truncate">{o.kupac_naziv}</p></div><span className="bg-slate-800 text-slate-400 border border-slate-600 text-[8px] px-2 py-0.5 rounded font-black uppercase shadow-inner h-fit shrink-0 ml-2">{o.status}</span></div>
-                                <div className="flex justify-between items-center text-[9px] text-slate-500 uppercase font-bold mt-2"><span>Kamion: {o.registracija || 'N/A'}</span><button onClick={(e)=>{e.stopPropagation(); setForm(o); setStavke(o.stavke_jsonb||[]); setTimeout(() => kreirajPDFPrivremeni(o), 100);}} className="text-emerald-400 font-black px-3 py-1 rounded bg-emerald-950/40 group-hover:bg-emerald-600 group-hover:text-white border border-emerald-500/20 transition-all shadow-sm">PDF 🖨️</button></div>
-                            </div>
-                        ))}
+                <div className="bg-theme-card p-6 rounded-box border border-theme-border shadow-2xl space-y-4 animate-in slide-in-from-right">
+                    <h3 className="text-orange-400 font-black uppercase text-xs mb-4">📋 Arhiva Otpremnica ({otpremnice.length})</h3>
+                    {loadingData && <p className="text-center text-orange-400 text-xs py-6 animate-pulse">Učitavam otpremnice...</p>}
+                    {!loadingData && otpremnice.length === 0 && <p className="text-center text-slate-500 text-xs py-10 border-2 border-dashed border-theme-border rounded-xl">Nema evidentiranih otpremnica.</p>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                        {otpremnice.map(o => {
+                            const ukM3 = (o.stavke_jsonb || []).reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0);
+                            return (
+                                <div key={o.id} onClick={() => pokreniIzmjenuOtpremnice(o)} className="p-4 bg-theme-panel border border-theme-border hover:border-orange-500 rounded-2xl cursor-pointer transition-all shadow-md flex flex-col justify-between">
+                                    <div className="flex justify-between items-start border-b border-theme-border pb-2 mb-2">
+                                        <div>
+                                            <p className="text-orange-400 font-black text-sm">{o.id}</p>
+                                            <p className="text-theme-text font-bold text-xs mt-1">{o.kupac_naziv}</p>
+                                            {o.vozac && <p className="text-[10px] text-slate-400 mt-0.5">🚛 Vozač: {o.vozac} {o.registracija ? `(${o.registracija})` : ''}</p>}
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase ${o.status === 'ISPORUČENO' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : 'bg-amber-900/30 text-amber-400 border border-amber-500/30'}`}>{o.status || 'ISPORUČENO'}</span>
+                                            <p className="text-emerald-400 font-black text-base mt-1">{ukM3.toFixed(3)} m³</p>
+                                            <p className="text-[9px] text-slate-500">{formatirajDatum(o.datum)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2 mt-2">
+                                        <button onClick={(e) => { e.stopPropagation(); kreirajPDFPrivremeni(o); }} className="px-3 py-1.5 bg-theme-card border border-theme-border text-theme-text hover:bg-white hover:text-black rounded-lg text-[9px] font-black uppercase">🖨️ PDF</button>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
 
-            {isScanningOverlay && <ScannerOverlay onScan={(text) => { 
-                if (scanTarget === 'lager') {
-                    setPretragaLagera(text.toUpperCase());
-                } else if (scanTarget === 'wms') {
-                    setPretragaWms(text.toUpperCase());
-                    const ekspresna = izdatnice.find(i => i.broj_izdatnice === text.toUpperCase());
-                    if (ekspresna) otvoriWmsUtovar(ekspresna);
-                } else if (scanTarget === 'wms_paket') {
-                    obradiSkeniraniKod(text.toUpperCase(), true);
-                } else {
-                    obradiSkeniraniKod(text.toUpperCase()); 
-                }
-                setIsScanningOverlay(false); 
-            }} onClose={() => setIsScanningOverlay(false)} />}
+            {isScanning && <ScannerOverlay onScan={(text) => {
+                if (scanTarget === 'paket') skenirajPaketDirektno(text);
+                else ucitajVezniDokument(text);
+                setIsScanning(false);
+            }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }

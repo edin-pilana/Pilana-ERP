@@ -538,20 +538,47 @@ function TabMasine({ prikaziDialog, zatvoriDialog }) {
     };
 
     const save = async () => {
-        if(!form.naziv) return toast.warning("Naziv mašine je obavezan!");
-        const payload = { naziv: form.naziv, cijena_sat: parseFloat(form.cijena_sat)||0, cijena_m3: parseFloat(form.cijena_m3)||0, atributi_paketa: form.atributi_paketa, dozvoljeni_moduli: form.dozvoljeni_moduli.join(', '), dnevni_kapacitet_m3: parseFloat(form.dnevni_kapacitet_m3)||0 };
+        const cistNaziv = (form.naziv || '').trim();
+        if (!cistNaziv) return toast.warning("Naziv mašine je obavezan!");
+
+        const kapacitet = parseFloat(form.dnevni_kapacitet_m3);
+        if (isNaN(kapacitet) || kapacitet <= 0) {
+            return toast.error("Dnevni kapacitet mašine mora biti veći od 0 m³/dan!");
+        }
+
+        const cijenaSat = parseFloat(form.cijena_sat) || 0;
+        const cijenaM3 = parseFloat(form.cijena_m3) || 0;
+        if (cijenaSat < 0 || cijenaM3 < 0) {
+            return toast.error("Cijena rada mašine ne može biti negativna!");
+        }
+
+        // Sigurno pretvaranje dozvoljeni_moduli u tekst (bilo da je niz ili već string)
+        const moduliTekst = Array.isArray(form.dozvoljeni_moduli)
+            ? form.dozvoljeni_moduli.join(', ')
+            : (form.dozvoljeni_moduli || '');
+
+        const payload = {
+            naziv: cistNaziv,
+            cijena_sat: cijenaSat,
+            cijena_m3: cijenaM3,
+            atributi_paketa: Array.isArray(form.atributi_paketa) ? form.atributi_paketa : [],
+            dozvoljeni_moduli: moduliTekst,
+            dnevni_kapacitet_m3: kapacitet
+        };
+
         if (isEditing) {
-            const {error} = await supabase.from('masine').update(payload).eq('id', form.id);
-            if(error) return toast.error("Greška: " + error.message);
-            await zapisiU_Log('IZMJENA_MASINE', `Ažurirana mašina: ${form.naziv}`); 
+            const { error } = await supabase.from('masine').update(payload).eq('id', form.id);
+            if (error) return toast.error("Greška: " + error.message);
+            await zapisiU_Log('IZMJENA_MASINE', `Ažurirana mašina: ${cistNaziv}`);
             toast.success("✅ Mašina uspješno ažurirana!");
         } else {
-            const {error} = await supabase.from('masine').insert([payload]);
-            if(error) return toast.error("Greška: " + error.message);
-            await zapisiU_Log('DODAVANJE_MASINE', `Dodana mašina: ${form.naziv}`); 
+            const { error } = await supabase.from('masine').insert([payload]);
+            if (error) return toast.error("Greška: " + error.message);
+            await zapisiU_Log('DODAVANJE_MASINE', `Dodana mašina: ${cistNaziv}`);
             toast.success("✅ Nova mašina uspješno dodana!");
         }
-        ponistiIzmjenu(); load();
+        ponistiIzmjenu();
+        load();
     };
 
     const obrisi = (id, naziv, e) => {
@@ -747,31 +774,73 @@ function TabKatalog({ prikaziDialog, zatvoriDialog }) {
     };
 
     const izvrsiUpisProizvodaUBazu = async (payload) => {
+        const cistPayload = {
+            sifra: payload.sifra.trim().toUpperCase(),
+            naziv: payload.naziv.trim(),
+            kategorija: (payload.kategorija || 'Ostalo').trim(),
+            default_jedinica: payload.default_jedinica || 'm3',
+            cijena: parseFloat(payload.cijena),
+            duzina: parseFloat(payload.duzina),
+            sirina: parseFloat(payload.sirina),
+            visina: parseFloat(payload.visina),
+            m3: parseFloat(payload.m3) || parseFloat((( parseFloat(payload.visina)/100 ) * ( parseFloat(payload.sirina)/100 ) * ( parseFloat(payload.duzina)/100 )).toFixed(6)),
+            m2: parseFloat(payload.m2) || parseFloat((( parseFloat(payload.sirina)/100 ) * ( parseFloat(payload.duzina)/100 )).toFixed(4)),
+            m1: parseFloat(payload.m1) || parseFloat(( parseFloat(payload.duzina)/100 ).toFixed(2)),
+            dokument_url: payload.dokument_url || null,
+            dimenzije: `${parseFloat(payload.visina)}x${parseFloat(payload.sirina)}x${parseFloat(payload.duzina)}`
+        };
+
         if (isEditing) {
-            const { error } = await supabase.from('katalog_proizvoda').update(payload).eq('sifra', form.sifra);
-            if(error) return toast.error("Greška pri ažuriranju: " + error.message);
-            await zapisiU_Log('IZMJENA_PROIZVODA', `Ažuriran proizvod: ${form.sifra}`); 
-            toast.success("✅ Proizvod uspješno ažuriran!");
+            const { error } = await supabase.from('katalog_proizvoda').update(cistPayload).eq('sifra', cistPayload.sifra);
+            if (error) return toast.error("Greška pri ažuriranju proizvoda: " + error.message);
+            await zapisiU_Log('IZMJENA_KATALOGA', `Ažuriran artikal: ${cistPayload.sifra} - Cijena: ${cistPayload.cijena} KM`);
+            toast.success(`✅ Proizvod ${cistPayload.sifra} uspješno ažuriran!`);
         } else {
-            const { data: postoji } = await supabase.from('katalog_proizvoda').select('sifra').eq('sifra', form.sifra.toUpperCase()).maybeSingle();
-            if(postoji) return toast.error("❌ Proizvod sa ovom šifrom već postoji!");
-            const { error } = await supabase.from('katalog_proizvoda').insert([payload]);
-            if(error) return toast.error("Greška pri dodavanju: " + error.message);
-            await zapisiU_Log('DODAVANJE_PROIZVODA', `Dodan novi proizvod: ${form.sifra}`); 
-            toast.success("✅ Proizvod uspješno dodan u katalog!");
+            const { data: postojeci } = await supabase.from('katalog_proizvoda').select('sifra').eq('sifra', cistPayload.sifra).maybeSingle();
+            if (postojeci) return toast.error(`Šifra proizvoda "${cistPayload.sifra}" već postoji u katalogu!`);
+
+            const { error } = await supabase.from('katalog_proizvoda').insert([cistPayload]);
+            if (error) return toast.error("Greška pri snimanju proizvoda: " + error.message);
+            await zapisiU_Log('DODAVANJE_KATALOGA', `Dodan novi artikal: ${cistPayload.sifra}`);
+            toast.success(`✅ Novi proizvod ${cistPayload.sifra} uspješno dodan!`);
         }
-        ponistiIzmjenu(); load();
+        ponistiIzmjenu();
+        await load();
     };
 
     const snimiProizvod = async () => {
-        if(!form.sifra || !form.naziv) return toast.warning("Šifra i Naziv proizvoda su obavezni!");
-        
-        const d = parseFloat(form.duzina)||0; const s = parseFloat(form.sirina)||0; const v = parseFloat(form.visina)||0;
-        const payload = {...form, sifra: form.sifra.toUpperCase(), cijena: parseFloat(form.cijena)||0, m3: parseFloat(form.m3)||0, m2: parseFloat(form.m2)||0, m1: parseFloat(form.m1)||0, duzina: d, sirina: s, visina: v };
+        if (!form.sifra || !form.naziv) return toast.warning("Šifra i Naziv proizvoda su obavezni!");
 
-        if (d > 0 && s > 0 && v > 0) {
-            const duplikatDimenzija = katalog.find(k => 
-                k.sifra !== form.sifra && parseFloat(k.duzina||0) === d && parseFloat(k.sirina||0) === s && parseFloat(k.visina||0) === v
+        const cijenaVal = parseFloat(form.cijena);
+        if (isNaN(cijenaVal) || cijenaVal <= 0) {
+            return toast.error("Cijena proizvoda mora biti veća od 0 KM! Negativne i nulte cijene nisu dozvoljene.");
+        }
+
+        const d = parseFloat(form.duzina);
+        const s = parseFloat(form.sirina);
+        const v = parseFloat(form.visina);
+        if (isNaN(d) || d <= 0 || isNaN(s) || s <= 0 || isNaN(v) || v <= 0) {
+            return toast.error("Sve dimenzije proizvoda (Debljina, Širina, Dužina u cm) moraju biti veće od 0!");
+        }
+
+        const payload = {
+            ...form,
+            sifra: form.sifra.trim().toUpperCase(),
+            cijena: cijenaVal,
+            m3: parseFloat(form.m3) || 0,
+            m2: parseFloat(form.m2) || 0,
+            m1: parseFloat(form.m1) || 0,
+            duzina: d,
+            sirina: s,
+            visina: v
+        };
+
+        if (!isEditing && d > 0 && s > 0 && v > 0) {
+            const duplikatDimenzija = katalog.find(k =>
+                k.sifra !== payload.sifra &&
+                parseFloat(k.duzina || 0) === d &&
+                parseFloat(k.sirina || 0) === s &&
+                parseFloat(k.visina || 0) === v
             );
             if (duplikatDimenzija) {
                 return prikaziDialog({
@@ -1255,20 +1324,47 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     const ponistiEdit = () => { setForm({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [], qr_kod: '' }); setEditId(null); };
 
     const snimi = async () => {
-        if(!form.ime_prezime || !form.username || !form.password) return toast.warning("Popunite Ime, Username i Password radnika!");
-        
-        const payload = { ime_prezime: form.ime_prezime, username: form.username.toLowerCase(), password: form.password, uloga: form.uloga, bruto_satnica: parseFloat(form.bruto_satnica)||0, preostalo_godisnjeg: parseInt(form.preostalo_godisnjeg)||0, dozvole: form.dozvole, qr_kod: form.qr_kod };
+        if (!form.ime_prezime || !form.username || (!editId && !form.password)) {
+            return toast.warning("Popunite Ime, Username i Password radnika!");
+        }
+
+        const satnica = parseFloat(form.bruto_satnica || 0);
+        if (satnica < 0) {
+            return toast.error("Satnica radnika ne može biti negativna!");
+        }
+
+        const godisnji = parseInt(form.preostalo_godisnjeg || 0);
+        if (godisnji < 0) {
+            return toast.error("Broj dana godišnjeg odmora ne može biti negativan!");
+        }
+
+        // Sprječava pucanje UNIQUE (qr_kod) constrainta kada je qr_kod prazan string ""
+        const siguranQrKod = (form.qr_kod && form.qr_kod.trim() !== '')
+            ? form.qr_kod.trim()
+            : `RAD-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+        const payload = {
+            ime_prezime: form.ime_prezime.trim(),
+            username: form.username.trim().toLowerCase(),
+            password: form.password,
+            uloga: form.uloga || 'operater',
+            bruto_satnica: satnica,
+            preostalo_godisnjeg: godisnji,
+            dozvole: Array.isArray(form.dozvole) ? form.dozvole : [],
+            qr_kod: siguranQrKod
+        };
 
         if (editId) {
             const { error } = await supabase.from('radnici').update(payload).eq('id', editId);
-            if(error) return toast.error("Greška: " + error.message); 
+            if (error) return toast.error("Greška: " + error.message);
             toast.success("✅ Radnik uspješno ažuriran!");
         } else {
             const { error } = await supabase.from('radnici').insert([payload]);
-            if(error) return toast.error("Greška: " + error.message); 
-            toast.success("✅ Novi radnik uspješno kreiran!"); 
+            if (error) return toast.error("Greška: " + error.message);
+            toast.success("✅ Novi radnik uspješno kreiran!");
         }
-        ponistiEdit(); load();
+        ponistiEdit();
+        await load();
     };
 
     const obrisiRadnika = (r) => {

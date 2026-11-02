@@ -488,6 +488,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             setUlazneStavke(prev => [...prev, ...data]);
             setUlazScan(''); 
 
+            // Ako desna forma još nema odabran naziv, predloži naziv sa ulaznog paketa
+            if (!form.naziv && paket.naziv_proizvoda) {
+                setForm(prev => ({ ...prev, naziv: paket.naziv_proizvoda }));
+            }
+
             if (id.endsWith('-R')) {
                  toast.warning(`⚠️ PAŽNJA: Ovaj paket (${id}) je VRAĆENA REKLAMACIJA!`);
             }
@@ -515,36 +520,97 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         else ulazTimerRef.current = setTimeout(() => processUlaz(val), 2000);
     };
 
+    // 🟢 POPRAVLJENO RAZDUŽIVANJE ULAZNOG PAKETA: Ažurira i kolicina_final i komade, poštuje DB constraint i odmah zatvara modal uz potvrdu!
     const potvrdiRazduzivanje = async () => {
-        if (!razduziKol || isNaN(razduziKol)) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Količina', poruka: "Unesite ispravnu količinu!", onCancel: zatvoriDialog });
+        if (!razduziKol || isNaN(razduziKol)) {
+            return toast.warning("Unesite ispravnu količinu za razduživanje!");
+        }
         const unos = parseFloat(razduziKol.toString().replace(',', '.'));
-        if (unos < 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Greška', poruka: "Količina ne može biti negativna!", onCancel: zatvoriDialog });
-        const v = parseFloat(razduziZapis.debljina) || 1; const s = parseFloat(razduziZapis.sirina) || 1; const d = parseFloat(razduziZapis.duzina) || 1;
+        if (unos <= 0) {
+            return toast.error("Količina mora biti veća od 0!");
+        }
+
+        const v = parseFloat(razduziZapis.debljina) || 1;
+        const s = parseFloat(razduziZapis.sirina) || 1;
+        const d = parseFloat(razduziZapis.duzina) || 1;
+        const vol1Kom = (v / 100) * (s / 100) * (d / 100);
+
         let unosM3 = unos;
-        if (razduziJm === 'kom') unosM3 = unos * (v/100) * (s/100) * (d/100);
-        else if (razduziJm === 'm2') unosM3 = unos * (v/100);
-        else if (razduziJm === 'm1') unosM3 = unos * (v/100) * (s/100);
+        if (razduziJm === 'kom') unosM3 = unos * vol1Kom;
+        else if (razduziJm === 'm2') unosM3 = unos * (v / 100);
+        else if (razduziJm === 'm1') unosM3 = unos * (v / 100) * (s / 100);
+
+        const trenutnoNaStanju = parseFloat(razduziZapis.kolicina_final || 0);
+        if (razduziMod === 'potroseno' && unosM3 > trenutnoNaStanju + 0.0005) {
+            return toast.error(`Ne možete potrošiti ${unosM3.toFixed(3)} m³ jer je na paketu dostupno ${trenutnoNaStanju.toFixed(3)} m³!`);
+        }
 
         let preostalo = 0;
-        const trenutnoNaStanju = parseFloat(razduziZapis.kolicina_final);
         if (razduziMod === 'potroseno') preostalo = trenutnoNaStanju - unosM3;
         else if (razduziMod === 'ostalo') preostalo = unosM3;
         if (preostalo < 0) preostalo = 0;
-        const novaKol = preostalo <= 0.001 ? 0 : preostalo;
+
+        const novaKolM3 = preostalo <= 0.0005 ? 0 : parseFloat(preostalo.toFixed(4));
+        const noviKomadi = vol1Kom > 0 && novaKolM3 > 0 ? Math.max(1, Math.round(novaKolM3 / vol1Kom)) : 1;
+
         const izvrsiRazduzivanje = async () => {
-            const { error } = await supabase.from('paketi').update({ kolicina_final: novaKol.toFixed(3) }).eq('id', razduziZapis.id);
-            if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
-            const { data } = await supabase.from('paketi').select('*').in('paket_id', activeUlazIds).gt('kolicina_final', 0);
-            setUlazneStavke(data || []);
-            setRazduziZapis(null); setRazduziKol('');
+            if (novaKolM3 === 0) {
+                // Ako je paket 100% potrošen, označi ga kao razduženog u doradi (ili obriši ako nema izlazne veze) kako ne bi prekršio chk_paketi_pozitivni (kolicina_final > 0)
+                const { error } = await supabase
+                    .from('paketi')
+                    .update({
+                        otpremnica_id: `POTROSENO-DORADA-${header?.datum || new Date().toISOString().split('T')[0]}`,
+                        status: 'POTROŠENO_U_DORADI',
+                        closed_at: razduziZapis.closed_at || new Date().toISOString()
+                    })
+                    .eq('id', razduziZapis.id);
+
+                if (error) {
+                    toast.error("Baza Greška: " + error.message);
+                    return;
+                }
+                setUlazneStavke(prev => prev.filter(st => st.id !== razduziZapis.id));
+                toast.success(`✅ Paket ${razduziZapis.paket_id} je u potpunosti potrošen i razdužen!`);
+            } else {
+                const { error } = await supabase
+                    .from('paketi')
+                    .update({
+                        kolicina_final: novaKolM3,
+                        kubikaza: novaKolM3,
+                        kolicina_m3: novaKolM3,
+                        kolicina_ulaz: noviKomadi,
+                        komada: noviKomadi
+                    })
+                    .eq('id', razduziZapis.id);
+
+                if (error) {
+                    toast.error("Baza Greška: " + error.message);
+                    return;
+                }
+                setUlazneStavke(prev => prev.map(st => st.id === razduziZapis.id ? {
+                    ...st,
+                    kolicina_final: novaKolM3,
+                    kolicina_ulaz: noviKomadi,
+                    komada: noviKomadi
+                } : st));
+                toast.success(`✅ Razduženo ${unosM3.toFixed(3)} m³ sa paketa ${razduziZapis.paket_id}! Preostalo: ${novaKolM3.toFixed(3)} m³ (${noviKomadi} kom).`);
+            }
+
+            setRazduziZapis(null);
+            setRazduziKol('');
             zatvoriDialog();
         };
-        if (novaKol === 0) {
+
+        if (novaKolM3 === 0) {
+            setRazduziZapis(null);
             prikaziDialog({
-                tip: 'upozorenje', naslov: 'Potvrda Brisanja',
-                poruka: `Stanje ove stavke će pasti na NULU i biće potpuno razdužena sa ulaza.\nDa li ste sigurni?`,
-                confirmText: '✅ DA, RAZDUŽI', cancelText: '✕ ODUSTANI',
-                onConfirm: izvrsiRazduzivanje, onCancel: zatvoriDialog
+                tip: 'upozorenje',
+                naslov: 'Potvrda Potpune Potrošnje',
+                poruka: `Stanje ove stavke (${razduziZapis.paket_id}) će pasti na NULU i biće potpuno razdužena sa ulaza.\nDa li ste sigurni?`,
+                confirmText: '✅ DA, RAZDUŽI',
+                cancelText: '✕ ODUSTANI',
+                onConfirm: izvrsiRazduzivanje,
+                onCancel: zatvoriDialog
             });
         } else {
             await izvrsiRazduzivanje();
@@ -653,6 +719,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
         const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== operater && ime !== viljuskarista) : [];
         const sviRadniciPilana = [operater, viljuskarista, ...ostaliRadnici].filter(Boolean).join(', ');
+        const nazivZaSnimanje = (form.naziv || ulazneStavke[0]?.naziv_proizvoda || `Dorada ${v}x${s}x${d} cm`).trim();
         
         if (activeEditItem) {
             if (updateMode === 'dodaj') {
@@ -669,7 +736,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
         } else {
             const { error } = await supabase.from('paketi').insert([{ 
-                paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: parseFloat(form.debljina), sirina: parseFloat(form.sirina), duzina: parseFloat(form.duzina), 
+                paket_id: selectedIzlazId, naziv_proizvoda: nazivZaSnimanje, debljina: parseFloat(form.debljina), sirina: parseFloat(form.sirina), duzina: parseFloat(form.duzina), 
                 kolicina_ulaz: parseFloat(form.kolicina_ulaz), jm: form.jm, kolicina_final: qtyZaPaket, mjesto: header.mjesto, masina: header.masina, 
                 snimio_korisnik: user?.ime_prezime || 'Nepoznat', radnici_pilana: sviRadniciPilana, brentista: operater, viljuskarista: viljuskarista,
                 vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, ai_sirovina_ids: activeUlazIds.length > 0 ? activeUlazIds : null, oznake: odabraneOznake, 
@@ -706,6 +773,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         fetchIzlaz(selectedIzlazId);
         ucitajSveZapoocetePakete();
         setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
+        toast.success(`✅ Dodano ${qtyZaPaket} m³ u izlazni paket ${selectedIzlazId}!`);
     };
 
     const obrisiStavkuIzPaketa = async (item, e) => {
@@ -811,7 +879,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         <h3 className="text-red-400 font-black uppercase text-sm mb-4 border-b border-theme-border pb-3">Razduživanje Stavke</h3>
                         <div className="mb-4 text-xs text-slate-300">
                             <p className="mb-1">Paket: <b className="text-theme-text bg-slate-800 px-2 py-0.5 rounded">{razduziZapis.paket_id}</b></p>
-                            <p className="mb-1">Proizvod: <b className="text-theme-text">{razduziZapis.naziv_proizvoda} ({razduziZapis.debljina}x{razduziZapis.sirina}x{razduziZapis.duzina} cm)</b></p>
+                            <p className="mb-1">Proizvod: <b className="text-theme-text">{razduziZapis.naziv_proizvoda || 'Sirovina'} ({razduziZapis.debljina}x{razduziZapis.sirina}x{razduziZapis.duzina} cm)</b></p>
                             <p className="mt-2 text-[10px] uppercase text-slate-500">Trenutno stanje na ulazu:</p>
                             <p className="text-emerald-400 font-black text-2xl drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">{razduziZapis.kolicina_final} <span className="text-sm">m³</span></p>
                         </div>
@@ -858,7 +926,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             <h2 className="text-amber-500 text-center font-black tracking-widest uppercase text-xl mt-2 mb-6 drop-shadow-md">🔄 DORADA - ULAZ / IZLAZ (Dimenzije u cm)</h2>
             
             <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-md p-4 rounded-2xl border border-theme-border/50 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                {/* 🟢 STEPENASTI Z-INDEX: 60 - index sprečava preklapanje padajućih menija na mobitelu */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full flex-wrap overflow-visible">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div key={polje.id} style={{ zIndex: 60 - index }} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
@@ -1009,8 +1076,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                     {ulazneStavke.map(s => (
                                         <div key={s.id} onClick={() => { setRazduziZapis(s); setRazduziMod('potroseno'); setRazduziKol(''); setRazduziJm('kom'); }} className="p-3 bg-slate-800/50 border border-theme-border/50 rounded-xl flex justify-between items-center cursor-pointer hover:border-red-500 hover:bg-slate-800 transition-all shadow-sm">
                                             <div>
-                                                <p className="text-theme-text text-xs font-black">{s.naziv_proizvoda}</p>
-                                                <p className="text-[9px] text-slate-400 mt-1">Paket: {s.paket_id} | Dim: {s.debljina}x{s.sirina}x{s.duzina} cm</p>
+                                                <p className="text-theme-text text-xs font-black">{s.naziv_proizvoda || `Paket ${s.paket_id}`}</p>
+                                                <p className="text-[9px] text-slate-400 mt-1">Paket: {s.paket_id} | Dim: {s.debljina}x{s.sirina}x{s.duzina} cm {s.kolicina_ulaz ? `| ${s.kolicina_ulaz} ${s.jm || 'kom'}` : ''}</p>
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-red-400 font-black text-lg">{s.kolicina_final} m³</div>
@@ -1044,7 +1111,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                 📦 Započeti izlazni paketi na ovoj mašini:
                             </label>
                             
-                            {/* 🟢 POPRAVLJENO PREKLAPANJE: Bedž i dugme X su jedno pored drugog u flex redu */}
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
                                 {aktivniPaketiInfo.length === 0 && <div className="col-span-full text-xs text-slate-500 italic border border-dashed border-theme-border p-4 rounded-xl w-full text-center">Nema započetih paketa na ovoj mašini...</div>}
                                 {aktivniPaketiInfo.map(p => (
