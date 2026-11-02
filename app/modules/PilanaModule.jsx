@@ -513,6 +513,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (!brentista) return prikaziDialog({ tip: 'greska', naslov: 'Blokada', poruka: "ZABRANJENO: Molimo odaberite Brentistu prije snimanja paketa!", onCancel: zatvoriDialog });
         if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Paket', poruka: "Prvo skenirajte ili unesite ID za IZLAZNI PAKET!", onCancel: zatvoriDialog });
         if (!form.kolicina_ulaz) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Količina', poruka: "Unesite količinu prije snimanja!", onCancel: zatvoriDialog });
+        if (!form.kolicina_ulaz || parseFloat(form.kolicina_ulaz) <= 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Količina mora biti veća od nule (0)! Negativne i nulte vrijednosti nisu dozvoljene.", onCancel: zatvoriDialog });
+        }
+        if (!form.debljina || parseFloat(form.debljina) <= 0 || !form.sirina || parseFloat(form.sirina) <= 0 || !form.duzina || parseFloat(form.duzina) <= 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Sve dimenzije (Debljina, Širina i Dužina u cm) moraju biti veće od nule!", onCancel: zatvoriDialog });
+        }
         
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);

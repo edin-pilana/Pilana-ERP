@@ -386,12 +386,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         zavrsiProrezPravi(brentista, viljuskarista);
     };
 
+    // 🟢 POPRAVLJENO: Ako trupac ima kontrolnu zapreminu, prorez uvijek koristi stvarnu (kontrolnu) zapreminu!
     const zavrsiProrezPravi = async (brentistaZaSpasiti, viljuskaristaZaSpasiti) => {
         const sviRadniciProrez = [brentistaZaSpasiti, viljuskaristaZaSpasiti].filter(Boolean).join(', ');
+        const efektivnaZapremina = parseFloat(trupac.kontrolna_zapremina || trupac.zapremina || 0);
         
         const logPayload = {
             trupac_id: trupac.id, 
-            zapremina: trupac.zapremina,
+            zapremina: efektivnaZapremina,
             mjesto: header.mjesto, 
             masina: header.masina,
             datum: header.datum || new Date().toISOString().split('T')[0], 
@@ -511,7 +513,6 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             <h2 className="text-red-500 text-center font-black tracking-widest uppercase text-xl md:text-2xl mt-2 mb-6 drop-shadow-md">🪚 PROREZ TRUPACA</h2>
             
             <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-red-500/20 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                {/* 🟢 POPRAVLJENO: Stepenasti zIndex (60 - index) sprečava preklapanje padajućih menija na mobitelu */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full overflow-visible">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div key={polje.id} style={{ zIndex: 60 - index }} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
@@ -548,21 +549,26 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                 <div className="flex justify-between items-start mb-6 border-b border-theme-border/50 pb-4 relative z-10">
                                     <div>
                                         <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Skenirani Trupac</span>
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex flex-wrap items-center gap-3">
                                             <h3 className="text-3xl text-theme-text font-black drop-shadow-md">{trupac.id}</h3>
                                             {trupac.broj_plocice && <span className="bg-red-900/30 border border-red-500/30 text-red-400 px-3 py-1 rounded-xl text-sm font-black uppercase">Pločica: {trupac.broj_plocice}</span>}
+                                            {trupac.kontrolna_zapremina && <span className="bg-amber-500 text-black px-2.5 py-1 rounded-lg text-[10px] font-black uppercase">Kontrolna mjera</span>}
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Zapremina (m³)</span>
-                                        <h3 className="text-4xl text-red-500 font-black drop-shadow-lg">{parseFloat(trupac.zapremina || 0).toFixed(3)} <span className="text-lg text-red-700">m³</span></h3>
+                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">
+                                            {trupac.kontrolna_zapremina ? 'Zapremina (Kontrola m³)' : 'Zapremina (m³)'}
+                                        </span>
+                                        <h3 className="text-4xl text-red-500 font-black drop-shadow-lg">
+                                            {parseFloat(trupac.kontrolna_zapremina || trupac.zapremina || 0).toFixed(3)} <span className="text-lg text-red-700">m³</span>
+                                        </h3>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 relative z-10">
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Vrsta</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.vrsta || 'N/A'}</span></div>
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Klasa</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.klasa || '-'}</span></div>
-                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Dužina (m)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.duzina} m</span></div>
-                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik (cm)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.promjer} cm</span></div>
+                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Dužina (m)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.kontrolna_duzina || trupac.duzina} m</span></div>
+                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik (cm)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.kontrolni_promjer || trupac.promjer} cm</span></div>
                                 </div>
                                 <div className="flex flex-col sm:flex-row gap-4 relative z-10">
                                     <button onClick={() => {setTrupac(null); setScan(''); setTimeout(() => inputRef.current?.focus(), 100);}} className="flex-1 py-5 bg-theme-card text-slate-400 font-black rounded-2xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-sm">✕ Otkazivanje</button>

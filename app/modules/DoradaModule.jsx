@@ -591,7 +591,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     
     const saveIzlaz = async () => {
         if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Paket', poruka: "Prvo skenirajte IZLAZNI PAKET!", onCancel: zatvoriDialog });
-        if (!form.kolicina_ulaz) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Količina', poruka: "Unesite količinu prije snimanja!", onCancel: zatvoriDialog });
+        if (!form.kolicina_ulaz || parseFloat(form.kolicina_ulaz) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Količina mora biti veća od nule (0)!", onCancel: zatvoriDialog });
+        if (parseFloat(form.debljina) <= 0 || parseFloat(form.sirina) <= 0 || parseFloat(form.duzina) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Sve dimenzije (Debljina, Širina, Dužina u cm) moraju biti veće od nule!", onCancel: zatvoriDialog });
         const izvrsiProcesSnimanja = async () => {
             const timeNow = new Date().toLocaleTimeString('de-DE');
             const unosKol = parseFloat(form.kolicina_ulaz);
@@ -668,10 +669,10 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
         } else {
             const { error } = await supabase.from('paketi').insert([{ 
-                paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: form.debljina, sirina: form.sirina, duzina: form.duzina, 
-                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket, mjesto: header.mjesto, masina: header.masina, 
+                paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: parseFloat(form.debljina), sirina: parseFloat(form.sirina), duzina: parseFloat(form.duzina), 
+                kolicina_ulaz: parseFloat(form.kolicina_ulaz), jm: form.jm, kolicina_final: qtyZaPaket, mjesto: header.mjesto, masina: header.masina, 
                 snimio_korisnik: user?.ime_prezime || 'Nepoznat', radnici_pilana: sviRadniciPilana, brentista: operater, viljuskarista: viljuskarista,
-                vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, ai_sirovina_ids: activeUlazIds.join(','), oznake: odabraneOznake, 
+                vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, ai_sirovina_ids: activeUlazIds.length > 0 ? activeUlazIds : null, oznake: odabraneOznake, 
                 broj_veze: radniNalog, je_nusproizvod: isNusProizvod 
             }]);
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });

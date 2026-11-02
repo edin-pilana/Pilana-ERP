@@ -7,12 +7,35 @@ import { useSaaS } from '../utils/useSaaS';
 import { ChevronLeft, ChevronRight, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// 🟢 ČISTO FORMATIRANJE DATUMA BEZ UTC POMAKA (06.11.2026. ostaje 06.11.2026.)
+const formatirajDatumBezPomaka = (isoStr) => {
+    if (!isoStr) return 'N/A';
+    const clean = isoStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length !== 3) return isoStr;
+    return `${parts[2]}.${parts[1]}.${parts[0]}.`;
+};
+
+const parseLocalIsoDate = (isoStr) => {
+    if (!isoStr) return new Date();
+    const clean = isoStr.split('T')[0];
+    const [y, m, d] = clean.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const toLocalIsoString = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const saas = useSaaS('planiranje_modul', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', boja_akcenta: '#f59e0b'
     });
 
-    const danasnjiDatum = new Date().toISOString().split('T')[0];
+    const danasnjiDatum = toLocalIsoString(new Date());
     const isReadOnly = user?.uloga !== 'admin' && user?.uloga !== 'superadmin' && !(user?.dozvole || []).includes('Planiranje Proizvodnje');
 
     const [loading, setLoading] = useState(true);
@@ -63,15 +86,14 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     useEffect(() => { if (odabranaMasina && katalog.length > 0) loadRaspored(); }, [odabranaMasina, pocetakSedmice, katalog]);
 
     function getStartOfWeek(date) {
-        const d = new Date(date);
+        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        return new Date(d.setDate(diff));
+        return new Date(d.getFullYear(), d.getMonth(), diff);
     }
 
     const shiftWeek = (smjer) => {
-        const d = new Date(pocetakSedmice);
-        d.setDate(d.getDate() + (smjer * 7));
+        const d = new Date(pocetakSedmice.getFullYear(), pocetakSedmice.getMonth(), pocetakSedmice.getDate() + (smjer * 7));
         setPocetakSedmice(d);
     };
 
@@ -90,10 +112,9 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const loadRaspored = async () => {
         setLoading(true);
-        const krajSedmice = new Date(pocetakSedmice);
-        krajSedmice.setDate(krajSedmice.getDate() + 6);
-        const dOd = pocetakSedmice.toISOString().split('T')[0];
-        const dDo = krajSedmice.toISOString().split('T')[0];
+        const krajSedmice = new Date(pocetakSedmice.getFullYear(), pocetakSedmice.getMonth(), pocetakSedmice.getDate() + 6);
+        const dOd = toLocalIsoString(pocetakSedmice);
+        const dDo = toLocalIsoString(krajSedmice);
 
         const { data: raspData } = await supabase.from('raspored_proizvodnje')
             .select('*').eq('masina', odabranaMasina).gte('datum_plana', dOd).lte('datum_plana', dDo);
@@ -120,7 +141,6 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 const sir = parseFloat(katItem.sirina) || 0; 
                 const d = parseFloat(katItem.duzina) || 0;
                 
-                // 🟢 MATEMATIKA ZA CENTIMETRE (dijelimo sa 100)
                 const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
                 const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
                 const len1kom = (d > 0) ? (d/100) : 0;
@@ -178,15 +198,14 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             }
         });
 
-        setNerasporedjeniNalozi(naloziZaLijevuStranu.sort((a,b) => new Date(a.rok_isporuke) - new Date(b.rok_isporuke)));
+        setNerasporedjeniNalozi(naloziZaLijevuStranu.sort((a,b) => parseLocalIsoDate(a.rok_isporuke) - parseLocalIsoDate(b.rok_isporuke)));
         setLoading(false);
     };
 
     const izracunajPreporuku = (rok_isporuke) => {
-        const rokDate = new Date(rok_isporuke);
-        const preporukaDate = new Date(rokDate);
-        preporukaDate.setDate(preporukaDate.getDate() - 2);
-        const danas = new Date(danasnjiDatum);
+        const rokDate = parseLocalIsoDate(rok_isporuke);
+        const preporukaDate = new Date(rokDate.getFullYear(), rokDate.getMonth(), rokDate.getDate() - 2);
+        const danas = parseLocalIsoDate(danasnjiDatum);
         return preporukaDate < danas ? danas : preporukaDate;
     };
 
@@ -216,14 +235,13 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             checked: true 
         }));
         let finalniDatum = datum;
-        if (!finalniDatum) { finalniDatum = izracunajPreporuku(nalog.rok_isporuke).toISOString().split('T')[0]; }
+        if (!finalniDatum) { finalniDatum = toLocalIsoString(izracunajPreporuku(nalog.rok_isporuke)); }
         setStavkeZaPlaniranje(pocetnoStanjeStavki);
         setPlaniranjeModal({ nalog, datum: finalniDatum });
     };
 
     const toggleStavkaPlaniranje = (id) => { setStavkeZaPlaniranje(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s)); };
     
-    // 🟢 MATEMATIKA PLANIRANJA
     const promjeniKolicinuPlaniranja = (id, novaKolOriginal) => { 
         setStavkeZaPlaniranje(prev => prev.map(s => {
             if (s.id === id) {
@@ -256,7 +274,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
         const { error } = await supabase.from('raspored_proizvodnje').insert(payload);
         if (error) return toast.error("Greška pri zakazivanju: " + error.message);
-        toast.success(`Radni nalog ${planiranjeModal.nalog.id} uspješno zakazan za ${planiranjeModal.datum}!`);
+        toast.success(`Radni nalog ${planiranjeModal.nalog.id} uspješno zakazan za ${formatirajDatumBezPomaka(planiranjeModal.datum)}!`);
         setPlaniranjeModal(null); 
         loadRaspored();
     };
@@ -290,7 +308,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 porukaUpozorenja += `• Za stavku "${prekoracenaStavka.naziv}" unijeli ste više nego što je preostalo u nalogu.\n\n`;
             }
             if (prelaziKapacitet) {
-                porukaUpozorenja += `• KAPACITET PREMAŠEN: Na dan ${danStr} je već planirano ${trenutnoPlaniranoNaDan.toFixed(2)} m³. Sa ovim dodajete još ${ukupnoNovihKubika.toFixed(2)} m³, čime prelazite dnevni limit od ${kapacitetMasine} m³.\n\n`;
+                porukaUpozorenja += `• KAPACITET PREMAŠEN: Na dan ${formatirajDatumBezPomaka(danStr)} je već planirano ${trenutnoPlaniranoNaDan.toFixed(2)} m³. Sa ovim dodajete još ${ukupnoNovihKubika.toFixed(2)} m³, čime prelazite dnevni limit od ${kapacitetMasine} m³.\n\n`;
             }
             porukaUpozorenja += `Da li ste sigurni da želite nastaviti i zakazati proizvodnju?`;
 
@@ -332,8 +350,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const DaniUSedmici = useMemo(() => {
         const dani = []; const imena = ['PONEDJELJAK', 'UTORAK', 'SRIJEDA', 'ČETVRTAK', 'PETAK', 'SUBOTA', 'NEDJELJA'];
         for(let i=0; i<7; i++) {
-            const d = new Date(pocetakSedmice); d.setDate(d.getDate() + i);
-            dani.push({ datum: d, ime: imena[i], iso: d.toISOString().split('T')[0] });
+            const d = new Date(pocetakSedmice.getFullYear(), pocetakSedmice.getMonth(), pocetakSedmice.getDate() + i);
+            dani.push({ datum: d, ime: imena[i], iso: toLocalIsoString(d) });
         }
         return dani;
     }, [pocetakSedmice]);
@@ -379,7 +397,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                 <p className="text-slate-300 text-xs md:text-sm font-bold bg-theme-panel inline-block px-2 md:px-3 py-1 md:py-1.5 rounded-lg mt-2 border border-theme-border">{pregledNaloga.kupac_naziv}</p>
                             </div>
                             <div className="sm:text-right sm:pt-6">
-                                <span className={`text-[9px] md:text-[10px] px-2 md:px-3 py-1 md:py-1.5 rounded-lg font-black uppercase tracking-widest ${new Date(pregledNaloga.rok_isporuke) <= new Date(DaniUSedmici[6].datum) ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-slate-800 text-slate-300'}`}>Rok: {new Date(pregledNaloga.rok_isporuke).toLocaleDateString('de-DE')}</span>
+                                <span className={`text-[9px] md:text-[10px] px-2 md:px-3 py-1 md:py-1.5 rounded-lg font-black uppercase tracking-widest ${parseLocalIsoDate(pregledNaloga.rok_isporuke) <= DaniUSedmici[6].datum ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-slate-800 text-slate-300'}`}>Rok: {formatirajDatumBezPomaka(pregledNaloga.rok_isporuke)}</span>
                             </div>
                         </div>
                         
@@ -499,10 +517,10 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         {!loading && nerasporedjeniNalozi.length === 0 && <div className="text-center text-slate-500 text-[9px] md:text-[10px] p-4 border border-dashed border-theme-border rounded-xl font-bold mt-2">Nema neraspoređenih naloga!</div>}
                         
                         {!loading && nerasporedjeniNalozi.map((rn) => {
-                            const isHitno = new Date(rn.rok_isporuke) <= new Date(DaniUSedmici[6].datum);
+                            const isHitno = parseLocalIsoDate(rn.rok_isporuke) <= DaniUSedmici[6].datum;
                             const preostaloM3 = rn.stavkeZaPlaniranje.reduce((s, st) => s + parseFloat(st.preostalo), 0).toFixed(2);
                             const preporuceniDatum = izracunajPreporuku(rn.rok_isporuke);
-                            const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${preporuceniDatum.toLocaleDateString('de-DE').substring(0, 5)})`;
+                            const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${String(preporuceniDatum.getDate()).padStart(2,'0')}.${String(preporuceniDatum.getMonth()+1).padStart(2,'0')}.)`;
 
                             return (
                                 <div 
@@ -518,7 +536,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                 >
                                     <div className="flex justify-between items-start mb-2 gap-2">
                                         <span className="text-[10px] md:text-[11px] text-blue-400 font-black uppercase bg-blue-900/20 px-2 py-0.5 md:py-1 rounded border border-blue-500/30 truncate">{rn.id}</span>
-                                        <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-0.5 md:py-1 rounded whitespace-nowrap ${isHitno ? 'bg-rose-900/30 text-rose-400' : 'bg-theme-card text-slate-400 border border-theme-border'}`}>Rok: {new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</span>
+                                        <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-0.5 md:py-1 rounded whitespace-nowrap ${isHitno ? 'bg-rose-900/30 text-rose-400' : 'bg-theme-card text-slate-400 border border-theme-border'}`}>Rok: {formatirajDatumBezPomaka(rn.rok_isporuke)}</span>
                                     </div>
                                     <p className="text-theme-text text-xs md:text-sm font-bold uppercase truncate">{rn.kupac_naziv}</p>
                                     
@@ -561,7 +579,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             >
                                 <div className="p-2 md:p-3 border-b border-theme-border/50 text-center shrink-0 bg-theme-panel/50 sticky top-0 z-10 backdrop-blur-md">
                                     <h4 className="text-[9px] md:text-[10px] text-slate-400 uppercase font-black tracking-widest">{dan.ime}</h4>
-                                    <h3 className={`text-sm md:text-base font-black mt-0.5 md:mt-1 ${dan.iso === danasnjiDatum ? 'text-blue-400' : 'text-theme-text'}`}>{dan.datum.toLocaleDateString('de-DE', {day:'2-digit', month:'2-digit'})}</h3>
+                                    <h3 className={`text-sm md:text-base font-black mt-0.5 md:mt-1 ${dan.iso === danasnjiDatum ? 'text-blue-400' : 'text-theme-text'}`}>{String(dan.datum.getDate()).padStart(2,'0')}.{String(dan.datum.getMonth()+1).padStart(2,'0')}.</h3>
                                     
                                     <div className="mt-2 bg-black/30 p-1.5 md:p-2 rounded-lg md:rounded-xl border border-theme-border/50 shadow-inner">
                                         <div className="flex justify-between text-[7px] md:text-[8px] font-black uppercase mb-1">
