@@ -1,10 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
 
 export default function MasterHeader({ header, setHeader, onExit, user, hideMasina, modulIme, saas }) {
     const [masine, setMasine] = useState([]);
@@ -13,7 +10,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const [otvorenTab, setOtvorenTab] = useState(false);
     const [noviRadnik, setNoviRadnik] = useState('');
     
-    // 🔔 State za Nadzorni Centar / Alarme
+    // 🔔 State za Nadzorni Centar / Alarme i Mobilne Notifikacije
     const [brojAlarma, setBrojAlarma] = useState(0);
     const [listaAlarma, setListaAlarma] = useState([]);
     const [otvorenoZvonce, setOtvorenoZvonce] = useState(false);
@@ -21,7 +18,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const dropdownRef = useRef(null);
 
     const currentUser = user?.ime_prezime ? user : JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
-    const isSuperadmin = currentUser?.uloga === 'superadmin';
+    const isSuperadmin = currentUser?.uloga === 'superadmin' || currentUser?.uloga === 'admin';
 
     // Zatvaranje dropdowna na klik izvan njega
     useEffect(() => {
@@ -34,7 +31,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // 🔔 Efekat za slušanje alarma u realnom vremenu (Samo za Superadmina)
+    // 🔔 Efekat za slušanje alarma u realnom vremenu (Za Admina i Superadmina + Mobilne Notifikacije)
     useEffect(() => {
         if (!isSuperadmin) return;
 
@@ -44,8 +41,8 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 .select('*', { count: 'exact' })
                 .eq('pregledano', false)
                 .in('nivo_alarma', ['CRVENO', 'ŽUTO'])
-                .order('created_at', { ascending: false })
-                .limit(10); // Povlači zadnjih 10 za brzi pregled
+                .order('vrijeme', { ascending: false })
+                .limit(15);
             
             setListaAlarma(data || []);
             setBrojAlarma(count || 0);
@@ -56,7 +53,21 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         const unikatanKanal = `alarmi_sync_header_${Math.random().toString(36).substring(2)}`;
 
         const channel = supabase.channel(unikatanKanal)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'sistem_audit_log' }, () => {
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sistem_audit_log' }, (payload) => {
+                ucitajAlarme();
+                const novi = payload?.new;
+                if (novi && (novi.nivo_alarma === 'CRVENO' || novi.nivo_alarma === 'ŽUTO')) {
+                    if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+                        window.navigator.vibrate([200, 100, 200]);
+                    }
+                    if (novi.nivo_alarma === 'CRVENO') {
+                        toast.error(`🚨 ${novi.akcija}: ${novi.detalji}`, { duration: 8000 });
+                    } else {
+                        toast.warning(`⚠️ ${novi.akcija}: ${novi.detalji}`, { duration: 6000 });
+                    }
+                }
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sistem_audit_log' }, () => {
                 ucitajAlarme(); 
             })
             .subscribe();
@@ -68,7 +79,6 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const oznaciKaoProcitano = async (id, e) => {
         e.stopPropagation();
         await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
-        // Ne moramo ručno ažurirati state jer će supabase realtime trigger (iznad) sam osvježiti listu
     };
 
     // Funkcija za brzo zatvaranje/čitanje svih trenutnih alarma u padajućem meniju
@@ -78,8 +88,8 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         if (ids.length === 0) return;
         
         await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', ids);
+        toast.success("Sva upozorenja su označena kao pročitana.");
     };
-
 
     useEffect(() => {
         const fetchMasine = async () => {
@@ -118,7 +128,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     }, [header?.masina]);
 
     const dodajRadnika = async () => {
-        if(!header?.masina) return alert("Odaberi mašinu prvo!");
+        if(!header?.masina) return toast.warning("Prvo odaberite mašinu u zaglavlju!");
         if(!noviRadnik) return;
         await supabase.from('aktivni_radnici').insert([{ radnik_ime: noviRadnik, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'pomocni' }]);
         setNoviRadnik('');
@@ -145,7 +155,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 
                 {/* LIJEVA STRANA: Izlaz, Modul i Live indikator */}
                 <div className="flex items-center gap-3">
-                    <button onClick={onExit} className="bg-theme-panel border border-theme-border text-[10px] px-4 py-3 rounded-xl uppercase text-theme-text font-black hover:bg-red-500 hover:border-red-500 transition-all shadow-md">← Meni</button>
+                    <button onClick={onExit} className="bg-theme-panel border border-theme-border text-[10px] px-4 py-3 rounded-xl uppercase text-theme-text font-black hover:bg-red-500 hover:text-white hover:border-red-500 transition-all shadow-md">← Meni</button>
                     {modulIme && (
                         <div className="flex items-center gap-3 bg-theme-panel/50 px-3 py-1.5 rounded-lg border border-theme-border/50">
                             <span className="text-theme-accent font-black tracking-widest uppercase text-xs hidden sm:block">Modul: {modulIme}</span>
@@ -190,17 +200,17 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 {/* DESNA STRANA: God Mode, Zvonce i Korisnik */}
                 <div className="flex flex-wrap items-center gap-3 justify-center lg:justify-end w-full lg:w-auto">
                     
-                    {/* 🔔 ZVONCE ZA NADZORNI CENTAR (PADAJUĆI MENI) */}
+                    {/* 🔔 ZVONCE ZA NADZORNI CENTAR (PADAJUĆI MENI NA DESKTOPU I MOBITELU) */}
                     {isSuperadmin && modulIme !== 'Nadzorni Centar' && (
                         <div className="relative" ref={dropdownRef}>
                             <button 
                                 onClick={() => setOtvorenoZvonce(!otvorenoZvonce)} 
                                 className={`relative w-10 h-10 rounded-xl border flex items-center justify-center text-lg transition-transform shadow-inner cursor-pointer ${otvorenoZvonce ? 'bg-theme-accent text-white border-theme-accent scale-105' : 'bg-theme-panel border-theme-border hover:scale-105'}`}
-                                title="Otvori upozorenja"
+                                title="Otvori upozorenja i zahtjeve za odobrenje"
                             >
                                 🔔
                                 {brojAlarma > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
+                                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
                                         {brojAlarma > 99 ? '99+' : brojAlarma}
                                     </span>
                                 )}
@@ -208,10 +218,10 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
 
                             {/* PADAJUĆI MENI */}
                             {otvorenoZvonce && (
-                                <div className="absolute top-[120%] right-0 w-80 sm:w-96 bg-theme-card border border-theme-border rounded-[1.5rem] shadow-2xl overflow-hidden z-[999] animate-in slide-in-from-top-2">
+                                <div className="fixed sm:absolute top-20 sm:top-[120%] right-4 sm:right-0 w-[92vw] sm:w-96 bg-theme-card border-2 border-theme-border rounded-[1.5rem] shadow-2xl overflow-hidden z-[9999] animate-in slide-in-from-top-2">
                                     <div className="flex justify-between items-center p-4 border-b border-theme-border bg-theme-panel/50">
                                         <h4 className="text-xs font-black uppercase text-theme-text flex items-center gap-2">
-                                            <span>🚨</span> Nedavna upozorenja
+                                            <span>🚨</span> Upozorenja ({brojAlarma})
                                         </h4>
                                         {listaAlarma.length > 0 && (
                                             <button onClick={oznaciSveKaoProcitano} className="text-[9px] text-theme-muted hover:text-emerald-400 uppercase font-black transition-colors">
@@ -233,14 +243,14 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                                         <div className="flex-1 min-w-0 pr-6">
                                                             <div className="flex justify-between items-center mb-1">
                                                                 <span className="text-[10px] font-black text-theme-text uppercase">{alarm.akcija}</span>
-                                                                <span className="text-[9px] text-slate-500">{formatirajVrijeme(alarm.created_at)}</span>
+                                                                <span className="text-[9px] text-slate-500">{formatirajVrijeme(alarm.vrijeme || alarm.created_at)}</span>
                                                             </div>
                                                             <p className="text-xs text-slate-400 font-medium leading-snug">{alarm.detalji}</p>
                                                             <p className="text-[9px] text-slate-500 mt-2 font-bold">👤 {alarm.korisnik}</p>
                                                         </div>
                                                         <button 
                                                             onClick={(e) => oznaciKaoProcitano(alarm.id, e)} 
-                                                            className="absolute top-1/2 -translate-y-1/2 right-3 w-6 h-6 flex items-center justify-center rounded-md bg-theme-panel border border-theme-border text-slate-400 hover:text-emerald-400 hover:border-emerald-500 transition-all opacity-0 group-hover:opacity-100"
+                                                            className="absolute top-1/2 -translate-y-1/2 right-3 w-7 h-7 flex items-center justify-center rounded-md bg-theme-panel border border-theme-border text-slate-400 hover:text-emerald-400 hover:border-emerald-500 transition-all"
                                                             title="Označi pročitano"
                                                         >
                                                             ✓
@@ -252,19 +262,15 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                     </div>
                                     
                                     <div className="p-3 bg-theme-panel/50 border-t border-theme-border text-center">
-                                    <button 
-    onClick={() => { 
-        setOtvorenoZvonce(false); 
-        // 👇 UMJESTO DISPATCH EVENTA, KORISTIMO POSTOJEĆU METODU IZNAD 👇
-        if(typeof setHeader === 'function') {
-           // Okinut ćemo fake "header" update, ali glavno čitanje će biti u page.tsx
-           window.dispatchEvent(new CustomEvent('navigacija_na_nadzor'));
-        }
-    }} 
-    className="text-[10px] text-theme-accent uppercase font-black tracking-widest hover:underline w-full"
->
-    → Otvori Nadzorni Centar
-</button>
+                                        <button 
+                                            onClick={() => { 
+                                                setOtvorenoZvonce(false); 
+                                                window.dispatchEvent(new CustomEvent('navigacija_na_nadzor'));
+                                            }} 
+                                            className="text-[10px] text-theme-accent uppercase font-black tracking-widest hover:underline w-full py-1"
+                                        >
+                                            → Otvori Nadzorni Centar
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -288,7 +294,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                         <span className="text-[9px] text-theme-muted uppercase font-black">Prijavljen:</span>
                         <span className="text-xs text-theme-text font-bold whitespace-nowrap">
                             {currentUser?.ime_prezime || 'Korisnik'}
-                            {isSuperadmin && <span className="text-amber-500 ml-1" title="Superadmin">★</span>}
+                            {isSuperadmin && <span className="text-amber-500 ml-1" title="Admin / Superadmin">★</span>}
                         </span>
                     </div>
                 </div>

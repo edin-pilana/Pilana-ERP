@@ -1,16 +1,13 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa, printFaznaDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { toast } from 'sonner';
 
 function DimBox({ label, val, set, disabled }) {
     return (
@@ -21,7 +18,7 @@ function DimBox({ label, val, set, disabled }) {
     );
 }
 
-function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop }) {
+function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop, prikaziDialog, zatvoriDialog }) {
     const [logovi, setLogovi] = useState([]);
     const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
@@ -33,18 +30,36 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
-        if (!form.vrijeme_od) return alert("Vrijeme početka je obavezno!");
+        if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
         const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
-        await supabase.from('dnevnik_masine').insert([payload]);
+        const { error } = await supabase.from('dnevnik_masine').insert([payload]);
+        if (error) return toast.error("Greška pri snimanju: " + error.message);
+        toast.success("Zapis o radu/zastoju uspješno dodan!");
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
 
-    const obrisiLog = async (id) => { if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); } };
+    const obrisiLog = (id) => { 
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje zapisa zastoja',
+            poruka: 'Da li ste sigurni da želite obrisati ovaj zapis iz dnevnika mašine?',
+            confirmText: '🗑️ OBRIŠI',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('dnevnik_masine').delete().eq('id', id);
+                loadLogove();
+                zatvoriDialog();
+                toast.info("Zapis obrisan iz dnevnika.");
+            },
+            onCancel: zatvoriDialog
+        });
+    };
+
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
         if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
-        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none shadow-inner" />;
+        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none shadow-inner text-center" />;
         if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
         return null;
     };
@@ -54,12 +69,12 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
             <h3 className="text-theme-accent font-black uppercase text-xs tracking-widest">⚙️ Evidencija rada i zastoja mašine</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-theme-panel p-4 rounded-2xl border border-theme-accent/40 items-start shadow-inner">
                 {(saas.ui.polja_dnevnik || []).map((polje, index) => {
-                    const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-2 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 md:col-span-2' : 'col-span-1');
+                    const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-2 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 sm:col-span-2 md:col-span-2' : 'col-span-1');
                     return (
-                        <div key={polje.id} className={`relative flex flex-col ${responsiveSpan} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
+                        <div key={polje.id} className={`relative flex flex-col ${responsiveSpan} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
                             {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
                             {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
-                            <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
+                            <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
                         </div>
                     );
                 })}
@@ -69,7 +84,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
             <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                 {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
                 {logovi.map(l => (
-                    <div key={l.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-slate-800 border border-theme-border rounded-xl gap-2">
+                    <div key={l.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-theme-panel border border-theme-border rounded-xl gap-2">
                         <div>
                             <p className="text-[10px] text-slate-400 font-black"><span className="text-emerald-400">{l.vrijeme_od}</span> - {l.vrijeme_do ? <span className="text-amber-400">{l.vrijeme_do}</span> : <span className="text-slate-500">...</span>}</p>
                             <p className="text-theme-text text-xs font-bold mt-1">{l.napomena || 'Nema napomene'}</p>
@@ -106,9 +121,9 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     
     const saas = useSaaS('pilana_izlaz', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16',
-        naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET',
+        naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)',
         polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (IZ PROREZA)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
-        polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1' } ]
+        polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-4' } ]
     });
 
     const dragItem = useRef(null);
@@ -293,7 +308,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 if (!acc[curr.paket_id]) {
                     acc[curr.paket_id] = { 
                         id: curr.paket_id, 
-                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina}`, 
+                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`, 
                         proizvod: curr.naziv_proizvoda,
                         m3: 0, 
                         stavke: 0 
@@ -517,7 +532,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             isNusProizvod = true;
         }
 
-        // 🟢 PROVJERA ZA VIŠAK I AGRESIVNO UPOZORENJE
         if (currentRnStavka && !isNusProizvod && !activeEditItem) {
             const vecNapravljenoM3 = parseFloat(currentRnStavka.napravljenoM3) || 0; 
             const narucenoM3 = parseFloat(currentRnStavka.narucenoM3) || 0;
@@ -689,11 +703,6 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={{ color: saas.ui.boja_slova }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="pilana" saas={saas} />
-            
-            <div className="absolute top-4 left-4 z-[9999] pointer-events-none flex items-center gap-2">
-                <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
-                <span className="text-[8px] text-emerald-500 uppercase font-black tracking-widest hidden md:block">LIVE SYNC</span>
-            </div>
 
             {saas.isEditMode && (
                 <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
@@ -708,21 +717,22 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             )}
 
             <h2 className="text-theme-accent text-center font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3">
-                🪵 Pilana - Izlaz Daske
+                🪵 Pilana - Izlaz Daske (Dimenzije u cm)
             </h2>
             
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 space-y-6 flex flex-col">
-                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl transition-all border border-theme-border backdrop-blur-[var(--glass-blur)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl transition-all border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-30 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <h3 className="text-[10px] text-theme-muted uppercase font-black tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-theme-accent"></span> Ekipa na mašini</h3>
-                        <div className="space-y-4">
-                            <div className="w-full relative">
+                        <div className="space-y-4 overflow-visible">
+                            {/* 🟢 STEPENASTI Z-INDEX: Gornje polje z-30, donje z-20 */}
+                            <div className="w-full relative z-30">
                                 <label className="text-[8px] text-theme-muted uppercase ml-2 block mb-1">👨‍🔧 BRENTISTA (IZ PROREZA)</label>
                                 <div className={`w-full h-12 bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-colors shadow-inner flex items-center ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
                                     <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={brentista} onSelect={r => handleBrentistaChange(r.naziv)} placeholder="Odaberi brentistu..." />
                                 </div>
                             </div>
-                            <div className="w-full relative">
+                            <div className="w-full relative z-20">
                                 <label className="text-[8px] text-theme-muted uppercase ml-2 block mb-1">🚜 VILJUŠKARISTA</label>
                                 <div className={`w-full h-12 bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-colors shadow-inner flex items-center ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
                                     <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={viljuskarista} onSelect={r => handleViljuskaristaChange(r.naziv)} placeholder="Odaberi viljuškaristu..." />
@@ -731,7 +741,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl border border-theme-border backdrop-blur-[var(--glass-blur)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-20 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-[10px] text-theme-accent uppercase font-black tracking-widest flex items-center gap-2">📋 Radni Nalog / Ponuda</h3>
                             {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]);}} className="text-[9px] text-red-400 hover:text-red-300 uppercase bg-red-900/20 px-2 py-1 rounded border border-red-500/30 transition-all font-black">✕ Ukloni</button>}
@@ -769,7 +779,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         
                                         <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center">
                                             <div className="flex-1 min-w-0 pr-4">
-                                                <div className={`text-xs font-black transition-colors truncate ${imaViska ? 'text-red-400' : 'text-theme-text group-hover:text-theme-accent'}`}>{s.dimenzije ? `${s.dimenzije} | ` : ''}{s.naziv_proizvoda}</div>
+                                                <div className={`text-xs font-black transition-colors truncate ${imaViska ? 'text-red-400' : 'text-theme-text group-hover:text-theme-accent'}`}>{s.dimenzije ? `${s.dimenzije} cm | ` : ''}{s.naziv_proizvoda}</div>
                                                 <div className="text-[10px] text-theme-muted mt-1 font-bold">
                                                     {s.isFazni ? <span className="text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 mr-2">FAZA: {header.masina}</span> : ''}
                                                     ŠIFRA: {s.sifra_proizvoda}
@@ -816,10 +826,11 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 </div>
 
                 <div className="lg:col-span-7 space-y-6">
-                    <div className={`p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.3)] border backdrop-blur-[var(--glass-blur)] relative overflow-hidden group border-theme-accent/40`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    {/* 🟢 POPRAVLJENO: overflow-visible umjesto overflow-hidden */}
+                    <div className={`p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.3)] border backdrop-blur-[var(--glass-blur)] relative overflow-visible group border-theme-accent/40`} style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-theme-accent to-transparent opacity-50"></div>
                         <label className={`uppercase text-theme-accent block mb-4 font-black tracking-widest text-center`} style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>
-                            {saas.ui.naslov_skenera || "SKENIRAJ ILI UPIŠI NOVI PAKET"}
+                            {saas.ui.naslov_skenera || "SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)"}
                         </label>
                         <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
                             <input value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleIzlazInput(izlazScan, true) }} className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ GOTOV PAKET..." />
@@ -864,7 +875,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             
                             <div className="space-y-4">
                                 <div className="relative z-40">
-                                    <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Proizvod koji se slaže</label>
+                                    <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Proizvod koji se slaže (Dimenzije u cm)</label>
                                     <MasterSearch 
                                         data={katalog} 
                                         poljaZaPretragu={['sifra', 'naziv']} 
@@ -873,7 +884,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..."
                                         renderItem={(k) => (
                                             <div>
-                                                <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-purple-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                                <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} cm | {k.naziv} <span className="text-purple-400 ml-2">(Šifra: {k.sifra})</span></div>
                                                 <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
                                             </div>
                                         )}
@@ -990,7 +1001,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 </div>
             </div>
             
-            <SaaS_DnevnikMasine modul="Pilana" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} />
+            <SaaS_DnevnikMasine modul="Pilana" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />
             {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='nalog') handleNalogSelect(text); else handleIzlazInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );

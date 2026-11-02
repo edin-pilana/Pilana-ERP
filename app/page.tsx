@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './utils/supabaseClient';
 import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck, Hammer } from 'lucide-react';
@@ -31,9 +31,6 @@ import HrDashboardModule from './modules/HrDashboardModule';
 // 🟢 DODAN NADZOR MODUL
 import NadzorModule from './modules/NadzorModule';
 
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const PALETA = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 const defaultModuli = [
@@ -96,10 +93,18 @@ export default function Page() {
         masina: typeof window !== 'undefined' ? localStorage.getItem('last_masina') || '' : ''
     });
 
+    const [loginLogoUrl, setLoginLogoUrl] = useState('');
     const [uiPostavke, setUiPostavke] = useState({
         glavni_naslov: "Operativni Centar",
         pozdravna_poruka: "Odaberi modul — isti tok rada, novi izgled.",
+        login_naslov_1: "Smart",
+        login_naslov_2: "Timber",
+        login_user_label: "Username",
+        login_pass_label: "Password",
+        login_btn_tekst: "Pristupi sistemu",
+        login_boja_akcenta: "#2563eb",
         moduli: [],
+        menu_style: {},
         widget_layout: defaultWidgetLayout
     });
 
@@ -122,9 +127,7 @@ export default function Page() {
         const handleNadzorNavigacija = () => {
             setActiveModule('nadzor');
         };
-        // Osluškujemo signal iz MasterHeader.jsx
         window.addEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
-        
         return () => window.removeEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
     }, []);
 
@@ -140,7 +143,7 @@ export default function Page() {
                 supabase.from('radni_nalozi').select('*').neq('status', 'ISPORUČENO'), 
                 supabase.from('sistem_audit_log').select('*').order('vrijeme', { ascending: false }).limit(8),
                 supabase.from('paketi').select('datum_yyyy_mm, kolicina_final').gte('datum_yyyy_mm', sedamDanaNazad).lte('datum_yyyy_mm', danas),
-                supabase.from('trupci').select('duzina, zapremina').is('prorezan_at', null).eq('zakljucen_prijem', true),
+                supabase.from('trupci').select('duzina, zapremina').eq('status', 'na_lageru').eq('zakljucen_prijem', true),
                 supabase.from('paketi').select('broj_veze, naziv_proizvoda, kolicina_final').not('closed_at', 'is', null).is('otpremnica_id', null)
             ]);
             const sumUlaz = (trupciRes.data || []).reduce((a,b)=>a+parseFloat(b.zapremina||0), 0);
@@ -194,8 +197,7 @@ export default function Page() {
     
     useEffect(() => { if (activeModule === 'home' && loggedUser) ucitajDashboardPodatke(); }, [activeModule, loggedUser]);
 
-    const pokreniEdit = () => { setBackupPostavke(JSON.parse(JSON.stringify(uiPostavke)));
-        setIsEditMode(true); };
+    const pokreniEdit = () => { setBackupPostavke(JSON.parse(JSON.stringify(uiPostavke))); setIsEditMode(true); };
     const odustaniOdEdita = () => { if (backupPostavke) setUiPostavke(backupPostavke); setIsEditMode(false); };
     
     const handleDeepLink = (modulId, targetId, action = null) => {
@@ -288,10 +290,18 @@ export default function Page() {
     };
     
     const spasiDizajn = async () => {
-        const { error } = await supabase.from('ui_postavke').update({ postavke_jsonb: uiPostavke }).eq('modul_ime', 'dashboard');
-        if(error) { toast.error("Greška pri snimanju dizajna: " + error.message); } 
-        else { toast.success("Dizajn i dozvole uspješno spašeni!");
-        setIsEditMode(false); setBackupPostavke(null); }
+        localStorage.setItem('erp_dashboard_ui_backup', JSON.stringify(uiPostavke));
+        const { error } = await supabase
+            .from('ui_postavke')
+            .upsert([{ modul_ime: 'dashboard', postavke_jsonb: uiPostavke }], { onConflict: 'modul_ime' });
+            
+        if(error) { 
+            toast.error("Greška pri snimanju dizajna: " + error.message); 
+        } else { 
+            toast.success("Dizajn i dozvole uspješno spašeni!"); 
+            setIsEditMode(false); 
+            setBackupPostavke(null); 
+        }
     };
 
     useEffect(() => {
@@ -299,17 +309,60 @@ export default function Page() {
             const userJson = localStorage.getItem('smart_timber_user');
             if (userJson) { try { setLoggedUser(JSON.parse(userJson)); } catch (e) { localStorage.removeItem('smart_timber_user'); } }
             try {
-                const { data: uiData } = await supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'dashboard').maybeSingle();
-                let fetchedSettings = uiData?.postavke_jsonb || { glavni_naslov: "Operativni Centar", pozdravna_poruka: "Odaberi modul — isti tok rada, novi izgled.", moduli: [], widget_layout: defaultWidgetLayout };
+                const [uiRes, brendRes] = await Promise.all([
+                    supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'dashboard').maybeSingle(),
+                    supabase.from('brending').select('*')
+                ]);
+
+                if (brendRes.data && brendRes.data.length > 0) {
+                    let logoObj = brendRes.data.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)')) || brendRes.data[0];
+                    if (logoObj?.url_slike) {
+                        setLoginLogoUrl(logoObj.url_slike);
+                        localStorage.setItem('saas_app_logo', logoObj.url_slike);
+                    }
+                } else {
+                    const cachedLogo = localStorage.getItem('saas_app_logo');
+                    if (cachedLogo) setLoginLogoUrl(cachedLogo);
+                }
+
+                // Prvo gledamo bazu, a ako baza nema zapis, čitamo iz localStorage bekapa
+                let localBackup = null;
+                try {
+                    const rawBackup = localStorage.getItem('erp_dashboard_ui_backup');
+                    if (rawBackup) localBackup = JSON.parse(rawBackup);
+                } catch (e) {}
+
+                let fetchedSettings = uiRes.data?.postavke_jsonb || localBackup || { 
+                    glavni_naslov: "Operativni Centar", 
+                    pozdravna_poruka: "Odaberi modul — isti tok rada, novi izgled.", 
+                    moduli: [], 
+                    menu_style: {},
+                    widget_layout: defaultWidgetLayout 
+                };
                 
                 if (!fetchedSettings.widget_layout) fetchedSettings.widget_layout = defaultWidgetLayout;
+                if (fetchedSettings.login_naslov_1 === undefined) fetchedSettings.login_naslov_1 = "Smart";
+                if (fetchedSettings.login_naslov_2 === undefined) fetchedSettings.login_naslov_2 = "Timber";
+                if (!fetchedSettings.login_user_label) fetchedSettings.login_user_label = "Username";
+                if (!fetchedSettings.login_pass_label) fetchedSettings.login_pass_label = "Password";
+                if (!fetchedSettings.login_btn_tekst) fetchedSettings.login_btn_tekst = "Pristupi sistemu";
+                if (!fetchedSettings.login_boja_akcenta) fetchedSettings.login_boja_akcenta = "#2563eb";
+                if (!Array.isArray(fetchedSettings.moduli)) fetchedSettings.moduli = [];
 
                 let changed = false;
                 defaultModuli.forEach(dm => {
-                    if (!fetchedSettings.moduli.some(m => m.id === dm.id)) { fetchedSettings.moduli.push(dm); changed = true; }
+                    if (!fetchedSettings.moduli.some(m => m.id === dm.id)) { 
+                        fetchedSettings.moduli.push(dm); 
+                        changed = true; 
+                    }
                 });
+
                 setUiPostavke(fetchedSettings);
-                if (changed && uiData) supabase.from('ui_postavke').update({ postavke_jsonb: fetchedSettings }).eq('modul_ime', 'dashboard').then();
+                localStorage.setItem('erp_dashboard_ui_backup', JSON.stringify(fetchedSettings));
+
+                if (changed || !uiRes.data) {
+                    supabase.from('ui_postavke').upsert([{ modul_ime: 'dashboard', postavke_jsonb: fetchedSettings }], { onConflict: 'modul_ime' }).then();
+                }
             } catch(e) {}
             setAuthLoading(false);
         };
@@ -322,14 +375,13 @@ export default function Page() {
         const password = e.target.pass.value.trim();
         const { data, error } = await supabase.rpc('provjeri_login', { uneseni_user: username, unesena_sifra: password });
         if (error) { toast.error("Greška pri komunikaciji sa serverom!"); } 
-        else if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data));
-        setLoggedUser(data); toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`); } 
-        else { toast.error("Pogrešan Username ili Password!");
-        }
+        else if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data)); setLoggedUser(data); toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`); } 
+        else { toast.error("Pogrešan Username ili Password!"); }
     };
 
     const hasPermission = (modulId) => {
         if (!loggedUser) return false;
+        if (modulId === 'nadzor') return loggedUser.uloga === 'superadmin';
         if (loggedUser.uloga === 'superadmin' || loggedUser.uloga === 'admin') return true;
         const mapaDozvola = {
             'prijem': 'Prijem trupaca', 'prorez': 'Prorez (Trupci)', 'pilana': 'Pilana (Izlaz)', 'dorada': 'Dorada (Ulaz/Izlaz)',
@@ -509,10 +561,25 @@ export default function Page() {
                 return (
                     <div className="flex flex-col h-full border-t border-theme-border pt-4">
                         <h3 className="text-[10px] text-slate-500 font-black uppercase mb-4 tracking-widest">🚀 Brze Prečice</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        <div className="grid grid-cols-12 gap-4">
                             {(uiPostavke.moduli || []).map((modul, modIndex) => {
-                                const imaDozvolu = hasPermission(modul.id);
+                                const imaDozvolu = hasPermission(modul.id) && !modul.hiddenInMenu;
                                 if (!imaDozvolu && !isEditMode) return null; 
+
+                                const cardSpan = modul.cardSpan || 'col-span-6 md:col-span-3 lg:col-span-2';
+                                const spanLabel = cardSpan.includes('lg:col-span-12') ? '1/1 (Red)' : cardSpan.includes('lg:col-span-6') ? '1/2' : cardSpan.includes('lg:col-span-4') ? '1/3' : cardSpan.includes('lg:col-span-3') ? '1/4' : '1/6';
+
+                                const toggleCardSpan = () => {
+                                    const spans = [
+                                        'col-span-6 md:col-span-3 lg:col-span-2', // 6 u redu
+                                        'col-span-6 md:col-span-3 lg:col-span-3', // 4 u redu
+                                        'col-span-6 md:col-span-4 lg:col-span-4', // 3 u redu
+                                        'col-span-12 md:col-span-6 lg:col-span-6', // 2 u redu
+                                        'col-span-12 lg:col-span-12'               // 1 u redu (puna širina)
+                                    ];
+                                    const nextIdx = (spans.indexOf(cardSpan) + 1) % spans.length;
+                                    updateModul(modIndex, 'cardSpan', spans[nextIdx]);
+                                };
 
                                 return (
                                     <div 
@@ -522,16 +589,26 @@ export default function Page() {
                                         onDragEnter={(e) => handleDragEnter(e, modIndex)}
                                         onDragEnd={handleDrop}
                                         onDragOver={(e) => e.preventDefault()}
-                                        className={`relative ${isEditMode ? 'cursor-move animate-in zoom-in duration-200' : ''}`}
+                                        className={`${cardSpan} relative ${isEditMode ? 'cursor-move animate-in zoom-in duration-200' : ''}`}
                                     >
                                         {isEditMode ? (
-                                            <div className="bg-theme-card border-2 border-amber-500 border-dashed p-4 rounded-2xl flex flex-col gap-2 opacity-95 hover:opacity-100 transition-all shadow-xl relative">
-                                                <button onClick={() => obrisiModulPotpuno(modIndex)} className="absolute -top-3 -right-3 w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center font-black shadow-lg hover:bg-red-500 transition-colors z-50">✕</button>
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <span className="text-amber-500 font-black text-[10px] uppercase tracking-widest flex items-center gap-1">☰ <span className="text-slate-400 hidden lg:inline">Pomicaj</span></span>
-                                                    <span className="text-slate-500 text-[9px] uppercase font-bold truncate ml-1">{modul.id}</span>
+                                            <div className={`bg-theme-card border-2 border-dashed p-3 rounded-2xl flex flex-col gap-2 transition-all shadow-xl relative ${modul.hiddenInMenu ? 'border-red-500 opacity-60' : 'border-amber-500'}`}>
+                                                <div className="flex justify-between items-center gap-1">
+                                                    <span className="text-amber-500 font-black text-[9px] uppercase flex items-center gap-1">☰</span>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={toggleCardSpan} className="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded text-[8px] font-black uppercase hover:bg-amber-500 hover:text-black" title="Promijeni širinu kartice u redu">
+                                                            Širina: {spanLabel}
+                                                        </button>
+                                                        <button onClick={() => updateModul(modIndex, 'hiddenInMenu', !modul.hiddenInMenu)} className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${modul.hiddenInMenu ? 'bg-red-600 text-white border-red-400' : 'bg-slate-800 text-slate-300 border-slate-600'}`} title="Sakrij/Prikaži modul">
+                                                            {modul.hiddenInMenu ? 'Skriveno' : 'Vidljivo'}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <input value={modul.naziv} onChange={(e) => updateModul(modIndex, 'naziv', e.target.value)} className="p-2 bg-theme-main text-white text-xs font-bold rounded-lg border border-slate-700 outline-none focus:border-amber-500 text-center" placeholder="Naziv" />
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <input value={modul.ikona || ''} onChange={(e) => updateModul(modIndex, 'ikona', e.target.value)} className="w-12 p-1.5 bg-theme-main text-white text-xs font-bold rounded-lg border border-slate-700 outline-none focus:border-amber-500 text-center" placeholder="Ikona" />
+                                                    <input type="color" value={modul.hex_boja || '#1e293b'} onChange={(e) => updateModul(modIndex, 'hex_boja', e.target.value)} className="flex-1 h-8 rounded cursor-pointer bg-transparent border border-slate-700" title="Boja kartice" />
+                                                </div>
                                             </div>
                                         ) : (
                                             <div 
@@ -562,14 +639,22 @@ export default function Page() {
         return (
             <div className="min-h-screen bg-theme-main flex items-center justify-center p-6 font-bold relative z-50">
                 <form onSubmit={handleLogin} className="w-full max-w-sm bg-theme-card p-10 rounded-[2rem] border border-slate-700 shadow-2xl space-y-6">
-                    <div className="text-center mb-8 flex flex-col items-center justify-center gap-2">
-                        <img src="/logo.png" alt="Logo" className="max-h-24 object-contain mb-2" />
-                        <h1 className="text-4xl font-black text-white tracking-tighter">Smart<span className="text-blue-500">Timber</span></h1>
+                    <div className="text-center mb-8 flex flex-col items-center justify-center gap-3">
+                        {loginLogoUrl && (
+                            <img src={loginLogoUrl} alt="ERP Logo" className="max-h-24 max-w-[220px] object-contain mb-2 drop-shadow-xl" crossOrigin="anonymous" />
+                        )}
+                        {(uiPostavke.login_naslov_1 || uiPostavke.login_naslov_2) && (
+                            <h1 className="text-4xl font-black text-white tracking-tighter">
+                                {uiPostavke.login_naslov_1}<span style={{ color: uiPostavke.login_boja_akcenta || '#3b82f6' }}>{uiPostavke.login_naslov_2}</span>
+                            </h1>
+                        )}
                     </div>
                     <div className="space-y-4">
-                        <input name="user" placeholder="Username" required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center" />
-                        <input name="pass" type="password" placeholder="Password" required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center" />
-                        <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl uppercase shadow-lg hover:opacity-90 transition-all">Pristupi sistemu</button>
+                        <input name="user" placeholder={uiPostavke.login_user_label || "Username"} required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center focus:border-blue-500 transition-colors" />
+                        <input name="pass" type="password" placeholder={uiPostavke.login_pass_label || "Password"} required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center focus:border-blue-500 transition-colors" />
+                        <button type="submit" style={{ backgroundColor: uiPostavke.login_boja_akcenta || '#2563eb' }} className="w-full py-5 text-white font-black rounded-2xl uppercase shadow-lg hover:opacity-90 transition-all">
+                            {uiPostavke.login_btn_tekst || "Pristupi sistemu"}
+                        </button>
                     </div>
                 </form>
             </div>
@@ -578,13 +663,37 @@ export default function Page() {
 
     const aktivniModulKonfig = (uiPostavke.moduli || []).find(m => m.id === activeModule);
     const modulBoja = aktivniModulKonfig?.hex_boja || '';
-    const finalniModuliZaMeni = defaultModuli.map(dm => {
-        const override = (uiPostavke.moduli || []).find(m => m.id === dm.id);
-        return override ? { ...dm, ...override } : dm;
-    });
+
+    // 🟢 MENI SADA PRATI TAČAN REDOSLIJED I ŠIRINE KOJE ADMIN SPASI
+    const finalniModuliZaMeni = (uiPostavke.moduli && uiPostavke.moduli.length > 0)
+        ? uiPostavke.moduli.map(m => {
+            const def = defaultModuli.find(d => d.id === m.id) || {};
+            return { ...def, ...m };
+        })
+        : defaultModuli;
+
+    const handleSaveMenuFromShell = async (noviModuli, noviMenuStyle) => {
+        const novePostavke = { ...uiPostavke, moduli: noviModuli, menu_style: noviMenuStyle };
+        setUiPostavke(novePostavke);
+        localStorage.setItem('erp_dashboard_ui_backup', JSON.stringify(novePostavke));
+        const { error } = await supabase
+            .from('ui_postavke')
+            .upsert([{ modul_ime: 'dashboard', postavke_jsonb: novePostavke }], { onConflict: 'modul_ime' });
+        if (error) {
+            toast.error("Greška pri snimanju u bazu: " + error.message);
+        }
+    };
 
     return (
-        <AppShell user={loggedUser} activeModule={activeModule} onModuleChange={setActiveModule} accentColor={modulBoja} dynamicModules={finalniModuliZaMeni}>
+        <AppShell 
+            user={loggedUser} 
+            activeModule={activeModule} 
+            onModuleChange={setActiveModule} 
+            accentColor={modulBoja} 
+            dynamicModules={finalniModuliZaMeni}
+            menuConfig={uiPostavke.menu_style || {}}
+            onSaveMenuConfig={handleSaveMenuFromShell}
+        >
             <PametniDialog {...dialog} />
             
             {/* ACTION HUB / KONTEKSTNI MENI MODAL */}
@@ -602,15 +711,14 @@ export default function Page() {
                                 return (
                                     <button 
                                         key={akcija.module} 
-                                        onClick={() => handleDeepLink(akcija.module, kontekstniMeni.id)} 
+                                        onClick={() => handleDeepLink(akcija.module, kontekstniMeni.id, akcija.action)} 
                                         className="w-full py-4 bg-theme-panel hover:bg-theme-accent hover:text-white border border-slate-700 rounded-xl text-xs font-black uppercase transition-all flex items-center justify-center gap-2 shadow-sm"
                                     >
                                         {akcija.label}
                                     </button>
                                 );
                             })}
-                            <button onClick={() => { navigator.clipboard.writeText(kontekstniMeni.id);
-                            toast.success("Kopirano!"); setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
+                            <button onClick={() => { navigator.clipboard.writeText(kontekstniMeni.id); toast.success("Kopirano!"); setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
                         </div>
                     </div>
                 </div>
@@ -622,11 +730,48 @@ export default function Page() {
                         <div className="max-w-7xl mx-auto space-y-6">
                             
                             <div className={`border border-theme-border p-6 md:p-8 rounded-[var(--radius-box)] flex flex-col md:flex-row gap-4 justify-between items-center shadow-2xl transition-colors duration-500 bg-theme-card backdrop-blur-[var(--glass-blur)] ${isEditMode ? 'ring-4 ring-amber-500' : ''}`}>
-                                <div className="w-full md:w-auto text-center md:text-left">
+                                <div className="w-full md:flex-1 text-center md:text-left">
                                     {isEditMode ? (
-                                        <div className="flex flex-col gap-2">
-                                            <input value={uiPostavke.glavni_naslov} onChange={e => setUiPostavke({...uiPostavke, glavni_naslov: e.target.value})} className="bg-black/30 text-blue-400 text-xs uppercase font-black tracking-widest p-2 rounded outline-none w-full border border-slate-700 focus:border-amber-500" />
-                                            <input value={uiPostavke.pozdravna_poruka} onChange={e => setUiPostavke({...uiPostavke, pozdravna_poruka: e.target.value})} className="bg-black/30 text-slate-300 text-sm p-2 rounded outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                        <div className="flex flex-col gap-3 w-full">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="text-[8px] text-amber-500 uppercase font-black block mb-1">Mali Naslov (Iznad pozdrava)</label>
+                                                    <input value={uiPostavke.glavni_naslov} onChange={e => setUiPostavke({...uiPostavke, glavni_naslov: e.target.value})} className="bg-black/40 text-blue-400 text-xs uppercase font-black tracking-widest p-2.5 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[8px] text-amber-500 uppercase font-black block mb-1">Pozdravna Poruka</label>
+                                                    <input value={uiPostavke.pozdravna_poruka} onChange={e => setUiPostavke({...uiPostavke, pozdravna_poruka: e.target.value})} className="bg-black/40 text-slate-300 text-xs p-2.5 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                </div>
+                                            </div>
+                                            <div className="border-t border-amber-500/30 pt-3 mt-1">
+                                                <label className="text-[9px] text-amber-400 uppercase font-black block mb-2">🔐 Postavke Login Ekrana (Pristup Sistemu)</label>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 items-end">
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Naziv 1 (Bijelo)</label>
+                                                        <input value={uiPostavke.login_naslov_1 ?? ''} onChange={e => setUiPostavke({...uiPostavke, login_naslov_1: e.target.value})} placeholder="Smart" className="bg-black/40 text-white text-xs font-black p-2 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Naziv 2 (U boji)</label>
+                                                        <input value={uiPostavke.login_naslov_2 ?? ''} onChange={e => setUiPostavke({...uiPostavke, login_naslov_2: e.target.value})} placeholder="Timber" className="bg-black/40 text-blue-400 text-xs font-black p-2 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Polje Korisnik</label>
+                                                        <input value={uiPostavke.login_user_label || ''} onChange={e => setUiPostavke({...uiPostavke, login_user_label: e.target.value})} className="bg-black/40 text-slate-200 text-xs p-2 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Polje Šifra</label>
+                                                        <input value={uiPostavke.login_pass_label || ''} onChange={e => setUiPostavke({...uiPostavke, login_pass_label: e.target.value})} className="bg-black/40 text-slate-200 text-xs p-2 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Tekst Dugmeta</label>
+                                                        <input value={uiPostavke.login_btn_tekst || ''} onChange={e => setUiPostavke({...uiPostavke, login_btn_tekst: e.target.value})} className="bg-black/40 text-slate-200 text-xs p-2 rounded-lg outline-none w-full border border-slate-700 focus:border-amber-500" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[8px] text-slate-400 uppercase block mb-1">Boja Login-a</label>
+                                                        <input type="color" value={uiPostavke.login_boja_akcenta || '#2563eb'} onChange={e => setUiPostavke({...uiPostavke, login_boja_akcenta: e.target.value})} className="w-full h-8 rounded cursor-pointer bg-transparent border border-slate-700" />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     ) : (
                                         <>
@@ -636,7 +781,7 @@ export default function Page() {
                                         </>
                                     )}
                                 </div>
-                                <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto justify-end">
+                                <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto justify-end shrink-0">
                                     <div className="bg-theme-panel border border-theme-border px-4 py-2 rounded-xl text-center md:text-right hidden md:block shadow-inner">
                                         <p className="text-[10px] uppercase font-black text-slate-500">Današnji Datum</p>
                                         <p className="text-theme-text font-black text-sm">{new Date().toLocaleDateString('bs-BA')}</p>
@@ -663,7 +808,7 @@ export default function Page() {
                                                 <option value="">-- Odaberi novi Widget --</option>
                                                 {DOSTUPNI_WIDGETI.map(w => <option key={w.type} value={w.type}>{w.name}</option>)}
                                             </select>
-                                            <button onClick={() => { const sel = document.getElementById('newWidgetSelect').value; if(sel) addWidget(sel); }} className="bg-amber-600 text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-lg hover:bg-amber-500 transition-colors">➕ DODAJ</button>
+                                            <button onClick={() => { const sel = (document.getElementById('newWidgetSelect') as HTMLSelectElement)?.value; if(sel) addWidget(sel); }} className="bg-amber-600 text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-lg hover:bg-amber-500 transition-colors">➕ DODAJ</button>
                                         </div>
                                     </div>
                                     <p className="text-[10px] text-amber-500/70 font-bold uppercase tracking-widest text-center">Prevucite blokove (☰) ispod da biste im promijenili redoslijed na ekranu.</p>
@@ -690,39 +835,39 @@ export default function Page() {
                                             onDragOver={(e) => e.preventDefault()}
                                         >
                                             {isEditMode && (
-    <div className="absolute top-2 right-2 left-2 flex flex-col sm:flex-row justify-between sm:items-center gap-2 z-[100] bg-black/80 p-2 sm:p-3 rounded-xl backdrop-blur-md border border-amber-500/50 shadow-xl">
-        <span className="text-[10px] text-amber-500 font-black cursor-grab active:cursor-grabbing flex items-center gap-1 uppercase tracking-widest px-2 py-1 hover:bg-amber-900/50 rounded transition-colors self-start sm:self-auto">
-            <Move size={12}/> Pomicaj
-        </span>
-        
-        <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-between w-full sm:w-auto">
-            <div className="flex items-center gap-1 sm:gap-2 sm:border-r border-slate-700 sm:pr-3 sm:mr-1 flex-1 sm:flex-none justify-center">
-                <span className="text-[8px] text-slate-400 uppercase font-black hidden sm:block"><Eye size={10} className="inline mr-1"/> Vide:</span>
-                {['superadmin', 'admin', 'manager', 'operater'].map(uloga => (
-                    <label key={uloga} className="flex items-center gap-1 text-[7px] sm:text-[8px] text-slate-300 font-bold cursor-pointer hover:text-white transition-colors">
-                        <input 
-                            type="checkbox" 
-                            checked={(widget.allowedRoles || []).includes(uloga) || uloga === 'superadmin' || uloga === 'admin'} 
-                            onChange={() => toggleWidgetRole(index, uloga)} 
-                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 accent-amber-500" 
-                            disabled={uloga === 'superadmin' || uloga === 'admin'} 
-                        />
-                        {uloga.substring(0,3).toUpperCase()}
-                    </label>
-                ))}
-            </div>
-            
-            <div className="flex gap-1.5 items-center shrink-0">
-                <button onClick={() => updateWidgetSpan(index)} className="bg-theme-panel text-amber-400 px-2 sm:px-3 py-1.5 rounded text-[7px] sm:text-[8px] font-black uppercase border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-colors shadow-sm">
-                    ŠIRINA: {widget.span.includes('col-span-4') ? '1/3' : (widget.span.includes('col-span-6') ? '1/2' : 'FULL')}
-                </button>
-                <button onClick={() => deleteWidget(index)} className="bg-red-900/50 text-red-500 w-6 h-6 sm:w-7 sm:h-7 rounded flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
-                    <X size={12}/>
-                </button>
-            </div>
-        </div>
-    </div>
-)}
+                                                <div className="absolute top-2 right-2 left-2 flex flex-col sm:flex-row justify-between sm:items-center gap-2 z-[100] bg-black/80 p-2 sm:p-3 rounded-xl backdrop-blur-md border border-amber-500/50 shadow-xl">
+                                                    <span className="text-[10px] text-amber-500 font-black cursor-grab active:cursor-grabbing flex items-center gap-1 uppercase tracking-widest px-2 py-1 hover:bg-amber-900/50 rounded transition-colors self-start sm:self-auto">
+                                                        <Move size={12}/> Pomicaj
+                                                    </span>
+                                                    
+                                                    <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center justify-between w-full sm:w-auto">
+                                                        <div className="flex items-center gap-1 sm:gap-2 sm:border-r border-slate-700 sm:pr-3 sm:mr-1 flex-1 sm:flex-none justify-center">
+                                                            <span className="text-[8px] text-slate-400 uppercase font-black hidden sm:block"><Eye size={10} className="inline mr-1"/> Vide:</span>
+                                                            {['superadmin', 'admin', 'manager', 'operater'].map(uloga => (
+                                                                <label key={uloga} className="flex items-center gap-1 text-[7px] sm:text-[8px] text-slate-300 font-bold cursor-pointer hover:text-white transition-colors">
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={(widget.allowedRoles || []).includes(uloga) || uloga === 'superadmin' || uloga === 'admin'} 
+                                                                        onChange={() => toggleWidgetRole(index, uloga)} 
+                                                                        className="w-2.5 h-2.5 sm:w-3 sm:h-3 accent-amber-500" 
+                                                                        disabled={uloga === 'superadmin' || uloga === 'admin'} 
+                                                                    />
+                                                                    {uloga.substring(0,3).toUpperCase()}
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                        
+                                                        <div className="flex gap-1.5 items-center shrink-0">
+                                                            <button onClick={() => updateWidgetSpan(index)} className="bg-theme-panel text-amber-400 px-2 sm:px-3 py-1.5 rounded text-[7px] sm:text-[8px] font-black uppercase border border-amber-500/50 hover:bg-amber-500 hover:text-black transition-colors shadow-sm">
+                                                                ŠIRINA: {widget.span.includes('col-span-4') ? '1/3' : (widget.span.includes('col-span-6') ? '1/2' : 'FULL')}
+                                                            </button>
+                                                            <button onClick={() => deleteWidget(index)} className="bg-red-900/50 text-red-500 w-6 h-6 sm:w-7 sm:h-7 rounded flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors border border-red-500/30">
+                                                                <X size={12}/>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className={`flex-1 h-full w-full relative ${isEditMode ? 'mt-12 pointer-events-none opacity-50' : 'p-6'}`}>
                                                 {content}
                                             </div>
@@ -738,21 +883,18 @@ export default function Page() {
                 : activeModule === 'dorada' ? <DoradaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'planiranje' ? <PlaniranjeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'lager' ? <LagerPaketaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
-                : activeModule === 'ponude' ? <PonudeModule user={loggedUser} onExit={() => setActiveModule('home')} />
-                : activeModule === 'radni_nalozi' ? <RadniNaloziModule user={loggedUser} onExit={() => setActiveModule('home')} />
-                : activeModule === 'otpremnice' ? <OtpremniceModule user={loggedUser} onExit={() => setActiveModule('home')} />
-                : activeModule === 'racuni' ? <RacuniModule user={loggedUser} onExit={() => setActiveModule('home')} />
+                : activeModule === 'ponude' ? <PonudeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                : activeModule === 'radni_nalozi' ? <RadniNaloziModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                : activeModule === 'otpremnice' ? <OtpremniceModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                : activeModule === 'racuni' ? <RacuniModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'blagajna' ? <BlagajnaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
-                : activeModule === 'toranj' ? <KontrolniToranjModule user={loggedUser} onExit={() => setActiveModule('home')} />
+                : activeModule === 'toranj' ? <KontrolniToranjModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : (activeModule === 'analitika' || activeModule === 'dashboard') ? <AnalitikaModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'kiosk' ? <KioskModule />
                 : activeModule === 'hr' ? <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'reklamacije' ? <ReklamacijeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'podesavanja' ? <SettingsModule onExit={() => setActiveModule('home')} />
-                
-                // 🟢 OVDJE JE DODAN RENDER NADZORNOG MODULA ZA SUPERADMINA
                 : activeModule === 'nadzor' && loggedUser?.uloga === 'superadmin' ? <NadzorModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
-                
                 : null}
             </div>
         </AppShell>

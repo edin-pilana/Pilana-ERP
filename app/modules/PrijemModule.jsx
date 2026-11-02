@@ -1,14 +1,11 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { toast } from 'sonner';
 
 const shiftDateString = (isoStr, days) => {
     if(!isoStr) return new Date().toISOString().split('T')[0];
@@ -342,9 +339,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const snimiTrupac = async () => {
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         if(!pHeader.otpremnica_broj || !pHeader.sumarija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Popunite Šumariju i Broj Otpremnice u Zaglavlju!", onCancel: zatvoriDialog });
-        if(!scan || !form.duzina || !form.promjer) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Skeniraj QR, unesi dužinu i prečnik.", onCancel: zatvoriDialog });
+        if(!scan || !form.duzina || !form.promjer) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Skeniraj QR, unesi dužinu (m) i prečnik (cm).", onCancel: zatvoriDialog });
         if (form.isKontrola && (!form.kontrolna_duzina || !form.kontrolni_promjer)) {
-            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale kontrolni podaci', poruka: "Uključili ste kontrolno mjerenje. Morate unijeti stvarnu dužinu i prečnik!", onCancel: zatvoriDialog });
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale kontrolni podaci', poruka: "Uključili ste kontrolno mjerenje. Morate unijeti stvarnu dužinu (m) i prečnik (cm)!", onCancel: zatvoriDialog });
         }
 
         const trupacID = scan.toUpperCase();
@@ -381,11 +378,30 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         refs.scan.current?.focus();
     };
 
+    const obrisiTrupacSaPrijema = (t, e) => {
+        e.stopPropagation();
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje Trupca sa Otpremnice',
+            poruka: `Da li ste sigurni da želite obrisati trupac ${t.id} (Pločica: ${t.broj_plocice || '-'}, ${t.zapremina} m³) sa ove otpremnice?`,
+            confirmText: '🗑️ OBRIŠI TRUPAC',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await zapisiU_Log('BRISANJE_TRUPCA_SA_PRIJEMA', `Obrisan trupac ${t.id} sa otpremnice ${pHeader.otpremnica_broj}.`, t, null);
+                await supabase.from('trupci').delete().eq('id', t.id);
+                loadPrijemList();
+                zatvoriDialog();
+                toast.info(`Trupac ${t.id} obrisan.`);
+            },
+            onCancel: zatvoriDialog
+        });
+    };
+
     const izvrsiKrojenje = async () => {
         if (!majkaTrupac) return;
         for (let i = 0; i < djecaTrupci.length; i++) {
             const dj = djecaTrupci[i];
-            if (!dj.id || !dj.duzina || !dj.promjer) { return prikaziDialog({ tip: 'upozorenje', naslov: 'Nepotpuni podaci', poruka: `Molimo popunite QR KOD (ID), Dužinu i Prečnik za trupac broj ${i+1}!`, onCancel: zatvoriDialog }); }
+            if (!dj.id || !dj.duzina || !dj.promjer) { return prikaziDialog({ tip: 'upozorenje', naslov: 'Nepotpuni podaci', poruka: `Molimo popunite QR KOD (ID), Dužinu (m) i Prečnik (cm) za trupac broj ${i+1}!`, onCancel: zatvoriDialog }); }
         }
         if (dodajKaloKaoTrupac && (!kaloPlocica || kaloPlocica.trim() === '')) { return prikaziDialog({ tip: 'upozorenje', naslov: 'Nepotpuni podaci', poruka: `Odabrali ste da zadužite kalo kao trupac. Skenirajte QR pločicu za kalo!`, onCancel: zatvoriDialog }); }
 
@@ -477,8 +493,8 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
             if(actualId === 'prevoznik') listToUse = prevozniciList;
 
             return (
-                <div className="w-full h-full min-h-[45px]">
-                    <select ref={refs[actualId]} value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] px-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent cursor-pointer uppercase shadow-inner transition-colors" style={inputStyle}>
+                <div className="w-full h-full min-h-[45px] min-w-0">
+                    <select ref={refs[actualId]} value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 px-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent cursor-pointer uppercase shadow-inner transition-colors" style={inputStyle}>
                         <option value="">-- Odaberi --</option>
                         {listToUse.map(s => <option key={s.naziv} value={s.naziv}>{s.naziv}</option>)}
                     </select>
@@ -488,30 +504,30 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         
         if (actualId === 'odjel') {
             return (
-                <div className="w-full h-full min-h-[45px] relative">
-                    <input list="odjeli-list" ref={refs[actualId]} value={val} onChange={e => setVal(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] px-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent uppercase shadow-inner transition-colors" style={inputStyle} placeholder="Unesi ili odaberi..." />
+                <div className="w-full h-full min-h-[45px] min-w-0 relative">
+                    <input list="odjeli-list" ref={refs[actualId]} value={val} onChange={e => setVal(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 px-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent uppercase shadow-inner transition-colors" style={inputStyle} placeholder="Unesi ili odaberi..." />
                     <datalist id="odjeli-list">{odjeliList.map(o => <option key={o.naziv} value={o.naziv} />)}</datalist>
                 </div>
             );
         }
         
         if (actualId === 'otpremnica_datum') return (
-            <div className="flex items-center gap-1 bg-theme-panel border border-theme-border p-1 focus-within:border-theme-accent h-full w-full shadow-inner transition-colors" style={{ ...inputStyle, padding: '4px' }}>
-                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">-</button>
-                <input ref={refs.otpremnica_datum} type="date" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="flex-1 w-full bg-transparent text-xs text-theme-text outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:invert font-black" style={{ fontFamily: saas.ui.font_family || 'inherit', color: saas.ui.input_color || 'inherit' }} />
-                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-8 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">+</button>
+            <div className="flex items-center gap-1 bg-theme-panel border border-theme-border p-1 focus-within:border-theme-accent h-full w-full min-w-0 shadow-inner transition-colors" style={{ ...inputStyle, padding: '4px' }}>
+                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-7 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">-</button>
+                <input ref={refs.otpremnica_datum} type="date" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="flex-1 min-w-0 w-full bg-transparent text-xs text-theme-text outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:invert font-black" style={{ fontFamily: saas.ui.font_family || 'inherit', color: saas.ui.input_color || 'inherit' }} />
+                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-7 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">+</button>
             </div>
         );
         
-        if (actualId === 'otpremnica_broj') return <input ref={refs.otpremnica_broj} type="text" value={val} onChange={e => setVal(e.target.value.toUpperCase())} onBlur={(e) => provjeriOtpremnicu(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent shadow-inner uppercase transition-colors" style={inputStyle} placeholder="Unesi broj..." />;
-        if (actualId === 'broj_plocice') return <input ref={refs.plocica} type="text" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors" style={inputStyle} placeholder="12345" />;
-        if (actualId === 'redni_broj') return <input ref={refs.redni} type="text" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors" style={inputStyle} placeholder="npr. 1" />;
+        if (actualId === 'otpremnica_broj') return <input ref={refs.otpremnica_broj} type="text" value={val} onChange={e => setVal(e.target.value.toUpperCase())} onBlur={(e) => provjeriOtpremnicu(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent shadow-inner uppercase transition-colors" style={inputStyle} placeholder="Unesi broj..." />;
+        if (actualId === 'broj_plocice') return <input ref={refs.plocica} type="text" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors" style={inputStyle} placeholder="12345" />;
+        if (actualId === 'redni_broj') return <input ref={refs.redni} type="text" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors" style={inputStyle} placeholder="npr. 1" />;
         
-        if (actualId === 'vrsta') return <select tabIndex="-1" ref={refs.vrsta} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{vrsteList.map(v => <option key={v} value={v} className="bg-theme-panel text-theme-text">{v}</option>)}</select>;
-        if (actualId === 'klasa') return <select tabIndex="-1" ref={refs.klasa} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{klaseList.map(k => <option key={k} value={k} className="bg-theme-panel text-theme-text">{k}</option>)}</select>;
+        if (actualId === 'vrsta') return <select tabIndex="-1" ref={refs.vrsta} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] min-w-0 px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{vrsteList.map(v => <option key={v} value={v} className="bg-theme-panel text-theme-text">{v}</option>)}</select>;
+        if (actualId === 'klasa') return <select tabIndex="-1" ref={refs.klasa} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] min-w-0 px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{klaseList.map(k => <option key={k} value={k} className="bg-theme-panel text-theme-text">{k}</option>)}</select>;
         
-        if (actualId === 'duzina') return <input ref={refs.duzina} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
-        if (actualId === 'promjer') return <input ref={refs.promjer} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
+        if (actualId === 'duzina') return <input ref={refs.duzina} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
+        if (actualId === 'promjer') return <input ref={refs.promjer} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
         
         return null;
     };
@@ -520,11 +536,6 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in pb-24 overflow-visible" style={{ fontFamily: saas.ui.font_family || 'inherit' }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} modulIme="prijem" saas={saas} hideMasina={true} />
-
-            <div className="absolute top-4 left-4 z-[9999] pointer-events-none flex items-center gap-2">
-                <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span>
-                <span className="text-[8px] text-emerald-500 uppercase font-black tracking-widest hidden md:block">LIVE SYNC</span>
-            </div>
 
             {saas.isEditMode && (
                 <div className="bg-theme-card/90 backdrop-blur-md p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
@@ -559,8 +570,8 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                         <div className="space-y-3 p-3 bg-black/10 rounded-xl border border-theme-border shadow-inner">
                             <h4 className="text-[10px] text-amber-500 uppercase font-black">3. Natpisi iznad polja</h4>
                             <div className="flex gap-2">
-                                <input type="number" value={saas.ui.label_size || 9} onChange={e=>saas.setUi({...saas.ui, label_size:e.target.value})} placeholder="Size px" className="w-1/2 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none font-bold text-center" />
-                                <select value={saas.ui.label_weight || '900'} onChange={e=>saas.setUi({...saas.ui, label_weight:e.target.value})} className="w-1/2 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none cursor-pointer font-bold">
+                                <input type="number" value={saas.ui.label_size || 9} onChange={e=>saas.setUi({...saas.ui, label_size:e.target.value})} placeholder="Size px" className="w-1/2 min-w-0 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none font-bold text-center" />
+                                <select value={saas.ui.label_weight || '900'} onChange={e=>saas.setUi({...saas.ui, label_weight:e.target.value})} className="w-1/2 min-w-0 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none cursor-pointer font-bold">
                                     <option value="400">Normal</option><option value="700">Bold</option><option value="900">Black</option>
                                 </select>
                             </div>
@@ -571,8 +582,8 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                         <div className="space-y-3 p-3 bg-black/10 rounded-xl border border-theme-border shadow-inner">
                             <h4 className="text-[10px] text-amber-500 uppercase font-black">4. Polja za Unos</h4>
                             <div className="flex gap-2 mb-2">
-                                <input type="number" value={saas.ui.input_size || 12} onChange={e=>saas.setUi({...saas.ui, input_size:e.target.value})} placeholder="Size px" className="w-1/2 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none font-bold text-center" />
-                                <select value={saas.ui.input_weight || '900'} onChange={e=>saas.setUi({...saas.ui, input_weight:e.target.value})} className="w-1/2 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none cursor-pointer font-bold">
+                                <input type="number" value={saas.ui.input_size || 12} onChange={e=>saas.setUi({...saas.ui, input_size:e.target.value})} placeholder="Size px" className="w-1/2 min-w-0 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none font-bold text-center" />
+                                <select value={saas.ui.input_weight || '900'} onChange={e=>saas.setUi({...saas.ui, input_weight:e.target.value})} className="w-1/2 min-w-0 bg-theme-panel text-theme-text border border-theme-border p-2 rounded text-xs outline-none cursor-pointer font-bold">
                                     <option value="400">Normal</option><option value="700">Bold</option><option value="900">Black</option>
                                 </select>
                             </div>
@@ -588,7 +599,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
             <div className="text-center mb-6">
                 <h2 className="text-theme-accent font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)' }}>
-                    🌳 PRIJEM TRUPACA (Lager)
+                    🌳 PRIJEM TRUPACA (Dužina u m, Prečnik u cm)
                 </h2>
             </div>
 
@@ -606,11 +617,11 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 <div className="text-center font-black relative mb-6 border-b border-theme-border pb-4">
                                     <span className="uppercase tracking-widest flex items-center justify-center gap-2" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px` }}><span className="w-2 h-2 rounded-full bg-theme-accent"></span> {saas.ui.naslov_zaglavlja}</span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4 relative overflow-visible">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative overflow-visible">
                                     {aktivnaPoljaZaglavlja.map((polje, index) => (
-                                        <div key={polje.id} className={`relative ${polje.span} transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
-                                            {polje.label && <label className="block mb-1 uppercase transition-colors" style={labelStyle}>{polje.label}</label>}
-                                            <div className="h-12 w-full overflow-visible">{renderPolje(polje, pHeader, updateHeader)}</div>
+                                        <div key={polje.id} className={`relative ${polje.span} min-w-0 transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
+                                            {polje.label && <label className="block mb-1 uppercase transition-colors truncate" style={labelStyle}>{polje.label}</label>}
+                                            <div className="h-12 w-full min-w-0 overflow-visible">{renderPolje(polje, pHeader, updateHeader)}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -618,11 +629,11 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                         </div>
 
                         <div className="lg:col-span-7 space-y-6 overflow-visible">
-                            <div className="p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.1)] border border-theme-accent/30 backdrop-blur-[var(--glass-blur)] relative overflow-visible group bg-theme-card transition-colors" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
+                            <div className="p-6 md:p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.1)] border border-theme-accent/30 backdrop-blur-[var(--glass-blur)] relative overflow-visible group bg-theme-card transition-colors" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-theme-accent to-transparent opacity-50"></div>
                                 <label className="uppercase block mb-4 tracking-widest text-center transition-colors" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px`, fontWeight: 900 }}>{saas.ui.naslov_skenera}</label>
                                 
-                                <div className="flex bg-theme-panel border-2 border-theme-accent/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-theme-accent transition-colors h-20 mb-6">
+                                <div className="flex bg-theme-panel border-2 border-theme-accent/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-theme-accent transition-colors h-20 mb-6 w-full">
                                     <input 
                                         ref={refs.scan} 
                                         value={scan} 
@@ -637,9 +648,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative mb-6 overflow-visible">
                                     {aktivnaPoljaUnosa.map((polje, index) => (
-                                        <div key={polje.id} className={`relative ${polje.span} transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
-                                            {polje.label && <label className="block mb-1 text-center transition-colors uppercase" style={labelStyle}>{polje.label}</label>}
-                                            <div className="h-14 w-full overflow-visible">{renderPolje(polje, form, (key, val) => setForm(prev => ({...prev, [key]: val})))}</div>
+                                        <div key={polje.id} className={`relative ${polje.span} min-w-0 transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
+                                            {polje.label && <label className="block mb-1 text-center transition-colors uppercase truncate" style={labelStyle}>{polje.label}</label>}
+                                            <div className="h-14 w-full min-w-0 overflow-visible">{renderPolje(polje, form, (key, val) => setForm(prev => ({...prev, [key]: val})))}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -662,13 +673,13 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     {form.isKontrola && (
                                         <div className="mt-4 p-4 bg-amber-900/10 border border-amber-500/30 rounded-2xl animate-in slide-in-from-top-2">
                                             <div className="grid grid-cols-2 gap-4 mb-4">
-                                                <div>
+                                                <div className="min-w-0">
                                                     <label className="text-[9px] text-amber-500 uppercase block mb-1 font-black tracking-widest text-center">Stvarna Dužina (M)</label>
-                                                    <input type="number" value={form.kontrolna_duzina} onChange={e => setForm({...form, kontrolna_duzina: e.target.value})} className="w-full h-12 p-3 bg-theme-panel border border-amber-500/30 rounded-xl text-amber-500 outline-none focus:border-amber-400 text-center text-lg font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+                                                    <input type="number" value={form.kontrolna_duzina} onChange={e => setForm({...form, kontrolna_duzina: e.target.value})} className="w-full min-w-0 h-12 p-3 bg-theme-panel border border-amber-500/30 rounded-xl text-amber-500 outline-none focus:border-amber-400 text-center text-lg font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                                 </div>
-                                                <div>
+                                                <div className="min-w-0">
                                                     <label className="text-[9px] text-amber-500 uppercase block mb-1 font-black tracking-widest text-center">Stvarni Prečnik (CM)</label>
-                                                    <input type="number" value={form.kontrolni_promjer} onChange={e => setForm({...form, kontrolni_promjer: e.target.value})} className="w-full h-12 p-3 bg-theme-panel border border-amber-500/30 rounded-xl text-amber-500 outline-none focus:border-amber-400 text-center text-lg font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+                                                    <input type="number" value={form.kontrolni_promjer} onChange={e => setForm({...form, kontrolni_promjer: e.target.value})} className="w-full min-w-0 h-12 p-3 bg-theme-panel border border-amber-500/30 rounded-xl text-amber-500 outline-none focus:border-amber-400 text-center text-lg font-black shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                                 </div>
                                             </div>
                                             <div className="flex justify-between items-center bg-theme-panel p-4 rounded-xl border border-amber-500/20 shadow-inner">
@@ -700,28 +711,21 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 {listaPrijema.length === 0 && <div className="text-center p-8 border-2 border-dashed border-theme-border rounded-2xl text-theme-muted font-bold uppercase tracking-widest text-xs bg-theme-panel">Nema skeniranih trupaca za ovu otpremnicu.</div>}
                                 {listaPrijema.map(t => (
                                     <div key={t.id} onClick={() => pokreniIzmjenuTrupca(t)} className={`cursor-pointer flex flex-col p-5 bg-theme-panel border rounded-2xl shadow-md transition-all hover:scale-[1.01] hover:border-theme-accent/50 ${t.kontrolna_zapremina ? 'border-amber-500/50 bg-amber-500/10' : 'border-theme-border'} ${scan.toUpperCase() === t.id ? 'ring-2 ring-amber-500 bg-theme-card' : ''}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <div className="text-sm text-theme-text font-black flex items-center gap-3">
+                                        <div className="flex justify-between items-start gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm text-theme-text font-black flex flex-wrap items-center gap-2">
                                                     <span className="text-theme-accent text-lg drop-shadow-md">{t.id}</span> 
                                                     <span className="text-theme-text text-[10px] bg-theme-card px-3 py-1 rounded-lg border border-theme-border shadow-inner">Pločica: {t.broj_plocice || '-'}</span>
                                                     {t.kontrolna_zapremina && <span className="text-[8px] bg-amber-500 text-white px-2 py-0.5 rounded uppercase font-black tracking-widest">Kontrola</span>}
                                                 </div>
                                                 <div className="text-[10px] text-theme-muted uppercase mt-2 font-bold tracking-widest">
-                                                    {t.vrsta} | Klasa {t.klasa} | Papir: L:{t.duzina}m Ø:{t.promjer}cm
-                                                    {t.kontrolna_duzina && <span className="text-amber-500 ml-2 block sm:inline mt-1 sm:mt-0">| Stvarno: L:{t.kontrolna_duzina}m Ø:{t.kontrolni_promjer}cm</span>}
+                                                    {t.vrsta} | Klasa {t.klasa} | Papir: L: {t.duzina} m, Ø: {t.promjer} cm
+                                                    {t.kontrolna_duzina && <span className="text-amber-500 ml-2 block sm:inline mt-1 sm:mt-0">| Stvarno: L: {t.kontrolna_duzina} m, Ø: {t.kontrolni_promjer} cm</span>}
                                                 </div>
                                             </div>
-                                            <div className="text-right flex flex-col items-end">
+                                            <div className="text-right flex flex-col items-end shrink-0">
                                                 <div className="text-2xl text-theme-text font-black drop-shadow-md">{t.kontrolna_zapremina ? t.kontrolna_zapremina : t.zapremina} <span className="text-sm text-theme-accent">m³</span></div>
-                                                <button onClick={async (e) => { 
-                                                    e.stopPropagation(); 
-                                                    if(window.confirm("Brisati trupac?")) { 
-                                                        await zapisiU_Log('BRISANJE_TRUPCA_SA_PRIJEMA', `Obrisan trupac ${t.id} sa otpremnice ${pHeader.otpremnica_broj}.`, t, null);
-                                                        await supabase.from('trupci').delete().eq('id', t.id); 
-                                                        loadPrijemList(); 
-                                                    } 
-                                                }} className="text-[10px] text-red-500 uppercase font-black hover:text-white bg-red-500/10 hover:bg-red-600 px-4 py-1.5 rounded-lg mt-2 transition-all shadow-sm">Obriši ×</button>
+                                                <button onClick={(e) => obrisiTrupacSaPrijema(t, e)} className="text-[10px] text-red-500 uppercase font-black hover:text-white bg-red-500/10 hover:bg-red-600 px-4 py-1.5 rounded-lg mt-2 transition-all shadow-sm">Obriši ×</button>
                                             </div>
                                         </div>
                                     </div>
@@ -741,9 +745,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                             <span className="text-amber-500 uppercase tracking-widest flex items-center justify-center gap-2 text-xl"><span className="w-2 h-2 rounded-full bg-amber-500"></span> 1. SKENIRAJ ORIGINALNI TRUPAC (MAJKU)</span>
                         </div>
                         
-                        <div className="flex bg-theme-panel border-2 border-amber-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-amber-500 transition-all h-20 mb-6">
-                            <input value={krojenjeScan} onChange={e => handleKrojenjeScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleKrojenjeScanInput(krojenjeScan, true) }} className="flex-1 px-6 bg-transparent text-xl md:text-2xl text-center text-amber-500 outline-none uppercase placeholder:text-theme-muted/50 font-black tracking-widest" placeholder="SKENIRAJ ILI UKUCAJ ID..." />
-                            <button onClick={() => {setScanTarget('krojenje_majka'); setIsScanning(true);}} className="px-8 bg-amber-500/10 text-amber-500 font-black hover:bg-amber-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-amber-500/30">📷</button>
+                        <div className="flex bg-theme-panel border-2 border-amber-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-amber-500 transition-all h-20 mb-6 w-full">
+                            <input value={krojenjeScan} onChange={e => handleKrojenjeScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleKrojenjeScanInput(krojenjeScan, true) }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-amber-500 outline-none uppercase placeholder:text-theme-muted/50 font-black tracking-widest" placeholder="SKENIRAJ ILI UKUCAJ ID..." />
+                            <button onClick={() => {setScanTarget('krojenje_majka'); setIsScanning(true);}} className="shrink-0 px-8 bg-amber-500/10 text-amber-500 font-black hover:bg-amber-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-amber-500/30">📷</button>
                         </div>
 
                         {majkaTrupac && (
@@ -753,8 +757,8 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     <div><span className="text-[9px] text-theme-muted uppercase font-black tracking-widest block mb-1">Pronađen Trupac</span><h3 className="text-2xl text-theme-text font-black drop-shadow-md">{majkaTrupac.id}</h3></div>
                                     <div className="text-right"><span className="text-[9px] text-theme-muted uppercase font-black tracking-widest block mb-1">Izvorna Zapremina</span><h3 className="text-2xl text-emerald-500 font-black drop-shadow-md">{majkaTrupac.zapremina} <span className="text-xs">m³</span></h3></div>
                                 </div>
-                                <div className="flex gap-4 text-xs font-bold text-theme-muted uppercase tracking-widest relative z-10">
-                                    <span>{majkaTrupac.vrsta}</span> | <span>Klasa: {majkaTrupac.klasa}</span> | <span>L: {majkaTrupac.duzina}m</span> | <span>Ø {majkaTrupac.promjer}cm</span>
+                                <div className="flex flex-wrap gap-4 text-xs font-bold text-theme-muted uppercase tracking-widest relative z-10">
+                                    <span>{majkaTrupac.vrsta}</span> | <span>Klasa: {majkaTrupac.klasa}</span> | <span>Dužina: {majkaTrupac.duzina} m</span> | <span>Prečnik: Ø {majkaTrupac.promjer} cm</span>
                                 </div>
                             </div>
                         )}
@@ -762,7 +766,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
                     {majkaTrupac && (
                         <div className="bg-theme-card p-6 md:p-8 rounded-[var(--radius-box)] border border-theme-border shadow-2xl animate-in slide-in-from-bottom transition-colors" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
-                            <div className="text-center font-black relative mb-6 border-b border-theme-border pb-4 flex justify-between items-center">
+                            <div className="text-center font-black relative mb-6 border-b border-theme-border pb-4 flex flex-wrap justify-between items-center gap-3">
                                 <span className="text-amber-500 uppercase tracking-widest flex items-center gap-2 text-lg"><span className="w-2 h-2 rounded-full bg-amber-500"></span> 2. KROJENJE (NOVI KOMADI)</span>
                                 <div className="flex items-center gap-3">
                                     <label className="text-[10px] text-theme-muted uppercase tracking-widest">Na koliko komada siječeš?</label>
@@ -776,28 +780,28 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 {djecaTrupci.map((dj, idx) => (
                                     <div key={idx} className="bg-theme-panel p-4 rounded-2xl border border-theme-border shadow-md flex flex-col md:flex-row gap-4 items-center">
                                         <div className="bg-amber-500/10 text-amber-500 w-8 h-8 flex items-center justify-center rounded-full font-black text-xs shrink-0 border border-amber-500/30">{idx+1}</div>
-                                        <div className="flex-1 w-full relative">
+                                        <div className="flex-1 w-full min-w-0 relative">
                                             <label className="text-[8px] text-theme-muted uppercase block mb-1 font-black tracking-widest ml-1">QR KOD (Nova Pločica)</label>
-                                            <input type="text" value={dj.id} onChange={e => { const arr = [...djecaTrupci]; arr[idx].id = e.target.value.toUpperCase(); setDjecaTrupci(arr); }} className="w-full p-3 bg-theme-card border border-theme-border rounded-xl text-theme-text font-black outline-none focus:border-amber-500 text-center uppercase shadow-inner" placeholder="SKENIRAJ ILI UKUCAJ..." />
+                                            <input type="text" value={dj.id} onChange={e => { const arr = [...djecaTrupci]; arr[idx].id = e.target.value.toUpperCase(); setDjecaTrupci(arr); }} className="w-full min-w-0 p-3 bg-theme-card border border-theme-border rounded-xl text-theme-text font-black outline-none focus:border-amber-500 text-center uppercase shadow-inner" placeholder="SKENIRAJ ILI UKUCAJ..." />
                                         </div>
-                                        <div className="w-full md:w-32 relative">
+                                        <div className="w-full md:w-32 min-w-0 relative">
                                             <label className="text-[8px] text-theme-muted uppercase block mb-1 font-black tracking-widest ml-1">Dužina (m)</label>
-                                            <input type="number" value={dj.duzina} onChange={e => { const arr = [...djecaTrupci]; arr[idx].duzina = e.target.value; setDjecaTrupci(arr); }} className="w-full p-3 bg-theme-card border border-theme-border rounded-xl text-amber-500 font-black outline-none focus:border-amber-500 text-center text-lg shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+                                            <input type="number" value={dj.duzina} onChange={e => { const arr = [...djecaTrupci]; arr[idx].duzina = e.target.value; setDjecaTrupci(arr); }} className="w-full min-w-0 p-3 bg-theme-card border border-theme-border rounded-xl text-amber-500 font-black outline-none focus:border-amber-500 text-center text-lg shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                         </div>
-                                        <div className="w-full md:w-32 relative">
+                                        <div className="w-full md:w-32 min-w-0 relative">
                                             <label className="text-[8px] text-theme-muted uppercase block mb-1 font-black tracking-widest ml-1">Prečnik (cm)</label>
-                                            <input type="number" value={dj.promjer} onChange={e => { const arr = [...djecaTrupci]; arr[idx].promjer = e.target.value; setDjecaTrupci(arr); }} className="w-full p-3 bg-theme-card border border-theme-border rounded-xl text-amber-500 font-black outline-none focus:border-amber-500 text-center text-lg shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+                                            <input type="number" value={dj.promjer} onChange={e => { const arr = [...djecaTrupci]; arr[idx].promjer = e.target.value; setDjecaTrupci(arr); }} className="w-full min-w-0 p-3 bg-theme-card border border-theme-border rounded-xl text-amber-500 font-black outline-none focus:border-amber-500 text-center text-lg shadow-inner [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                         </div>
-                                        <div className="w-full md:w-24 text-center bg-theme-card p-2 rounded-xl border border-theme-border">
-                                            <span className="text-[8px] text-theme-muted uppercase block mb-0.5 font-black">Zapremina</span>
-                                            <span className="text-sm font-black text-emerald-500">{calcVol(dj.duzina, dj.promjer).toFixed(3)}</span>
+                                        <div className="w-full md:w-28 text-center bg-theme-card p-2 rounded-xl border border-theme-border shrink-0">
+                                            <span className="text-[8px] text-theme-muted uppercase block mb-0.5 font-black">Zapremina (m³)</span>
+                                            <span className="text-sm font-black text-emerald-500">{calcVol(dj.duzina, dj.promjer).toFixed(3)} m³</span>
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
                             <div className="bg-theme-panel p-6 rounded-2xl border-2 border-dashed border-theme-border mb-6">
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
                                     <div className="flex items-center gap-3">
                                         <span className="text-3xl">🪚</span>
                                         <div>
@@ -807,13 +811,13 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     </div>
                                     
                                     {kaloVolume > 0 && (
-                                        <div className="bg-theme-card p-3 rounded-xl border border-theme-border flex items-center gap-3">
+                                        <div className="bg-theme-card p-3 rounded-xl border border-theme-border flex flex-wrap items-center gap-3">
                                             <label className="text-[9px] text-theme-muted uppercase font-black tracking-widest cursor-pointer flex items-center gap-2">
                                                 <input type="checkbox" checked={dodajKaloKaoTrupac} onChange={e => setDodajKaloKaoTrupac(e.target.checked)} className="w-4 h-4 accent-orange-500" />
                                                 Zaduži ostatak na lager
                                             </label>
                                             {dodajKaloKaoTrupac && (
-                                                <input type="text" value={kaloPlocica} onChange={e => setKaloPlocica(e.target.value.toUpperCase())} className="w-32 p-2 bg-theme-panel border border-orange-500/50 rounded-lg text-orange-500 text-xs text-center uppercase font-black outline-none shadow-inner" placeholder="QR ZA KALO..." />
+                                                <input type="text" value={kaloPlocica} onChange={e => setKaloPlocica(e.target.value.toUpperCase())} className="w-36 p-2 bg-theme-panel border border-orange-500/50 rounded-lg text-orange-500 text-xs text-center uppercase font-black outline-none shadow-inner" placeholder="QR ZA KALO..." />
                                             )}
                                         </div>
                                     )}
@@ -821,7 +825,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                 <p className="text-[9px] text-theme-muted uppercase font-bold tracking-widest text-center">Ukupna vrijednost "Majke" bit će prenesena na novonastale komade srazmjerno njihovoj kubikaži.</p>
                             </div>
 
-                            <div className="flex gap-4">
+                            <div className="flex flex-col sm:flex-row gap-4">
                                 <button onClick={() => {setMajkaTrupac(null); setBrojDjece(2); setDjecaTrupci([]);}} className="flex-1 py-4 bg-theme-panel text-theme-muted font-black rounded-xl uppercase hover:bg-slate-500 hover:text-white transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
                                 <button onClick={izvrsiKrojenje} className="flex-[2] py-4 bg-amber-600 text-white font-black rounded-xl uppercase shadow-lg hover:bg-amber-500 transition-all text-xs tracking-widest hover:scale-[1.02] border border-amber-500">✂️ ZAVRŠI KROJENJE I ZADUŽI</button>
                             </div>

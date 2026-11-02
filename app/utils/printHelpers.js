@@ -1,8 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { supabase } from './supabaseClient';
+import { toast } from 'sonner';
 
 export const POSTAVKE = {
     imeAplikacije: "TTM DOO ERP",
@@ -10,7 +7,6 @@ export const POSTAVKE = {
     bojaFirme: "#3b82f6" 
 };
 
-// Pomoćna funkcija za centralno preuzimanje iz baze u trenutku printa
 const fetchPrintSettings = async () => {
     let brending = [];
     let firmaInfo = { adresa: '', telefon: '', email: '', footer_tekst: '', footer_boja: '#64748b', footer_velicina: '10' };
@@ -71,7 +67,6 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${brojDokumenta}`;
     const printSkripta = decodeURIComponent('%3Cscript%3Ewindow.onload%3Dfunction()%7BsetTimeout(function()%7Bwindow.print()%3B%7D%2C2000)%3B%7D%3B%3C%2Fscript%3E');
 
-    // UBACENA LOGIKA ZA TOTAL NA DNU
     const donjiDioHtml = totaliHtml ? `
         <div class="totals-section">
             ${totaliHtml}
@@ -94,7 +89,6 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                     print-color-adjust: exact; 
                 }
                 .page-container { 
-                    /* Ujednacene margine za header i sadrzaj ispod */
                     padding: 20mm; 
                     min-height: 297mm; 
                     box-sizing: border-box;
@@ -123,7 +117,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 .header { 
                     display: flex; 
                     justify-content: space-between; 
-                    align-items: flex-start; /* Poravnano na vrh umjesto dno */
+                    align-items: flex-start;
                     padding-bottom: 5mm; 
                     border-bottom: 2px solid #e2e8f0; 
                     margin-bottom: 6mm; 
@@ -131,13 +125,11 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 .logo-area { display: flex; flex-direction: column; max-width: 70%; }
                 .company-name { font-size: 20px; font-weight: 900; color: #0f172a; }
                 .left-logo { 
-                    /* Povecan logo */
                     max-height: 70px; 
                     max-width: 300px; 
                     object-fit: contain; 
                     margin-bottom: 5px; 
                 }
-                
                 .doc-title-area { margin-top: 15px; }
                 .doc-title { 
                     font-size: 32px; 
@@ -148,7 +140,6 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                     line-height: 1; 
                 }
                 .doc-subtitle { color: #64748b; font-size: 11px; font-weight: 600; margin-top: 4px; }
-                
                 .qr-wrapper { 
                     text-align: right; 
                     display: flex;
@@ -157,8 +148,6 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 }
                 .qr-wrapper img { width: 75px; height: 75px; margin-bottom: 3px; }
                 .qr-text { font-family: monospace; font-size: 9px; font-weight: 800; color: #475569; }
-                
-                /* KUTIJA ZA INFO O KUPCU (Sa slike) */
                 .info-grid { 
                     display: flex; 
                     justify-content: space-between; 
@@ -172,10 +161,8 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 .info-col-left h4 { margin: 0 0 2px 0; font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 800; }
                 .info-col-left h2 { margin: 0 0 2px 0; font-size: 16px; color: #0f172a; font-weight: 900; text-transform: uppercase; }
                 .info-col-left p { margin: 0; font-size: 10px; color: #475569; line-height: 1.4; }
-                
                 .info-col-right { text-align: right; font-size: 10px; color: #475569; display: flex; flex-direction: column; justify-content: center;}
                 .info-col-right b { color: #0f172a; font-weight: 800;}
-                
                 table { 
                     width: 100%; 
                     border-collapse: collapse; 
@@ -196,13 +183,9 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 th.num { text-align: right; }
                 td { padding: 8px 6px; border-bottom: 1px solid #cbd5e1; color: #334155; vertical-align: top;}
                 td.num { text-align: right; font-weight: 800; font-size: 11px; color: #0f172a;}
-                
-                /* IZGLED ZA REDOVE PROIZVODA (Dominira naziv, sifra blijeda) */
                 .prod-sifra { font-size: 9px; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 2px;}
                 .prod-naziv { font-size: 12px; color: #0f172a; font-weight: 900; text-transform: uppercase; display: block;}
                 .prod-dim { font-size: 10px; color: #475569; font-weight: 600; display: block; margin-top: 2px;}
-                
-                /* ZAKUCANI TOTALI UZ DESNU MARGINU */
                 .totals-section {
                     display: flex;
                     justify-content: flex-end;
@@ -239,10 +222,9 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 .totals-table tr.grand-total td.val {
                     color: ${themeColor};
                 }
-
                 .global-footer-custom { 
                     text-align: center; 
-                    margin-top: auto; /* Gura ga na dno stranice */
+                    margin-top: auto;
                     padding-top: 10px; 
                     border-top: 1px solid #e2e8f0; 
                     color: ${firmaInfo.footer_boja}; 
@@ -254,9 +236,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
         <body>
             <div class="top-bar"></div>
             <div class="page-container">
-                
                 ${topBannerHtml}
-                
                 <div class="header">
                     <div class="logo-area">
                         ${leftLogoHtml}
@@ -272,11 +252,8 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                         <div class="qr-text">${brojDokumenta}</div>
                     </div>
                 </div>
-                
                 ${htmlSadrzajTabela}
-                
                 ${donjiDioHtml}
-
                 ${firmaInfo.footer_tekst ? `<div class="global-footer-custom">${firmaInfo.footer_tekst}</div>` : ''}
             </div>
             ${printSkripta}
@@ -293,7 +270,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
 };
 
 // ==========================================
-// 2. STANDARDNA A5 DEKLARACIJA PAKETA
+// 2. STANDARDNA A5 DEKLARACIJA PAKETA (Dimenzije u cm)
 // ==========================================
 export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '') => {
     if (!items || items.length === 0) return;
@@ -325,7 +302,7 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
     };
     
     const datum = items[0].datum_yyyy_mm ? formatDatumTacke(items[0].datum_yyyy_mm) : formatDatumTacke(new Date().toISOString().split('T')[0]);
-    const woodType = items[0].naziv_proizvoda.split(' ')[0] || 'Rezana'; 
+    const woodType = (items[0].naziv_proizvoda || 'Rezana').split(' ')[0] || 'Rezana'; 
     let totalLengthM = 0;
 
     const redoviStavki = items.map(item => {
@@ -342,9 +319,9 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
 
         return `
             <div class="row">
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Tickness mm</span></div><div class="box">${item.debljina}</div></div>
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Width mm</span></div><div class="box">${item.sirina}</div></div>
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Length mm</span></div><div class="box">${item.duzina * 10}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Thickness (cm)</span></div><div class="box">${item.debljina}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Width (cm)</span></div><div class="box">${item.sirina}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Length (cm)</span></div><div class="box">${item.duzina}</div></div>
                 <div class="col"><div class="lbl-wrap"><span class="lbl">PCS</span></div><div class="box">${pcs}</div></div>
                 <div class="col"><div class="lbl-wrap"><span class="lbl">Volume (m³)</span></div><div class="box">${item.kolicina_final}</div></div>
             </div>
@@ -414,7 +391,7 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
                         <div class="col"><span class="lbl">Wood Type</span><div class="box">${woodType}</div></div>
                         <div class="col"><span class="lbl">MC</span><div class="box">8-11%</div></div>
                         <div class="col"><span class="lbl">Quality</span><div class="box">A/B</div></div>
-                        <div class="col"><span class="lbl">Total Length</span><div class="box">${Math.round(totalLengthM)}</div></div>
+                        <div class="col"><span class="lbl">Total Length (m)</span><div class="box">${Math.round(totalLengthM)}</div></div>
                     </div>
                     ${redoviStavki}
                 </div>
@@ -456,7 +433,7 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
 // 3. FAZNA A5 DEKLARACIJA PAKETA (SA NAREDNIM KORACIMA)
 // ==========================================
 export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, tehnologija) => {
-    const stariNaslov = document.title;
+    const originalTitle = document.title;
     document.title = `FAZA_${paketId}`;
 
     const { brending, firmaInfo } = await fetchPrintSettings();
@@ -472,7 +449,7 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
         <tr>
             <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 6px;">${i+1}.</td>
             <td style="border-bottom: 1px solid #cbd5e1; padding: 6px;"><b style="font-size: 16px;">${s.sifra_proizvoda || s.naziv_proizvoda}</b></td>
-            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; font-weight: 900; font-size: 20px;">${s.debljina}x${s.sirina}x${s.duzina}</td>
+            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; font-weight: 900; font-size: 20px;">${s.debljina}x${s.sirina}x${s.duzina} cm</td>
             <td style="text-align: right; border-bottom: 1px solid #cbd5e1; padding: 6px; font-size: 24px; font-weight: 900; color: #d97706;">${s.kolicina_final} <span style="font-size: 14px; color: #475569;">m³</span></td>
         </tr>
     `).join('');
@@ -497,7 +474,7 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
             return `
                 <div style="padding: 6px; margin-bottom: 4px; border-left: 4px solid ${boja}; background: ${bg}; opacity: ${isProsla ? '0.6' : '1'};">
                     <b style="color: ${boja}; font-size: 12px;">${i+1}. ${f.masina} <span style="font-size: 9px; margin-left: 4px;">${dodatak}</span></b><br/>
-                    <span style="font-size: 10px;">Cilj: ${f.dimenzija} | ${f.kolicina} ${f.jm}</span>
+                    <span style="font-size: 10px;">Cilj: ${f.dimenzija} cm | ${f.kolicina} ${f.jm}</span>
                 </div>
             `;
         }).join('');
@@ -547,7 +524,7 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
                     <div class="left-pane">
                         <table>
                             <thead>
-                                <tr><th>#</th><th>Proizvod</th><th>Radna Dimenzija</th><th style="text-align: right;">Količina</th></tr>
+                                <tr><th>#</th><th>Proizvod</th><th>Radna Dimenzija (cm)</th><th style="text-align: right;">Količina</th></tr>
                             </thead>
                             <tbody>${redovi}</tbody>
                         </table>
@@ -600,7 +577,7 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
                     <span class="prod-sifra">${s.sifra}</span>
                     <span class="prod-naziv">${s.naziv}</span>
                 </td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #d97706; vertical-align: top;">${faza.dimenzija}</td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #d97706; vertical-align: top;">${faza.dimenzija} cm</td>
                 <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; vertical-align: top;">${faza.kolicina} <span style="font-size: 10px; color: #64748b;">${faza.jm}</span></td>
                 <td style="border-bottom: 1px solid #cbd5e1; font-size: 10px; vertical-align: top; color: #475569;">
                     <b>${faza.oznake?.join(', ') || ''}</b><br/> 
@@ -610,7 +587,7 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
         `;
     }).filter(s => s !== null).join('');
     
-    if (!stavkeZaMasinu) return alert(`Nema definisanih zadataka za mašinu: ${masina}`);
+    if (!stavkeZaMasinu) return toast.warning(`Nema definisanih zadataka za mašinu: ${masina}`);
     
     const htmlSadrzaj = `
         <div class="info-grid">
@@ -629,7 +606,7 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
                 <tr>
                     <th style="width: 5%;">#</th>
                     <th style="width: 45%;">Proizvod za Obradu</th>
-                    <th style="text-align: center;">Radna Dimenzija</th>
+                    <th style="text-align: center;">Radna Dimenzija (cm)</th>
                     <th style="text-align: center;">Količina</th>
                     <th>Zadatak / Oznake</th>
                 </tr>
@@ -653,7 +630,7 @@ export const printRadniNalogSveFaze = async (rn) => {
         const faze = rn.tehnologija_jsonb[s.id] || [];
         const fazeHtml = faze.map((f, fi) => `
             <div style="font-size: 9px; border-left: 2px solid #d97706; padding-left: 5px; margin-bottom: 3px; color: #475569;">
-                <b style="color: #0f172a;">${fi+1}. ${f.masina}</b> &mdash; Dimenzija: <b>${f.dimenzija}</b> | Target: <b>${f.kolicina} ${f.jm}</b>
+                <b style="color: #0f172a;">${fi+1}. ${f.masina}</b> &mdash; Dimenzija: <b>${f.dimenzija} cm</b> | Target: <b>${f.kolicina} ${f.jm}</b>
             </div>
         `).join('');
         

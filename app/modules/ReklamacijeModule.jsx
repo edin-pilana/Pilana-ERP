@@ -1,15 +1,12 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
 import { AlertTriangle, CheckCircle2, XCircle, Search, ArrowRight, ShieldAlert } from 'lucide-react';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { toast } from 'sonner';
 
 export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     
@@ -29,7 +26,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     const [katalog, setKatalog] = useState([]);
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
     const [imeKupca, setImeKupca] = useState('Nepoznat Kupac');
-    const [prikaznaJedinicaDimenzija, setPrikaznaJedinicaDimenzija] = useState('mm');
 
     const [kolicinaGreska, setKolicinaGreska] = useState(false);
     const [porukaGreske, setPorukaGreske] = useState('');
@@ -46,7 +42,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
     useEffect(() => {
         loadReklamacije();
-        // LIVE SYNC za Reklamacije
         const channel = supabase.channel(`reklamacije_sync_${Math.random()}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'reklamacije' }, () => {
                 loadReklamacije();
@@ -93,17 +88,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             const kat = katalog.find(k => k.naziv === paketZaReklamaciju.naziv_proizvoda || k.sifra === paketZaReklamaciju.naziv_proizvoda);
             setTrenutniProizvod(kat || null);
 
-            let upotrijebiCm = false;
-            if (kat) {
-                const duzinaFilter = parseFloat(kat.duzina) || 0;
-                if (duzinaFilter < 1000 && duzinaFilter > 0) {
-                    upotrijebiCm = true;
-                    setPrikaznaJedinicaDimenzija('cm');
-                } else {
-                    setPrikaznaJedinicaDimenzija('mm');
-                }
-            }
-
             if (preostaliKapacitetM3 <= 0.0001) {
                 prikaziDialog({ tip: 'greska', naslov: 'Paket Potpuno Reklamiran', poruka: `Za paket ${id} je već iskorišten sav isporučeni volumen (${ukupniKapacitetM3} m³).\nNije moguće unijeti nove reklamacije!`, onCancel: zatvoriDialog });
                 setScan('');
@@ -139,6 +123,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         }
     };
 
+    // 🟢 SVE DIMENZIJE SU U CENTIMETRIMA (cm) -> dijelimo sa 100
     useEffect(() => {
         if (!form.kolicina_unos || !paket) {
             setForm(f => ({ ...f, kolicina_obracun: '' }));
@@ -147,29 +132,25 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         const kol = parseFloat(form.kolicina_unos);
         let obracun = kol;
         
-        if (form.jm_unos !== 'm3' && trenutniProizvod) {
-            const v = parseFloat(trenutniProizvod.visina) || 1;
-            const s = parseFloat(trenutniProizvod.sirina) || 1;
-            const d = parseFloat(trenutniProizvod.duzina) || 1;
+        if (form.jm_unos !== 'm3') {
+            const v = parseFloat(trenutniProizvod?.visina || paket?.debljina) || 1;
+            const s = parseFloat(trenutniProizvod?.sirina || paket?.sirina) || 1;
+            const d = parseFloat(trenutniProizvod?.duzina || paket?.duzina) || 1;
             
             if (form.jm_unos === 'kom') {
-                if (prikaznaJedinicaDimenzija === 'cm') {
-                    obracun = kol * (v / 100) * (s / 100) * (d / 100);
-                } else {
-                    obracun = kol * (v / 1000) * (s / 1000) * (d / 1000);
-                }
+                obracun = kol * (v / 100) * (s / 100) * (d / 100);
             }
             else if (form.jm_unos === 'm2') {
-                obracun = prikaznaJedinicaDimenzija === 'cm' ? kol * (s / 100) * (d / 100) : kol * (s / 1000) * (d / 1000);
+                obracun = kol * (s / 100) * (d / 100);
             }
             else if (form.jm_unos === 'm1') {
-                obracun = prikaznaJedinicaDimenzija === 'cm' ? kol * (d / 100) : kol * (d / 1000);
+                obracun = kol * (d / 100);
             }
         }
         
         const konacniM3 = parseFloat(obracun.toFixed(4));
 
-        if (konacniM3 > stvarnoPreostaloM3) {
+        if (konacniM3 > stvarnoPreostaloM3 + 0.0001) {
             setKolicinaGreska(true);
             setPorukaGreske(`Maksimalni preostali volumen paketa iznosi: ${stvarnoPreostaloM3.toFixed(3)} m³. Vaš unos daje: ${konacniM3.toFixed(3)} m³!`);
         } else {
@@ -178,11 +159,11 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         }
         
         setForm(f => ({ ...f, kolicina_obracun: konacniM3 }));
-    }, [form.kolicina_unos, form.jm_unos, trenutniProizvod, paket, stvarnoPreostaloM3, prikaznaJedinicaDimenzija]);
+    }, [form.kolicina_unos, form.jm_unos, trenutniProizvod, paket, stvarnoPreostaloM3]);
 
     const podnesiReklamaciju = async () => {
         if (!paket) return;
-        if (!form.kolicina_obracun || parseFloat(form.kolicina_obracun) <= 0 || parseFloat(form.kolicina_obracun) > stvarnoPreostaloM3) {
+        if (!form.kolicina_obracun || parseFloat(form.kolicina_obracun) <= 0 || parseFloat(form.kolicina_obracun) > stvarnoPreostaloM3 + 0.0001) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Količina', poruka: `Unesite ispravnu količinu (Maksimalno: ${stvarnoPreostaloM3.toFixed(3)} m³)`, onCancel: zatvoriDialog });
         }
 
@@ -202,6 +183,15 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
         const { error } = await supabase.from('reklamacije').insert([payload]);
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: user?.ime_prezime || 'Nepoznat',
+            akcija: 'NOVA_REKLAMACIJA',
+            detalji: `Podnesena reklamacija za paket ${paket.paket_id} (${payload.kolicina} m³). Razlog: ${form.razlog}`,
+            nivo_alarma: 'CRVENO',
+            pregledano: false,
+            vrijeme: new Date().toISOString()
+        }]);
 
         setPaket(null); setTrenutniProizvod(null);
         setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true });
@@ -253,7 +243,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 napravljeno: 0
                             };
                             const noveStavke = [...rn.stavke_jsonb, novaStavka];
-                            await supabase.from('radni_nalozi').update({ stavke_jsonb: noveStavke, status: 'U RADU' }).eq('id', rek.broj_otpremnice);
+                            await supabase.from('radni_nalozi').update({ stavke_jsonb: noveStavke, status: 'U PROIZVODNJI' }).eq('id', rek.broj_otpremnice);
                         }
                     }
 
@@ -271,13 +261,24 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    const odbijReklamaciju = async (rek) => {
-        if(window.confirm("Da li ste sigurni da želite ODBITI ovu reklamaciju?")) {
-            await supabase.from('reklamacije').update({ 
-                status: 'ODBIJENO', 
-                odobrio_korisnik: user?.ime_prezime || 'Admin' 
-            }).eq('id', rek.id);
-        }
+    const odbijReklamaciju = (rek) => {
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Odbijanje Reklamacije',
+            poruka: `Da li ste sigurni da želite ODBITI reklamaciju za paket ${rek.paket_id} (${rek.kolicina} m³)?`,
+            confirmText: '❌ DA, ODBIJ',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('reklamacije').update({ 
+                    status: 'ODBIJENO', 
+                    odobrio_korisnik: user?.ime_prezime || 'Admin' 
+                }).eq('id', rek.id);
+                zatvoriDialog();
+                toast.info(`Reklamacija za paket ${rek.paket_id} je odbijena.`);
+                loadReklamacije();
+            },
+            onCancel: zatvoriDialog
+        });
     };
 
     return (
@@ -285,9 +286,19 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="reklamacije" saas={saas} hideMasina={true} />
 
+            {saas.isEditMode && (
+                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
+                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna Reklamacija</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Kartica: <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                    </div>
+                </div>
+            )}
+
             <div className="text-center mb-6">
                 <h2 className="text-red-500 font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3">
-                    <AlertTriangle /> MODUL REKLAMACIJE I POVRATI
+                    <AlertTriangle /> MODUL REKLAMACIJE I POVRATI (Dimenzije u cm)
                 </h2>
             </div>
 
@@ -300,15 +311,15 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-left">
                     <div className="bg-theme-card p-6 md:p-8 rounded-[var(--radius-box)] border-2 border-red-500/50 shadow-[0_0_40px_rgba(239,68,68,0.15)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         
-                        <div className="flex bg-theme-panel border-2 border-red-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 transition-all h-20 mb-6">
-                            <input value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleScanInput(scan, true) }} className="flex-1 px-6 bg-transparent text-xl md:text-2xl text-center text-red-400 outline-none uppercase placeholder:text-slate-600 font-black tracking-widest" placeholder="SKENIRAJ ID PAKETA..." />
-                            <button onClick={() => { setIsScanning(true); }} className="px-8 bg-red-600/20 text-red-500 font-black hover:bg-red-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-red-500/30"><Search /></button>
+                        <div className="flex bg-theme-panel border-2 border-red-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 transition-all h-20 mb-6 w-full">
+                            <input value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleScanInput(scan, true) }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-red-400 outline-none uppercase placeholder:text-slate-600 font-black tracking-widest" placeholder="SKENIRAJ ID PAKETA..." />
+                            <button onClick={() => { setIsScanning(true); }} className="shrink-0 px-8 bg-red-600/20 text-red-500 font-black hover:bg-red-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-red-500/30"><Search /></button>
                         </div>
 
                         {paket && (
                             <div className="bg-black/40 p-6 rounded-2xl border border-red-500/30 shadow-inner mt-6 animate-in zoom-in-95">
                                 <div className="flex justify-between items-start border-b border-theme-border pb-4 mb-6">
-                                    <div><span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">Fokusirani Paket</span><h3 className="text-2xl text-white font-black drop-shadow-md">{paket.paket_id}</h3>
+                                    <div><span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">Fokusirani Paket</span><h3 className="text-2xl text-theme-text font-black drop-shadow-md">{paket.paket_id}</h3>
                                     <div className="mt-2"><span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">KUPAC: {imeKupca}</span></div></div>
                                     <div className="text-right bg-red-950/40 border border-red-500/40 p-3 rounded-xl">
                                         <span className="text-[9px] text-red-400 uppercase font-black tracking-widest block mb-1">Maksimalno preostalo</span>
@@ -318,23 +329,28 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 </div>
                                 <div className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-6">
                                     <span>{paket.naziv_proizvoda}</span> | <span className="text-amber-500">Radni Nalog: {paket.broj_veze || 'Nepoznat'}</span>
-                                    {trenutniProizvod && <p className="text-emerald-400 font-black mt-2 text-xs md:text-sm bg-emerald-950/40 border border-emerald-500/20 px-3 py-1.5 rounded-lg w-fit">📏 DIMENZIJE: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} {prikaznaJedinicaDimenzija}</p>}
+                                    {trenutniProizvod ? (
+                                        <p className="text-emerald-400 font-black mt-2 text-xs md:text-sm bg-emerald-950/40 border border-emerald-500/20 px-3 py-1.5 rounded-lg w-fit">📏 DIMENZIJE: {trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} cm</p>
+                                    ) : (
+                                        paket.debljina && <p className="text-emerald-400 font-black mt-2 text-xs md:text-sm bg-emerald-950/40 border border-emerald-500/20 px-3 py-1.5 rounded-lg w-fit">📏 DIMENZIJE: {paket.debljina}x{paket.sirina}x{paket.duzina} cm</p>
+                                    )}
                                 </div>
 
+                                {/* 🟢 RESPONZIVNI OKVIR BEZ PROBIJANJA DESNE IVICE (min-w-0 + shrink-0) */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                    <div className="bg-theme-panel p-4 rounded-xl border border-theme-border shadow-inner flex flex-col justify-between">
-                                        <label className="text-[10px] md:text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">1. Količina za reklamaciju (UNOS)</label>
-                                        <div className="flex gap-2 w-full">
-                                            <input type="number" value={form.kolicina_unos} onChange={e => setForm({...form, kolicina_unos: e.target.value})} className={`w-2/3 p-3 md:p-4 bg-black rounded-xl text-lg md:text-xl font-black text-center outline-none border-2 ${kolicinaGreska ? 'border-red-600 text-red-500 bg-red-950/20' : 'border-slate-700 text-white focus:border-red-400'}`} placeholder="0" />
-                                            <select value={form.jm_unos} onChange={e => setForm({...form, jm_unos: e.target.value})} className="w-1/3 p-3 md:p-4 bg-black border border-slate-700 rounded-xl text-white font-black outline-none cursor-pointer uppercase text-xs md:text-sm">
+                                    <div className="bg-theme-panel p-4 rounded-xl border border-theme-border shadow-inner flex flex-col justify-between min-w-0">
+                                        <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">1. Količina za reklamaciju (UNOS)</label>
+                                        <div className="flex gap-2 w-full min-w-0">
+                                            <input type="number" value={form.kolicina_unos} onChange={e => setForm({...form, kolicina_unos: e.target.value})} className={`flex-1 min-w-0 p-3 md:p-4 bg-theme-card rounded-xl text-lg md:text-xl font-black text-center outline-none border-2 ${kolicinaGreska ? 'border-red-600 text-red-500 bg-red-950/20' : 'border-theme-border text-theme-text focus:border-red-400'}`} placeholder="0" />
+                                            <select value={form.jm_unos} onChange={e => setForm({...form, jm_unos: e.target.value})} className="w-24 shrink-0 p-3 md:p-4 bg-theme-card border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer uppercase text-xs md:text-sm">
                                                 <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
                                             </select>
                                         </div>
                                     </div>
-                                    <div className="bg-theme-panel p-4 rounded-xl border border-emerald-500/30 shadow-inner relative overflow-hidden">
-                                        <label className="text-[9px] md:text-[10px] text-emerald-500 uppercase tracking-widest block mb-2 font-black">2. Preračunato u Kubike</label>
-                                        <div className="relative">
-                                            <input type="number" value={form.kolicina_obracun} readOnly className={`w-full p-3 md:p-4 bg-emerald-900/10 border-2 rounded-xl text-center text-lg md:text-xl font-black outline-none cursor-not-allowed shadow-inner ${kolicinaGreska ? 'border-red-600 text-red-500' : 'border-emerald-500/30 text-emerald-400'}`} />
+                                    <div className="bg-theme-panel p-4 rounded-xl border border-emerald-500/30 shadow-inner relative overflow-hidden min-w-0">
+                                        <label className="text-[9px] md:text-[10px] text-emerald-500 uppercase tracking-widest block mb-2 font-black">2. Preračunato u Kubike (m³)</label>
+                                        <div className="relative w-full min-w-0">
+                                            <input type="number" value={form.kolicina_obracun} readOnly className={`w-full min-w-0 p-3 md:p-4 bg-emerald-900/10 border-2 rounded-xl text-center text-lg md:text-xl font-black outline-none cursor-not-allowed shadow-inner ${kolicinaGreska ? 'border-red-600 text-red-500' : 'border-emerald-500/30 text-emerald-400'}`} />
                                             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-600 font-black text-xs">m³</span>
                                         </div>
                                     </div>
@@ -349,14 +365,14 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div>
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Tip Reklamacije</label>
-                                        <select value={form.tip_reklamacije} onChange={e => setForm({...form, tip_reklamacije: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-white font-black outline-none cursor-pointer">
+                                        <select value={form.tip_reklamacije} onChange={e => setForm({...form, tip_reklamacije: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer">
                                             <option value="POVRAT">Fizički Povrat Robe (Vraća se u firmu)</option>
                                             <option value="OTPIS_BEZ_POVRATA">Rasknjižavanje bez povrata (Kupac zadržava/baca)</option>
                                         </select>
                                     </div>
                                     <div>
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Razlog (Kategorija)</label>
-                                        <select value={form.razlog} onChange={e => setForm({...form, razlog: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-white font-black outline-none cursor-pointer">
+                                        <select value={form.razlog} onChange={e => setForm({...form, razlog: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer">
                                             <option value="LOŠA KLASA">Loša Klasa / Kvalitet</option>
                                             <option value="POGREŠNA DIMENZIJA">Pogrešna Dimenzija</option>
                                             <option value="OSTECENJE TRANSPORT">Oštećenje u transportu</option>
@@ -365,22 +381,22 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Detaljna napomena</label>
-                                        <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-white font-bold outline-none focus:border-red-400" placeholder="Opiši problem..." />
+                                        <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text font-bold outline-none focus:border-red-400" placeholder="Opiši problem..." />
                                     </div>
                                 </div>
 
-                                <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-xl mb-6 flex items-center justify-between">
+                                <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-xl mb-6 flex items-center justify-between gap-4">
                                     <div>
                                         <p className="text-[10px] text-blue-400 uppercase font-black tracking-widest">PONOVNA IZRADA (ZAMJENA)</p>
                                         <p className="text-xs text-slate-400 mt-1">Sistem će ovu količinu automatski dodati nazad na Radni nalog kako bi se proizvela nova roba za kupca.</p>
                                     </div>
-                                    <label className="relative inline-flex items-center cursor-pointer">
+                                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                         <input type="checkbox" checked={form.nova_isporuka} onChange={e => setForm({...form, nova_isporuka: e.target.checked})} className="sr-only peer" />
                                         <div className="w-14 h-7 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
                                     </label>
                                 </div>
 
-                                <div className="flex gap-4">
+                                <div className="flex flex-col sm:flex-row gap-4">
                                     <button onClick={() => {setPaket(null); setScan('');}} className="flex-1 py-4 bg-theme-panel text-slate-400 font-black rounded-xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
                                     <button onClick={podnesiReklamaciju} disabled={kolicinaGreska} className={`flex-[2] py-4 text-white font-black rounded-xl uppercase tracking-widest transition-all text-xs border ${kolicinaGreska ? 'bg-slate-700 border-slate-600 opacity-40 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.3)] hover:scale-[1.02]'}`}>📤 PODNESI ZAHTJEV ZA ODOBRENJE</button>
                                 </div>
@@ -400,28 +416,25 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                             {reklamacijeLista.length === 0 && <div className="text-center p-10 border border-dashed border-theme-border rounded-2xl text-slate-500 font-bold uppercase tracking-widest text-sm">Nema evidentiranih reklamacija.</div>}
                             {reklamacijeLista.map(rek => {
                                 const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
-                                let jedDim = 'mm';
-                                if (kat && parseFloat(kat.duzina) < 1000 && parseFloat(kat.duzina) > 0) jedDim = 'cm';
-                                const dimenzijeTekst = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} ${jedDim}` : 'Dimenzije nisu definisane';
+                                const dimenzijeTekst = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : 'Dimenzije nisu definisane';
                                 const originalniUnosUtaknut = rek.napomena?.match(/\[Unos:\s*\d+\s*\w+\]/i)?.[0]?.replace(/[\[\]]/g, '') || 'N/A';
 
                                 return (
                                 <div key={rek.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row gap-6 justify-between items-start md:items-center shadow-lg transition-all ${rek.status === 'CEKA_ODOBRENJE' ? 'bg-theme-panel border-amber-500/50 ring-1 ring-amber-500/20' : (rek.status === 'ODOBRENO' ? 'bg-emerald-900/10 border-emerald-500/30' : 'bg-red-900/10 border-red-500/30')}`}>
                                     
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-3 mb-2">
                                             <span className={`text-[10px] px-2 py-1 rounded font-black uppercase tracking-widest ${rek.status === 'CEKA_ODOBRENJE' ? 'bg-amber-500 text-black' : (rek.status === 'ODOBRENO' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400')}`}>
-                                                {/* 🟢 POPRAVLJENO: Zaštita statusa pri renderovanju */}
                                                 {(rek.status || 'NEPOZNATO').replace('_', ' ')}
                                             </span>
                                             <span className="text-[10px] text-slate-400 font-bold uppercase">{new Date(rek.created_at).toLocaleString('bs-BA')} | Podnosilac: {rek.snimio_korisnik}</span>
                                         </div>
-                                        <div className="text-xl font-black text-white flex items-center gap-3 drop-shadow-md">
+                                        <div className="text-xl font-black text-theme-text flex items-center gap-3 drop-shadow-md">
                                             <span>Paket: {rek.paket_id}</span> <ArrowRight className="w-5 h-5 text-slate-500"/> <span className="text-red-400">{rek.kolicina} m³</span>
                                         </div>
                                         
                                         <div className="bg-black/30 p-3 rounded-lg border border-slate-700/50 my-3">
-                                            <p className="text-[10px] text-amber-500 font-black uppercase mb-1">Kupac: <span className="text-white font-bold">{rek.kupac_naziv}</span></p>
+                                            <p className="text-[10px] text-amber-500 font-black uppercase mb-1">Kupac: <span className="text-theme-text font-bold">{rek.kupac_naziv}</span></p>
                                             <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest leading-relaxed">{rek.naziv_proizvoda} <span className="text-blue-400 ml-2">(Nalog: {rek.broj_otpremnice})</span></p>
                                             
                                             <div className="pt-2 mt-2 border-t border-slate-700/40 flex flex-wrap gap-4 text-[10px]">
@@ -431,7 +444,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                         </div>
 
                                         <div className="mt-3 flex gap-2 flex-wrap">
-                                            {/* 🟢 POPRAVLJENO: Zaštita tipa reklamacije */}
                                             <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">TIP: {(rek.tip_reklamacije || 'POVRAT').replace('_', ' ')}</span>
                                             <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">RAZLOG: {rek.razlog}</span>
                                             {rek.nova_isporuka && <span className="text-[9px] bg-blue-900/40 border border-blue-500/50 px-2 py-1 rounded text-blue-400 font-black uppercase">ZAHTJEVA NOVU IZRADU</span>}
@@ -439,7 +451,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                         {rek.napomena && <p className="text-[10px] text-slate-400 mt-3 italic border-l-2 border-slate-600 pl-2 leading-relaxed">Napomena: "{rek.napomena.replace(/\[Unos:\s*\d+\s*\w+\]/i, '').trim()}"</p>}
                                     </div>
 
-                                    {rek.status === 'CEKA_ODOBRENJE' && (
+                                    {rek.status === 'CEKA_ODOBRENJE' && imaPravoNadzora && (
                                         <div className="flex gap-2 w-full md:w-auto shrink-0">
                                             <button onClick={() => odbijReklamaciju(rek)} className="flex-1 md:flex-none px-6 py-3 bg-theme-card border border-red-500/50 hover:bg-red-600 hover:text-white text-red-400 rounded-xl text-[10px] font-black uppercase transition-all shadow-sm flex items-center justify-center gap-2"><XCircle className="w-4 h-4"/> Odbij</button>
                                             <button onClick={() => odobriReklamaciju(rek)} className="flex-[2] md:flex-none px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 border border-emerald-400"><CheckCircle2 className="w-4 h-4"/> ODOBRI I KNJIŽI</button>
@@ -459,6 +471,8 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     </div>
                 </div>
             )}
+
+            {isScanning && <ScannerOverlay onScan={(text) => { handleScanInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }

@@ -1,13 +1,9 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const mjeseciBHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Juni', 'Juli', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar'];
 
@@ -48,7 +44,7 @@ export default function KioskModule() {
 
     useEffect(() => {
         const timer = setInterval(() => setVrijeme(new Date()), 1000);
-        supabase.from('radnici').select('ime_prezime, username, qr_kod').then(({data}) => setRadniciList(data || []));
+        supabase.from('radnici').select('id, ime_prezime, username, qr_kod').then(({data}) => setRadniciList(data || []));
         return () => clearInterval(timer);
     }, []);
 
@@ -232,7 +228,6 @@ export default function KioskModule() {
 
     const zatraziOdmorJedanDan = () => { if(datumOd && !datumDo) zatraziOdmorInteraktivno(datumOd, datumOd); };
 
-    // ISPRAVLJENO: Robusnija provjera za radne subote
     const zatraziOdmorInteraktivno = async (startD, endD) => {
         let brojDana = 0;
         let d = new Date(startD);
@@ -244,7 +239,6 @@ export default function KioskModule() {
             const isoDatum = formatLocalISODate(d);
             const day = d.getDay(); 
             
-            // SIGURNOSNA PROVJERA: Da li je baza sačuvala "true" ili string 'true'
             if (kalendarIzuzeci[isoDatum] !== undefined) {
                 if (kalendarIzuzeci[isoDatum] === true || kalendarIzuzeci[isoDatum] === 'true' || kalendarIzuzeci[isoDatum] === 1) {
                     brojDana++;
@@ -318,7 +312,7 @@ export default function KioskModule() {
             )}
 
             {aktivnaAkcija && !radnikProfil && (
-                <div className="w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border-2 border-slate-700 p-6 md:p-10 rounded-3xl md:rounded-[3rem] shadow-2xl z-10 flex flex-col items-center animate-in slide-in-from-bottom-8">
+                <div className="w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border-2 border-slate-700 p-6 md:p-10 rounded-3xl md:rounded-[3rem] shadow-2xl z-10 flex flex-col items-center animate-in slide-in-from-bottom-8 relative">
                     <button onClick={() => {setAktivaAkcija(null); setPoruka(null); setSken(''); setFilteredRadnici([]);}} className="absolute top-6 left-6 text-slate-400 hover:text-white flex items-center gap-2 font-black uppercase text-xs bg-black/40 px-4 py-2 rounded-xl transition-colors">
                         <ArrowLeft size={16}/> Nazad
                     </button>
@@ -331,17 +325,17 @@ export default function KioskModule() {
                     <p className="text-slate-400 text-xs md:text-sm mb-8 text-center">Prislonite ID karticu ili ukucajte ime u polje ispod.</p>
 
                     <div className="w-full max-w-md flex bg-black/80 border-2 border-slate-600 focus-within:border-white rounded-2xl overflow-visible shadow-inner transition-colors relative z-20">
-                        <div className="flex-1 relative">
+                        <div className="flex-1 min-w-0 relative">
                             <input 
                                 ref={inputRef} type="text" value={sken} 
                                 onChange={(e) => setSken(e.target.value)} onKeyDown={handleKeyDown}
-                                className="w-full h-full p-5 md:p-6 text-center text-xl md:text-2xl font-black text-white uppercase tracking-widest bg-transparent outline-none"
+                                className="w-full min-w-0 h-full p-5 md:p-6 text-center text-xl md:text-2xl font-black text-white uppercase tracking-widest bg-transparent outline-none"
                                 placeholder="KARTICA / IME" autoFocus
                             />
                             {sken && filteredRadnici.length > 0 && (
-                                <div className="absolute top-full mt-2 w-full bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-50">
-                                    {filteredRadnici.map(r => (
-                                        <div key={r.id} onClick={() => procesuirajSkenId(r.qr_kod || r.username || r.ime_prezime)} className="p-4 border-b border-slate-700 hover:bg-blue-600 cursor-pointer transition-colors text-left">
+                                <div className="absolute top-full mt-2 w-full bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto custom-scrollbar">
+                                    {filteredRadnici.map((r, idx) => (
+                                        <div key={r.id || idx} onClick={() => procesuirajSkenId(r.qr_kod || r.username || r.ime_prezime)} className="p-4 border-b border-slate-700 hover:bg-blue-600 cursor-pointer transition-colors text-left">
                                             <p className="font-black text-white">{r.ime_prezime}</p>
                                             <p className="text-[10px] text-slate-400">ID: {r.qr_kod || r.username}</p>
                                         </div>
@@ -349,7 +343,7 @@ export default function KioskModule() {
                                 </div>
                             )}
                         </div>
-                        <button onClick={() => setIsScanning(true)} className="w-16 md:w-24 shrink-0 bg-slate-800 text-white hover:bg-slate-700 transition-all flex items-center justify-center border-l border-slate-600 z-10 relative">
+                        <button onClick={() => setIsScanning(true)} className="w-16 md:w-24 shrink-0 bg-slate-800 text-white hover:bg-slate-700 transition-all flex items-center justify-center border-l border-slate-600 z-10 relative rounded-r-2xl">
                             <ScanLine className="w-6 h-6 md:w-8 md:h-8"/>
                         </button>
                     </div>

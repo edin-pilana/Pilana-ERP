@@ -1,16 +1,13 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printFaznaDeklaracijaPaketa, printDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { toast } from 'sonner';
 
 function DimBox({ label, val, set, disabled, inputRef, onKeyDown }) {
     return (
@@ -21,7 +18,7 @@ function DimBox({ label, val, set, disabled, inputRef, onKeyDown }) {
     );
 }
 
-function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop }) {
+function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop, prikaziDialog, zatvoriDialog }) {
     const [logovi, setLogovi] = useState([]);
     const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
@@ -33,69 +30,84 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
-        if (!form.vrijeme_od) return alert("Vrijeme početka je obavezno!");
+        if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
         const payload = {
             datum: header.datum, masina: header.masina, modul: modul,
             vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null,
-            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user.ime_prezime
+            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
         };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
-        if (error) return alert("Greška: " + error.message);
+        if (error) return toast.error("Greška: " + error.message);
+        toast.success("Zapis o radu/zastoju uspješno dodan!");
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
 
-    const obrisiLog = async (id) => {
-        if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); }
+    const obrisiLog = (id) => {
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje zapisa zastoja',
+            poruka: 'Da li ste sigurni da želite obrisati ovaj zapis iz dnevnika mašine?',
+            confirmText: '🗑️ OBRIŠI',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('dnevnik_masine').delete().eq('id', id);
+                loadLogove();
+                zatvoriDialog();
+                toast.info("Zapis obrisan iz dnevnika.");
+            },
+            onCancel: zatvoriDialog
+        });
     };
 
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
         if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
-        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none" />;
+        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none text-center" />;
         if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
         return null;
     };
 
     return (
-        <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 mt-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`}>
+        <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 mt-6 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`} style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
             <h3 className="text-amber-500 font-black uppercase text-xs">⚙️ EVIDENCIJA RADA I ZASTOJA MAŠINE</h3>
-            {/* 🟢 POPRAVLJENO: Mobilni Grid sa 1 kolonom, pa 2, pa 4 za dnevnik */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-theme-panel p-4 rounded-2xl border border-theme-accent/40 items-start shadow-inner">
-                {(saas.ui.polja_dnevnik || []).map((polje, index) => (
-                    <div 
-                        key={polje.id} 
-                        className={`relative flex flex-col ${polje.span} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
-                        style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }}
-                        draggable={saas.isEditMode} 
-                        onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} 
-                        onDragEnter={(e) => handleDragEnter(e, index)} 
-                        onDragEnd={() => handleDrop('polja_dnevnik')} 
-                        onDragOver={(e) => e.preventDefault()}
-                        onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}
-                    >
-                        {saas.isEditMode && (
-                            <div className="flex justify-between items-center mb-2 shrink-0">
-                                <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
-                                <button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
-                            </div>
-                        )}
-                        {saas.isEditMode ? (
-                            <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />
-                        ) : (
-                            polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
-                        )}
-                        <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
-                    </div>
-                ))}
-                {/* 🟢 POPRAVLJENO: Dugme Dodaj se širi kako treba */}
-                <button onClick={snimiZastojIliRad} className={`w-full py-3 bg-amber-600 text-theme-text font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
+                {(saas.ui.polja_dnevnik || []).map((polje, index) => {
+                    const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-2 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 sm:col-span-2 md:col-span-2' : 'col-span-1');
+                    return (
+                        <div 
+                            key={polje.id} 
+                            className={`relative flex flex-col ${responsiveSpan} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                            style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }}
+                            draggable={saas.isEditMode} 
+                            onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} 
+                            onDragEnter={(e) => handleDragEnter(e, index)} 
+                            onDragEnd={() => handleDrop('polja_dnevnik')} 
+                            onDragOver={(e) => e.preventDefault()}
+                            onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}
+                        >
+                            {saas.isEditMode && (
+                                <div className="flex justify-between items-center mb-2 shrink-0">
+                                    <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
+                                    <button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button>
+                                </div>
+                            )}
+                            {saas.isEditMode ? (
+                                <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />
+                            ) : (
+                                polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>
+                            )}
+                            <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
+                        </div>
+                    );
+                })}
+                <button onClick={snimiZastojIliRad} className={`w-full py-3.5 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
             </div>
             
             <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                 {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
                 {logovi.map(l => (
-                    <div key={l.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-slate-800 border border-theme-border rounded-xl gap-2">
+                    <div key={l.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-theme-panel border border-theme-border rounded-xl gap-2">
                         <div>
                             <p className="text-[10px] text-slate-400 font-black"><span className="text-emerald-400">{l.vrijeme_od}</span> - {l.vrijeme_do ? <span className="text-amber-400">{l.vrijeme_do}</span> : <span className="text-slate-500">...</span>}</p>
                             <p className="text-theme-text text-xs font-bold mt-1">{l.napomena || 'Nema napomene'}</p>
@@ -136,17 +148,17 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         velicina_naslova: '16',
         boja_teksta_ulaz: 'text-red-500',
         boja_teksta_izlaz: 'text-emerald-500',
-        naslov_ulaz: 'SKENIRAJ ULAZNI PAKET (SIROVINA)',
-        naslov_izlaz: 'QR IZLAZNOG PAKETA (GOTOVO)',
+        naslov_ulaz: 'SKENIRAJ ULAZNI PAKET (SIROVINA - Dimenzije u cm)',
+        naslov_izlaz: 'QR IZLAZNOG PAKETA (GOTOVO - Dimenzije u cm)',
         polja_radnici: [
             { id: 'operater', label: '👨‍🔧 ODGOVORNI RADNIK (ZA MAŠINOM)', span: 'col-span-1' },
             { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }
         ],
         polja_dnevnik: [
-            { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' },
-            { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' },
+            { id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' },
+            { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' },
             { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' },
-            { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1', customWidth: '100%', span: 'col-span-4' }
+            { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-4' }
         ]
     });
     const dragItem = useRef(null);
@@ -211,7 +223,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     
-    // 🟢 LISTA ZAPOČETIH PAKETA INFO
     const [aktivniPaketiInfo, setAktivniPaketiInfo] = useState([]);
 
     const [activeEditItem, setActiveEditItem] = useState(null);
@@ -225,7 +236,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const izlazTimerRef = useRef(null);
     const ulazTimerRef = useRef(null);
 
-    // PAMETNI DIJALOZI
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -272,7 +282,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         ucitajSveZapoocetePakete();
     }, [header?.masina]);
 
-    // 🟢 DOHVAĆANJE PAKETA SA DIMENZIJAMA ZA NOVE PLOČICE
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) { setActiveIzlazIds([]); setAktivniPaketiInfo([]); return; }
         
@@ -290,12 +299,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             const jedinstveniIds = [...new Set(data.map(p => p.paket_id))];
             setActiveIzlazIds(jedinstveniIds);
             
-            // Grupisanje u pločice (kao na Pilani)
             const grouped = data.reduce((acc, curr) => {
                 if (!acc[curr.paket_id]) {
                     acc[curr.paket_id] = { 
                         id: curr.paket_id, 
-                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina}`, 
+                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`, 
                         proizvod: curr.naziv_proizvoda,
                         m3: 0, 
                         stavke: 0 
@@ -481,7 +489,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             setUlazScan(''); 
 
             if (id.endsWith('-R')) {
-                 setTimeout(() => alert(`⚠️ PAŽNJA: Ovaj paket (${id}) je VRAĆENA REKLAMACIJA!`), 500);
+                 toast.warning(`⚠️ PAŽNJA: Ovaj paket (${id}) je VRAĆENA REKLAMACIJA!`);
             }
 
             if (paket.broj_veze && !radniNalog) {
@@ -563,7 +571,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 });
             }
             setActiveIzlazIds(p => [...p, id]);
-            ucitajSveZapoocetePakete(); // Osvježi pločice ako je dodan novi
+            ucitajSveZapoocetePakete();
         }
         setSelectedIzlazId(id); fetchIzlaz(id); setIzlazScan('');
     };
@@ -640,7 +648,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     };
 
     const zavrsiSnimanjeUBazu = async (qtyZaPaket, isNusProizvod, currentRnStavka, komada, v, s, d) => {
-        const timeNowFull = new Date().toISOString();
         const timeNow = new Date().toLocaleTimeString('de-DE');
         const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
         const ostaliRadnici = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== operater && ime !== viljuskarista) : [];
@@ -696,7 +703,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             }
         }
         fetchIzlaz(selectedIzlazId);
-        ucitajSveZapoocetePakete(); // 🟢 Osvježi info pločice nakon snimanja
+        ucitajSveZapoocetePakete();
         setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
     };
 
@@ -709,7 +716,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             onConfirm: async () => { 
                 await supabase.from('paketi').delete().eq('id', item.id); 
                 fetchIzlaz(selectedIzlazId); 
-                ucitajSveZapoocetePakete(); // 🟢 Osvježi info pločice
+                ucitajSveZapoocetePakete();
                 zatvoriDialog(); 
             },
             onCancel: zatvoriDialog
@@ -731,7 +738,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 
                 setActiveIzlazIds(p => p.filter(x => x !== pid));
                 if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
-                ucitajSveZapoocetePakete(); // 🟢 Osvježi info pločice
+                ucitajSveZapoocetePakete();
                 zatvoriDialog();
 
                 prikaziDialog({
@@ -760,7 +767,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             tip: 'upozorenje', naslov: 'Ukloniti paket?',
             poruka: `Ukloniti paket ${pid} sa ekrana? (Ostat će u bazi kao Započet)`,
             confirmText: '🗑️ UKLONI', cancelText: '✕ ODUSTANI',
-            onConfirm: () => { setActiveIzlazIds(p => p.filter(x => x !== pid)); if(selectedIzlazId === pid) setSelectedIzlazId(''); zatvoriDialog(); },
+            onConfirm: () => { setActiveIzlazIds(p => p.filter(x => x !== pid)); setAktivniPaketiInfo(p => p.filter(x => x.id !== pid)); if(selectedIzlazId === pid) setSelectedIzlazId(''); zatvoriDialog(); },
             onCancel: zatvoriDialog
         });
     };
@@ -779,8 +786,6 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         if (polje.id === 'viljuskarista') return <div className="h-full w-full min-w-0 bg-transparent text-theme-text font-black text-sm uppercase px-2 py-1 outline-none overflow-visible"><MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={viljuskarista} onSelect={r => handleViljuskaristaChange(r.naziv)} placeholder="Odaberi viljuškaristu..." /></div>;
         return null;
     };
-
-    const sveOznakeZaPrikaz = Array.from(new Set([...dostupneOznake, ...odabraneOznake]));
 
     if (!header?.masina) {
         return (
@@ -805,14 +810,14 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         <h3 className="text-red-400 font-black uppercase text-sm mb-4 border-b border-theme-border pb-3">Razduživanje Stavke</h3>
                         <div className="mb-4 text-xs text-slate-300">
                             <p className="mb-1">Paket: <b className="text-theme-text bg-slate-800 px-2 py-0.5 rounded">{razduziZapis.paket_id}</b></p>
-                            <p className="mb-1">Proizvod: <b className="text-theme-text">{razduziZapis.naziv_proizvoda}</b></p>
+                            <p className="mb-1">Proizvod: <b className="text-theme-text">{razduziZapis.naziv_proizvoda} ({razduziZapis.debljina}x{razduziZapis.sirina}x{razduziZapis.duzina} cm)</b></p>
                             <p className="mt-2 text-[10px] uppercase text-slate-500">Trenutno stanje na ulazu:</p>
                             <p className="text-emerald-400 font-black text-2xl drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">{razduziZapis.kolicina_final} <span className="text-sm">m³</span></p>
                         </div>
 
                         <div className="flex bg-slate-800 p-1 rounded-xl mb-4 border border-theme-border">
-                            <button onClick={() => { setRazduziMod('potroseno'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'potroseno' ? 'bg-red-600 text-theme-text shadow-lg' : 'text-slate-400 hover:text-theme-text hover:bg-slate-700'}`}>🔴 Potrošeno</button>
-                            <button onClick={() => { setRazduziMod('ostalo'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'ostalo' ? 'bg-blue-600 text-theme-text shadow-lg' : 'text-slate-400 hover:text-theme-text hover:bg-slate-700'}`}>🔵 Ostalo</button>
+                            <button onClick={() => { setRazduziMod('potroseno'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'potroseno' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>🔴 Potrošeno</button>
+                            <button onClick={() => { setRazduziMod('ostalo'); setRazduziKol(''); }} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${razduziMod === 'ostalo' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>🔵 Ostalo</button>
                         </div>
 
                         <div className="mb-6">
@@ -829,7 +834,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                 </p>
                             )}
                         </div>
-                        <button onClick={potvrdiRazduzivanje} className="w-full py-4 bg-emerald-600 text-theme-text font-black rounded-xl text-xs uppercase shadow-lg hover:bg-emerald-500 transition-all border border-emerald-400">✅ Potvrdi i Razduži</button>
+                        <button onClick={potvrdiRazduzivanje} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl text-xs uppercase shadow-lg hover:bg-emerald-500 transition-all border border-emerald-400">✅ Potvrdi i Razduži</button>
                     </div>
                 </div>
             )}
@@ -849,13 +854,13 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            <h2 className="text-amber-500 text-center font-black tracking-widest uppercase text-xl mt-2 mb-6 drop-shadow-md">🔄 DORADA - ULAZ / IZLAZ</h2>
+            <h2 className="text-amber-500 text-center font-black tracking-widest uppercase text-xl mt-2 mb-6 drop-shadow-md">🔄 DORADA - ULAZ / IZLAZ (Dimenzije u cm)</h2>
             
             <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-md p-4 rounded-2xl border border-theme-border/50 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                {/* 🟢 POPRAVLJENO: Grid koji ide u 1 kolonu na mobitelu, pa u onoliko kolona koliko ima polja */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full flex-wrap">
+                {/* 🟢 STEPENASTI Z-INDEX: 60 - index sprečava preklapanje padajućih menija na mobitelu */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full flex-wrap overflow-visible">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
-                        <div key={polje.id} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
+                        <div key={polje.id} style={{ zIndex: 60 - index }} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
                             {saas.isEditMode && (
                                 <div className="absolute -top-3 -right-2 z-[60] flex gap-1">
                                     <span className="text-[10px] text-amber-500 bg-theme-card px-2 py-1 rounded-box cursor-move border border-amber-500/50 shadow-lg">☰ POMICANJE</span>
@@ -865,9 +870,9 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                 {saas.isEditMode ? (
                                     <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_radnici')} className="w-full sm:w-24 bg-theme-card text-amber-400 p-1 rounded border border-amber-500/50 text-[8px] uppercase font-black shrink-0 mr-2" placeholder="Naslov..." />
                                 ) : (
-                                    polje.label && <label className="text-[8px] text-slate-500 uppercase sm:mx-2 whitespace-nowrap shrink-0 sm:w-24 overflow-hidden text-ellipsis mb-1 sm:mb-0">{polje.label}</label>
+                                    polje.label && <label className="text-[8px] text-slate-500 uppercase sm:mx-2 whitespace-nowrap shrink-0 sm:w-28 overflow-hidden text-ellipsis mb-1 sm:mb-0">{polje.label}</label>
                                 )}
-                                <div className="w-full sm:flex-1 sm:border-l border-theme-border/50 sm:pl-2 relative overflow-visible z-[100]">
+                                <div className="w-full sm:flex-1 sm:border-l border-theme-border/50 sm:pl-2 relative overflow-visible">
                                     {renderRadnikPolje(polje)}
                                 </div>
                             </div>
@@ -924,7 +929,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                         }} className="flex flex-col p-3 bg-slate-800/80 rounded-xl cursor-pointer hover:bg-blue-600 transition-all border border-theme-border/50 group">
                                             <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                                 <div>
-                                                    <div className="text-xs text-theme-text font-black">{s.dimenzije ? `${s.dimenzije} | ` : ''}{s.naziv_proizvoda}</div>
+                                                    <div className="text-xs text-theme-text font-black">{s.dimenzije ? `${s.dimenzije} cm | ` : ''}{s.naziv_proizvoda}</div>
                                                     <div className="text-[10px] text-slate-400 mt-1 font-bold">
                                                         {s.isFazni ? <span className="text-amber-400 bg-amber-900/30 px-2 py-0.5 rounded mr-2">FAZA: {header.masina}</span> : ''}
                                                         ŠIFRA: {s.sifra_proizvoda}
@@ -952,45 +957,45 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                             <label className={`text-[10px] uppercase text-red-500 block mb-2 tracking-widest text-center`} style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_ulaz}</label>
                             <div className="flex bg-theme-panel border-2 border-red-500/50 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 relative z-10">
                                 <input type="text" value={ulazScan} onChange={e => handleUlazInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') handleUlazInput(ulazScan, true)}} placeholder="UČITAJ PAKET SIROVINE..." className="flex-1 p-5 bg-transparent text-center text-theme-text outline-none uppercase text-lg font-black min-w-0" />
-                                <button onClick={() => {setScanTarget('ulaz'); setIsScanning(true);}} className="px-6 bg-red-600/30 text-red-400 font-bold hover:bg-red-500 hover:text-theme-text transition-all text-2xl border-l border-red-500/50 shrink-0 backdrop-blur-sm">📷</button>
+                                <button onClick={() => {setScanTarget('ulaz'); setIsScanning(true);}} className="px-6 bg-red-600/30 text-red-400 font-bold hover:bg-red-500 hover:text-white transition-all text-2xl border-l border-red-500/50 shrink-0 backdrop-blur-sm">📷</button>
                             </div>
                         </div>
 
                         {predlozeniPaketi.length > 0 && (
-    <div className="mt-4 bg-red-900/10 border border-red-500/20 p-5 rounded-2xl shadow-inner animate-in fade-in">
-        <span className="text-[9px] text-red-400 uppercase font-black mb-4 block opacity-80 tracking-widest flex items-center gap-2">
-            🪵 Dostupna sirovina {radniNalog ? `iz naloga ${radniNalog}` : 'za ovu fazu'}:
-        </span>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.values(predlozeniPaketi.filter(p => !activeUlazIds.includes(p.paket_id)).reduce((acc, curr) => {
-                if (!acc[curr.paket_id]) {
-                    acc[curr.paket_id] = { id: curr.paket_id, dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina}`, proizvod: curr.naziv_proizvoda, m3: 0, stavke: 0 };
-                }
-                acc[curr.paket_id].m3 += parseFloat(curr.kolicina_final || 0);
-                acc[curr.paket_id].stavke += 1;
-                return acc;
-            }, {})).map(p => (
-                <div key={p.id} onClick={() => processUlaz(p.id)} className="cursor-pointer flex flex-col p-4 rounded-xl border-2 border-slate-700 bg-slate-800/80 hover:border-red-500 hover:bg-slate-800 transition-all shadow-md group relative overflow-hidden">
-                    <div className="flex justify-between items-start mb-2 relative z-10">
-                        <span className="text-sm font-black text-theme-text group-hover:text-red-400 transition-colors">{p.id}</span>
-                        <span className="text-[9px] bg-black/40 px-2 py-0.5 rounded border border-white/5 text-slate-400 font-bold">{p.stavke} {p.stavke === 1 ? 'st' : 'st'}</span>
-                    </div>
-                    <div className="text-[10px] font-black mb-1 line-clamp-1 relative z-10 text-slate-300">{p.dimenzija}</div>
-                    <div className="text-[9px] font-bold line-clamp-1 relative z-10 text-slate-500">{p.proizvod}</div>
-                    <div className="text-right mt-auto pt-2 text-[10px] font-black uppercase tracking-widest relative z-10 border-t border-slate-700 text-slate-400 group-hover:border-red-500/30 transition-colors">
-                        Stanje: <span className="text-red-400 text-sm ml-1">{p.m3.toFixed(3)} m³</span>
-                    </div>
-                </div>
-            ))}
-        </div>
-    </div>
-)}
+                            <div className="mt-4 bg-red-900/10 border border-red-500/20 p-5 rounded-2xl shadow-inner animate-in fade-in">
+                                <span className="text-[9px] text-red-400 uppercase font-black mb-4 block opacity-80 tracking-widest flex items-center gap-2">
+                                    🪵 Dostupna sirovina {radniNalog ? `iz naloga ${radniNalog}` : 'za ovu fazu'}:
+                                </span>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {Object.values(predlozeniPaketi.filter(p => !activeUlazIds.includes(p.paket_id)).reduce((acc, curr) => {
+                                        if (!acc[curr.paket_id]) {
+                                            acc[curr.paket_id] = { id: curr.paket_id, dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`, proizvod: curr.naziv_proizvoda, m3: 0, stavke: 0 };
+                                        }
+                                        acc[curr.paket_id].m3 += parseFloat(curr.kolicina_final || 0);
+                                        acc[curr.paket_id].stavke += 1;
+                                        return acc;
+                                    }, {})).map(p => (
+                                        <div key={p.id} onClick={() => processUlaz(p.id)} className="cursor-pointer flex flex-col p-4 rounded-xl border-2 border-slate-700 bg-slate-800/80 hover:border-red-500 hover:bg-slate-800 transition-all shadow-md group relative overflow-hidden">
+                                            <div className="flex justify-between items-start mb-2 relative z-10">
+                                                <span className="text-sm font-black text-theme-text group-hover:text-red-400 transition-colors">{p.id}</span>
+                                                <span className="text-[9px] bg-black/40 px-2 py-0.5 rounded border border-white/5 text-slate-400 font-bold">{p.stavke} st</span>
+                                            </div>
+                                            <div className="text-[10px] font-black mb-1 line-clamp-1 relative z-10 text-slate-300">{p.dimenzija}</div>
+                                            <div className="text-[9px] font-bold line-clamp-1 relative z-10 text-slate-500">{p.proizvod}</div>
+                                            <div className="text-right mt-auto pt-2 text-[10px] font-black uppercase tracking-widest relative z-10 border-t border-slate-700 text-slate-400 group-hover:border-red-500/30 transition-colors">
+                                                Stanje: <span className="text-red-400 text-sm ml-1">{p.m3.toFixed(3)} m³</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {activeUlazIds.length > 0 && (
                             <div className="flex gap-2 flex-wrap mt-4">
                                 {activeUlazIds.map(id => (
                                     <div key={id} className="bg-red-900/30 border border-red-500 text-red-400 px-3 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-2 shadow-lg">
-                                        {id} <button onClick={() => ukloniIzAktivnihUlaza(id)} className="hover:text-theme-text bg-red-500/20 w-5 h-5 flex items-center justify-center rounded-box ml-1">✕</button>
+                                        {id} <button onClick={() => ukloniIzAktivnihUlaza(id)} className="hover:text-white bg-red-500/20 w-5 h-5 flex items-center justify-center rounded-box ml-1">✕</button>
                                     </div>
                                 ))}
                             </div>
@@ -1004,7 +1009,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                         <div key={s.id} onClick={() => { setRazduziZapis(s); setRazduziMod('potroseno'); setRazduziKol(''); setRazduziJm('kom'); }} className="p-3 bg-slate-800/50 border border-theme-border/50 rounded-xl flex justify-between items-center cursor-pointer hover:border-red-500 hover:bg-slate-800 transition-all shadow-sm">
                                             <div>
                                                 <p className="text-theme-text text-xs font-black">{s.naziv_proizvoda}</p>
-                                                <p className="text-[9px] text-slate-400 mt-1">Paket: {s.paket_id} | Dim: {s.debljina}x{s.sirina}x{s.duzina}</p>
+                                                <p className="text-[9px] text-slate-400 mt-1">Paket: {s.paket_id} | Dim: {s.debljina}x{s.sirina}x{s.duzina} cm</p>
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-red-400 font-black text-lg">{s.kolicina_final} m³</div>
@@ -1038,21 +1043,23 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                 📦 Započeti izlazni paketi na ovoj mašini:
                             </label>
                             
-                            {/* 🟢 OVDJE SU SADA PLOČICE ZAPOČETIH PAKETA (ISTO KAO NA PILANI) */}
+                            {/* 🟢 POPRAVLJENO PREKLAPANJE: Bedž i dugme X su jedno pored drugog u flex redu */}
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-2">
                                 {aktivniPaketiInfo.length === 0 && <div className="col-span-full text-xs text-slate-500 italic border border-dashed border-theme-border p-4 rounded-xl w-full text-center">Nema započetih paketa na ovoj mašini...</div>}
                                 {aktivniPaketiInfo.map(p => (
                                     <div key={p.id} onClick={() => {setSelectedIzlazId(p.id); fetchIzlaz(p.id);}} className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group relative overflow-hidden ${selectedIzlazId === p.id ? 'bg-emerald-600 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.5)] scale-105 z-10' : 'bg-slate-800 border-theme-border hover:border-emerald-500/60'}`}>
-                                        <div className="flex justify-between items-start mb-2 relative z-10">
-                                            <span className={`text-lg font-black ${selectedIzlazId === p.id ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
-                                            <span className="text-[9px] bg-black/30 px-2 py-0.5 rounded border border-white/10 text-slate-300 font-bold">{p.stavke} {p.stavke===1?'st':'st'}</span>
+                                        <div className="flex justify-between items-start gap-1 mb-2 relative z-10">
+                                            <span className={`text-lg font-black truncate ${selectedIzlazId === p.id ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <span className="text-[9px] bg-black/30 px-2 py-0.5 rounded border border-white/10 text-slate-300 font-bold">{p.stavke} st</span>
+                                                <button onClick={(e) => { e.stopPropagation(); otkaziPaket(p.id); }} className={`w-6 h-6 flex items-center justify-center rounded-md font-black text-[10px] transition-all ${selectedIzlazId === p.id ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-red-900/40 text-red-400 hover:bg-red-500 hover:text-white'}`} title="Skloni sa ekrana">✕</button>
+                                            </div>
                                         </div>
                                         <div className={`text-[10px] font-black mb-1 line-clamp-1 relative z-10 ${selectedIzlazId === p.id ? 'text-white/90' : 'text-emerald-400'}`}>{p.dimenzija}</div>
                                         <div className={`text-[9px] font-bold line-clamp-1 relative z-10 ${selectedIzlazId === p.id ? 'text-white/70' : 'text-slate-400'}`}>{p.proizvod}</div>
                                         <div className={`text-right mt-auto pt-2 text-[10px] font-black uppercase tracking-widest relative z-10 border-t ${selectedIzlazId === p.id ? 'border-white/20 text-white/90' : 'border-slate-700 text-slate-400'}`}>
                                             Ukupno: <span className={selectedIzlazId === p.id ? 'text-white text-sm' : 'text-emerald-400 text-sm'}>{p.m3.toFixed(3)} m³</span>
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); otkaziPaket(p.id); }} className={`absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-md font-black text-[10px] transition-all opacity-0 group-hover:opacity-100 z-20 ${selectedIzlazId === p.id ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-red-900/40 text-red-400 hover:bg-red-500 hover:text-white'}`} title="Skloni sa ekrana">✕</button>
                                     </div>
                                 ))}
                             </div>
@@ -1066,9 +1073,9 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
 
                                     {/* KALO PREGLED */}
                                     <div className="flex bg-black/30 p-2 rounded-xl border border-theme-border gap-4 shadow-inner mb-2">
-                                        <div className="text-center px-3 border-r border-theme-border/50"><div className="text-[9px] text-amber-500 uppercase font-black">Ulaz Sirovina</div><div className="text-sm font-black text-theme-text">{ulazM3}</div></div>
-                                        <div className="text-center px-3 border-r border-theme-border/50"><div className="text-[9px] text-emerald-400 uppercase font-black">Novi Izlaz</div><div className="text-sm font-black text-theme-text">{izlazM3}</div></div>
-                                        <div className="text-center px-3"><div className="text-[9px] text-red-400 uppercase font-black">Kalo (Otpad)</div><div className="text-sm font-black text-red-400">{(ulazM3 - izlazM3).toFixed(3)}</div></div>
+                                        <div className="text-center px-3 border-r border-theme-border/50"><div className="text-[9px] text-amber-500 uppercase font-black">Ulaz Sirovina</div><div className="text-sm font-black text-theme-text">{ulazM3} m³</div></div>
+                                        <div className="text-center px-3 border-r border-theme-border/50"><div className="text-[9px] text-emerald-400 uppercase font-black">Novi Izlaz</div><div className="text-sm font-black text-theme-text">{izlazM3} m³</div></div>
+                                        <div className="text-center px-3"><div className="text-[9px] text-red-400 uppercase font-black">Kalo (Otpad)</div><div className="text-sm font-black text-red-400">{(ulazM3 - izlazM3).toFixed(3)} m³</div></div>
                                     </div>
 
                                     {activeEditItem && (
@@ -1079,8 +1086,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                     )}
                                     
                                     <div className="space-y-4">
-                                        <div className="relative overflow-visible">
-                                            <label className="text-[9px] text-theme-muted uppercase ml-1 block mb-1 tracking-widest font-black">PROIZVOD KOJI SE SLAŽE</label>
+                                        <div className="relative overflow-visible z-40">
+                                            <label className="text-[9px] text-theme-muted uppercase ml-1 block mb-1 tracking-widest font-black">PROIZVOD KOJI SE SLAŽE (Dimenzije u cm)</label>
                                             <MasterSearch 
                                                 data={katalog} 
                                                 poljaZaPretragu={['sifra', 'naziv']} 
@@ -1089,7 +1096,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                 placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..."
                                                 renderItem={(k) => (
                                                     <div>
-                                                        <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-purple-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                                        <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} cm | {k.naziv} <span className="text-purple-400 ml-2">(Šifra: {k.sifra})</span></div>
                                                         <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
                                                     </div>
                                                 )}
@@ -1194,6 +1201,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                 handleDragStart={handleDragStart}
                 handleDragEnter={handleDragEnter}
                 handleDrop={handleDrop}
+                prikaziDialog={prikaziDialog}
+                zatvoriDialog={zatvoriDialog}
             />
             
             {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='nalog') handleNalogSelect(text); else if(scanTarget==='ulaz') handleUlazInput(text, true); else handleIzlazInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}

@@ -1,17 +1,14 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
+import { toast } from 'sonner';
 
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop }) {
+function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop, prikaziDialog, zatvoriDialog }) {
     const [logovi, setLogovi] = useState([]);
     const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     const [form, setForm] = useState({ vrijeme_od: t, vrijeme_do: '', zastoj_min: '', napomena: '' });
@@ -23,48 +20,89 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
-        if (!form.vrijeme_od) return alert("Vrijeme početka je obavezno!");
+        if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
         const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
-        await supabase.from('dnevnik_masine').insert([payload]);
+        const { error } = await supabase.from('dnevnik_masine').insert([payload]);
+        if (error) return toast.error("Greška pri snimanju zastoja: " + error.message);
+        toast.success("Zapis o radu/zastoju uspješno dodan!");
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
     };
 
-    const obrisiLog = async (id) => { if(window.confirm("Obrisati ovaj zapis?")) { await supabase.from('dnevnik_masine').delete().eq('id', id); loadLogove(); } };
+    const obrisiLog = (id) => { 
+        prikaziDialog({
+            tip: 'upozorenje',
+            naslov: 'Brisanje zapisa zastoja',
+            poruka: 'Da li ste sigurni da želite obrisati ovaj zapis iz dnevnika mašine?',
+            confirmText: '🗑️ OBRIŠI',
+            cancelText: '✕ ODUSTANI',
+            onConfirm: async () => {
+                await supabase.from('dnevnik_masine').delete().eq('id', id);
+                loadLogove();
+                zatvoriDialog();
+                toast.info("Zapis obrisan iz dnevnika.");
+            },
+            onCancel: zatvoriDialog
+        });
+    };
+
     const renderDnevnikPolje = (polje) => {
-        if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500" />;
-        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500" />;
-        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none" />;
-        if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500" />;
+        if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[46px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-bold border border-theme-border outline-none focus:border-red-500" />;
+        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[46px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-bold border border-theme-border outline-none focus:border-red-500" />;
+        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0 min" className="w-full h-full min-h-[46px] p-3 bg-red-900/20 rounded-xl text-sm text-red-400 font-black border border-red-500/50 outline-none text-center" />;
+        if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, zamjena žage, kvar..." className="w-full h-full min-h-[46px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-bold border border-theme-border outline-none focus:border-red-500" />;
         return null;
     };
 
     return (
-        <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`}>
-            <h3 className="text-red-500 font-black uppercase text-xs">⚙️ EVIDENCIJA RADA I ZASTOJA MAŠINE</h3>
+        <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[2.5rem] border shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`} style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
+            <h3 className="text-red-500 font-black uppercase text-xs tracking-widest">⚙️ EVIDENCIJA RADA I ZASTOJA MAŠINE</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-theme-panel p-4 rounded-2xl border border-red-500/20 items-start shadow-inner">
-                {(saas.ui.polja_dnevnik || []).map((polje, index) => (
-                    <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
-                        {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
-                        {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
-                        <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
-                    </div>
-                ))}
-                {/* 🟢 POPRAVLJENO: col-span-1 na mobitelu, col-span-4 na kompu za dugme */}
-                <button onClick={snimiZastojIliRad} className={`w-full py-3 bg-red-600 text-theme-text font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-red-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis</button>
+                {(saas.ui.polja_dnevnik || []).map((polje, index) => {
+                    const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-2 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 sm:col-span-2' : 'col-span-1');
+                    return (
+                        <div 
+                            key={polje.id} 
+                            className={`relative flex flex-col ${responsiveSpan} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} 
+                            style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }} 
+                            draggable={saas.isEditMode} 
+                            onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} 
+                            onDragEnter={(e) => handleDragEnter(e, index)} 
+                            onDragEnd={() => handleDrop('polja_dnevnik')} 
+                            onDragOver={(e) => e.preventDefault()} 
+                            onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}
+                        >
+                            {saas.isEditMode && (
+                                <div className="flex justify-between items-center mb-2 shrink-0">
+                                    <span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span>
+                                    <button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">
+                                        ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}
+                                    </button>
+                                </div>
+                            )}
+                            {saas.isEditMode ? (
+                                <input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />
+                            ) : (
+                                polje.label && <label className="text-[9px] text-slate-400 font-black uppercase ml-1 block mb-1.5 shrink-0">{polje.label}</label>
+                            )}
+                            <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
+                        </div>
+                    );
+                })}
+                <button onClick={snimiZastojIliRad} className={`w-full py-3.5 bg-red-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-red-500 transition-all ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
             </div>
             
-            <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
+            <div className="space-y-2 mt-4 max-h-44 overflow-y-auto pr-2 custom-scrollbar">
+                {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase py-2">Nema unesenih zastoja za danas.</p>}
                 {logovi.map(l => (
-                    <div key={l.id} className="flex justify-between items-center p-3 bg-slate-800 border border-theme-border rounded-xl">
+                    <div key={l.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-theme-panel border border-theme-border rounded-xl gap-2">
                         <div>
                             <p className="text-[10px] text-slate-400 font-black"><span className="text-emerald-400">{l.vrijeme_od}</span> - {l.vrijeme_do ? <span className="text-amber-400">{l.vrijeme_do}</span> : <span className="text-slate-500">...</span>}</p>
                             <p className="text-theme-text text-xs font-bold mt-1">{l.napomena || 'Nema napomene'}</p>
                         </div>
-                        <div className="flex items-center gap-4">
-                            {l.zastoj_min > 0 && <span className="text-red-400 text-xs font-black bg-red-900/30 px-2 py-1 rounded border border-red-500/30">Zastoj: {l.zastoj_min} min</span>}
-                            <button onClick={() => obrisiLog(l.id)} className="text-red-500 font-black hover:bg-slate-700 p-2 rounded">✕</button>
+                        <div className="flex items-center justify-between sm:justify-end gap-4">
+                            {l.zastoj_min > 0 && <span className="text-red-400 text-xs font-black bg-red-900/30 px-2.5 py-1 rounded border border-red-500/30">Zastoj: {l.zastoj_min} min</span>}
+                            <button onClick={() => obrisiLog(l.id)} className="text-red-500 font-black hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-colors">✕ Obriši</button>
                         </div>
                     </div>
                 ))}
@@ -93,29 +131,60 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     }, [header?.masina]);
     
     const saas = useSaaS('prorez_modul', {
-        boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16', naslov_skenera: 'SKENIRAJ TRUPAC NA BRENTI',
+        boja_kartice: '#1e293b', 
+        boja_slova: '#ffffff', 
+        velicina_naslova: '16', 
+        naslov_skenera: 'SKENIRAJ TRUPAC NA BRENTI (Dužina u m, Prečnik u cm)',
         polja_radnici: [ 
             { id: 'brentista', label: '👨‍🔧 BRENTISTA (GLAVNI)', span: 'col-span-1' }, 
             { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }
         ],
-        polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-1', customWidth: '100%', span: 'col-span-4' } ]
+        polja_dnevnik: [ 
+            { id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' }, 
+            { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' }, 
+            { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, 
+            { id: 'napomena', label: 'NAPOMENA / RAZLOG ZASTOJA', span: 'col-span-4' } 
+        ]
     });
 
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
     const handleDragStart = (e, index, lista) => { dragItem.current = { index, lista }; };
     const handleDragEnter = (e, index) => { dragOverItem.current = index; };
-    const handleDrop = (listaIme) => { if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
-    const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista]; const premjesteniItem = novaLista[dragItem.current.index]; novaLista.splice(dragItem.current.index, 1);
-    novaLista.splice(dragOverItem.current, 0, premjesteniItem); dragItem.current = null; dragOverItem.current = null; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const updatePolje = (index, key, val, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
-    const novaLista = [...aktuelnaLista]; novaLista[index][key] = val; saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const toggleVelicinaPolja = (index, listaIme) => { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
-    const novaLista = [...aktuelnaLista]; const trenutno = novaLista[index].span; novaLista[index].span = trenutno === 'col-span-1' ?
-    'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); saas.setUi({...saas.ui, [listaIme]: novaLista}); };
-    const spremiDimenzije = (e, index, listaIme) => { if (!saas.isEditMode) return; const w = e.currentTarget.style.width; const h = e.currentTarget.style.height;
-    if (w || h) { const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; const novaLista = [...aktuelnaLista];
-    if (w) novaLista[index].customWidth = w; if (h) novaLista[index].customHeight = h; saas.setUi({...saas.ui, [listaIme]: novaLista}); } };
+    const handleDrop = (listaIme) => { 
+        if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
+        const novaLista = [...aktuelnaLista]; 
+        const premjesteniItem = novaLista[dragItem.current.index]; 
+        novaLista.splice(dragItem.current.index, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteniItem); 
+        dragItem.current = null; dragOverItem.current = null; 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const updatePolje = (index, key, val, listaIme) => { 
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+        const novaLista = [...aktuelnaLista]; 
+        novaLista[index][key] = val; 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const toggleVelicinaPolja = (index, listaIme) => { 
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+        const novaLista = [...aktuelnaLista]; 
+        const trenutno = novaLista[index].span; 
+        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); 
+        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+    };
+    const spremiDimenzije = (e, index, listaIme) => { 
+        if (!saas.isEditMode) return; 
+        const w = e.currentTarget.style.width; const h = e.currentTarget.style.height;
+        if (w || h) { 
+            const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
+            const novaLista = [...aktuelnaLista];
+            if (w) novaLista[index].customWidth = w; 
+            if (h) novaLista[index].customHeight = h; 
+            saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+        } 
+    };
 
     const [scan, setScan] = useState('');
     const [trupac, setTrupac] = useState(null);
@@ -442,14 +511,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             <h2 className="text-red-500 text-center font-black tracking-widest uppercase text-xl md:text-2xl mt-2 mb-6 drop-shadow-md">🪚 PROREZ TRUPACA</h2>
             
             <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-red-500/20 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                {/* 🟢 POPRAVLJENO: Grid koji ide u 1 kolonu na mobitelu, 2 na desktopu */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                {/* 🟢 POPRAVLJENO: Stepenasti zIndex (60 - index) sprečava preklapanje padajućih menija na mobitelu */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full overflow-visible">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
-                        <div key={polje.id} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
+                        <div key={polje.id} style={{ zIndex: 60 - index }} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
                             {saas.isEditMode && (<div className="absolute -top-3 -right-2 z-[60] flex gap-1"><span className="text-[10px] text-amber-500 bg-theme-card px-2 py-1 rounded-box cursor-move border border-amber-500/50 shadow-lg">☰ POMICANJE</span></div>)}
                             <div className="flex-1 flex flex-col sm:flex-row sm:items-center w-full overflow-visible gap-2 sm:gap-0">
-                                {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_radnici')} className="w-full sm:w-24 bg-theme-card text-amber-400 p-1 rounded border border-amber-500/50 text-[8px] uppercase font-black shrink-0 mr-2" placeholder="Naslov..." />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase sm:mx-2 whitespace-nowrap shrink-0 sm:w-24 overflow-hidden text-ellipsis mb-1 sm:mb-0">{polje.label}</label>)}
-                                <div className="w-full sm:flex-1 sm:border-l border-theme-border/50 sm:pl-2 relative overflow-visible z-[100]">{renderRadnikPolje(polje)}</div>
+                                {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_radnici')} className="w-full sm:w-24 bg-theme-card text-amber-400 p-1 rounded border border-amber-500/50 text-[8px] uppercase font-black shrink-0 mr-2" placeholder="Naslov..." />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase sm:mx-2 whitespace-nowrap shrink-0 sm:w-28 overflow-hidden text-ellipsis mb-1 sm:mb-0">{polje.label}</label>)}
+                                <div className="w-full sm:flex-1 sm:border-l border-theme-border/50 sm:pl-2 relative overflow-visible">{renderRadnikPolje(polje)}</div>
                             </div>
                         </div>
                     ))}
@@ -481,22 +550,20 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                                         <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Skenirani Trupac</span>
                                         <div className="flex items-center gap-3">
                                             <h3 className="text-3xl text-theme-text font-black drop-shadow-md">{trupac.id}</h3>
-                                            {/* 🟢 EKSPLICITNI PRIKAZ PLOČICE (DODANO!) */}
                                             {trupac.broj_plocice && <span className="bg-red-900/30 border border-red-500/30 text-red-400 px-3 py-1 rounded-xl text-sm font-black uppercase">Pločica: {trupac.broj_plocice}</span>}
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Zapremina</span>
+                                        <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Zapremina (m³)</span>
                                         <h3 className="text-4xl text-red-500 font-black drop-shadow-lg">{parseFloat(trupac.zapremina || 0).toFixed(3)} <span className="text-lg text-red-700">m³</span></h3>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 relative z-10">
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Vrsta</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.vrsta || 'N/A'}</span></div>
                                     <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Klasa</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.klasa || '-'}</span></div>
-                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Dužina</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.duzina} m</span></div>
-                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.promjer} cm</span></div>
+                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Dužina (m)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">{trupac.duzina} m</span></div>
+                                    <div className="bg-black/30 p-4 rounded-2xl border border-theme-border/30 text-center"><span className="text-[9px] text-slate-500 uppercase block mb-1 font-bold">Prečnik (cm)</span><span className="text-sm font-black text-theme-text uppercase tracking-widest">Ø {trupac.promjer} cm</span></div>
                                 </div>
-                                {/* 🟢 POPRAVLJENO: flex-col na mobitelu za dugmad */}
                                 <div className="flex flex-col sm:flex-row gap-4 relative z-10">
                                     <button onClick={() => {setTrupac(null); setScan(''); setTimeout(() => inputRef.current?.focus(), 100);}} className="flex-1 py-5 bg-theme-card text-slate-400 font-black rounded-2xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-sm">✕ Otkazivanje</button>
                                     <button 
@@ -563,7 +630,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 </div>
             </div>
             
-            <SaaS_DnevnikMasine modul="Prorez" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} />
+            <SaaS_DnevnikMasine modul="Prorez" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />
             {isScanning && <ScannerOverlay onScan={(text) => { handleScanInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );

@@ -1,16 +1,12 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function RacuniModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
@@ -64,30 +60,30 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [stavkaForm, setStavkaForm] = useState({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' });
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
 
-  // 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
-  useEffect(() => {
-    setTimeout(() => {
-        const autoAction = localStorage.getItem('erp_auto_action');
-        if (autoAction === 'otvoreni') {
-            setTab('otvoreni');
-            localStorage.removeItem('erp_auto_action');
-        }
-    }, 150);
-}, []);
+    // 🟢 PREMIUM DEEP LINKING: Skakanje na tab otvorenih dugovanja
+    useEffect(() => {
+        setTimeout(() => {
+            const autoAction = localStorage.getItem('erp_auto_action');
+            if (autoAction === 'otvoreni') {
+                setTab('otvoreni');
+                localStorage.removeItem('erp_auto_action');
+            }
+        }, 150);
+    }, []);
 
-// 🟢 LIVE SYNC REALTIME KANAL
-useEffect(() => {
-    load();
-    const channel = supabase.channel(`racuni_realtime_${Math.random()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
-            supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
-        })
-        .subscribe();
+    // 🟢 LIVE SYNC REALTIME KANAL
+    useEffect(() => {
+        load();
+        const channel = supabase.channel(`racuni_realtime_${Math.random()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => {
+                supabase.from('racuni').select('*').order('datum', { ascending: false }).then(({data}) => setRacuni(data||[]));
+            })
+            .subscribe();
 
-    return () => {
-        supabase.removeChannel(channel);
-    };
-}, []);
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, []);
 
     const load = async () => {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
@@ -240,18 +236,23 @@ useEffect(() => {
     useEffect(() => {
         if(!trenutniProizvod || !stavkaForm.kolicina_unos) return;
         const kol = parseFloat(stavkaForm.kolicina_unos); let obracun = kol;
-        if (stavkaForm.jm_unos === 'kom' && stavkaForm.jm_obracun !== 'kom') {
-            const v = parseFloat(trenutniProizvod.visina) || 1; const s = parseFloat(trenutniProizvod.sirina) || 1; const d = parseFloat(trenutniProizvod.duzina) || 1;
-            if (stavkaForm.jm_obracun === 'm3') obracun = kol * (v/100) * (s/100) * (d/100);
-            if (stavkaForm.jm_obracun === 'm2') obracun = kol * (s/100) * (d/100);
-            if (stavkaForm.jm_obracun === 'm1') obracun = kol * (d/100);
-        }
+        const v = (parseFloat(trenutniProizvod.visina) || 1) / 100; const s = (parseFloat(trenutniProizvod.sirina) || 1) / 100; const d = (parseFloat(trenutniProizvod.duzina) || 1) / 100;
+        let komada = kol;
+        if (stavkaForm.jm_unos === 'm3') komada = kol / (v * s * d);
+        else if (stavkaForm.jm_unos === 'm2') komada = kol / (s * d);
+        else if (stavkaForm.jm_unos === 'm1') komada = kol / d;
+
+        if (stavkaForm.jm_obracun === 'm3') obracun = komada * (v * s * d);
+        else if (stavkaForm.jm_obracun === 'm2') obracun = komada * (s * d);
+        else if (stavkaForm.jm_obracun === 'm1') obracun = komada * d;
+        else if (stavkaForm.jm_obracun === 'kom') obracun = komada;
+
         setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : kol}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const dodajStavku = async () => {
         if(!trenutniProizvod || !stavkaForm.kolicina_obracun) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Odaberite proizvod i unesite količinu!", onCancel: zatvoriDialog });
-        if(!odabraniKupac) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
+        if(!odabraniKupac && !form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
         
         const kolicina = parseFloat(stavkaForm.kolicina_obracun);
         const fiksna_cijena = parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena;
@@ -265,7 +266,7 @@ useEffect(() => {
             kolicina_unos: parseFloat(stavkaForm.kolicina_unos), jm_unos: stavkaForm.jm_unos, kolicina_obracun: kolicina, jm_obracun: stavkaForm.jm_obracun,
             cijena_baza: dinamickaCijena, rabat_procenat: rabat_konacni.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata, ukupno: ukupno_sa_rabatom
         };
-        if (stavkaForm.id) setStavke(supabase => stavke.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
+        if (stavkaForm.id) setStavke(prev => prev.map(s => s.id === stavkaForm.id ? novaStavka : s)); else setStavke([...stavke, novaStavka]);
         setStavkaForm({ id: null, sifra_unos: '', kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', jm_obracun: 'm3', sistemski_rabat: 0, konacni_rabat: '', fiksna_cijena: '' }); setTrenutniProizvod(null);
     };
 
@@ -354,7 +355,7 @@ useEffect(() => {
         const odabraniKupac = kupci.find(k => k.naziv === podaci.kupac_naziv) || null;
         let redovi = stavkeZaPrint.map((s, i) => {
             const kat = katalog.find(k => k.sifra === s.sifra);
-            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina}` : '';
+            const dimenzije = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : '';
             const paketiStr = paketiPrikaz[s.naziv] && paketiPrikaz[s.naziv].length > 0 ? `<br/><span style="color: #3b82f6; font-size: 10px; font-weight: bold;">📦 Sadrži pakete: ${paketiPrikaz[s.naziv].join(', ')}</span>` : '';
             
             return `
@@ -384,7 +385,7 @@ useEffect(() => {
                 </div>
             </div>
             <table>
-                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${podaci.valuta})</th></tr></thead>
+                <thead><tr><th style="width: 5%; text-align: center;">R.B.</th><th>Dimenzija (cm) i Naziv Proizvoda</th><th style="text-align:center;">Količina</th><th style="text-align:right;">Cijena</th><th style="text-align:right;">Rabat</th><th style="text-align:right;">Ukupno (${podaci.valuta})</th></tr></thead>
                 <tbody>${redovi}</tbody>
             </table>
             <div class="summary-box">
@@ -421,7 +422,7 @@ useEffect(() => {
                 <div className="flex-1 min-w-0 h-full">
                     <MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => {setForm({...form, kupac_naziv: k.naziv}); setOdabraniKupac(k);}} placeholder="Odaberi kupca..." />
                 </div>
-                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-theme-text px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+                {hasKupacEdit && <button onClick={() => setShowBrziKupac(true)} className="bg-theme-accent hover:opacity-80 text-white px-3 h-full min-h-[45px] rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
             </div>
         );
         if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full h-full min-h-[45px] p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-red-500 shadow-inner" />;
@@ -434,8 +435,8 @@ useEffect(() => {
                     <option value="Virmanski">Virmanski (Uključuje PDV)</option><option value="Gotovina">Gotovina (BEZ PDV-a)</option><option value="Kartica">Kartica</option>
                 </select>
                 <div className="flex items-center gap-4 text-[10px] uppercase font-black text-slate-400 pl-1">
-                    <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="radio" name="pdv_racun" checked={form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: true})} /> + Obračunaj PDV</label>
-                    <label className="flex items-center gap-1 cursor-pointer hover:text-white"><input type="radio" name="pdv_racun" checked={!form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: false})} /> Bez PDV-a</label>
+                    <label className="flex items-center gap-1 cursor-pointer hover:text-theme-text"><input type="radio" name="pdv_racun" checked={form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: true})} /> + Obračunaj PDV</label>
+                    <label className="flex items-center gap-1 cursor-pointer hover:text-theme-text"><input type="radio" name="pdv_racun" checked={!form.ukljuciPDV} onChange={() => setForm({...form, ukljuciPDV: false})} /> Bez PDV-a</label>
                 </div>
             </div>
         );
@@ -444,7 +445,7 @@ useEffect(() => {
 
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in">
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="računi" saas={saas} />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="računi" saas={saas} hideMasina={true} />
             
             <PametniDialog {...dialog} />
 
@@ -477,26 +478,29 @@ useEffect(() => {
                         </div>
                     )}
 
-                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditing ? 'border-amber-500/50 bg-theme-card backdrop-blur-[var(--glass-blur)]' : 'border-red-500/30 bg-theme-card backdrop-blur-[var(--glass-blur)]')}`} >
+                    <div className={`p-6 rounded-box border-2 shadow-2xl space-y-4 transition-all relative z-[40] ${saas.isEditMode ? 'border-dashed border-amber-500 bg-black/20' : (isEditing ? 'border-amber-500/50 bg-theme-card backdrop-blur-[var(--glass-blur)]' : 'border-red-500/30 bg-theme-card backdrop-blur-[var(--glass-blur)]')}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-center mb-2">
                             <h3 className={`${isEditing ? 'text-amber-500' : saas.ui.boja_naslova} font-black uppercase text-xs`}>1. Parametri Računa</h3>
                             {isEditing && <button onClick={resetFormu} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1 rounded-xl uppercase hover:bg-red-900/50 transition-all">Odustani od izmjena ✕</button>}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-theme-border pb-4 items-start">
-                            {aktivnaPolja.map((polje, index) => (
-                                <div key={polje.id} className={`relative flex flex-col ${polje.span} transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px' } : {}), width: polje.customWidth || undefined, height: polje.customHeight || undefined }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index)}>
-                                    {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
-                                    {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
-                                    <div className={`flex-1 ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderPoljeHeader(polje)}</div>
-                                </div>
-                            ))}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 border-b border-theme-border pb-4 items-start overflow-visible">
+                            {aktivnaPolja.map((polje, index) => {
+                                const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 md:col-span-2' : 'col-span-1');
+                                return (
+                                    <div key={polje.id} className={`relative flex flex-col ${responsiveSpan} overflow-visible transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ zIndex: 50 - index, maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index)} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={handleDrop} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index)}>
+                                        {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicinaPolja(index)} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
+                                        {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value)} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Naslov polja" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
+                                        <div className={`min-h-[48px] flex-1 overflow-visible ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderPoljeHeader(polje)}</div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
-                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-4 relative z-[30]">
-                        <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički dodaj / uredi stavke</h3>
+                    <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-4 relative z-[30]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <h3 className="text-blue-500 font-black uppercase text-xs mb-4">2. Dinamički dodaj / uredi stavke (Dimenzije u cm)</h3>
                         <div className="relative z-40 mb-3">
-                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod za dodavanje</label>
+                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Pronađi proizvod za dodavanje (Dimenzije u cm)</label>
                             <div className="flex gap-2 items-center w-full">
                                 <div className="flex-1 min-w-0">
                                     <MasterSearch 
@@ -507,50 +511,67 @@ useEffect(() => {
                                         placeholder="Pronađi proizvod..."
                                         renderItem={(k) => (
                                             <div>
-                                                <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv} <span className="text-red-400 ml-2">(Šifra: {k.sifra})</span></div>
+                                                <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} cm | {k.naziv} <span className="text-red-400 ml-2">(Šifra: {k.sifra})</span></div>
                                                 <div className="text-[10px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
                                             </div>
                                         )}
                                     />
                                 </div>
-                                {hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-theme-text px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
+                                {hasKatalogEdit && <button onClick={() => setShowBrziKatalog(true)} className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-3 rounded-xl shadow-lg shrink-0 text-[10px] font-black">➕ NOVI</button>}
                             </div>
                         </div>
 
                         {trenutniProizvod && (
                             <div className="p-4 bg-blue-900/10 border border-blue-500/30 rounded-2xl animate-in zoom-in-95 space-y-4 shadow-inner">
                                 <div className="flex justify-between items-center border-b border-theme-border pb-3">
-                                    <div><p className="text-theme-text text-sm font-black">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} | {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Šifra: {trenutniProizvod.sifra}</p></div>
+                                    <div><p className="text-theme-text text-sm font-black">{trenutniProizvod.visina}x{trenutniProizvod.sirina}x{trenutniProizvod.duzina} cm | {trenutniProizvod.naziv}</p><p className="text-[10px] text-slate-400">Šifra: {trenutniProizvod.sifra}</p></div>
                                     <div className="text-right"><p className="text-[10px] text-slate-400 uppercase">Cijena po {stavkaForm.jm_obracun}</p><p className="text-red-400 font-black text-lg">{dinamickaCijena.toFixed(2)} {form.valuta}</p></div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="flex-1 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-red-500/50 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
-                                        <div className="col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina (Obračun po)</label><div className="flex gap-1"><input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-400 font-black text-center border border-theme-border outline-none cursor-not-allowed" /><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-20 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border shadow-inner uppercase cursor-pointer"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div></div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 bg-black/20 p-3 rounded-xl border border-theme-border">
-                                        <div>
-                                            <label className="text-[8px] text-emerald-500 uppercase ml-2 block mb-1 font-black">Konačna Cijena</label>
-                                            <input type="number" value={stavkaForm.fiksna_cijena} onChange={e => { const val = e.target.value; const cijena = parseFloat(val) || 0; const rabat = dinamickaCijena > 0 ? ((dinamickaCijena - cijena) / dinamickaCijena) * 100 : 0; setStavkaForm({...stavkaForm, fiksna_cijena: val, konacni_rabat: rabat.toFixed(2)}); }} className="w-full p-3 bg-emerald-900/20 rounded-xl text-sm text-emerald-400 font-black text-center outline-none border border-emerald-500/50 shadow-inner" />
+                                {/* 🟢 POPRAVLJENO UKLAPANJE U OKVIR: grid-cols-12 sa min-w-0 sprečava da polje jedinice mjere siječe desni okvir */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end w-full">
+                                    <div className="space-y-3 w-full min-w-0">
+                                        <div className="w-full min-w-0">
+                                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina i Jedinica (Unos)</label>
+                                            <div className="grid grid-cols-12 gap-2 w-full">
+                                                <input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="0" className="col-span-8 min-w-0 w-full p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-red-500/50 shadow-inner" />
+                                                <select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="col-span-4 min-w-0 w-full !px-2 py-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black text-center outline-none border border-theme-border shadow-inner uppercase cursor-pointer">
+                                                    <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
+                                                </select>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="text-[8px] text-pink-500 uppercase ml-2 block mb-1 font-black">Ili Popust %</label>
-                                            <input type="number" value={stavkaForm.konacni_rabat} onChange={e => { const val = e.target.value; const rabat = parseFloat(val) || 0; const cijena = dinamickaCijena - (dinamickaCijena * (rabat / 100)); setStavkaForm({...stavkaForm, konacni_rabat: val, fiksna_cijena: cijena.toFixed(2)}); }} className="w-full p-3 bg-pink-900/20 rounded-xl text-sm text-pink-400 font-black text-center outline-none border border-pink-500/50 shadow-inner" />
+                                        <div className="w-full min-w-0">
+                                            <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Količina (Obračun po)</label>
+                                            <div className="grid grid-cols-12 gap-2 w-full">
+                                                <input type="number" value={stavkaForm.kolicina_obracun} readOnly className="col-span-8 min-w-0 w-full p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-400 font-black text-center border border-theme-border outline-none cursor-not-allowed" />
+                                                <select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="col-span-4 min-w-0 w-full !px-2 py-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black text-center outline-none border border-theme-border shadow-inner uppercase cursor-pointer">
+                                                    <option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 bg-black/20 p-3 rounded-xl border border-theme-border w-full">
+                                        <div className="min-w-0">
+                                            <label className="text-[8px] text-emerald-500 uppercase ml-1 block mb-1 font-black truncate">Konačna Cijena</label>
+                                            <input type="number" value={stavkaForm.fiksna_cijena} onChange={e => { const val = e.target.value; const cijena = parseFloat(val) || 0; const rabat = dinamickaCijena > 0 ? ((dinamickaCijena - cijena) / dinamickaCijena) * 100 : 0; setStavkaForm({...stavkaForm, fiksna_cijena: val, konacni_rabat: rabat.toFixed(2)}); }} className="w-full min-w-0 p-3 bg-emerald-900/20 rounded-xl text-sm text-emerald-400 font-black text-center outline-none border border-emerald-500/50 shadow-inner" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <label className="text-[8px] text-pink-500 uppercase ml-1 block mb-1 font-black truncate">Ili Popust %</label>
+                                            <input type="number" value={stavkaForm.konacni_rabat} onChange={e => { const val = e.target.value; const rabat = parseFloat(val) || 0; const cijena = dinamickaCijena - (dinamickaCijena * (rabat / 100)); setStavkaForm({...stavkaForm, konacni_rabat: val, fiksna_cijena: cijena.toFixed(2)}); }} className="w-full min-w-0 p-3 bg-pink-900/20 rounded-xl text-sm text-pink-400 font-black text-center outline-none border border-pink-500/50 shadow-inner" />
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={dodajStavku} className={`w-full py-4 text-theme-text font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'}`}>{stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na račun'}</button>
+                                <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-600 hover:bg-red-500'}`}>{stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na račun'}</button>
                             </div>
                         )}
                     </div>
 
                     {stavke.length > 0 && (
-                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl animate-in slide-in-from-bottom">
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl animate-in slide-in-from-bottom" style={{ backgroundColor: saas.ui.boja_kartice }}>
                             <div className="flex justify-between items-center mb-4"><h3 className="text-red-400 font-black uppercase text-xs">3. Konačni obračun</h3><button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button></div>
                             <div className="space-y-2 mb-6">
                                 {stavke.map((s, i) => {
                                     const katItem = katalog.find(k => k.sifra === s.sifra);
-                                    const dim = katItem ? `${katItem.visina}x${katItem.sirina}x${katItem.duzina}` : '';
+                                    const dim = katItem ? `${katItem.visina}x${katItem.sirina}x${katItem.duzina} cm` : '';
                                     return (
                                     <div key={s.id} onClick={() => urediStavku(s)} className="flex justify-between items-center p-4 bg-theme-card border border-theme-border rounded-xl relative overflow-hidden cursor-pointer hover:border-red-500 transition-all group shadow-md">
                                         {s.rabat_procenat > 0 && <div className="absolute top-0 left-0 h-full w-1 bg-pink-500"></div>}
@@ -571,14 +592,14 @@ useEffect(() => {
                                 <div className="flex justify-between text-xl text-theme-text font-black pt-2 mt-2 border-t border-theme-border"><span>ZA NAPLATU:</span><span className="text-red-400">{totals.za_naplatu} {form.valuta}</span></div>
                             </div>
                             <textarea value={form.napomena} onChange={e=>setForm({...form, napomena:e.target.value})} placeholder="Napomena na računu..." className="w-full mt-4 p-4 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text outline-none focus:border-red-500 shadow-inner" rows="2"></textarea>
-                            <button onClick={snimiRacun} className={`w-full mt-4 py-6 text-theme-text font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(239,68,68,0.4)] transition-all text-sm tracking-widest ${isEditing ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-red-600 hover:bg-red-500'}`}>{isEditing ? '✅ Snimi izmjene računa' : '🏁 ZAKLJUČI I KREIRAJ RAČUN'}</button>
+                            <button onClick={snimiRacun} className={`w-full mt-4 py-6 text-white font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(239,68,68,0.4)] transition-all text-sm tracking-widest ${isEditing ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-red-600 hover:bg-red-500'}`}>{isEditing ? '✅ Snimi izmjene računa' : '🏁 ZAKLJUČI I KREIRAJ RAČUN'}</button>
                         </div>
                     )}
                 </div>
             ) : (
                 <div className="animate-in slide-in-from-right max-w-5xl mx-auto">
                     {tab === 'otvoreni' && (
-                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl w-full">
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-red-500/30 shadow-2xl w-full" style={{ backgroundColor: saas.ui.boja_kartice }}>
                             <h3 className="text-red-500 font-black uppercase text-xs mb-4 flex justify-between"><span>⏳ ČEKA NAPLATU (OTVORENO)</span></h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2">
                                 {neplaceni.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-10 border-2 border-dashed border-theme-border rounded-box">Nema otvorenih računa.</p>}
@@ -589,7 +610,7 @@ useEffect(() => {
                                             <div className="text-right"><p className="text-red-400 font-black text-lg">{r.ukupno_sa_pdv} {r.valuta}</p><p className="text-[9px] text-slate-500 uppercase mt-1">Rok: {formatirajDatum(r.rok_placanja)}</p></div>
                                         </div>
                                         <div className="flex justify-between items-center mt-2">
-                                            <button onClick={()=>promijeniStatusBrzo(r, 'NAPLAĆENO')} className="text-[9px] text-theme-text font-black bg-emerald-600 px-4 py-2 rounded-xl hover:bg-emerald-500 transition-all shadow-md">Označi kao naplaćeno 💰</button>
+                                            <button onClick={()=>promijeniStatusBrzo(r, 'NAPLAĆENO')} className="text-[9px] text-white font-black bg-emerald-600 px-4 py-2 rounded-xl hover:bg-emerald-500 transition-all shadow-md">Označi kao naplaćeno 💰</button>
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg ${r.nacin_placanja === 'Gotovina' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : 'bg-blue-900/30 text-theme-accent border border-blue-500/30'}`}>{r.nacin_placanja}</span>
                                                 <span className="text-[9px] text-slate-500 font-bold">Veza: {r.broj_veze || '-'}</span>
@@ -601,7 +622,7 @@ useEffect(() => {
                         </div>
                     )}
                     {tab === 'arhiva' && (
-                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl w-full">
+                        <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl w-full" style={{ backgroundColor: saas.ui.boja_kartice }}>
                             <h3 className="text-emerald-500 font-black uppercase text-xs mb-4 flex justify-between"><span>✅ NAPLAĆENO (ARHIVA)</span></h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2">
                                 {placeni.length === 0 && <p className="text-center text-slate-500 text-xs col-span-full py-10 border-2 border-dashed border-theme-border rounded-box">Arhiva je prazna.</p>}

@@ -1,16 +1,12 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const saas = useSaaS('lager_modul', {
@@ -63,17 +59,11 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
+    // 🟢 SVE DIMENZIJE SE NORMALIZUJU U CENTIMETRE (cm)
     const normalizujDimenzije = (p) => {
         let d = parseFloat(p.debljina) || 0;
         let s = parseFloat(p.sirina) || 0;
         let l = parseFloat(p.duzina) || 0;
-
-        const katArtikal = katalog.find(k => k.sifra === p.naziv_proizvoda || k.naziv === p.naziv_proizvoda);
-        const jedinica = (katArtikal?.jm_unos || p.jm || 'kom').toLowerCase();
-
-        if (jedinica === 'cm') { d = d * 10; s = s * 10; l = l * 10; }
-        else if (jedinica === 'm') { d = d * 1000; s = s * 1000; l = l * 1000; }
-
         return { debljina: d, sirina: s, duzina: l };
     };
 
@@ -164,7 +154,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             kolicina_ulaz: unosKol, jm: rucniUlazForm.jm,
             kolicina_final: izracunatM3,
             broj_veze: 'SLOBODNA_ROBA',
-            mjesto: header.mjesto || 'Lager',
+            mjesto: header?.mjesto || 'Lager',
             masina: 'Ručni Unos',
             snimio_korisnik: user?.ime_prezime || 'Nepoznat',
             datum_yyyy_mm: new Date().toISOString().split('T')[0],
@@ -199,9 +189,10 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         setHistorija('load'); setIzvedeniPaketi([]);
         const sid = paket.paket_id;
 
-        const { data: auditData } = await supabase.from('audit_log').select('*').eq('zapis_id', sid).order('vrijeme', { ascending: true });
+        // 🟢 POPRAVLJENO: Čita iz prave tabele sistem_audit_log umjesto nepostojeće audit_log
+        const { data: auditData } = await supabase.from('sistem_audit_log').select('*').ilike('detalji', `%${sid}%`).order('vrijeme', { ascending: true });
         let dogadjaji = auditData ? auditData.map(a => {
-            let detaljanOpis = "Izmjena unutrašnjih parametara paketa.";
+            let detaljanOpis = a.detalji || "Izmjena unutrašnjih parametara paketa.";
             if (a.akcija === 'DODAVANJE') detaljanOpis = `Kreiran paket na mašini: ${paket.masina || 'N/A'}. Količina: ${paket.kolicina_ulaz} kom (${paket.kolicina_final} m³).`;
             if (a.stari_podaci && a.novi_podaci) {
                 try {
@@ -216,7 +207,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                     if (promjene.length > 0) detaljanOpis = promjene.join(' | ');
                 } catch(e) {}
             }
-            return { vrijeme: a.vrijeme, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
+            return { vrijeme: a.vrijeme || a.created_at, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
         }) : [];
 
         const { data: forwardData } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${sid}%`);
@@ -294,6 +285,17 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="lager" saas={saas} hideMasina={true} />
 
+            {saas.isEditMode && (
+                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
+                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna Lagera</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova || '#ffffff'} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Veličina naslova (px): <input type="number" value={saas.ui.velicina_naslova || 16} onChange={e => saas.setUi({...saas.ui, velicina_naslova: e.target.value})} className="w-full p-2 mt-1 bg-black text-amber-400 font-mono rounded" /></label>
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-col sm:flex-row bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner gap-1 overflow-x-auto custom-scrollbar">
                 <button onClick={() => setGlavniTab('paketi')} className={`flex-1 py-4 px-4 rounded-xl text-xs uppercase font-black transition-all whitespace-nowrap flex items-center justify-center gap-2 ${glavniTab === 'paketi' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-white'}`}>📦 Lager Gotovih Paketa</button>
                 <button onClick={() => setGlavniTab('rucni_ulaz')} className={`flex-1 py-4 px-4 rounded-xl text-xs uppercase font-black transition-all whitespace-nowrap flex items-center justify-center gap-2 ${glavniTab === 'rucni_ulaz' ? 'bg-amber-600 text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-white'}`}>➕ Slobodni Ulaz</button>
@@ -320,7 +322,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                             placeholder="Pretraži po šifri ili nazivu..."
                             renderItem={(k) => (
                                 <div>
-                                    <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} | {k.naziv}</div>
+                                    <div className="text-theme-text text-xs font-black">{k.visina}x{k.sirina}x{k.duzina} cm | {k.naziv}</div>
                                     <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold text-amber-400">Kat: {k.kategorija} | Baza: {k.default_jedinica}</div>
                                 </div>
                             )}
@@ -396,15 +398,37 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                     </div>
 
                     {glavniTab === 'paketi' && (
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 pt-4 border-t border-theme-border flex-wrap">
-                            <div className="col-span-2 md:col-span-1">
-                                <label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Radni Nalog</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-4 border-t border-theme-border">
+                            <div>
+                                <label className="text-[9px] text-slate-400 uppercase ml-2 mb-1 block font-black">Radni Nalog</label>
                                 <div className="h-[45px]"><MasterSearch data={aktivniNalozi} poljaZaPretragu={['id', 'kupac_naziv']} value={fPaket.rn} onSelect={n => setFPaket({...fPaket, rn: n.id})} placeholder="Odaberi RN..." /></div>
                             </div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Debljina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.debljinaOd} onChange={e=>setFPaket({...fPaket, debljinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.debljinaDo} onChange={e=>setFPaket({...fPaket, debljinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Širina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.sirinaOd} onChange={e=>setFPaket({...fPaket, sirinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.sirinaDo} onChange={e=>setFPaket({...fPaket, sirinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
-                            <div><label className="text-[8px] text-slate-500 uppercase ml-2 mb-1 block">Dužina (mm od-do)</label><div className="flex gap-1"><input type="number" value={fPaket.duzinaOd} onChange={e=>setFPaket({...fPaket, duzinaOd: e.target.value})} placeholder="Min" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /><input type="number" value={fPaket.duzinaDo} onChange={e=>setFPaket({...fPaket, duzinaDo: e.target.value})} placeholder="Max" className="w-1/2 p-3 bg-theme-card border border-theme-border rounded-xl text-xs text-center text-white" /></div></div>
-                            <div className="flex flex-col justify-end"><button onClick={() => { setPretraga(''); setFPaket({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' }); }} className="w-full p-3 bg-theme-panel text-slate-400 rounded-xl text-[9px] uppercase font-black hover:bg-red-900/30 hover:text-red-400 border border-theme-border">Poništi filtere ✕</button></div>
+                            <div>
+                                <label className="text-[9px] text-slate-400 uppercase ml-2 mb-1 block font-black">Debljina (cm od-do)</label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                    <input type="number" value={fPaket.debljinaOd} onChange={e=>setFPaket({...fPaket, debljinaOd: e.target.value})} placeholder="Od cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                    <input type="number" value={fPaket.debljinaDo} onChange={e=>setFPaket({...fPaket, debljinaDo: e.target.value})} placeholder="Do cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[9px] text-slate-400 uppercase ml-2 mb-1 block font-black">Širina (cm od-do)</label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                    <input type="number" value={fPaket.sirinaOd} onChange={e=>setFPaket({...fPaket, sirinaOd: e.target.value})} placeholder="Od cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                    <input type="number" value={fPaket.sirinaDo} onChange={e=>setFPaket({...fPaket, sirinaDo: e.target.value})} placeholder="Do cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[9px] text-slate-400 uppercase ml-2 mb-1 block font-black">Dužina (cm od-do)</label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                    <input type="number" value={fPaket.duzinaOd} onChange={e=>setFPaket({...fPaket, duzinaOd: e.target.value})} placeholder="Od cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                    <input type="number" value={fPaket.duzinaDo} onChange={e=>setFPaket({...fPaket, duzinaDo: e.target.value})} placeholder="Do cm" className="w-full min-h-[45px] px-2 bg-theme-panel border border-theme-border rounded-xl text-xs text-center text-theme-text outline-none focus:border-blue-500" />
+                                </div>
+                            </div>
+                            <div className="flex flex-col justify-end">
+                                <button onClick={() => { setPretraga(''); setFPaket({ rn: '', debljinaOd: '', debljinaDo: '', sirinaOd: '', sirinaDo: '', duzinaOd: '', duzinaDo: '' }); }} className="w-full min-h-[45px] p-3 bg-theme-panel text-slate-400 rounded-xl text-[10px] uppercase font-black hover:bg-red-900/30 hover:text-red-400 border border-theme-border transition-colors">
+                                    Poništi filtere ✕
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -437,7 +461,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             {(glavniTab === 'paketi' || glavniTab === 'trupci') && (
                 <>
                     <div className="flex justify-between items-center bg-theme-card p-4 rounded-2xl border border-theme-border" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <p className="text-slate-500 text-xs uppercase">Prikazano: <span className="text-white font-black ml-1">{stats.count}</span></p>
+                        <p className="text-slate-500 text-xs uppercase">Prikazano: <span className="text-theme-text font-black ml-1">{stats.count}</span></p>
                         <p className="text-emerald-500 text-sm font-black uppercase">Ukupna zapremina: <span className="text-2xl ml-2 text-emerald-400">{stats.m3} m³</span></p>
                     </div>
 
@@ -455,7 +479,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                                 <div className="flex-1 pr-2">
                                                     <p className="text-theme-accent font-black text-lg font-mono">{item.paket_id}</p>
                                                     <p className="text-theme-text text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>
-                                                    <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest font-mono">{norm.debljina}x{norm.sirina}x{norm.duzina} <span className="text-[9px] lowercase text-slate-500">mm</span></p>
+                                                    <p className="text-amber-400 font-black text-xs uppercase mt-1 tracking-widest font-mono">{norm.debljina}x{norm.sirina}x{norm.duzina} <span className="text-[9px] lowercase text-slate-400">cm</span></p>
                                                     <div className="flex flex-wrap gap-1 mt-2">
                                                         {item.broj_veze === 'SLOBODNA_ROBA' ? (
                                                             <span className="text-[9px] bg-amber-900/30 text-amber-500 px-2 py-0.5 rounded font-black border border-amber-500/30">📦 SLOBODNI ULAZ</span>
@@ -464,12 +488,12 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                                         ) : null}
                                                     </div>
                                                 </div>
-                                                <div className="text-right flex flex-col items-end shrink-0">
+                                                <div className="text-right flex flex-col items-end shrink-0 mt-3">
                                                     <div className="bg-emerald-900/20 border border-emerald-500/30 px-3 py-2 rounded-xl text-right mb-1">
                                                         <p className="text-emerald-400 font-black text-xl font-mono leading-none">{item.kolicina_final} <span className="text-[10px]">m³</span></p>
                                                     </div>
                                                     <div className="bg-theme-card border border-theme-border px-3 py-1.5 rounded-xl text-right shadow-inner">
-                                                        <p className="text-theme-text font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-500">kom</span></p>
+                                                        <p className="text-theme-text font-black text-sm leading-none">{item.kolicina_ulaz || 0} <span className="text-[9px] text-slate-500">{item.jm || 'kom'}</span></p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -480,8 +504,8 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                                 <p className="text-amber-500 font-black text-lg font-mono">QR: {item.id}</p>
                                                 <p className="text-theme-text font-bold text-xs uppercase mt-1">{item.vrsta} | Klasa: {item.klasa}</p>
                                                 <div className="flex gap-2 mt-2">
-                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">L: {item.duzina}m</span>
-                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">Ø: {item.promjer}cm</span>
+                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">Dužina: {item.duzina} m</span>
+                                                    <span className="text-[9px] bg-theme-card text-theme-text px-2 py-1 rounded border border-theme-border font-black uppercase shadow-inner">Prečnik: Ø {item.promjer} cm</span>
                                                 </div>
                                                 <p className="text-[9px] text-slate-500 mt-3 font-bold uppercase">Šumarija: <span className="text-theme-text">{item.sumarija}</span></p>
                                                 <p className="text-[9px] text-slate-500 mt-1 font-bold uppercase">Otpremnica: <span className="text-theme-text">{item.otpremnica_broj}</span></p>
@@ -508,7 +532,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         <div className="mb-6">
                             <h3 className="text-blue-400 text-xs uppercase tracking-widest mb-1">Forenzika i Hronologija izmjena paketa</h3>
                             <p className="text-white text-base uppercase font-black">{selektovaniPaket.paket_id} - {selektovaniPaket.naziv_proizvoda}</p>
-                            <p className="text-amber-400 font-black text-sm tracking-widest mt-1 font-mono">DIMENZIJE U BAZI: {normalizujDimenzije(selektovaniPaket).debljina}x{normalizujDimenzije(selektovaniPaket).sirina}x{normalizujDimenzije(selektovaniPaket).duzina} mm</p>
+                            <p className="text-amber-400 font-black text-sm tracking-widest mt-1 font-mono">DIMENZIJE U BAZI: {normalizujDimenzije(selektovaniPaket).debljina}x{normalizujDimenzije(selektovaniPaket).sirina}x{normalizujDimenzije(selektovaniPaket).duzina} cm</p>
                         </div>
 
                         {selektovaniPaket.broj_veze === 'SLOBODNA_ROBA' ? (
@@ -553,7 +577,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                             )}
                         </div>
 
-                        <button onClick={() => isprintajAutomatski(selektovaniPaket)} disabled={isPrinting} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl uppercase shadow-lg text-xs tracking-widest">🖨️ Isprintaj deklaraciju (Auto QR + mm)</button>
+                        <button onClick={() => isprintajAutomatski(selektovaniPaket)} disabled={isPrinting} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl uppercase shadow-lg text-xs tracking-widest">🖨️ Isprintaj deklaraciju (Auto QR + cm)</button>
                     </div>
                 </div>
             )}

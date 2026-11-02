@@ -1,15 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     const loggedUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
@@ -338,15 +334,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {tab === 'analitika' || tab === 'pregled' ? (
-                <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" saas={saas} />
-            ) : (
-                <div className="flex justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-box border border-emerald-500/30 shadow-lg" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                    <button onClick={onExit} className="bg-theme-panel text-[10px] px-4 py-2 rounded-xl uppercase font-black hover:bg-slate-700 transition-all">← Meni</button>
-                    <h2 className="text-emerald-400 font-black tracking-widest uppercase text-xs" style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_glavni}</h2>
-                    <div className="w-20"></div>
-                </div>
-            )}
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-emerald-500" user={user} hideMasina={true} modulIme="blagajna" saas={saas} />
 
             <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner">
                 <button onClick={() => setTab('unos')} className={`flex-1 py-3 rounded-xl text-[10px] uppercase font-black transition-all ${tab === 'unos' ? 'bg-theme-accent text-white shadow-lg' : 'text-theme-muted hover:bg-theme-card hover:text-theme-text'}`}>
@@ -367,7 +355,6 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         <div className="flex-1 relative overflow-visible">
                             <label className="text-[10px] text-theme-accent uppercase font-black block mb-2 ml-2">Pametni sken (Učitaj PONUDU, RN ili RAČUN za naplatu)</label>
                             
-                            {/* ZAMJENA: Koristimo MasterSearch umjesto onog ručnog koda */}
                             <MasterSearch 
                                 data={sviDokumenti} 
                                 poljaZaPretragu={['id', 'kupac']} 
@@ -419,7 +406,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             </div>
                             <div>
                                 <label className="text-[10px] text-slate-500 uppercase ml-2 block mb-1">Iznos (KM)</label>
-                                <input type="number" value={form.iznos} onChange={e=>setForm({...form, iznos:e.target.value})} placeholder="0.00" className={`w-full p-4 bg-black rounded-xl text-2xl font-black text-center outline-none border-2 shadow-inner ${form.tip === 'ULAZ' ? 'border-emerald-500/50 text-emerald-400 focus:border-emerald-400' : 'border-red-500/50 text-red-400 focus:border-red-400'}`} />
+                                <input type="number" value={form.iznos} onChange={e=>setForm({...form, iznos:e.target.value})} placeholder="0.00" className={`w-full p-4 bg-theme-panel rounded-xl text-2xl font-black text-center outline-none border-2 shadow-inner ${form.tip === 'ULAZ' ? 'border-emerald-500/50 text-emerald-400 focus:border-emerald-400' : 'border-red-500/50 text-red-400 focus:border-red-400'}`} />
                             </div>
                         </div>
 
@@ -428,7 +415,6 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                 <div className="relative overflow-visible">
                                     <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera)</label>
                                     
-                                    {/* ZAMJENA: MasterSearch za ručni unos veze */}
                                     <MasterSearch 
                                         data={sviDokumenti.filter(d => d.tip === 'Račun' || d.tip === 'Ponuda')} 
                                         poljaZaPretragu={['id', 'kupac']} 
@@ -469,7 +455,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                             </div>
                         </div>
 
-                        <button onClick={snimiTransakciju} className={`w-full py-6 text-theme-text font-black rounded-box uppercase text-sm shadow-xl transition-all tracking-widest ${form.tip === 'ULAZ' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : 'bg-red-600 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]'}`}>
+                        <button onClick={snimiTransakciju} className={`w-full py-6 text-white font-black rounded-box uppercase text-sm shadow-xl transition-all tracking-widest ${form.tip === 'ULAZ' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : 'bg-red-600 hover:bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]'}`}>
                             ✅ Proknjiži i Štampaj
                         </button>
                     </div>
@@ -512,7 +498,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                             <p className="text-theme-text text-sm font-black uppercase">{t.kategorija}</p>
                                             <p className="text-xs text-slate-400 mt-1 line-clamp-1" title={t.opis}>{t.opis || 'Nema opisa'}</p>
                                             <div className="flex flex-wrap gap-2 mt-2 items-center">
-                                                <span className="text-[9px] bg-black text-slate-300 px-2 py-1 rounded font-bold border border-theme-border">{formatirajDatum(t.datum)} {t.vrijeme_tekst}</span>
+                                                <span className="text-[9px] bg-theme-panel text-slate-300 px-2 py-1 rounded font-bold border border-theme-border">{formatirajDatum(t.datum)} {t.vrijeme_tekst}</span>
                                                 <span className="text-[9px] bg-blue-900/30 text-theme-accent border border-blue-500/30 px-2 py-1 rounded font-bold">👤 {t.snimio_korisnik}</span>
                                                 {t.racun_id && (
                                                     <button onClick={() => otvoriDokument(t.racun_id)} className="text-[9px] bg-emerald-900/40 text-emerald-400 border border-emerald-500/40 px-3 py-1 rounded font-black hover:bg-emerald-600 hover:text-theme-text transition-all shadow-md">
@@ -525,7 +511,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                     <div className="flex items-center gap-6 w-full md:w-auto justify-end border-t md:border-none border-theme-border pt-3 md:pt-0 mt-3 md:mt-0">
                                         <div className="text-right">
                                             <p className={`text-2xl font-black font-mono tracking-widest ${t.tip === 'ULAZ' ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {t.tip === 'ULAZ' ? '+' : '-'}{t.iznos.toFixed(2)}
+                                                {t.tip === 'ULAZ' ? '+' : '-'}{parseFloat(t.iznos || 0).toFixed(2)}
                                             </p>
                                             <button onClick={() => printPotvrda(t)} className="text-[9px] uppercase font-black text-slate-500 hover:text-theme-text mt-1 border border-theme-border px-3 py-1 rounded-lg bg-theme-panel transition-all">🖨️ Print Potvrdu</button>
                                         </div>
