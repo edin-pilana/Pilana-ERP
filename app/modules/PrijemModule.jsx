@@ -12,9 +12,23 @@ const shiftDateString = (isoStr, days) => {
     const d = new Date(isoStr); d.setDate(d.getDate() + days); return d.toISOString().split('T')[0];
 };
 
+// Pomoćna funkcija koja pretvara stare span vrijednosti (col-span-1, col-span-2) u 12-kolonski sistem (1/4, 1/3, 1/2, FULL)
+const normalizujSpan12 = (span) => {
+    if (!span) return 'col-span-6';
+    if (span === 'col-span-12' || span === 'col-span-4' && false) return 'col-span-12';
+    if (span === 'col-span-12') return 'col-span-12'; // 100% (FULL)
+    if (span === 'col-span-6') return 'col-span-6';   // 50% (1/2)
+    if (span === 'col-span-4') return 'col-span-4';   // 33.3% (1/3)
+    if (span === 'col-span-3') return 'col-span-3';   // 25% (1/4)
+    // Mapiranje starih vrijednosti iz baze ako su ostale iz 2-kolonskog ili 4-kolonskog grida:
+    if (span === 'col-span-1') return 'col-span-6';
+    if (span === 'col-span-2') return 'col-span-6';
+    return 'col-span-6';
+};
+
 export default function PrijemModule({ user, header, setHeader, onExit }) {
     
-    // 🟢 SUPER GOD MODE - DEFAULTS
+    // 🟢 SUPER GOD MODE - DEFAULTS (12-kolonski sistem: 12 = FULL, 6 = 1/2, 4 = 1/3, 3 = 1/4)
     const saas = useSaaS('prijem_trupaca', {
         boja_kartice: '', 
         boja_slova: '', 
@@ -34,14 +48,20 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         input_radius: '12',
 
         polja_zaglavlje: [
-            { id: 'sumarija', label: 'ŠUMARIJA', span: 'col-span-1' }, { id: 'podruznica', label: 'PODRUŽNICA', span: 'col-span-1' },
-            { id: 'prevoznik', label: 'PREVOZNIK', span: 'col-span-1' }, { id: 'odjel', label: 'ODJEL', span: 'col-span-1' },
-            { id: 'otpremnica_datum', label: 'DATUM OTPR.', span: 'col-span-1' }, { id: 'otpremnica_broj', label: 'BROJ OTPREMNICE', span: 'col-span-1' }
+            { id: 'sumarija', label: 'ŠUMARIJA', span: 'col-span-6' }, 
+            { id: 'podruznica', label: 'PODRUŽNICA', span: 'col-span-6' },
+            { id: 'prevoznik', label: 'PREVOZNIK', span: 'col-span-6' }, 
+            { id: 'odjel', label: 'ODJEL', span: 'col-span-6' },
+            { id: 'otpremnica_datum', label: 'DATUM OTPR.', span: 'col-span-6' }, 
+            { id: 'otpremnica_broj', label: 'BROJ OTPREMNICE', span: 'col-span-6' }
         ],
         polja_unos: [
-            { id: 'plocica', label: 'BROJ PLOČICE', span: 'col-span-2' }, { id: 'redni', label: 'REDNI BROJ (OPCIONO)', span: 'col-span-2' },
-            { id: 'vrsta', label: 'VRSTA DRVETA', span: 'col-span-1' }, { id: 'klasa', label: 'KLASA', span: 'col-span-1' },
-            { id: 'duzina', label: 'DUŽINA (M)', span: 'col-span-1' }, { id: 'promjer', label: 'PREČNIK (CM)', span: 'col-span-1' }
+            { id: 'plocica', label: 'BROJ PLOČICE', span: 'col-span-6' }, 
+            { id: 'redni', label: 'REDNI BROJ (OPCIONO)', span: 'col-span-6' },
+            { id: 'vrsta', label: 'VRSTA DRVETA', span: 'col-span-6' }, 
+            { id: 'klasa', label: 'KLASA', span: 'col-span-6' },
+            { id: 'duzina', label: 'DUŽINA (M)', span: 'col-span-6' }, 
+            { id: 'promjer', label: 'PREČNIK (CM)', span: 'col-span-6' }
         ]
     });
 
@@ -77,6 +97,42 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
     const aktivnaPoljaZaglavlja = saas.ui.polja_zaglavlje?.length > 0 ? saas.ui.polja_zaglavlje : saas.defaultConfig.polja_zaglavlje;
     const aktivnaPoljaUnosa = saas.ui.polja_unos?.length > 0 ? saas.ui.polja_unos : saas.defaultConfig.polja_unos;
+
+    // 🟢 DRAG & DROP I PROMJENA VELIČINE POLJA (1/4, 1/3, 1/2, FULL) ZA SVE SEKCIJE
+    const dragItem = useRef(null);
+    const dragOverItem = useRef(null);
+
+    const handleDragStart = (e, index, listaIme) => {
+        dragItem.current = { index, listaIme };
+    };
+    const handleDragEnter = (e, index) => {
+        dragOverItem.current = index;
+    };
+    const handleDrop = (listaIme) => {
+        if (!dragItem.current || dragOverItem.current === null || dragItem.current.listaIme !== listaIme) return;
+        const izvornaLista = listaIme === 'polja_zaglavlje' ? aktivnaPoljaZaglavlja : aktivnaPoljaUnosa;
+        const novaLista = [...izvornaLista];
+        const premjesteni = novaLista[dragItem.current.index];
+        novaLista.splice(dragItem.current.index, 1);
+        novaLista.splice(dragOverItem.current, 0, premjesteni);
+        dragItem.current = null;
+        dragOverItem.current = null;
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
+    };
+
+    const promijeniSirinuPolja = (listaIme, index, noviSpan) => {
+        const izvornaLista = listaIme === 'polja_zaglavlje' ? aktivnaPoljaZaglavlja : aktivnaPoljaUnosa;
+        const novaLista = [...izvornaLista];
+        novaLista[index] = { ...novaLista[index], span: noviSpan };
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
+    };
+
+    const promijeniNazivPolja = (listaIme, index, noviLabel) => {
+        const izvornaLista = listaIme === 'polja_zaglavlje' ? aktivnaPoljaZaglavlja : aktivnaPoljaUnosa;
+        const novaLista = [...izvornaLista];
+        novaLista[index] = { ...novaLista[index], label: noviLabel };
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
+    };
 
     const [tab, setTab] = useState('prijem');
     const [sumarijeList, setSumarijeList] = useState([]);
@@ -532,15 +588,55 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
+    // Pomoćna komponenta za kontrolu širine polja (1/4, 1/3, 1/2, FULL) u God Mode-u
+    const renderGodModeKontrolePolja = (listaIme, polje, index) => {
+        const trenutniSpan = normalizujSpan12(polje.span);
+        const opcije = [
+            { label: '1/4', span: 'col-span-3' },
+            { label: '1/3', span: 'col-span-4' },
+            { label: '1/2', span: 'col-span-6' },
+            { label: 'FULL', span: 'col-span-12' }
+        ];
+        return (
+            <div className="mb-2 space-y-1.5 bg-black/60 p-2 rounded-xl border border-amber-500/40">
+                <div className="flex items-center justify-between gap-1">
+                    <span className="text-[9px] text-amber-400 font-black uppercase cursor-grab active:cursor-grabbing px-1">☰ Pomjeri</span>
+                    <div className="flex gap-1">
+                        {opcije.map(op => (
+                            <button
+                                key={op.span}
+                                type="button"
+                                onClick={() => promijeniSirinuPolja(listaIme, index, op.span)}
+                                className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase transition-all ${trenutniSpan === op.span ? 'bg-amber-500 text-black shadow-md' : 'bg-theme-panel text-slate-400 hover:text-white border border-slate-700'}`}
+                            >
+                                {op.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <input
+                    type="text"
+                    value={polje.label || ''}
+                    onChange={(e) => promijeniNazivPolja(listaIme, index, e.target.value)}
+                    placeholder="Naziv polja..."
+                    className="w-full p-1 bg-theme-card text-amber-300 text-[9px] font-black uppercase text-center rounded border border-amber-500/30 outline-none"
+                />
+            </div>
+        );
+    };
+
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in pb-24 overflow-visible" style={{ fontFamily: saas.ui.font_family || 'inherit' }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} modulIme="prijem" saas={saas} hideMasina={true} />
 
             {saas.isEditMode && (
-                <div className="bg-theme-card/90 backdrop-blur-md p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
-                    <div className="flex justify-between items-center border-b border-amber-500/20 pb-4 mb-4">
-                        <h3 className="text-amber-500 font-black uppercase text-sm flex items-center gap-2">🛠️ Super God Mode - Napredni UI Editor</h3>
+                <div className="bg-theme-card/90 backdrop-blur-md p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl space-y-4">
+                    <div className="flex flex-wrap justify-between items-center border-b border-amber-500/20 pb-4 gap-2">
+                        <div>
+                            <h3 className="text-amber-500 font-black uppercase text-sm flex items-center gap-2">🛠️ Super God Mode - Napredni UI Editor</h3>
+                            <p className="text-[10px] text-amber-300/80 font-bold mt-1">Ispod na svakom polju kliknite na [1/4], [1/3], [1/2] ili [FULL] da podesite širinu polja, ili prevucite polje mišem (☰) za promjenu redoslijeda!</p>
+                        </div>
                         <button onClick={resetToThemeDefaults} className="text-[10px] bg-red-900/30 text-red-400 px-3 py-1.5 rounded-lg font-black uppercase border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors">🧹 Očisti boje (Tema)</button>
                     </div>
                     
@@ -615,15 +711,44 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                         <div className="lg:col-span-5 space-y-6 overflow-visible">
                             <div className="p-6 rounded-[var(--radius-box)] shadow-2xl transition-colors border border-theme-border backdrop-blur-[var(--glass-blur)] relative overflow-visible bg-theme-card" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                                 <div className="text-center font-black relative mb-6 border-b border-theme-border pb-4">
-                                    <span className="uppercase tracking-widest flex items-center justify-center gap-2" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px` }}><span className="w-2 h-2 rounded-full bg-theme-accent"></span> {saas.ui.naslov_zaglavlja}</span>
+                                    {saas.isEditMode ? (
+                                        <input
+                                            type="text"
+                                            value={saas.ui.naslov_zaglavlja || ''}
+                                            onChange={e => saas.setUi({ ...saas.ui, naslov_zaglavlja: e.target.value })}
+                                            className="w-full p-2 bg-black/40 border border-amber-500/50 rounded-xl text-center text-amber-400 font-black uppercase text-xs outline-none"
+                                        />
+                                    ) : (
+                                        <span className="uppercase tracking-widest flex items-center justify-center gap-2" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px` }}><span className="w-2 h-2 rounded-full bg-theme-accent"></span> {saas.ui.naslov_zaglavlja}</span>
+                                    )}
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative overflow-visible">
-                                    {aktivnaPoljaZaglavlja.map((polje, index) => (
-                                        <div key={polje.id} className={`relative ${polje.span} min-w-0 transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
-                                            {polje.label && <label className="block mb-1 uppercase transition-colors truncate" style={labelStyle}>{polje.label}</label>}
-                                            <div className="h-12 w-full min-w-0 overflow-visible">{renderPolje(polje, pHeader, updateHeader)}</div>
-                                        </div>
-                                    ))}
+
+                                {/* 🟢 12-KOLONSKA SIMETRIČNA MREŽA ZA ZAGLAVLJE OTPREMNICE (1/4, 1/3, 1/2, FULL) */}
+                                <div className="grid grid-cols-12 gap-3.5 relative overflow-visible items-end">
+                                    {aktivnaPoljaZaglavlja.map((polje, index) => {
+                                        const cistSpan = normalizujSpan12(polje.span);
+                                        return (
+                                            <div 
+                                                key={polje.id} 
+                                                className={`relative ${cistSpan} min-w-0 transition-all overflow-visible ${saas.isEditMode ? 'p-2 rounded-2xl border-2 border-dashed border-amber-500/60 bg-amber-950/10' : ''}`} 
+                                                style={{ zIndex: 50 - index }}
+                                                draggable={saas.isEditMode}
+                                                onDragStart={(e) => handleDragStart(e, index, 'polja_zaglavlje')}
+                                                onDragEnter={(e) => handleDragEnter(e, index)}
+                                                onDragEnd={() => handleDrop('polja_zaglavlje')}
+                                                onDragOver={(e) => e.preventDefault()}
+                                            >
+                                                {saas.isEditMode ? (
+                                                    renderGodModeKontrolePolja('polja_zaglavlje', polje, index)
+                                                ) : (
+                                                    polje.label && <label className="block mb-1.5 ml-1 uppercase transition-colors truncate" style={labelStyle}>{polje.label}</label>
+                                                )}
+                                                <div className={`h-12 w-full min-w-0 overflow-visible ${saas.isEditMode ? 'opacity-70 pointer-events-none' : ''}`}>
+                                                    {renderPolje(polje, pHeader, updateHeader)}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -631,7 +756,16 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                         <div className="lg:col-span-7 space-y-6 overflow-visible">
                             <div className="p-6 md:p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.1)] border border-theme-accent/30 backdrop-blur-[var(--glass-blur)] relative overflow-visible group bg-theme-card transition-colors" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-theme-accent to-transparent opacity-50"></div>
-                                <label className="uppercase block mb-4 tracking-widest text-center transition-colors" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px`, fontWeight: 900 }}>{saas.ui.naslov_skenera}</label>
+                                {saas.isEditMode ? (
+                                    <input
+                                        type="text"
+                                        value={saas.ui.naslov_skenera || ''}
+                                        onChange={e => saas.setUi({ ...saas.ui, naslov_skenera: e.target.value })}
+                                        className="w-full p-2 mb-4 bg-black/40 border border-amber-500/50 rounded-xl text-center text-amber-400 font-black uppercase text-xs outline-none"
+                                    />
+                                ) : (
+                                    <label className="uppercase block mb-4 tracking-widest text-center transition-colors" style={{ color: saas.ui.boja_teksta || 'var(--theme-accent)', fontSize: `${saas.ui.velicina_naslova || 16}px`, fontWeight: 900 }}>{saas.ui.naslov_skenera}</label>
+                                )}
                                 
                                 <div className="flex bg-theme-panel border-2 border-theme-accent/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-theme-accent transition-colors h-20 mb-6 w-full">
                                     <input 
@@ -646,13 +780,32 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     <button onClick={() => {setScanTarget('unos'); setIsScanning(true);}} className="shrink-0 w-16 md:w-24 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-theme-accent/50">📷</button>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative mb-6 overflow-visible">
-                                    {aktivnaPoljaUnosa.map((polje, index) => (
-                                        <div key={polje.id} className={`relative ${polje.span} min-w-0 transition-all overflow-visible`} style={{ zIndex: 50 - index }}>
-                                            {polje.label && <label className="block mb-1 text-center transition-colors uppercase truncate" style={labelStyle}>{polje.label}</label>}
-                                            <div className="h-14 w-full min-w-0 overflow-visible">{renderPolje(polje, form, (key, val) => setForm(prev => ({...prev, [key]: val})))}</div>
-                                        </div>
-                                    ))}
+                                {/* 🟢 12-KOLONSKA SIMETRIČNA MREŽA ZA POLJA UNOSA TRUPCA (1/4, 1/3, 1/2, FULL) */}
+                                <div className="grid grid-cols-12 gap-3.5 relative mb-6 overflow-visible items-end">
+                                    {aktivnaPoljaUnosa.map((polje, index) => {
+                                        const cistSpan = normalizujSpan12(polje.span);
+                                        return (
+                                            <div 
+                                                key={polje.id} 
+                                                className={`relative ${cistSpan} min-w-0 transition-all overflow-visible ${saas.isEditMode ? 'p-2 rounded-2xl border-2 border-dashed border-amber-500/60 bg-amber-950/10' : ''}`} 
+                                                style={{ zIndex: 50 - index }}
+                                                draggable={saas.isEditMode}
+                                                onDragStart={(e) => handleDragStart(e, index, 'polja_unos')}
+                                                onDragEnter={(e) => handleDragEnter(e, index)}
+                                                onDragEnd={() => handleDrop('polja_unos')}
+                                                onDragOver={(e) => e.preventDefault()}
+                                            >
+                                                {saas.isEditMode ? (
+                                                    renderGodModeKontrolePolja('polja_unos', polje, index)
+                                                ) : (
+                                                    polje.label && <label className="block mb-1.5 text-center transition-colors uppercase truncate" style={labelStyle}>{polje.label}</label>
+                                                )}
+                                                <div className={`h-14 w-full min-w-0 overflow-visible ${saas.isEditMode ? 'opacity-70 pointer-events-none' : ''}`}>
+                                                    {renderPolje(polje, form, (key, val) => setForm(prev => ({...prev, [key]: val})))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                                 
                                 {/* DEKLARISANO (PAPIR) */}

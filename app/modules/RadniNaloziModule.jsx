@@ -201,11 +201,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
 
     const ucitajPonuduIzBaze = async (broj) => {
         try {
-            const cistBroj = broj.toUpperCase().trim();
-            const ponuda = aktivnePonude.find(p => p.id === cistBroj);
+            const cistBroj = (broj || '').toString().toUpperCase().trim();
+            if (!cistBroj) return;
+
+            // 1. Prvo tražimo u učitanoj listi, a ako nije tu, povlačimo direktno iz Supabase baze!
+            let ponuda = aktivnePonude.find(p => (p.id || '').toUpperCase().trim() === cistBroj);
+            if (!ponuda) {
+                const { data: dbPonuda } = await supabase.from('ponude').select('*').ilike('id', cistBroj).maybeSingle();
+                if (dbPonuda) ponuda = dbPonuda;
+            }
 
             if(!ponuda) {
-                prikaziDialog({ tip: 'greska', naslov: 'Nije pronađeno', poruka: `Ponuda ${cistBroj} nije pronađena! Moguće da je već realizovana, ili je broj pogrešan.`, onCancel: zatvoriDialog });
+                prikaziDialog({ tip: 'greska', naslov: 'Nije pronađeno', poruka: `Ponuda ${cistBroj} nije pronađena u bazi podataka! Provjerite jeste li unijeli tačan broj.`, onCancel: zatvoriDialog });
                 setSkenerInput('');
                 return;
             }

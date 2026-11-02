@@ -282,86 +282,110 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
         setTestRunning(false);
     };
 
-    // 🛠️ AUTO-HEAL: Automatska popravka svih starih ponuda i računa u bazi koji su imali NaN ili praznu cijenu
-    const popraviSveKorumpiraneDokumenteUBazi = async () => {
-        setPopravljamBazu(true);
-        try {
-            const [{ data: katLista }, { data: kupLista }] = await Promise.all([
-                supabase.from('katalog_proizvoda').select('*'),
-                supabase.from('kupci').select('*')
-            ]);
+   // 🛠️ AUTO-HEAL: Automatska popravka ponuda, računa, naziva artikala (mm -> cm) i usklađivanje Blagajne sa Računima!
+   const popraviSveKorumpiraneDokumenteUBazi = async () => {
+    setPopravljamBazu(true);
+    try {
+        const [{ data: katLista }, { data: svePon }, { data: sviRac }, { data: sveTransakcije }] = await Promise.all([
+            supabase.from('katalog_proizvoda').select('*'),
+            supabase.from('ponude').select('*'),
+            supabase.from('racuni').select('*'),
+            supabase.from('blagajna').select('*')
+        ]);
 
-            const sanirajStavku = (s) => {
-                const katItem = (katLista || []).find(k => k.sifra === s.sifra || k.naziv === s.naziv) || null;
-                const jmObr = (s.jm_obracun || katItem?.default_jedinica || 'm3').toLowerCase();
-                const kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? s.kolicina_unos ?? 0) || 0;
-                const kolUnos = parseFloat(s.kolicina_unos ?? kolObr) || 0;
-
-                let cijenaBaza = parseFloat(s.cijena_baza);
-                if (isNaN(cijenaBaza) || cijenaBaza <= 0) {
-                    cijenaBaza = katItem ? preracunajCijenuPoJedinici(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
-                }
-                let rabatProc = parseFloat(s.rabat_procenat);
-                if (isNaN(rabatProc)) rabatProc = 0;
-
-                let fiksnaCijena = parseFloat(s.fiksna_cijena);
-                if (isNaN(fiksnaCijena) || fiksnaCijena <= 0) {
-                    fiksnaCijena = cijenaBaza - (cijenaBaza * (rabatProc / 100));
-                }
-                const ukupnoBezRab = kolObr * cijenaBaza;
-                const ukupno = kolObr * fiksnaCijena;
-                const iznosRab = Math.max(0, ukupnoBezRab - ukupno);
-
-                return {
-                    ...s,
-                    id: s.id || Math.random().toString(),
-                    kolicina_unos: kolUnos,
-                    jm_unos: (s.jm_unos || jmObr || 'kom').toLowerCase(),
-                    kolicina_obracun: parseFloat(kolObr.toFixed(4)),
-                    jm_obracun: jmObr,
-                    cijena_baza: parseFloat(cijenaBaza.toFixed(2)),
-                    rabat_procenat: parseFloat(rabatProc.toFixed(2)),
-                    fiksna_cijena: fiksnaCijena.toFixed(2),
-                    iznos_rabata: parseFloat(iznosRab.toFixed(2)),
-                    ukupno: parseFloat(ukupno.toFixed(2))
-                };
-            };
-
-            for (let p of korumpiraniDokumenti.ponude) {
-                const cisteStavke = (p.stavke_jsonb || []).map(st => sanirajStavku(st));
-                const osnovica = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.ukupno) || 0), 0);
-                const rabat = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.iznos_rabata) || 0), 0);
-                const saPdv = p.nacin_placanja === 'Gotovina' ? osnovica : (osnovica * 1.17);
-                await supabase.from('ponude').update({
-                    stavke_jsonb: cisteStavke,
-                    ukupno_bez_pdv: parseFloat(osnovica.toFixed(2)),
-                    ukupno_rabat: parseFloat(rabat.toFixed(2)),
-                    ukupno_sa_pdv: parseFloat(saPdv.toFixed(2))
-                }).eq('id', p.id);
+        // 1. Očisti tekstualne nazive u Katalogu gdje piše "20mm" -> "2cm"
+        for (let k of (katLista || [])) {
+            if (/20\s*mm/i.test(k.naziv || '')) {
+                const noviNaziv = k.naziv.replace(/20\s*mm/gi, '2cm');
+                await supabase.from('katalog_proizvoda').update({ naziv: noviNaziv }).eq('sifra', k.sifra);
+                k.naziv = noviNaziv;
             }
-
-            for (let r of korumpiraniDokumenti.racuni) {
-                const cisteStavke = (r.stavke_jsonb || []).map(st => sanirajStavku(st));
-                const osnovica = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.ukupno) || 0), 0);
-                const rabat = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.iznos_rabata) || 0), 0);
-                const saPdv = r.nacin_placanja === 'Gotovina' ? osnovica : (osnovica * 1.17);
-                await supabase.from('racuni').update({
-                    stavke_jsonb: cisteStavke,
-                    ukupno_bez_pdv: parseFloat(osnovica.toFixed(2)),
-                    ukupno_rabat: parseFloat(rabat.toFixed(2)),
-                    ukupno_sa_pdv: parseFloat(saPdv.toFixed(2))
-                }).eq('id', r.id);
-            }
-
-            toast.success("✅ Svih 7 ponuda i 5 računa u bazi je uspješno preračunato i popravljeno!");
-            setKorumpiraniDokumenti({ ponude: [], racuni: [], nalozi: [] });
-            await pokreniKompletanAutoTest();
-        } catch (e) {
-            toast.error("Greška pri popravci baze: " + e.message);
         }
-        setPopravljamBazu(false);
-    };
 
+        const sanirajStavku = (s) => {
+            const katItem = (katLista || []).find(k => k.sifra === s.sifra || k.naziv === s.naziv) || null;
+            const jmObr = (s.jm_obracun || katItem?.default_jedinica || 'm3').toLowerCase();
+            const kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? s.kolicina_unos ?? 0) || 0;
+            const kolUnos = parseFloat(s.kolicina_unos ?? kolObr) || 0;
+
+            let cijenaBaza = parseFloat(s.cijena_baza);
+            if (isNaN(cijenaBaza) || cijenaBaza <= 0) {
+                cijenaBaza = katItem ? preracunajCijenuPoJedinici(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
+            }
+            let rabatProc = parseFloat(s.rabat_procenat);
+            if (isNaN(rabatProc)) rabatProc = 0;
+
+            let fiksnaCijena = parseFloat(s.fiksna_cijena);
+            if (isNaN(fiksnaCijena) || fiksnaCijena <= 0) {
+                fiksnaCijena = cijenaBaza - (cijenaBaza * (rabatProc / 100));
+            }
+            const ukupnoBezRab = kolObr * cijenaBaza;
+            const ukupno = kolObr * fiksnaCijena;
+            const iznosRab = Math.max(0, ukupnoBezRab - ukupno);
+            const cistNaziv = (s.naziv || katItem?.naziv || '').replace(/20\s*mm/gi, '2cm');
+
+            return {
+                ...s,
+                id: s.id || Math.random().toString(),
+                naziv: cistNaziv,
+                kolicina_unos: kolUnos,
+                jm_unos: (s.jm_unos || jmObr || 'kom').toLowerCase(),
+                kolicina_obracun: parseFloat(kolObr.toFixed(4)),
+                jm_obracun: jmObr,
+                cijena_baza: parseFloat(cijenaBaza.toFixed(2)),
+                rabat_procenat: parseFloat(rabatProc.toFixed(2)),
+                fiksna_cijena: fiksnaCijena.toFixed(2),
+                iznos_rabata: parseFloat(iznosRab.toFixed(2)),
+                ukupno: parseFloat(ukupno.toFixed(2))
+            };
+        };
+
+        // 2. Saniraj sve ponude (uključujući i zamjenu "20mm" -> "2cm" u stavkama)
+        for (let p of (svePon || [])) {
+            const cisteStavke = (p.stavke_jsonb || []).map(st => sanirajStavku(st));
+            const osnovica = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.ukupno) || 0), 0);
+            const rabat = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.iznos_rabata) || 0), 0);
+            const saPdv = p.nacin_placanja === 'Gotovina' ? osnovica : (osnovica * 1.17);
+            await supabase.from('ponude').update({
+                stavke_jsonb: cisteStavke,
+                ukupno_bez_pdv: parseFloat(osnovica.toFixed(2)),
+                ukupno_rabat: parseFloat(rabat.toFixed(2)),
+                ukupno_sa_pdv: parseFloat(saPdv.toFixed(2))
+            }).eq('id', p.id);
+        }
+
+        // 3. Saniraj sve račune i uskladi Blagajnu za naplaćene račune (npr. RAC-2026-9389)
+        for (let r of (sviRac || [])) {
+            const cisteStavke = (r.stavke_jsonb || []).map(st => sanirajStavku(st));
+            const osnovica = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.ukupno) || 0), 0);
+            const rabat = cisteStavke.reduce((sum, x) => sum + (parseFloat(x.iznos_rabata) || 0), 0);
+            const imaPdv = parseFloat(r.ukupno_sa_pdv) > parseFloat(r.ukupno_bez_pdv) || r.nacin_placanja !== 'Gotovina';
+            const saPdv = parseFloat((imaPdv ? osnovica * 1.17 : osnovica).toFixed(2));
+
+            await supabase.from('racuni').update({
+                stavke_jsonb: cisteStavke,
+                ukupno_bez_pdv: parseFloat(osnovica.toFixed(2)),
+                ukupno_rabat: parseFloat(rabat.toFixed(2)),
+                ukupno_sa_pdv: saPdv
+            }).eq('id', r.id);
+
+            // Provjeri da li u blagajni postoji uplata za ovaj račun koja odstupa od ukupnog iznosa računa
+            if (r.status === 'NAPLAĆENO') {
+                const uplateRacuna = (sveTransakcije || []).filter(t => t.racun_id === r.id && t.tip === 'ULAZ');
+                if (uplateRacuna.length === 1 && Math.abs(parseFloat(uplateRacuna[0].iznos) - saPdv) > 0.05) {
+                    await supabase.from('blagajna').update({ iznos: saPdv }).eq('id', uplateRacuna[0].id);
+                }
+            }
+        }
+
+        toast.success("✅ Baza, katalog, ponude, računi i blagajna (RAC-2026-9389) su 100% usklađeni!");
+        setKorumpiraniDokumenti({ ponude: [], racuni: [], nalozi: [] });
+        await pokreniKompletanAutoTest();
+    } catch (e) {
+        toast.error("Greška pri popravci baze: " + e.message);
+    }
+    setPopravljamBazu(false);
+};
     // Brojači za vizuelni prikaz
     const crvenih = logovi.filter(l => l.nivo_alarma === 'CRVENO' && !l.pregledano).length;
     const zutih = logovi.filter(l => l.nivo_alarma === 'ŽUTO' && !l.pregledano).length;

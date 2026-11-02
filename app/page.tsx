@@ -800,15 +800,15 @@ export default function Page() {
                             </div>
 
                             {isEditMode && (
-                                <div className="bg-amber-950/20 border-2 border-amber-500/50 p-6 rounded-[2rem] shadow-2xl space-y-6">
-                                    <div className="flex justify-between items-center border-b border-amber-500/20 pb-4">
+                                <div className="bg-amber-950/20 border-2 border-amber-500/50 p-4 sm:p-6 rounded-[2rem] shadow-2xl space-y-4">
+                                    <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-amber-500/20 pb-4 gap-3">
                                         <h3 className="text-amber-500 font-black uppercase text-xs">🛠️ Enterprise Dashboard Builder</h3>
-                                        <div className="flex items-center gap-3">
-                                            <select id="newWidgetSelect" className="bg-black text-amber-400 p-2 rounded-lg text-[10px] font-black uppercase outline-none border border-amber-500/50 cursor-pointer">
+                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto min-w-0">
+                                            <select id="newWidgetSelect" className="flex-1 min-w-0 w-full sm:w-auto bg-theme-panel text-amber-400 p-2.5 rounded-lg text-[10px] font-black uppercase outline-none border border-amber-500/50 cursor-pointer truncate">
                                                 <option value="">-- Odaberi novi Widget --</option>
                                                 {DOSTUPNI_WIDGETI.map(w => <option key={w.type} value={w.type}>{w.name}</option>)}
                                             </select>
-                                            <button onClick={() => { const sel = (document.getElementById('newWidgetSelect') as HTMLSelectElement)?.value; if(sel) addWidget(sel); }} className="bg-amber-600 text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-lg hover:bg-amber-500 transition-colors">➕ DODAJ</button>
+                                            <button onClick={() => { const sel = document.getElementById('newWidgetSelect').value; if(sel) addWidget(sel); }} className="shrink-0 bg-amber-600 text-black px-4 py-2.5 rounded-lg text-[10px] font-black uppercase shadow-lg hover:bg-amber-500 transition-colors">➕ DODAJ</button>
                                         </div>
                                     </div>
                                     <p className="text-[10px] text-amber-500/70 font-bold uppercase tracking-widest text-center">Prevucite blokove (☰) ispod da biste im promijenili redoslijed na ekranu.</p>
