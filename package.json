@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "savkod": "node -e 'const fs=require(\"fs\"),path=require(\"path\");let out=\"\";function walk(d){if(!fs.existsSync(d))return;for(const f of fs.readdirSync(d)){const p=path.join(d,f);if(fs.statSync(p).isDirectory()){if(![\"node_modules\",\".next\",\".git\"].includes(f))walk(p);}else if(/\\.(js|jsx|ts|tsx|css)$/.test(f)){const lines=fs.readFileSync(p,\"utf8\").split(\"\n\");out+=\"\n========================================\nFAJL: \"+p+\" (Ukupno redova: \"+lines.length+\")\n========================================\n\"+lines.map((l,i)=>(i+1)+\": \"+l).join(\"\n\")+\"\n\";}}}walk(\"app\");fs.writeFileSync(\"sav_kod.txt\",out);console.log(\"GOTOVO!\");'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

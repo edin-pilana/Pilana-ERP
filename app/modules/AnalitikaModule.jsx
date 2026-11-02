@@ -252,6 +252,8 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             const kljuc = `${pId}_${dimStr}_${p.naziv_proizvoda}`;
             const tacanM3 = izracunajTacanVolumenStavkePaketa(p);
             const tacnoKom = izracunajKomadeStavkePaketa(p);
+            const jmUnos = (p.jm || 'kom').toLowerCase();
+            const ulazVal = parseFloat(p.kolicina_ulaz ?? p.komada ?? 0);
 
             if (!grupisaniPaketiMap[kljuc]) {
                 grupisaniPaketiMap[kljuc] = {
@@ -262,19 +264,26 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                     sirina: p.sirina,
                     duzina: p.duzina,
                     komada: tacnoKom,
+                    dijeloviKolicine: [`${ulazVal} ${jmUnos}`],
+                    jediniceSet: new Set([jmUnos]),
                     m3: tacanM3,
                     datum: (p.datum_yyyy_mm || p.datum || p.created_at || '').split('T')[0],
                     brentista: p.brentista || '-',
                     masina: p.masina || 'PILANA'
                 };
             } else {
-                // Ako postoji više legitimnih različitih unosa u isti paket, zbroji ih, ali ako je identičan broj komada i vremena, ne dupliraj
                 grupisaniPaketiMap[kljuc].komada += tacnoKom;
+                grupisaniPaketiMap[kljuc].dijeloviKolicine.push(`${ulazVal} ${jmUnos}`);
+                grupisaniPaketiMap[kljuc].jediniceSet.add(jmUnos);
                 grupisaniPaketiMap[kljuc].m3 += tacanM3;
             }
         });
 
-        const cistiPaketiPilane = Object.values(grupisaniPaketiMap);
+        const cistiPaketiPilane = Object.values(grupisaniPaketiMap).map(g => ({
+            ...g,
+            prikazKolicine: g.jediniceSet.size > 1 ? g.dijeloviKolicine.join(' + ') : `${g.komada} kom`
+        }));
+
         const proizvedenoM3 = cistiPaketiPilane.reduce((s, p) => s + p.m3, 0);
         const yieldProc = izrezanoM3 > 0 ? ((proizvedenoM3 / izrezanoM3) * 100) : 0;
 
@@ -365,15 +374,17 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             if (Array.isArray(p.ai_sirovina_ids)) ulazIds = p.ai_sirovina_ids;
             else if (typeof p.ai_sirovina_ids === 'string' && p.ai_sirovina_ids.trim()) ulazIds = p.ai_sirovina_ids.split(',').map(x => x.trim());
 
-            let ulazZaOvajPaketM3 = 0;
             ulazIds.forEach(uid => {
-                ulazniPaketiSet.add(uid);
-                ulazZaOvajPaketM3 += (sveStavkePaketaMap.get(uid) || 0);
+                const cistUid = (uid || '').trim();
+                if (!cistUid) return;
+                if (!ulazniPaketiSet.has(cistUid)) {
+                    ulazniPaketiSet.add(cistUid);
+                    const volUlaza = sveStavkePaketaMap.get(cistUid) || 0;
+                    if (d && poDanimaDoradaMap[d]) {
+                        poDanimaDoradaMap[d].ulazM3 += volUlaza;
+                    }
+                }
             });
-
-            if (d && ulazZaOvajPaketM3 > 0) {
-                poDanimaDoradaMap[d].ulazM3 += ulazZaOvajPaketM3;
-            }
 
             return {
                 paket_id: p.paket_id,
@@ -723,7 +734,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                                                 <td className="p-3 font-black text-theme-accent">{p.paket_id}</td>
                                                 <td className="p-3 font-bold text-theme-text">{p.naziv_proizvoda}</td>
                                                 <td className="p-3 text-center font-mono text-amber-400 font-black">{p.dimenzije}</td>
-                                                <td className="p-3 text-center text-slate-300">{p.komada} kom</td>
+                                                <td className="p-3 text-center text-slate-300">{p.prikazKolicine || `${p.komada} kom`}</td>
                                                 <td className="p-3 text-right font-black text-emerald-400">{p.m3.toFixed(3)} m³</td>
                                             </tr>
                                         ))}

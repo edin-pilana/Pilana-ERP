@@ -189,9 +189,14 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         setHistorija('load'); setIzvedeniPaketi([]);
         const sid = paket.paket_id;
 
-        // 🟢 POPRAVLJENO: Čita iz prave tabele sistem_audit_log umjesto nepostojeće audit_log
-        const { data: auditData } = await supabase.from('sistem_audit_log').select('*').ilike('detalji', `%${sid}%`).order('vrijeme', { ascending: true });
-        let dogadjaji = auditData ? auditData.map(a => {
+        const [auditRes, sveOtpRes, sviPaketiRes] = await Promise.all([
+            supabase.from('sistem_audit_log').select('*').ilike('detalji', `%${sid}%`).order('vrijeme', { ascending: true }),
+            supabase.from('otpremnice').select('id, kupac_naziv, datum, status, stavke_jsonb, created_at'),
+            supabase.from('paketi').select('*')
+        ]);
+
+        const auditData = auditRes.data || [];
+        let dogadjaji = auditData.map(a => {
             let detaljanOpis = a.detalji || "Izmjena unutrašnjih parametara paketa.";
             if (a.akcija === 'DODAVANJE') detaljanOpis = `Kreiran paket na mašini: ${paket.masina || 'N/A'}. Količina: ${paket.kolicina_ulaz} kom (${paket.kolicina_final} m³).`;
             if (a.stari_podaci && a.novi_podaci) {
@@ -200,26 +205,66 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                     const n = typeof a.novi_podaci === 'string' ? JSON.parse(a.novi_podaci) : a.novi_podaci;
                     const promjene = [];
                     Object.keys(n).forEach(k => {
-                        if (JSON.stringify(s[k]) !== JSON.stringify(n[k]) && !['created_at', 'vrijeme_tekst', 'id'].includes(k)) {
-                            promjene.push(`${k.toUpperCase()}: ${s[k] || 'prazno'} ➔ ${n[k]}`);
+                        if (JSON.stringify(s[k]) !== JSON.stringify(n[k]) && !['created_at', 'vrijeme_tekst', 'id', 'last_modified_at'].includes(k)) {
+                            promjene.push(`${k.toUpperCase()}: ${s[k] ?? 'prazno'} ➔ ${n[k]}`);
                         }
                     });
-                    if (promjene.length > 0) detaljanOpis = promjene.join(' | ');
+                    if (promjene.length > 0) {
+                        detaljanOpis = a.detalji ? `${a.detalji}\n(${promjene.join(' | ')})` : promjene.join(' | ');
+                    }
                 } catch(e) {}
             }
-            return { vrijeme: a.vrijeme || a.created_at, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
-        }) : [];
+            return { vrijeme: a.vrijeme || a.created_at || paket.created_at, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
+        });
 
-        const { data: forwardData } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').ilike('ai_sirovina_ids', `%${sid}%`);
-        if (forwardData && forwardData.length > 0) {
+        // Provjeri sve izlazne pakete iz Dorade kojima je ovaj paket bio ulazna sirovina (ai_sirovina_ids)
+        const sviPaketi = sviPaketiRes.data || [];
+        const forwardData = sviPaketi.filter(p => {
+            if (!p.ai_sirovina_ids) return false;
+            const niz = Array.isArray(p.ai_sirovina_ids) ? p.ai_sirovina_ids : String(p.ai_sirovina_ids).replace(/[{}"[\]]/g, '').split(',').map(x => x.trim());
+            return niz.some(id => id.toUpperCase() === sid.toUpperCase());
+        });
+
+        if (forwardData.length > 0) {
             setIzvedeniPaketi([...new Map(forwardData.map(item => [item.paket_id, item])).values()]);
+            forwardData.forEach(izv => {
+                const vecUpisano = dogadjaji.some(d => d.opis.includes(izv.paket_id) || d.naslov.includes('DORADA'));
+                if (!vecUpisano) {
+                    dogadjaji.push({
+                        vrijeme: izv.created_at || paket.created_at,
+                        naslov: 'PRERADA / POTROŠNJA U DORADI',
+                        opis: `Paket korišten kao ulazna sirovina u Doradi (${izv.masina || 'Dorada'}) za izradu izlaznog paketa ${izv.paket_id} (${izv.kolicina_ulaz || ''} ${izv.jm || 'kom'} / ${izv.kolicina_final} m³). Trenutno preostalo na ovom paketu: ${paket.kolicina_ulaz} ${paket.jm || 'kom'} (${paket.kolicina_final} m³).`,
+                        korisnik: izv.snimio_korisnik || 'Dorada'
+                    });
+                }
+            });
         }
 
-        const { data: sveStavkePaketa } = await supabase.from('paketi').select('ulaz_trupci_ids, ai_sirovina_ids').eq('paket_id', sid);
-        if (sveStavkePaketa && sveStavkePaketa.length > 0) {
+        // Provjeri sve otpremnice na kojima je ovaj paket djelimično ili potpuno otpremljen
+        const sveOtpremnice = sveOtpRes.data || [];
+        sveOtpremnice.forEach(otp => {
+            const stavkeOtp = Array.isArray(otp.stavke_jsonb) ? otp.stavke_jsonb : [];
+            stavkeOtp.forEach(st => {
+                const stPid = st.paket_id || (st.sifra === sid ? st.sifra : null) || ((st.naziv || '').includes(sid) ? sid : null);
+                if (stPid && stPid.toUpperCase() === sid.toUpperCase()) {
+                    const vecUpisanaOtp = dogadjaji.some(d => d.opis.includes(otp.id));
+                    if (!vecUpisanaOtp) {
+                        dogadjaji.push({
+                            vrijeme: otp.created_at || otp.datum || paket.created_at,
+                            naslov: st.tip_utovara === 'DJELIMICNO' ? 'DJELIMIČNA OTPREMA PAKETA' : 'OTPREMA PAKETA',
+                            opis: `Otpremnica ${otp.id} (Kupac: ${otp.kupac_naziv}, Status: ${otp.status}): Otpremljeno ${st.kolicina_unos} ${st.jm_unos || 'kom'} (${parseFloat(st.kolicina_obracun || 0).toFixed(3)} m³). Preostalo na paketu: ${paket.kolicina_ulaz} ${paket.jm || 'kom'} (${paket.kolicina_final} m³).`,
+                            korisnik: otp.snimio_korisnik || 'Otprema'
+                        });
+                    }
+                }
+            });
+        });
+
+        const sveStavkePaketa = sviPaketi.filter(p => p.paket_id === sid);
+        if (sveStavkePaketa.length > 0) {
             let sviTrupciId = [];
             sveStavkePaketa.forEach(red => { if (red.ulaz_trupci_ids && Array.isArray(red.ulaz_trupci_ids)) sviTrupciId = [...sviTrupciId, ...red.ulaz_trupci_ids]; });
-            const unikatniTrupci = [...new Set(sviTrupciId)]; 
+            const unikatniTrupci = [...new Set(sviTrupciId)];
 
             if (unikatniTrupci.length > 0) {
                 const { data: trupciPodaci } = await supabase.from('trupci').select('*').in('id', unikatniTrupci);

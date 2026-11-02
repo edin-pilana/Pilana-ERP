@@ -77,9 +77,11 @@ export default function TabAiAnalitika({ saas }) {
         const prinosYield = ulazProrezanoM3 > 0 ? ((ukupnoPaketaM3 / ulazProrezanoM3) * 100).toFixed(1) : "64.5";
 
         const sviRacuni = baza.tabela_izdati_racuni || [];
+        const placeniRacuni = sviRacuni.filter(r => r.status === 'NAPLAĆENO');
         const nenaplaceniRacuni = sviRacuni.filter(r => r.status !== 'NAPLAĆENO');
+        const ukupnoSviRacuniIznos = sviRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
         const ukupnoPotrazivanja = nenaplaceniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
-        const ukupnoNaplaceno = sviRacuni.filter(r => r.status === 'NAPLAĆENO').reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
+        const ukupnoNaplaceno = placeniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
 
         const sveReklamacije = baza.tabela_reklamacije_i_povrati || [];
         const odobreneReklamacije = sveReklamacije.filter(r => r.status === 'ODOBRENO');
@@ -92,7 +94,12 @@ export default function TabAiAnalitika({ saas }) {
         const stanjeKase = ulazKasa - izlazKasa;
 
         return [
-            `Na osnovu trenutnog stanja u ERP bazi podataka, evo tačnog izvještaja za tvoj upit:`,
+            `Na osnovu trenutnog stanja u ERP baze podataka, evo tačnog izvještaja za tvoj upit:`,
+            ``,
+            `**🧾 Računi (Ukupno / Plaćeni / Otvoreni):**`,
+            `* Ukupno svih računa u bazi: **${sviRacuni.length} računa** (Ukupna vrijednost svih računa: **${ukupnoSviRacuniIznos.toFixed(2)} KM**)`,
+            `* Plaćeni (arhivirani) računi: **${placeniRacuni.length} računa** (Ukupno naplaćeno: **${ukupnoNaplaceno.toFixed(2)} KM**)`,
+            `* Otvoreni (nenaplaćeni / djelimični) računi: **${nenaplaceniRacuni.length} računa** (Otvorena potraživanja: **${ukupnoPotrazivanja.toFixed(2)} KM**)`,
             ``,
             `**📦 Paketi i Proizvodnja (Prinos / Yield):**`,
             `* Ukupno paketa u bazi: **${sviPaketi.length} paketa** (ukupnog volumena **${ukupnoPaketaM3.toFixed(3)} m³**)`,
@@ -104,10 +111,8 @@ export default function TabAiAnalitika({ saas }) {
             `* Trupci spremni na lageru: **${trupciNaLageru.length} kom** (**${trupciNaLageruM3.toFixed(3)} m³**)`,
             `* Ukupno prorezano trupaca: **${prorezaniTrupci.length} kom** (**${ulazProrezanoM3.toFixed(3)} m³**)`,
             ``,
-            `**💰 Finansije, Računi i Blagajna:**`,
-            `* Otvorena potraživanja (nenaplaćeni računi): **${ukupnoPotrazivanja.toFixed(2)} KM** (${nenaplaceniRacuni.length} računa)`,
-            `* Ukupno naplaćeni računi: **${ukupnoNaplaceno.toFixed(2)} KM**`,
-            `* Trenutno stanje gotovine u Blagajni: **${stanjeKase.toFixed(2)} KM**`,
+            `**💰 Blagajna (Gotovina):**`,
+            `* Trenutno stanje gotovine u Blagajni: **${stanjeKase.toFixed(2)} KM** (Ulaz: **${ulazKasa.toFixed(2)} KM** | Izlaz: **${izlazKasa.toFixed(2)} KM**)`,
             ``,
             `**⚙️ Nalozi, Katalog i Reklamacije:**`,
             `* Aktivni radni nalozi: **${aktivniNalozi.length}** | Artikala u katalogu: **${(baza.tabela_katalog_artikala || []).length}**`,

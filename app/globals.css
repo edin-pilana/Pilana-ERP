@@ -197,6 +197,12 @@ textarea {
   --theme-panel: #f8fafc !important;
   --theme-text: #0f172a !important;
   --theme-muted: #475569 !important;
+  --theme-accent: #2563eb !important;
+}
+
+[data-theme="light"] .bg-theme-accent {
+  background-color: var(--theme-accent, #2563eb) !important;
+  color: #ffffff !important;
 }
 
 /* 2. Gaženje inline SaaS tamnih boja (kartica i pozadina) iz baze */

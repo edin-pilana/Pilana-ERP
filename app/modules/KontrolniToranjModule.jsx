@@ -278,24 +278,37 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             }
         }
 
+        if (ponudaIdZaLanac && !nalogIdZaLanac) {
+            const { data: rnDb } = await supabase.from('radni_nalozi').select('id').eq('broj_ponude', ponudaIdZaLanac).neq('status', 'OBRISANO').limit(1).maybeSingle();
+            if (rnDb) nalogIdZaLanac = rnDb.id;
+        }
+
         if (nalogIdZaLanac) {
             const { data: rnDb } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', nalogIdZaLanac).maybeSingle();
             if (rnDb?.broj_ponude && !ponudaIdZaLanac) ponudaIdZaLanac = rnDb.broj_ponude;
             if (!otpremnicaIdZaLanac) {
-                const { data: otpDb } = await supabase.from('otpremnice').select('id').eq('broj_veze', nalogIdZaLanac).maybeSingle();
+                const { data: otpDb } = await supabase.from('otpremnice').select('id').eq('broj_veze', nalogIdZaLanac).limit(1).maybeSingle();
                 if (otpDb) otpremnicaIdZaLanac = otpDb.id;
             }
             if (otpremnicaIdZaLanac && !racunIdZaLanac) {
-                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).maybeSingle();
+                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaZaLanac || otpremnicaIdZaLanac).limit(1).maybeSingle();
                 if (racDb) racunIdZaLanac = racDb.id;
             }
         }
 
-        if (ponudaIdZaLanac && !nalogIdZaLanac) {
-            const { data: rnDb } = await supabase.from('radni_nalozi').select('id').eq('broj_ponude', ponudaIdZaLanac).maybeSingle();
-            if (rnDb) nalogIdZaLanac = rnDb.id;
+        if (ponudaIdZaLanac && (!otpremnicaIdZaLanac || !racunIdZaLanac)) {
+            if (!otpremnicaIdZaLanac) {
+                const { data: otpDir } = await supabase.from('otpremnice').select('id').or(`broj_veze.eq.${ponudaIdZaLanac},napomena.ilike.%${ponudaIdZaLanac}%`).limit(1).maybeSingle();
+                if (otpDir) otpremnicaIdZaLanac = otpDir.id;
+            }
+            if (!racunIdZaLanac) {
+                const { data: racDir } = await supabase.from('racuni').select('id, broj_veze').or(`broj_veze.eq.${ponudaIdZaLanac},napomena.ilike.%${ponudaIdZaLanac}%`).limit(1).maybeSingle();
+                if (racDir) {
+                    racunIdZaLanac = racDir.id;
+                    if (!otpremnicaIdZaLanac && racDir.broj_veze?.startsWith('OTP-')) otpremnicaIdZaLanac = racDir.broj_veze;
+                }
+            }
         }
-
         let cistiIdovi = [val, nalogIdZaLanac, otpremnicaIdZaLanac, racunIdZaLanac, ponudaIdZaLanac].filter(Boolean);
 
         // 🟢 FILTRIRANJE AUDIT LOGOVA SA GRANICOM RIJEČI (Da kratki ID paketa npr. "57" ne pokupi "PON-2026-8578")

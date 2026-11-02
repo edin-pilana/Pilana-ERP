@@ -259,11 +259,11 @@ export default function AppShell({
 
         return (
             <div className={isCollapsed ? "flex flex-col gap-2" : "grid grid-cols-6 gap-2"}>
-                <button 
+              <button 
                     title={isCollapsed ? 'POČETNA' : ''} 
                     onClick={() => { onModuleChange('home'); setMobileMenuOpen(false); }} 
                     style={{ fontSize: `${menuStyle.fontSize}px` }}
-                    className={`col-span-6 flex items-center gap-3 ${padClass} rounded-xl font-bold uppercase transition-all tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'} ${isCollapsed ? 'justify-center px-0' : ''}`}
+                    className={`col-span-6 flex items-center gap-3 ${padClass} rounded-xl font-bold uppercase transition-all tracking-widest ${activeModule === 'home' ? 'bg-blue-600 text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'} ${isCollapsed ? 'justify-center px-0' : ''}`}
                 >
                     <div className="shrink-0"><LayoutDashboard size={menuStyle.iconSize} /></div>
                     {!isCollapsed && <span className="truncate">POČETNA</span>}
@@ -333,11 +333,11 @@ export default function AppShell({
     const renderSettingsPanel = () => (
         <AnimatePresence>
             {isSettingsOpen && (
-                <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-0 right-0 h-full w-80 sm:w-96 bg-theme-card border-l border-theme-border shadow-2xl z-[5000] p-6 flex flex-col backdrop-blur-[var(--glass-blur)]">
-                    <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
-                        <h2 className="text-base font-black text-theme-text uppercase tracking-widest flex items-center gap-2"><Settings size={20}/> Postavke Ekrana i Menija</h2>
-                        <button onClick={() => setIsSettingsOpen(false)} className="text-theme-muted hover:text-red-500 transition-colors"><X size={24}/></button>
-                    </div>
+               <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-0 right-0 h-full w-full max-w-[100vw] sm:w-96 bg-theme-card border-l border-theme-border shadow-2xl z-[5000] p-4 sm:p-6 flex flex-col backdrop-blur-[var(--glass-blur)] overflow-x-hidden">
+               <div className="flex justify-between items-center gap-2 mb-6 border-b border-theme-border pb-4">
+                   <h2 className="text-sm sm:text-base font-black text-theme-text uppercase tracking-widest flex items-center gap-2 min-w-0 truncate"><Settings size={18} className="shrink-0"/> <span className="truncate">Postavke Ekrana</span></h2>
+                   <button onClick={() => setIsSettingsOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors"><X size={22}/></button>
+               </div>
                     <div className="space-y-6 flex-1 overflow-y-auto pr-1 custom-scrollbar">
                         <div>
                             <h3 className="text-[10px] font-black text-theme-muted mb-3 uppercase tracking-widest">1. Tema / Boje</h3>
@@ -517,18 +517,18 @@ export default function AppShell({
 
     const renderTopNavLayout = () => (
         <div className="flex flex-col w-full min-h-screen relative">
-            <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-16 w-full bg-theme-card border-b border-theme-border px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm">
-                <div className="flex items-center gap-3 w-full justify-between md:w-auto md:justify-start">
-                    <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2.5 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm active:scale-95 transition-transform"><Menu size={20}/></button>
-                    {renderLogoDisplay(true)}
-                    <div className="md:hidden flex items-center gap-2">
-                        <button onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={18}/></button>
-                        <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm"><LogOut size={18}/></button>
+           <motion.header initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="h-16 w-full max-w-[100vw] bg-theme-card border-b border-theme-border px-2 sm:px-4 flex items-center justify-between sticky top-0 z-40 backdrop-blur-[var(--glass-blur)] shadow-sm overflow-x-hidden">
+                <div className="flex items-center gap-1.5 sm:gap-3 w-full justify-between md:w-auto md:justify-start min-w-0">
+                    <button onClick={() => setMobileMenuOpen(true)} className="md:hidden shrink-0 p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm active:scale-95 transition-transform"><Menu size={18}/></button>
+                    <div className="min-w-0 truncate">{renderLogoDisplay(true)}</div>
+                    <div className="md:hidden flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => setIsSettingsOpen(true)} className="w-9 h-9 shrink-0 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={16}/></button>
+                        <button onClick={handleLogout} className="w-9 h-9 shrink-0 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm"><LogOut size={16}/></button>
                     </div>
                 </div>
                 
                 <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
-                    <button onClick={() => onModuleChange('home')} style={{ fontSize: `${menuStyle.fontSize}px` }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-theme-accent text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                    <button onClick={() => onModuleChange('home')} style={{ fontSize: `${menuStyle.fontSize}px` }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-blue-600 text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
                         <LayoutDashboard size={14} /> POČETNA
                     </button>
                     {visibleMenuItems.map((item, idx) => (

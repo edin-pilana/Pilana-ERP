@@ -554,8 +554,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         const noviKomadi = vol1Kom > 0 && novaKolM3 > 0 ? Math.max(1, Math.round(novaKolM3 / vol1Kom)) : 1;
 
         const izvrsiRazduzivanje = async () => {
+            const potrosenoM3 = Math.max(0, trenutnoNaStanju - novaKolM3);
+            const stariKomadi = parseFloat(razduziZapis.kolicina_ulaz ?? razduziZapis.komada ?? (vol1Kom > 0 ? Math.round(trenutnoNaStanju / vol1Kom) : 0));
+            const potrosenoKom = Math.max(0, Math.round(stariKomadi - (novaKolM3 === 0 ? 0 : noviKomadi)));
+
             if (novaKolM3 === 0) {
-                // Ako je paket 100% potrošen, označi ga kao razduženog u doradi (ili obriši ako nema izlazne veze) kako ne bi prekršio chk_paketi_pozitivni (kolicina_final > 0)
                 const { error } = await supabase
                     .from('paketi')
                     .update({
@@ -569,6 +572,15 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     toast.error("Baza Greška: " + error.message);
                     return;
                 }
+
+                await supabase.from('sistem_audit_log').insert([{
+                    korisnik: user?.ime_prezime || 'Dorada',
+                    akcija: 'POTROŠNJA_PAKETA_DORADA',
+                    detalji: `Paket ${razduziZapis.paket_id}: Potpuna potrošnja u Doradi (${header?.masina || 'Dorada'}). Potrošeno: ${stariKomadi} kom (${trenutnoNaStanju.toFixed(3)} m³) -> Preostalo: 0 kom (0.000 m³).`,
+                    stari_podaci: { paket_id: razduziZapis.paket_id, kolicina_ulaz: stariKomadi, kolicina_final: trenutnoNaStanju },
+                    novi_podaci: { paket_id: razduziZapis.paket_id, kolicina_ulaz: 0, kolicina_final: 0 }
+                }]);
+
                 setUlazneStavke(prev => prev.filter(st => st.id !== razduziZapis.id));
                 toast.success(`✅ Paket ${razduziZapis.paket_id} je u potpunosti potrošen i razdužen!`);
             } else {
@@ -587,6 +599,15 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     toast.error("Baza Greška: " + error.message);
                     return;
                 }
+
+                await supabase.from('sistem_audit_log').insert([{
+                    korisnik: user?.ime_prezime || 'Dorada',
+                    akcija: 'DJELIMIČNA_POTROŠNJA_DORADA',
+                    detalji: `Paket ${razduziZapis.paket_id}: Djelimična potrošnja u Doradi (${header?.masina || 'Dorada'}). Potrošeno: ${potrosenoKom} kom (${potrosenoM3.toFixed(3)} m³). Stanje paketa umanjeno sa ${stariKomadi} kom (${trenutnoNaStanju.toFixed(3)} m³) na ${noviKomadi} kom (${novaKolM3.toFixed(3)} m³).`,
+                    stari_podaci: { paket_id: razduziZapis.paket_id, kolicina_ulaz: stariKomadi, kolicina_final: trenutnoNaStanju },
+                    novi_podaci: { paket_id: razduziZapis.paket_id, kolicina_ulaz: noviKomadi, kolicina_final: novaKolM3 }
+                }]);
+
                 setUlazneStavke(prev => prev.map(st => st.id === razduziZapis.id ? {
                     ...st,
                     kolicina_final: novaKolM3,
