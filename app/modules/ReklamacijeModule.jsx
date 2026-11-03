@@ -127,25 +127,31 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     useEffect(() => {
         if (!form.kolicina_unos || !paket) {
             setForm(f => ({ ...f, kolicina_obracun: '' }));
+            setKolicinaGreska(false);
+            setPorukaGreske('');
             return;
         }
         const kol = parseFloat(form.kolicina_unos);
+        if (isNaN(kol) || kol <= 0) {
+            setKolicinaGreska(true);
+            setPorukaGreske("Količina za reklamaciju mora biti pozitivan broj veći od 0!");
+            setForm(f => ({ ...f, kolicina_obracun: 0 }));
+            return;
+        }
+
         let obracun = kol;
+        const v = parseFloat(paket?.debljina || trenutniProizvod?.visina) || 1;
+        const s = parseFloat(paket?.sirina || trenutniProizvod?.sirina) || 1;
+        const d = parseFloat(paket?.duzina || trenutniProizvod?.duzina) || 1;
         
-        if (form.jm_unos !== 'm3') {
-            const v = parseFloat(trenutniProizvod?.visina || paket?.debljina) || 1;
-            const s = parseFloat(trenutniProizvod?.sirina || paket?.sirina) || 1;
-            const d = parseFloat(trenutniProizvod?.duzina || paket?.duzina) || 1;
-            
-            if (form.jm_unos === 'kom') {
-                obracun = kol * (v / 100) * (s / 100) * (d / 100);
-            }
-            else if (form.jm_unos === 'm2') {
-                obracun = kol * (s / 100) * (d / 100);
-            }
-            else if (form.jm_unos === 'm1') {
-                obracun = kol * (d / 100);
-            }
+        if (form.jm_unos === 'kom') {
+            obracun = kol * (v / 100) * (s / 100) * (d / 100);
+        } else if (form.jm_unos === 'm2') {
+            // 🟢 Kvadratura (m²) * debljina u metrima (v / 100) = kubikaža (m³)! (npr. 0.2 m² * 0.02 m = 0.004 m³)
+            obracun = kol * (v / 100);
+        } else if (form.jm_unos === 'm1') {
+            // Dužni metar (m1) * debljina (v / 100) * širina (s / 100) = kubikaža (m³)!
+            obracun = kol * (v / 100) * (s / 100);
         }
         
         const konacniM3 = parseFloat(obracun.toFixed(4));
@@ -163,19 +169,26 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
     const podnesiReklamaciju = async () => {
         if (!paket) return;
-        if (!form.kolicina_obracun || parseFloat(form.kolicina_obracun) <= 0 || parseFloat(form.kolicina_obracun) > stvarnoPreostaloM3 + 0.0001) {
-            return prikaziDialog({ tip: 'upozorenje', naslov: 'Količina', poruka: `Unesite ispravnu količinu (Maksimalno: ${stvarnoPreostaloM3.toFixed(3)} m³)`, onCancel: zatvoriDialog });
+        const kolUnosNum = parseFloat(form.kolicina_unos);
+        const kolObrNum = parseFloat(form.kolicina_obracun);
+        if (isNaN(kolUnosNum) || kolUnosNum <= 0 || isNaN(kolObrNum) || kolObrNum <= 0 || kolObrNum > stvarnoPreostaloM3 + 0.0001) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Količina', poruka: `Unesite ispravnu pozitivnu količinu (Maksimalno: ${stvarnoPreostaloM3.toFixed(3)} m³)`, onCancel: zatvoriDialog });
         }
 
+        const v = parseFloat(paket.debljina || trenutniProizvod?.visina || 0);
+        const s = parseFloat(paket.sirina || trenutniProizvod?.sirina || 0);
+        const d = parseFloat(paket.duzina || trenutniProizvod?.duzina || 0);
+        const dimTag = (v > 0 && s > 0 && d > 0) ? `[Dim: ${v}x${s}x${d} cm]` : '';
+
         const payload = {
-            broj_otpremnice: paket.broj_veze || 'NEPOZNATO',
+            broj_otpremnice: paket.broj_veze || paket.otpremnica_id || 'NEPOZNATO',
             kupac_naziv: imeKupca, 
             paket_id: paket.paket_id,
             naziv_proizvoda: paket.naziv_proizvoda,
-            kolicina: parseFloat(form.kolicina_obracun),
+            kolicina: kolObrNum,
             jm: 'm3',
             razlog: form.razlog,
-            napomena: `[Unos: ${form.kolicina_unos} ${form.jm_unos}] ${form.napomena}`,
+            napomena: `[Unos: ${form.kolicina_unos} ${form.jm_unos}] ${dimTag} ${form.napomena}`.trim(),
             tip_reklamacije: form.tip_reklamacije,
             nova_isporuka: form.nova_isporuka,
             snimio_korisnik: user?.ime_prezime || 'Nepoznat'
@@ -195,6 +208,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
         setPaket(null); setTrenutniProizvod(null);
         setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true });
+        await loadReklamacije();
         prikaziDialog({ tip: 'uspjeh', naslov: 'Poslano na odobrenje', poruka: "Reklamacija je uspješno kreirana i čeka odobrenje Superadmina.", onCancel: zatvoriDialog });
     };
 
@@ -207,37 +221,58 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 zatvoriDialog();
                 
                 try {
-                    if (rek.tip_reklamacije === 'POVRAT') {
-                        const { data: orig } = await supabase.from('paketi').select('*').eq('paket_id', rek.paket_id).maybeSingle();
-                        if (orig) {
-                            const noviPaket = {
-                                ...orig,
-                                id: undefined, 
-                                paket_id: `${rek.paket_id}-R`, 
-                                kolicina_ulaz: rek.kolicina,
-                                kolicina_final: rek.kolicina,
-                                jm: 'm3',
-                                masina: 'MAGACIN_REKLAMACIJA', 
-                                oznake: ['REKLAMACIJA'],
-                                closed_at: null, 
-                                otpremnica_id: null,
-                                broj_veze: 'POVRAT'
-                            };
-                            await supabase.from('paketi').insert([noviPaket]);
+                    const { data: orig } = await supabase.from('paketi').select('*').eq('paket_id', rek.paket_id).maybeSingle();
+                    const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
+                    const v = parseFloat(orig?.debljina || kat?.visina || 0);
+                    const s = parseFloat(orig?.sirina || kat?.sirina || 0);
+                    const d = parseFloat(orig?.duzina || kat?.duzina || 0);
+                    const vol1Kom = (v > 0 && s > 0 && d > 0) ? (v / 100) * (s / 100) * (d / 100) : 0;
+                    const rekM3 = parseFloat(rek.kolicina || 0);
+
+                    if (rek.tip_reklamacije === 'POVRAT' && orig) {
+                        // Umanji izvorni paket za vraćenu količinu i kreiraj -R paket za preradu
+                        const stariM3 = parseFloat(orig.kolicina_final || 0);
+                        const preostaloOrigM3 = Math.max(0, parseFloat((stariM3 - rekM3).toFixed(4)));
+                        if (preostaloOrigM3 > 0) {
+                            const noviKomOrig = vol1Kom > 0 ? parseFloat((preostaloOrigM3 / vol1Kom).toFixed(2)) : orig.kolicina_ulaz;
+                            await supabase.from('paketi').update({ kolicina_final: preostaloOrigM3, kolicina_ulaz: noviKomOrig }).eq('id', orig.id);
                         }
+                        const noviPaket = {
+                            ...orig,
+                            id: undefined, 
+                            paket_id: `${rek.paket_id}-R`, 
+                            kolicina_ulaz: rek.kolicina,
+                            kolicina_final: rek.kolicina,
+                            jm: 'm3',
+                            masina: 'MAGACIN_REKLAMACIJA', 
+                            oznake: ['REKLAMACIJA'],
+                            closed_at: null, 
+                            otpremnica_id: null,
+                            broj_veze: 'POVRAT'
+                        };
+                        await supabase.from('paketi').insert([noviPaket]);
                     }
 
-                    if (rek.nova_isporuka && rek.broj_otpremnice !== 'NEPOZNATO') {
+                    if (rek.nova_isporuka && rek.broj_otpremnice && rek.broj_otpremnice !== 'NEPOZNATO') {
                         const { data: rn } = await supabase.from('radni_nalozi').select('stavke_jsonb').eq('id', rek.broj_otpremnice).maybeSingle();
                         if (rn && rn.stavke_jsonb) {
-                            const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
+                            const dimStr = (v > 0 && s > 0 && d > 0) ? `${v}x${s}x${d}` : (rn.stavke_jsonb[0]?.dimenzije || '');
+                            const unosMatch = (rek.napomena || '').match(/\[Unos:\s*([0-9.,]+)\s*(\w+)\]/i);
+                            const izracunatoKom = vol1Kom > 0 ? parseFloat((rekM3 / vol1Kom).toFixed(2)) : rekM3;
+                            const kolUnosZaRN = unosMatch ? parseFloat(unosMatch[1].replace(',', '.')) : izracunatoKom;
+                            const jmUnosZaRN = unosMatch ? unosMatch[2].toLowerCase() : (vol1Kom > 0 ? 'kom' : 'm3');
+
                             const novaStavka = {
                                 id: `rek-${Date.now()}`,
-                                sifra: kat ? kat.sifra : 'REK-ZAMJENA',
+                                sifra: kat ? kat.sifra : (rn.stavke_jsonb[0]?.sifra || 'REK-ZAMJENA'),
                                 naziv: `${rek.naziv_proizvoda} (ZAMJENA REKLAMACIJE)`,
-                                kolicina_unos: rek.kolicina,
-                                jm_unos: 'm3',
-                                kolicina_obracun: rek.kolicina,
+                                dimenzije: dimStr,
+                                visina: v || undefined,
+                                sirina: s || undefined,
+                                duzina: d || undefined,
+                                kolicina_unos: kolUnosZaRN,
+                                jm_unos: jmUnosZaRN,
+                                kolicina_obracun: rekM3,
                                 jm_obracun: 'm3',
                                 status: 'ZA_IZRADU',
                                 napravljeno: 0
@@ -252,6 +287,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                         odobrio_korisnik: user?.ime_prezime || 'Admin' 
                     }).eq('id', rek.id);
 
+                    await loadReklamacije();
                     prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: "Reklamacija je uspješno obrađena! Zalihe i nalozi su ažurirani.", onCancel: zatvoriDialog });
                 } catch (error) {
                     prikaziDialog({ tip: 'greska', naslov: 'Sistemska Greška', poruka: error.message, onCancel: zatvoriDialog });
@@ -416,8 +452,10 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                             {reklamacijeLista.length === 0 && <div className="text-center p-10 border border-dashed border-theme-border rounded-2xl text-slate-500 font-bold uppercase tracking-widest text-sm">Nema evidentiranih reklamacija.</div>}
                             {reklamacijeLista.map(rek => {
                                 const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
-                                const dimenzijeTekst = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : 'Dimenzije nisu definisane';
-                                const originalniUnosUtaknut = rek.napomena?.match(/\[Unos:\s*\d+\s*\w+\]/i)?.[0]?.replace(/[\[\]]/g, '') || 'N/A';
+                                const dimIzNapomene = rek.napomena?.match(/\[Dim:\s*([^\]]+)\]/i)?.[1];
+                                const dimIzNaziva = rek.naziv_proizvoda?.match(/(\d+(?:[.,]\d+)?\s*[xX*]\s*\d+(?:[.,]\d+)?\s*[xX*]\s*\d+(?:[.,]\d+)?)/)?.[1];
+                                const dimenzijeTekst = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : (dimIzNapomene || (dimIzNaziva ? `${dimIzNaziva} cm` : `${rek.kolicina} m³`));
+                                const originalniUnosUtaknut = rek.napomena?.match(/\[Unos:\s*[0-9.,]+\s*\w+\]/i)?.[0]?.replace(/[\[\]]/g, '') || `Unos: ${rek.kolicina} ${rek.jm || 'm3'}`;
 
                                 return (
                                 <div key={rek.id} className={`p-5 rounded-2xl border flex flex-col md:flex-row gap-6 justify-between items-start md:items-center shadow-lg transition-all ${rek.status === 'CEKA_ODOBRENJE' ? 'bg-theme-panel border-amber-500/50 ring-1 ring-amber-500/20' : (rek.status === 'ODOBRENO' ? 'bg-emerald-900/10 border-emerald-500/30' : 'bg-red-900/10 border-red-500/30')}`}>

@@ -840,6 +840,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             confirmText: '🏁 ZAKLJUČI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
+                await supabase.from('sistem_audit_log').insert([{ korisnik: user?.ime_prezime || 'Dorada', akcija: 'ZAKLJUČEN_PAKET', detalji: `Paket: ${pid} je uspješno zaključen na mašini ${header?.masina || 'Dorada'}.` }]);
                 
                 setActiveIzlazIds(p => p.filter(x => x !== pid));
                 if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }

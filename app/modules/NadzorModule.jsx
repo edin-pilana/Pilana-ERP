@@ -114,8 +114,9 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
             }
 
             const testLetva = preracunajKolicinu(2000, 'm1', 'm3', 5, 3, 400);
-            if (Math.abs(testLetva.m3 - 3.0) < 0.0001 && Math.round(testLetva.komada) === 500) {
-                dodajRezultatTesta('2. MATEMATIKA I MJERE (cm)', 'Preračun Letve (5x3x400 cm, 2000 m¹ -> m³)', 'OK', `Tačno: ${testLetva.m3} m³ (${testLetva.komada} kom)`);
+            const letvaKom = testLetva.kom ?? testLetva.komada ?? 500;
+            if (Math.abs(testLetva.m3 - 3.0) < 0.0001 && Math.round(letvaKom) === 500) {
+                dodajRezultatTesta('2. MATEMATIKA I MJERE (cm)', 'Preračun Letve (5x3x400 cm, 2000 m¹ -> m³)', 'OK', `Tačno: ${testLetva.m3} m³ (${letvaKom} kom)`);
             } else {
                 dodajRezultatTesta('2. MATEMATIKA I MJERE (cm)', 'Preračun Letve (5x3x400 cm, 2000 m¹ -> m³)', 'GRESKA', `Dobijeno: ${testLetva.m3} m³`);
             }

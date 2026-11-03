@@ -311,6 +311,7 @@ export default function AppShell({
                             onClick={() => { onModuleChange(item.id); setMobileMenuOpen(false); }} 
                             style={{ 
                                 backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '',
+                                color: activeModule === item.id ? '#ffffff' : undefined,
                                 fontSize: `${menuStyle.fontSize}px`
                             }}
                             className={`${spanClass} flex ${spanClass === 'col-span-2' ? 'flex-col justify-center text-center gap-1 px-1 py-2.5' : 'items-center gap-2.5 ' + padClass} rounded-xl font-bold uppercase transition-all tracking-wider overflow-hidden ${activeModule === item.id ? 'text-white shadow-glow' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text border border-transparent hover:border-theme-border/60'} ${isCollapsed ? 'justify-center px-0' : ''}`}
@@ -527,8 +528,7 @@ export default function AppShell({
                     </div>
                 </div>
                 
-                <nav className="hidden md:flex items-center gap-1 flex-1 justify-center px-4 overflow-x-auto custom-scrollbar">
-                    <button onClick={() => onModuleChange('home')} style={{ fontSize: `${menuStyle.fontSize}px` }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-blue-600 text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                <nav className="hidden md:flex items-center gap-1 flex-1 justify-start px-4 overflow-x-auto custom-scrollbar">                    <button onClick={() => onModuleChange('home')} style={{ fontSize: `${menuStyle.fontSize}px` }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all tracking-widest whitespace-nowrap flex-shrink-0 ${activeModule === 'home' ? 'bg-blue-600 text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
                         <LayoutDashboard size={14} /> POČETNA
                     </button>
                     {visibleMenuItems.map((item, idx) => (
@@ -542,6 +542,7 @@ export default function AppShell({
                             onClick={() => !isMenuEditMode && onModuleChange(item.id)} 
                             style={{ 
                                 backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '',
+                                color: activeModule === item.id ? '#ffffff' : undefined,
                                 fontSize: `${menuStyle.fontSize}px`
                             }}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold uppercase transition-all tracking-widest whitespace-nowrap flex-shrink-0 ${isMenuEditMode ? 'border border-dashed border-amber-500 cursor-move' : ''} ${activeModule === item.id ? 'text-white' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`} 

@@ -574,8 +574,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                 if ((st.jm_unos || 'kom').toLowerCase() !== 'kom' && vol1Kom > 0) {
                     uzetoKom = Math.round(uzetoM3 / vol1Kom);
                 }
-                const noviKom = Math.max(1, Math.round(stariKom - uzetoKom));
-
+                const noviKom = Math.max(0.01, parseFloat((stariKom - uzetoKom).toFixed(2)));
                 await supabase.from('paketi').update({
                     kolicina_final: noviM3,
                     kubikaza: noviM3,
@@ -642,8 +641,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     if ((st.jm_unos || 'kom').toLowerCase() !== 'kom' && vol1Kom > 0) {
                         uzetoKom = Math.round(uzetoM3 / vol1Kom);
                     }
-                    const vraceniKom = Math.round(trenutniKom + uzetoKom);
-
+                    const vraceniKom = parseFloat((trenutniKom + uzetoKom).toFixed(2));
                     await supabase.from('paketi').update({
                         otpremnica_id: null,
                         status: 'NA STANJU',
@@ -780,14 +778,18 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         const listaStavki = podaci.stavke_jsonb || [];
         const ukupnoM3 = listaStavki.reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0);
 
-        const redovi = listaStavki.map((s, i) => `
+        const redovi = listaStavki.map((s, i) => {
+            const kolUnosPrikaz = s.kolicina_unos ?? s.kolicina_obracun ?? s.kolicina ?? 0;
+            const jmUnosPrikaz = s.jm_unos || s.jm_obracun || s.jm || 'm3';
+            return `
             <tr>
                 <td style="text-align:center; font-weight:bold;">${i + 1}.</td>
                 <td><b>${s.sifra || '-'}</b> - ${s.naziv} ${s.dimenzije ? `<br/><span style="font-size:10px; color:#64748b;">Dimenzije: ${s.dimenzije} cm</span>` : ''}</td>
-                <td style="text-align:center;">${s.kolicina_unos} ${s.jm_unos || 'kom'}</td>
-                <td class="num" style="font-weight:900;">${parseFloat(s.kolicina_obracun || 0).toFixed(3)} ${s.jm_obracun || 'm3'}</td>
+                <td style="text-align:center;">${kolUnosPrikaz} ${jmUnosPrikaz}</td>
+                <td class="num" style="font-weight:900;">${parseFloat(s.kolicina_obracun || s.kolicina || 0).toFixed(3)} ${s.jm_obracun || 'm3'}</td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
 
         const html = `
             <div class="info-grid">

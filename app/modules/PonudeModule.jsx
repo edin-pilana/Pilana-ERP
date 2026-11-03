@@ -251,6 +251,10 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         if (isNaN(fiksnaCijena) || fiksnaCijena < 0 || Math.abs(rabatProc - 100) < 0.001) {
             fiksnaCijena = cijenaBaza * (1 - rabatProc / 100);
         }
+        if (fiksnaCijena > cijenaBaza) {
+            cijenaBaza = fiksnaCijena;
+            rabatProc = 0;
+        }
 
         const ukupnoBezRabata = parseFloat((kolObr * cijenaBaza).toFixed(2));
         const ukupno = parseFloat((kolObr * fiksnaCijena).toFixed(2));

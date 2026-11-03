@@ -58,11 +58,10 @@ export default function TabAiAnalitika({ saas }) {
     // 🟢 PAMETNI LOKALNI ERP ANALITIČKI MOTOR (Odgovara sa 100% tačnim podacima iz baze čak i bez eksternog Gemini API ključa!)
     const generisiPametniLokalniOdgovor = (baza, pitanje) => {
         if (!baza) return "Došlo je do greške pri čitanju baze podataka.";
-        const q = pitanje.toLowerCase();
 
-        const sviPaketi = baza.tabela_paketi_proizvodnja || [];
+        const sviPaketi = (baza.tabela_paketi_proizvodnja || []).filter(p => parseFloat(p.kolicina_final || 0) > 0);
         const paketiNaStanju = sviPaketi.filter(p => p.closed_at !== null && p.otpremnica_id === null);
-        const paketiURadu = sviPaketi.filter(p => p.closed_at === null);
+        const paketiURadu = sviPaketi.filter(p => p.closed_at === null && p.otpremnica_id === null);
         const paketiOtpremljeni = sviPaketi.filter(p => p.otpremnica_id !== null);
 
         const ukupnoPaketaM3 = sviPaketi.reduce((s, p) => s + parseFloat(p.kolicina_final || 0), 0);
@@ -71,41 +70,89 @@ export default function TabAiAnalitika({ saas }) {
         const sviTrupci = baza.tabela_trupci || [];
         const trupciNaLageru = sviTrupci.filter(t => t.zakljucen_prijem && t.status === 'na_lageru');
         const prorezaniTrupci = sviTrupci.filter(t => t.status === 'prorezano');
-        const ulazProrezanoM3 = prorezaniTrupci.reduce((s, t) => s + parseFloat(t.zapremina || 0), 0);
-        const trupciNaLageruM3 = trupciNaLageru.reduce((s, t) => s + parseFloat(t.zapremina || 0), 0);
+        const ulazProrezanoM3 = prorezaniTrupci.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
+        const trupciNaLageruM3 = trupciNaLageru.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
 
-        const prinosYield = ulazProrezanoM3 > 0 ? ((ukupnoPaketaM3 / ulazProrezanoM3) * 100).toFixed(1) : "64.5";
+        // Prinos (Yield) Pilane (izlaz paketa sa Pilane / prorezani trupci) + omjer ukupnog inventara
+        const paketiPilana = sviPaketi.filter(p => {
+            const m = (p.masina || '').toUpperCase();
+            return (m.includes('PILANA') || m.includes('BRENTA')) && (!p.ai_sirovina_ids || p.ai_sirovina_ids.length === 0);
+        });
+        const izlazPilanaM3 = paketiPilana.reduce((s, p) => s + parseFloat(p.kolicina_final || 0), 0);
+        const prinosPilanaProc = ulazProrezanoM3 > 0 ? ((izlazPilanaM3 / ulazProrezanoM3) * 100).toFixed(1) : "0.0";
+        const omjerUkupnoProc = ulazProrezanoM3 > 0 ? ((ukupnoPaketaM3 / ulazProrezanoM3) * 100).toFixed(1) : "0.0";
 
+        const sveTransakcije = baza.tabela_blagajna_troskovi || [];
         const sviRacuni = baza.tabela_izdati_racuni || [];
         const placeniRacuni = sviRacuni.filter(r => r.status === 'NAPLAĆENO');
-        const nenaplaceniRacuni = sviRacuni.filter(r => r.status !== 'NAPLAĆENO');
+        const otvoreniRacuni = sviRacuni.filter(r => r.status !== 'NAPLAĆENO');
+
         const ukupnoSviRacuniIznos = sviRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
-        const ukupnoPotrazivanja = nenaplaceniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
+        const nominalnoOtvoreniIznos = otvoreniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
+
+        // 🟢 Tačan obračun stvarnog preostalog duga za svaki otvoreni račun (umanjen za sve uplate u Blagajni!)
+        let stvarniPreostaliDug = 0;
+        const detaljiOtvorenihRacuna = otvoreniRacuni.map(r => {
+            const rid = (r.id || '').toUpperCase().trim();
+            const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+            const uplacenoUBlagajni = sveTransakcije
+                .filter(t => t.tip === 'ULAZ' && (
+                    (t.racun_id && t.racun_id.toUpperCase().trim() === rid) ||
+                    (t.opis && t.opis.toUpperCase().includes(rid))
+                ))
+                .reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
+            const uplacenoPolje = parseFloat(r.uplaceno || 0);
+            const stvarnoPlaceno = Math.max(uplacenoUBlagajni, uplacenoPolje);
+            const preostalo = Math.max(0, parseFloat((ukupnoRacun - stvarnoPlaceno).toFixed(2)));
+            stvarniPreostaliDug += preostalo;
+            return `**${r.id}** (Kupac: **${r.kupac_naziv}**, Ukupno: ${ukupnoRacun.toFixed(2)} KM, Već uplaćeno: ${stvarnoPlaceno.toFixed(2)} KM, Stvarni preostali dug: **${preostalo.toFixed(2)} KM**)`;
+        });
+
         const ukupnoNaplaceno = placeniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
+
+        const ulazKasa = sveTransakcije.filter(t => t.tip === 'ULAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
+        const izlazKasa = sveTransakcije.filter(t => t.tip === 'IZLAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
+        const stanjeKase = ulazKasa - izlazKasa;
 
         const sveReklamacije = baza.tabela_reklamacije_i_povrati || [];
         const odobreneReklamacije = sveReklamacije.filter(r => r.status === 'ODOBRENO');
         const reklamacijeM3 = odobreneReklamacije.reduce((s, r) => s + parseFloat(r.kolicina || 0), 0);
-
         const aktivniNalozi = (baza.tabela_radni_nalozi || []).filter(n => n.status !== 'ZAVRŠENO' && n.status !== 'OBRISANO');
 
-        const ulazKasa = (baza.tabela_blagajna_troskovi || []).filter(t => t.tip === 'ULAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
-        const izlazKasa = (baza.tabela_blagajna_troskovi || []).filter(t => t.tip === 'IZLAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
-        const stanjeKase = ulazKasa - izlazKasa;
+        // 🟢 Ako korisnik pita za specifičan paket (npr. "57") ili dokument, prikaži pune detalje tog paketa na samom vrhu!
+        let posebniDetalji = [];
+        const rijeciUpita = (pitanje || '').toUpperCase().split(/[\s,?.!:;"'()]+/).filter(Boolean);
+        const trazeniPaketi = sviPaketi.filter(p => rijeciUpita.includes(String(p.paket_id).toUpperCase()));
+        if (trazeniPaketi.length > 0) {
+            const pid = trazeniPaketi[0].paket_id;
+            const m3Pak = trazeniPaketi.reduce((s, x) => s + parseFloat(x.kolicina_final || 0), 0);
+            const komPak = trazeniPaketi.reduce((s, x) => s + parseFloat(x.kolicina_ulaz || 0), 0);
+            const stPak = trazeniPaketi[0].otpremnica_id ? `OTPREMLJENO (${trazeniPaketi[0].otpremnica_id})` : (trazeniPaketi[0].closed_at ? 'NA STANJU (Završen paket na lageru)' : 'U PROIZVODNJI');
+            const opisStavki = trazeniPaketi.map(x => `${x.naziv_proizvoda} — Dimenzije: **${x.debljina}x${x.sirina}x${x.duzina} cm**, Količina: **${x.kolicina_ulaz} ${x.jm || 'kom'}** (**${parseFloat(x.kolicina_final || 0).toFixed(3)} m³**), Mašina: ${x.masina || '-'}`).join(' | ');
+            posebniDetalji.push(
+                `**🔎 Detalji traženog paketa ${pid}:**`,
+                `* Identitet paketa: **Paket ${pid}** | Status: **${stPak}**`,
+                `* Sadržaj i dimenzije: ${opisStavki}`,
+                `* Ukupna količina i volumen paketa ${pid}: **${komPak} ${trazeniPaketi[0].jm || 'kom'}** (**${m3Pak.toFixed(3)} m³**) | Vezni nalog: **${trazeniPaketi[0].broj_veze || 'Slobodna roba'}**`
+            );
+        }
 
         return [
-            `Na osnovu trenutnog stanja u ERP baze podataka, evo tačnog izvještaja za tvoj upit:`,
+            `Na osnovu trenutnog stanja u ERP bazi podataka, evo tačnog izvještaja za tvoj upit:`,
+            ...(posebniDetalji.length > 0 ? [``, ...posebniDetalji] : []),
             ``,
-            `**🧾 Računi (Ukupno / Plaćeni / Otvoreni):**`,
+            `**🧾 Računi i Stvarni Preostali Dug (Otvorena potraživanja):**`,
             `* Ukupno svih računa u bazi: **${sviRacuni.length} računa** (Ukupna vrijednost svih računa: **${ukupnoSviRacuniIznos.toFixed(2)} KM**)`,
-            `* Plaćeni (arhivirani) računi: **${placeniRacuni.length} računa** (Ukupno naplaćeno: **${ukupnoNaplaceno.toFixed(2)} KM**)`,
-            `* Otvoreni (nenaplaćeni / djelimični) računi: **${nenaplaceniRacuni.length} računa** (Otvorena potraživanja: **${ukupnoPotrazivanja.toFixed(2)} KM**)`,
+            `* Plaćeni (arhivirani) računi: **${placeniRacuni.length} računa** (Ukupno naplaćeno u arhivi: **${ukupnoNaplaceno.toFixed(2)} KM**)`,
+            `* Otvoreni (neplaćeni / djelimični) računi: **${otvoreniRacuni.length} računa**`,
+            `* **Stvarni preostali dug na otvorenim računima (nakon uračunatih uplata): ${stvarniPreostaliDug.toFixed(2)} KM** (Nominalni zbir otvorenih računa prije oduzimanja uplata: ${nominalnoOtvoreniIznos.toFixed(2)} KM)`,
+            `* Identiteti i detalji otvorenih računa: ${detaljiOtvorenihRacuna.join(' ; ') || 'Nema otvorenih računa'}`,
             ``,
             `**📦 Paketi i Proizvodnja (Prinos / Yield):**`,
-            `* Ukupno paketa u bazi: **${sviPaketi.length} paketa** (ukupnog volumena **${ukupnoPaketaM3.toFixed(3)} m³**)`,
+            `* Ukupno paketa u bazi (svi statusi: lager + u proizvodnji + otpremljeno + ručni ulaz): **${sviPaketi.length} paketa** (ukupnog volumena **${ukupnoPaketaM3.toFixed(3)} m³**)`,
             `* Zaključani paketi trenutno na stanju (Lager): **${paketiNaStanju.length} paketa** (**${naStanjuM3.toFixed(3)} m³**)`,
             `* Otpremljeni paketi kupcima: **${paketiOtpremljeni.length} paketa** | U radu na mašinama: **${paketiURadu.length} paketa**`,
-            `* Ukupan prinos (Yield / iskorištenje sirovine): **${prinosYield}%**`,
+            `* Proizvodni prinos Pilane (izlaz Pilane ${izlazPilanaM3.toFixed(3)} m³ / prorezani trupci ${ulazProrezanoM3.toFixed(3)} m³): **${prinosPilanaProc}%** (Omjer ukupnog inventara svih paketa prema prorezanim trupcima: ${omjerUkupnoProc}%)`,
             ``,
             `**🪵 Sirovina (Trupci na placu):**`,
             `* Trupci spremni na lageru: **${trupciNaLageru.length} kom** (**${trupciNaLageruM3.toFixed(3)} m³**)`,
@@ -130,63 +177,15 @@ export default function TabAiAnalitika({ saas }) {
 
         try {
             const dbObject = await fetchCijelaBaza();
-            const aktivniKljuc = (customKey || DEFAULT_GEMINI_KEY || '').trim();
-
-            if (aktivniKljuc) {
-                const dbDump = JSON.stringify(dbObject);
-                const prompt = `
-                Ti si ekspertni poslovni i finansijski AI analitičar za pilanu i drvnu industriju.
-                Ispod ti je proslijeđen KOMPLETAN JSON DUMP cijele ERP baze podataka klijenta.
-                Tvoj zadatak je da pažljivo analiziraš ove sirove podatke i tačno odgovoriš na korisnikovo pitanje na bosanskom jeziku.
-                PODACI IZ BAZE:
-                ${dbDump}
-                PITANJE KORISNIKA:
-                ${userText}
-                `;
-
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${ODABRANI_MODEL}:generateContent?key=${aktivniKljuc}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        contents: [{ parts: [{ text: prompt }] }], 
-                        generationConfig: { temperature: 0.1 }
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const aiOdgovor = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (aiOdgovor) {
-                        setMessages(prev => [...prev, { role: 'ai', text: aiOdgovor }]);
-                        setIsTyping(false);
-                        return;
-                    }
-                }
-            }
-
-            // Ako nema eksternog API ključa ili je vraćen 403, koristi ugrađeni Lokalni ERP Analitički Motor
+            // Uvijek koristi deterministički ERP analitički motor koji garantuje 100% tačne brojeve iz baze bez halucinacija!
             const lokalniOdgovor = generisiPametniLokalniOdgovor(dbObject, userText);
             setMessages(prev => [...prev, { role: 'ai', text: lokalniOdgovor }]);
-
         } catch (error) {
-            const dbObject = await fetchCijelaBaza();
-            const lokalniOdgovor = generisiPametniLokalniOdgovor(dbObject, userText);
-            setMessages(prev => [...prev, { role: 'ai', text: lokalniOdgovor }]);
+            setMessages(prev => [...prev, { role: 'ai', text: 'Došlo je do greške pri analizi baze podataka.' }]);
         }
         
         setIsTyping(false);
     };
-
-    const renderMarkdown = (text) => {
-        const lines = text.split('\n');
-        return lines.map((line, index) => {
-            let formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            if (formattedLine.trim().startsWith('* ')) return <li key={index} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: formattedLine.substring(2) }} />;
-            if (formattedLine.trim() === '') return <br key={index} />;
-            return <p key={index} className="mb-1" dangerouslySetInnerHTML={{ __html: formattedLine }} />;
-        });
-    };
-
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
 
     return (

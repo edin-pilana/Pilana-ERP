@@ -285,6 +285,22 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             }
         }
         setHistorija(dogadjaji.length > 0 ? dogadjaji.sort((a,b) => new Date(a.vrijeme) - new Date(b.vrijeme)) : 'none');
+        if (!dogadjaji.some(d => d.naslov.includes('DODANA') || d.naslov.includes('SLOBODNI') || d.naslov.includes('KREIRAN'))) {
+            dogadjaji.unshift({
+                vrijeme: paket.created_at || new Date().toISOString(),
+                naslov: 'DODANA_STAVKA_U_PAKET',
+                opis: `Kreiran paket ${sid} na mašini: ${paket.masina || 'Pogon'}. Proizvod: ${paket.naziv_proizvoda} (${paket.debljina}x${paket.sirina}x${paket.duzina} cm), Količina: ${paket.kolicina_ulaz} ${paket.jm || 'kom'} (${paket.kolicina_final} m³).`,
+                korisnik: paket.snimio_korisnik || 'Sistem'
+            });
+        }
+        if (paket.closed_at && !dogadjaji.some(d => d.naslov.includes('ZAKLJUČEN'))) {
+            dogadjaji.push({
+                vrijeme: paket.closed_at,
+                naslov: 'ZAKLJUČEN_PAKET',
+                opis: `Paket ${sid} je zaključen i spreman na lageru (${paket.kolicina_ulaz} ${paket.jm || 'kom'} / ${paket.kolicina_final} m³).`,
+                korisnik: paket.snimio_korisnik || 'Sistem'
+            });
+        }
     };
 
     const isprintajAutomatski = async (paket) => {
