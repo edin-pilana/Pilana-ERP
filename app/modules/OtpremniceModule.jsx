@@ -470,11 +470,23 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Odaberite proizvod i unesite pozitivnu količinu veću od 0!", onCancel: zatvoriDialog });
         }
 
+        const postojecaStavka = stavkaForm.id ? stavke.find(s => s.id === stavkaForm.id) : null;
+        const pidIzPostojece = postojecaStavka ? izvuciPaketIdIzStavke(postojecaStavka) : null;
+
         const nova = {
+            ...(postojecaStavka || {}),
             id: stavkaForm.id || Math.random().toString(),
+            paket_id: pidIzPostojece || undefined,
+            tip_utovara: postojecaStavka?.tip_utovara || (pidIzPostojece ? 'DJELIMICNO' : undefined),
+            lager_umanjen: false,
             sifra: trenutniProizvod.sifra,
-            naziv: trenutniProizvod.naziv,
+            naziv: pidIzPostojece && !(trenutniProizvod.naziv || '').includes(pidIzPostojece)
+                ? `${trenutniProizvod.naziv} [Dio paketa: ${pidIzPostojece}]`
+                : trenutniProizvod.naziv,
             dimenzije: `${trenutniProizvod.visina}x${trenutniProizvod.sirina}x${trenutniProizvod.duzina}`,
+            debljina: trenutniProizvod.visina,
+            sirina: trenutniProizvod.sirina,
+            duzina: trenutniProizvod.duzina,
             kolicina_unos: parseFloat(stavkaForm.kolicina_unos),
             jm_unos: stavkaForm.jm_unos,
             kolicina_obracun: parseFloat(stavkaForm.kolicina_obracun),

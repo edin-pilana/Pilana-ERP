@@ -542,8 +542,11 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                                 <div key={item.id} onClick={() => { if(glavniTab==='paketi') ucitajHistoriju(item); }} className="p-5 rounded-box border border-theme-border bg-theme-panel hover:border-theme-accent hover:-translate-y-1 cursor-pointer transition-all shadow-xl group relative overflow-hidden">
                                     {glavniTab === 'paketi' ? (
                                         <>
-                                            {item.closed_at && <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>}
-                                            <div className="flex justify-between items-start mb-3">
+{item.otpremnica_id ? (
+    <div className="absolute top-0 right-0 bg-orange-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">OTPREMLJEN ({item.otpremnica_id})</div>
+) : item.closed_at ? (
+    <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[8px] px-3 py-1 font-black rounded-bl-xl uppercase shadow-md z-10">ZAVRŠEN</div>
+) : null}                                            <div className="flex justify-between items-start mb-3">
                                                 <div className="flex-1 pr-2">
                                                     <p className="text-theme-accent font-black text-lg font-mono">{item.paket_id}</p>
                                                     <p className="text-theme-text text-sm font-bold mt-1 uppercase leading-tight">{item.naziv_proizvoda}</p>

@@ -2,9 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
 
-const DEFAULT_GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
-const ODABRANI_MODEL = "gemini-2.5-flash"; 
-
 export default function TabAiAnalitika({ saas }) {
     const [messages, setMessages] = useState([
         { role: 'ai', text: 'Zdravo šefe! Ja sam tvoj AI ERP Asistent. Imam **neograničen pristup cijeloj bazi podataka** (svi proizvodi, paketi, trupci, računi, nalozi i reklamacije). Šta te zanima?' }
@@ -20,7 +17,6 @@ export default function TabAiAnalitika({ saas }) {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // FUNKCIJA ZA DOHVAĆANJE CIJELE BAZE (BEZ OGRANIČENJA DATUMA)
     const fetchCijelaBaza = async () => {
         try {
             const [trupciRes, paketiRes, racuniRes, blagajnaRes, radniciRes, katalogRes, reklamacijeRes, naloziRes, otpremniceRes, prorezRes] = await Promise.all([
@@ -37,7 +33,6 @@ export default function TabAiAnalitika({ saas }) {
             ]);
 
             return {
-                informacija: "Ovo je kompletan ispis (dump) baze podataka ERP sistema kompanije.",
                 tabela_trupci: trupciRes.data || [],
                 tabela_paketi_proizvodnja: paketiRes.data || [],
                 tabela_izdati_racuni: racuniRes.data || [],
@@ -55,7 +50,6 @@ export default function TabAiAnalitika({ saas }) {
         }
     };
 
-    // 🟢 PAMETNI LOKALNI ERP ANALITIČKI MOTOR (Odgovara sa 100% tačnim podacima iz baze čak i bez eksternog Gemini API ključa!)
     const generisiPametniLokalniOdgovor = (baza, pitanje) => {
         if (!baza) return "Došlo je do greške pri čitanju baze podataka.";
 
@@ -73,7 +67,6 @@ export default function TabAiAnalitika({ saas }) {
         const ulazProrezanoM3 = prorezaniTrupci.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
         const trupciNaLageruM3 = trupciNaLageru.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
 
-        // Prinos (Yield) Pilane (izlaz paketa sa Pilane / prorezani trupci) + omjer ukupnog inventara
         const paketiPilana = sviPaketi.filter(p => {
             const m = (p.masina || '').toUpperCase();
             return (m.includes('PILANA') || m.includes('BRENTA')) && (!p.ai_sirovina_ids || p.ai_sirovina_ids.length === 0);
@@ -90,7 +83,6 @@ export default function TabAiAnalitika({ saas }) {
         const ukupnoSviRacuniIznos = sviRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
         const nominalnoOtvoreniIznos = otvoreniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
 
-        // 🟢 Tačan obračun stvarnog preostalog duga za svaki otvoreni račun (umanjen za sve uplate u Blagajni!)
         let stvarniPreostaliDug = 0;
         const detaljiOtvorenihRacuna = otvoreniRacuni.map(r => {
             const rid = (r.id || '').toUpperCase().trim();
@@ -119,7 +111,6 @@ export default function TabAiAnalitika({ saas }) {
         const reklamacijeM3 = odobreneReklamacije.reduce((s, r) => s + parseFloat(r.kolicina || 0), 0);
         const aktivniNalozi = (baza.tabela_radni_nalozi || []).filter(n => n.status !== 'ZAVRŠENO' && n.status !== 'OBRISANO');
 
-        // 🟢 Ako korisnik pita za specifičan paket (npr. "57") ili dokument, prikaži pune detalje tog paketa na samom vrhu!
         let posebniDetalji = [];
         const rijeciUpita = (pitanje || '').toUpperCase().split(/[\s,?.!:;"'()]+/).filter(Boolean);
         const trazeniPaketi = sviPaketi.filter(p => rijeciUpita.includes(String(p.paket_id).toUpperCase()));
@@ -177,7 +168,6 @@ export default function TabAiAnalitika({ saas }) {
 
         try {
             const dbObject = await fetchCijelaBaza();
-            // Uvijek koristi deterministički ERP analitički motor koji garantuje 100% tačne brojeve iz baze bez halucinacija!
             const lokalniOdgovor = generisiPametniLokalniOdgovor(dbObject, userText);
             setMessages(prev => [...prev, { role: 'ai', text: lokalniOdgovor }]);
         } catch (error) {
@@ -186,6 +176,17 @@ export default function TabAiAnalitika({ saas }) {
         
         setIsTyping(false);
     };
+
+    const renderMarkdown = (text) => {
+        const lines = (text || '').split('\n');
+        return lines.map((line, index) => {
+            let formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            if (formattedLine.trim().startsWith('* ')) return <li key={index} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: formattedLine.substring(2) }} />;
+            if (formattedLine.trim() === '') return <br key={index} />;
+            return <p key={index} className="mb-1" dangerouslySetInnerHTML={{ __html: formattedLine }} />;
+        });
+    };
+
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
 
     return (

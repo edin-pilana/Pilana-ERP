@@ -253,7 +253,7 @@ background-color: #ffffff !important;
 color: #0f172a !important;
 }
 
-//* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini, OSIM kada su na obojenoj pozadini!) */
+/* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini, OSIM kada su na obojenoj pozadini!) */
 [data-theme="light"] .text-white:not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-purple-"]):not([class*="bg-indigo-"]):not([class*="bg-orange-"]):not([class*="bg-pink-"]):not([class*="bg-theme-accent"]),
 [data-theme="light"] .text-slate-300,
 [data-theme="light"] .text-slate-400,
@@ -286,4 +286,12 @@ color: #0f172a !important;
   background-color: #f8fafc !important;
   border: 1px solid #cbd5e1 !important;
   color: #0f172a !important;
+}
+
+/* 7. Aktivno dugme u bočnom i gornjem meniju uvijek ima bijeli tekst */
+[data-theme="light"] aside nav button[style*="background-color"] *,
+[data-theme="light"] aside nav button[style*="background-color"],
+[data-theme="light"] header nav button[style*="background-color"] *,
+[data-theme="light"] header nav button[style*="background-color"] {
+  color: #ffffff !important;
 }

@@ -70,11 +70,17 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
     const processScan = async (val) => {
         const id = val.toUpperCase().trim();
-        if (id.length < 3) return;
+        if (id.length < 1) return;
 
-        const { data } = await supabase.from('paketi').select('*').eq('paket_id', id).maybeSingle();
-        if (data) {
-            const paketZaReklamaciju = data;
+        const { data: redoviPaketa } = await supabase.from('paketi').select('*').eq('paket_id', id);
+        if (redoviPaketa && redoviPaketa.length > 0) {
+            const ukupniKapacitetM3 = redoviPaketa.reduce((s, r) => s + parseFloat(r.kolicina_final || 0), 0);
+            const ukupnoKom = redoviPaketa.reduce((s, r) => s + parseFloat(r.kolicina_ulaz || 0), 0);
+            const paketZaReklamaciju = {
+                ...redoviPaketa[0],
+                kolicina_final: parseFloat(ukupniKapacitetM3.toFixed(4)),
+                kolicina_ulaz: ukupnoKom
+            };
             
             const { data: istorijaRek } = await supabase.from('reklamacije')
                 .select('kolicina')
@@ -82,7 +88,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 .in('status', ['CEKA_ODOBRENJE', 'ODOBRENO']);
             
             const ukupnoPotrosenoM3 = (istorijaRek || []).reduce((acc, r) => acc + parseFloat(r.kolicina || 0), 0);
-            const ukupniKapacitetM3 = parseFloat(paketZaReklamaciju.kolicina_final || 0);
             const preostaliKapacitetM3 = Math.max(0, ukupniKapacitetM3 - ukupnoPotrosenoM3);
 
             const kat = katalog.find(k => k.naziv === paketZaReklamaciju.naziv_proizvoda || k.sifra === paketZaReklamaciju.naziv_proizvoda);
@@ -122,7 +127,6 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             setScan('');
         }
     };
-
     // 🟢 SVE DIMENZIJE SU U CENTIMETRIMA (cm) -> dijelimo sa 100
     useEffect(() => {
         if (!form.kolicina_unos || !paket) {

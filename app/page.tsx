@@ -136,24 +136,38 @@ export default function Page() {
         const danas = new Date().toISOString().split('T')[0];
         const sedamDanaNazad = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
         try {
-            const [trupciRes, paketiRes, racuniRes, naloziRes, feedRes, trendRes, trupciLagerRes, paketiLagerRes] = await Promise.all([
-                supabase.from('trupci').select('zapremina').eq('datum_prijema', danas),
+            const [trupciRes, paketiRes, racuniRes, blagajnaRes, naloziRes, feedRes, trendRes, trupciLagerRes, paketiLagerRes] = await Promise.all([
+                supabase.from('trupci').select('zapremina, kontrolna_zapremina').eq('datum_prijema', danas),
                 supabase.from('paketi').select('kolicina_final').eq('datum_yyyy_mm', danas),
                 supabase.from('racuni').select('*').neq('status', 'NAPLAĆENO'), 
+                supabase.from('blagajna').select('racun_id, iznos, tip, opis').eq('tip', 'ULAZ'),
                 supabase.from('radni_nalozi').select('*').neq('status', 'ISPORUČENO'), 
                 supabase.from('sistem_audit_log').select('*').order('vrijeme', { ascending: false }).limit(8),
                 supabase.from('paketi').select('datum_yyyy_mm, kolicina_final').gte('datum_yyyy_mm', sedamDanaNazad).lte('datum_yyyy_mm', danas),
-                supabase.from('trupci').select('duzina, zapremina').eq('status', 'na_lageru').eq('zakljucen_prijem', true),
+                supabase.from('trupci').select('duzina, zapremina, kontrolna_zapremina').eq('status', 'na_lageru').eq('zakljucen_prijem', true),
                 supabase.from('paketi').select('broj_veze, naziv_proizvoda, kolicina_final').not('closed_at', 'is', null).is('otpremnica_id', null)
             ]);
-            const sumUlaz = (trupciRes.data || []).reduce((a,b)=>a+parseFloat(b.zapremina||0), 0);
+            const sumUlaz = (trupciRes.data || []).reduce((a,b)=>a+parseFloat(b.kontrolna_zapremina || b.zapremina || 0), 0);
             const sumIzlaz = (paketiRes.data || []).reduce((a,b)=>a+parseFloat(b.kolicina_final||0), 0);
             
             const sviRacuni = racuniRes.data || [];
-            const sumFakturisano = sviRacuni.reduce((a,b)=>a+parseFloat(b.ukupno_sa_pdv||0), 0);
-            
+            const sveUplate = blagajnaRes.data || [];
+            let sumOtvoreniDug = 0;
             const kupciDug = {};
-            sviRacuni.forEach(r => { kupciDug[r.kupac_naziv] = (kupciDug[r.kupac_naziv] || 0) + parseFloat(r.ukupno_sa_pdv || 0); });
+
+            sviRacuni.forEach(r => {
+                const rid = (r.id || '').toUpperCase().trim();
+                const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+                const uplacenoZaRacun = sveUplate
+                    .filter(u => (u.racun_id && u.racun_id.toUpperCase().trim() === rid) || (u.opis && u.opis.toUpperCase().includes(rid)))
+                    .reduce((s, u) => s + parseFloat(u.iznos || 0), 0);
+                const preostalo = Math.max(0, parseFloat((ukupnoRacun - uplacenoZaRacun).toFixed(2)));
+                if (preostalo > 0.009) {
+                    sumOtvoreniDug += preostalo;
+                    kupciDug[r.kupac_naziv] = (kupciDug[r.kupac_naziv] || 0) + preostalo;
+                }
+            });
+
             const topDuznici = Object.keys(kupciDug).map(k => ({ name: k, dug: parseFloat(kupciDug[k].toFixed(2)) })).sort((a,b) => b.dug - a.dug).slice(0, 5);
 
             const trendMap = {};
@@ -161,7 +175,7 @@ export default function Page() {
             trendMap[d] = { dan: d.substring(5,10).replace('-', '.'), m3: 0 }; }
             (trendRes.data || []).forEach(p => { if(trendMap[p.datum_yyyy_mm]) trendMap[p.datum_yyyy_mm].m3 += parseFloat(p.kolicina_final||0); });
             const trupciMap = {};
-            (trupciLagerRes.data || []).forEach(t => { const l = parseFloat(t.duzina).toFixed(1); trupciMap[l] = (trupciMap[l] || 0) + parseFloat(t.zapremina || 0); });
+            (trupciLagerRes.data || []).forEach(t => { const l = parseFloat(t.duzina).toFixed(1); trupciMap[l] = (trupciMap[l] || 0) + parseFloat(t.kontrolna_zapremina || t.zapremina || 0); });
             const trupciChart = Object.keys(trupciMap).map(k => ({ duzina: k + 'm', m3: parseFloat(trupciMap[k].toFixed(2)) })).sort((a,b) => parseFloat(a.duzina) - parseFloat(b.duzina));
             const paketiMap = {};
             (paketiLagerRes.data || []).forEach(p => { const n = p.naziv_proizvoda; paketiMap[n] = (paketiMap[n] || 0) + parseFloat(p.kolicina_final || 0); });
@@ -170,12 +184,11 @@ export default function Page() {
             
             const naloziCekanje = sviNalozi.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO').map(n => ({
                 id: n.id, kupac: n.kupac_naziv, rok: n.rok_isporuke, status: n.status, stavki: (n.stavke_jsonb||[]).length
-            })).sort((a,b) => new Date(a.rok) - new Date(b.rok));
+            })).sort((a,b) => new Date(a.rok).getTime() - new Date(b.rok).getTime());
             const naloziProgres = sviNalozi.filter(n => n.status === 'U PROIZVODNJI').map(n => {
                 const stavke = n.stavke_jsonb || [];
                 const cilj = stavke.reduce((s, st) => s + parseFloat(st.kolicina_obracun || st.kolicina_unos || 0), 0);
                 const uradjeno = stavke.reduce((s, st) => s + parseFloat(st.napravljeno || 0), 0);
-             
                 const procenat = cilj > 0 ? Math.min(100, Math.round((uradjeno / cilj) * 100)) : 0;
                 return { id: n.id, kupac: n.kupac_naziv, cilj: cilj.toFixed(2), uradjeno: uradjeno.toFixed(2), procenat };
             }).sort((a,b) => b.procenat - a.procenat);
@@ -186,9 +199,9 @@ export default function Page() {
             const spremnoZaIsporuku = Object.keys(spremnoMap).map(rn => {
                 const nalogInfo = sviNalozi.find(n => n.id === rn);
                 return { id: rn, kupac: nalogInfo ? nalogInfo.kupac_naziv : 'Nepoznat Kupac', kolicina: spremnoMap[rn].toFixed(2) };
-            }).sort((a,b) => b.kolicina - a.kolicina);
+            }).sort((a,b) => parseFloat(b.kolicina) - parseFloat(a.kolicina));
             setDashboardData({
-                kpi: { ulaz: sumUlaz.toFixed(1), izlaz: sumIzlaz.toFixed(1), potrazivanja: sumFakturisano.toLocaleString('bs-BA') },
+                kpi: { ulaz: sumUlaz.toFixed(1), izlaz: sumIzlaz.toFixed(1), potrazivanja: sumOtvoreniDug.toLocaleString('bs-BA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
                 feed: feedRes.data || [], trend: Object.values(trendMap), trupciChart, paketiChart, naloziCekanje, naloziProgres, spremnoZaIsporuku, topDuznici
             });
         } catch(e) {}

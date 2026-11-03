@@ -293,8 +293,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             if (!uOpseguDatuma(d.datum, d.created_at)) return false;
             return daLiMasinaOdgovaraProrezu(d.masina, masinaFilter);
         });
-        const ukupnoZastojaMin = zastojiLista.reduce((s, z) => s + parseInt(z.zastoj_min || 0), 0);
-
+        const ukupnoZastojaMin = zastojiLista.reduce((s, z) => s + Math.max(0, parseInt(z.zastoj_min || 0)), 0);
         const efektivniSati = Math.max(1, (logoviProreza.length * 0.15) - (ukupnoZastojaMin / 60));
         const brzinaM3Sat = izrezanoM3 > 0 ? (izrezanoM3 / efektivniSati) : 0;
 

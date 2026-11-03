@@ -898,7 +898,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         data={katalog} 
                                         poljaZaPretragu={['sifra', 'naziv']} 
                                         value={form.naziv}
-                                        onSelect={(k) => { setForm({...form, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom'}); }} 
+                                        onChange={(val) => setForm(prev => ({ ...prev, naziv: val }))}
+                                        onSelect={(k) => { setForm(prev => ({ ...prev, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom' })); }}
                                         placeholder="Pronađi proizvod ili UNESI SLOBODAN NAZIV..."
                                         renderItem={(k) => (
                                             <div>
