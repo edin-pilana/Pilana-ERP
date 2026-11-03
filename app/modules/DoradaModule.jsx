@@ -218,8 +218,12 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const [razduziMod, setRazduziMod] = useState('potroseno'); 
     const [razduziKol, setRazduziKol] = useState('');
     const [razduziJm, setRazduziJm] = useState('kom'); 
-    const [potrosenoUlazM3Map, setPotrosenoUlazM3Map] = useState({});
-
+    const [potrosenoUlazM3Map, setPotrosenoUlazM3Map] = useState(() => {
+        if (typeof window !== 'undefined') {
+            try { return JSON.parse(localStorage.getItem('dorada_potroseno_map') || '{}'); } catch (e) {}
+        }
+        return {};
+    });
     const [activeIzlazIds, setActiveIzlazIds] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
@@ -559,10 +563,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             const stariKomadi = parseFloat(razduziZapis.kolicina_ulaz ?? razduziZapis.komada ?? (vol1Kom > 0 ? Math.round(trenutnoNaStanju / vol1Kom) : 0));
             const potrosenoKom = Math.max(0, Math.round(stariKomadi - (novaKolM3 === 0 ? 0 : noviKomadi)));
 
-            setPotrosenoUlazM3Map(prev => ({
-                ...prev,
-                [razduziZapis.paket_id]: (prev[razduziZapis.paket_id] || 0) + potrosenoM3
-            }));
+            setPotrosenoUlazM3Map(prev => {
+                const novo = { ...prev, [razduziZapis.paket_id]: (prev[razduziZapis.paket_id] || 0) + potrosenoM3 };
+                if (typeof window !== 'undefined') localStorage.setItem('dorada_potroseno_map', JSON.stringify(novo));
+                return novo;
+            });
 
             if (novaKolM3 === 0) {
                 const { error } = await supabase

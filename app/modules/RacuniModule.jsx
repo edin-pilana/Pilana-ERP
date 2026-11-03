@@ -158,8 +158,11 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const {data: o} = await supabase.from('otpremnice').select('id, kupac_naziv, datum, broj_veze, stavke_jsonb, stavke').order('datum', { ascending: false }); setOtpremniceZaIzbor(o||[]);
     };
 
-    const zapisiU_Log = async (akcija, detalji) => { await supabase.from('sistem_audit_log').insert([{ korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji }]); };
-
+    const zapisiU_Log = async (akcija, detalji, nivo = 'INFO') => {
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji, nivo_alarma: nivo, pregledano: false, vrijeme: new Date().toISOString()
+        }]);
+    };
     // 🟢 POPRAVLJENA SINHRONIZACIJA KASE: Ažurira postojeću uplatu ako se iznos računa promijeni (nema dupliranja ni razlika!)
     const sinhronizujKasu = async (racunId, status, nacinPlacanja, iznos, kupac) => {
         const { data: postojeceUplate } = await supabase.from('blagajna').select('*').eq('racun_id', racunId).eq('tip', 'ULAZ');
@@ -455,9 +458,15 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     };
 
     const promijeniStatusBrzo = async (r, noviStatus) => {
+        const stariStatus = r.status;
         await supabase.from('racuni').update({ status: noviStatus }).eq('id', r.id);
         await sinhronizujKasu(r.id, noviStatus, r.nacin_placanja, r.ukupno_sa_pdv, r.kupac_naziv);
-        await zapisiU_Log('STATUS_RAČUNA', `Račun ${r.id} prebačen u ${noviStatus}`); load();
+        if (stariStatus === 'NAPLAĆENO' && noviStatus !== 'NAPLAĆENO') {
+            await zapisiU_Log('ALARM_POVRAT_RAČUNA_U_NENAPLAĆENO', `🚨 Račun ${r.id} (${r.kupac_naziv}, Iznos: ${r.ukupno_sa_pdv} ${r.valuta || 'KM'}) je vraćen iz statusa NAPLAĆENO u ${noviStatus}!`, 'CRVENO');
+        } else {
+            await zapisiU_Log('STATUS_RAČUNA', `Račun ${r.id} (${r.kupac_naziv}) prebačen iz ${stariStatus} u ${noviStatus}`, 'INFO');
+        }
+        await load();
     };
 
     const resetFormu = () => {

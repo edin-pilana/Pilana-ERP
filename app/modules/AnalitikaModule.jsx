@@ -472,8 +472,24 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         let trzisnaVrijednostKM = 0;
         paketiUPeriodu.forEach(p => {
             const m3 = izracunajTacanVolumenStavkePaketa(p);
-            const kat = katalogBaza.find(k => k.sifra === p.sifra_proizvoda || k.naziv === p.naziv_proizvoda);
-            const cijenaPoM3 = parseFloat(kat?.cijena || 600);
+            const deb = parseFloat(p.debljina || 0);
+            const sir = parseFloat(p.sirina || 0);
+            const duz = parseFloat(p.duzina || 0);
+
+            // 1. Prvo traži u katalogu tačno poklapanje po šifri ili po (nazivu + dimenzijama) ili po tačnim dimenzijama (npr. 5x3x300 -> 666 KM/m3)
+            let kat = katalogBaza.find(k => k.sifra === p.sifra_proizvoda) ||
+                      katalogBaza.find(k => k.naziv === p.naziv_proizvoda && parseFloat(k.visina || 0) === deb && parseFloat(k.sirina || 0) === sir && parseFloat(k.duzina || 0) === duz) ||
+                      katalogBaza.find(k => parseFloat(k.visina || 0) === deb && parseFloat(k.sirina || 0) === sir && parseFloat(k.duzina || 0) === duz) ||
+                      katalogBaza.find(k => k.naziv === p.naziv_proizvoda);
+
+            let cijenaPoM3 = parseFloat(kat?.cijena || 600);
+            const katJm = (kat?.default_jedinica || 'm3').toLowerCase();
+            if (kat && katJm !== 'm3' && deb > 0 && sir > 0 && duz > 0) {
+                const vol1Kom = (deb / 100) * (sir / 100) * (duz / 100);
+                if (katJm === 'kom' && vol1Kom > 0) cijenaPoM3 = cijenaPoM3 / vol1Kom;
+                else if (katJm === 'm1' && (duz / 100) > 0 && vol1Kom > 0) cijenaPoM3 = (cijenaPoM3 * (duz / 100)) / vol1Kom;
+                else if (katJm === 'm2' && ((sir / 100) * (duz / 100)) > 0 && vol1Kom > 0) cijenaPoM3 = (cijenaPoM3 * (sir / 100) * (duz / 100)) / vol1Kom;
+            }
             trzisnaVrijednostKM += (m3 * cijenaPoM3);
         });
 

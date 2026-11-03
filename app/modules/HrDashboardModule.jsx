@@ -394,8 +394,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                     <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-lg w-full flex flex-col relative max-h-[95vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6 border-b border-theme-border pb-4">
                             <div><h2 className="text-xl md:text-2xl font-black uppercase tracking-widest text-theme-text flex items-center gap-2"><Edit3 size={24}/> Uredi Sate</h2><p className="text-slate-400 text-xs mt-1">Radnik: <span className="text-blue-400 font-bold">{modalUredi.radnik_ime}</span></p></div>
-                            <div className="text-right"><p className="text-slate-400 text-[10px] uppercase">Datum:</p><p className="text-theme-text font-black text-sm">{new Date(modalUredi.datum).toLocaleDateString('bs-BA')}</p></div>
-                        </div>
+                            <div className="text-right"><p className="text-slate-400 text-[10px] uppercase">Datum:</p><p className="text-theme-text font-black text-sm">{prikazDatumaBHS(modalUredi.datum)}</p></div>                        </div>
 
                         <div className="bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl mb-6 flex justify-between items-center shadow-inner">
                             <div><p className="text-[10px] text-blue-400 uppercase font-black tracking-widest mb-1">Stvarno vrijeme na poslu:</p><p className="text-sm text-slate-300">Od: <span className="text-theme-text">{new Date(modalUredi.vrijeme_dolaska).toLocaleTimeString('de-DE')}</span> do <span className="text-theme-text">{new Date(modalUredi.vrijeme_odlaska).toLocaleTimeString('de-DE')}</span></p></div>

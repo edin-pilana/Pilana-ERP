@@ -201,7 +201,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 <div className="flex flex-wrap items-center gap-3 justify-center lg:justify-end w-full lg:w-auto">
                     
                     {/* 🔔 ZVONCE ZA NADZORNI CENTAR (PADAJUĆI MENI NA DESKTOPU I MOBITELU) */}
-                    {isSuperadmin && modulIme !== 'Nadzorni Centar' && (
+                    {isSuperadmin && (
                         <div className="relative" ref={dropdownRef}>
                             <button 
                                 onClick={() => setOtvorenoZvonce(!otvorenoZvonce)} 

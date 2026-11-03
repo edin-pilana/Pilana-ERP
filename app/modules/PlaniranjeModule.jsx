@@ -276,21 +276,40 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         })); 
     };
 
-    const izvrsiUpisPlanaUBazu = async (stavkeZaBazu) => {
-        const payload = stavkeZaBazu.map(s => ({
-            rn_id: planiranjeModal.nalog.id, stavka_id: s.id, proizvod_naziv: s.naziv, dimenzije: s.dimenzije,
-            masina: odabranaMasina, datum_plana: planiranjeModal.datum, 
-            planirano_m3: parseFloat(s.kolicinaM3), proizvedeno_m3: 0, status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
-        }));
+    const isSubmittingPlanRef = React.useRef(false);
 
-        const { error } = await supabase.from('raspored_proizvodnje').insert(payload);
-        if (error) return toast.error("Greška pri zakazivanju: " + error.message);
-        toast.success(`Radni nalog ${planiranjeModal.nalog.id} uspješno zakazan za ${formatirajDatumBezPomaka(planiranjeModal.datum)}!`);
-        setPlaniranjeModal(null); 
-        loadRaspored();
+    const izvrsiUpisPlanaUBazu = async (stavkeZaBazu, modalSnapshot) => {
+        if (isSubmittingPlanRef.current) return;
+        isSubmittingPlanRef.current = true;
+        const aktivniModal = modalSnapshot || planiranjeModal;
+        if (!aktivniModal) {
+            isSubmittingPlanRef.current = false;
+            return;
+        }
+        // Odmah zatvori modal da spriječiš bilo kakav dupli klik!
+        setPlaniranjeModal(null);
+
+        try {
+            const payload = stavkeZaBazu.map(s => ({
+                rn_id: aktivniModal.nalog.id, stavka_id: s.id, proizvod_naziv: s.naziv, dimenzije: s.dimenzije,
+                masina: odabranaMasina, datum_plana: aktivniModal.datum, 
+                planirano_m3: parseFloat(s.kolicinaM3), proizvedeno_m3: 0, status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
+            }));
+
+            const { error } = await supabase.from('raspored_proizvodnje').insert(payload);
+            if (error) {
+                toast.error("Greška pri zakazivanju: " + error.message);
+            } else {
+                toast.success(`Radni nalog ${aktivniModal.nalog.id} uspješno zakazan za ${formatirajDatumBezPomaka(aktivniModal.datum)}!`);
+            }
+            await loadRaspored();
+        } finally {
+            isSubmittingPlanRef.current = false;
+        }
     };
 
     const potvrdiPlaniranje = async () => {
+        if (isSubmittingPlanRef.current || !planiranjeModal) return;
         const stavkeZaBazu = stavkeZaPlaniranje.filter(s => s.checked);
         if (stavkeZaBazu.length === 0) return toast.warning("Morate odabrati bar jednu stavku za planiranje!");
         if (!planiranjeModal.datum) return toast.warning("Morate odabrati datum!");
@@ -323,6 +342,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             }
             porukaUpozorenja += `Da li ste sigurni da želite nastaviti i zakazati proizvodnju?`;
 
+            const modalKopija = { ...planiranjeModal };
             return prikaziDialog({
                 tip: 'upozorenje',
                 naslov: '⚠️ Prekoračenje Norme / Kapaciteta',
@@ -331,13 +351,13 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 cancelText: '✕ KORIGUJ',
                 onConfirm: () => {
                     zatvoriDialog();
-                    izvrsiUpisPlanaUBazu(stavkeZaBazu);
+                    izvrsiUpisPlanaUBazu(stavkeZaBazu, modalKopija);
                 },
                 onCancel: zatvoriDialog
             });
         }
 
-        await izvrsiUpisPlanaUBazu(stavkeZaBazu);
+        await izvrsiUpisPlanaUBazu(stavkeZaBazu, { ...planiranjeModal });
     };
 
     const obrisiIzPlana = (id, e) => {

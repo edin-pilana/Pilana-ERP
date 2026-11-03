@@ -56,17 +56,17 @@ const defaultModuli = [
 ];
 
 const DOSTUPNI_WIDGETI = [
-    { type: 'brzi_moduli', name: '🚀 Brzi Pristup Modulima (Katalog)' },
-    { type: 'rezime_finansije', name: '💰 Finansijski Rezime (Cashflow)' },
-    { type: 'rezime_proizvodnja', name: '🏭 Proizvodni Rezime (OEE)' },
-    { type: 'nalozi_progres', name: '🔥 Progres Aktivnih Naloga (Live)' },
-    { type: 'spremno_isporuka', name: '🚚 Roba Spremna za Isporuku' },
-    { type: 'nalozi_cekanje', name: '⏳ Radni Nalozi na Čekanju' },
-    { type: 'trend_proizvodnje', name: '📈 Trend Proizvodnje (Area Chart)' },
-    { type: 'live_feed', name: '⚡ Live Feed Pogon (Dnevnik)' },
-    { type: 'stanje_trupaca', name: '🪵 Stanje Trupaca na Placu (Bar Chart)' },
-    { type: 'stanje_daske', name: '📦 Stanje Gotove Robe (Pie Chart)' },
-    { type: 'top_duznici', name: '🚨 Top 5 Dužnika (Potraživanja)' },
+    { type: 'brzi_moduli', name: '🚀 Brzi Moduli (Katalog)' },
+    { type: 'rezime_finansije', name: '💰 Finansije (Cashflow)' },
+    { type: 'rezime_proizvodnja', name: '🏭 Proizvodnja (OEE)' },
+    { type: 'nalozi_progres', name: '🔥 Progres Naloga' },
+    { type: 'spremno_isporuka', name: '🚚 Spremno za Isporuku' },
+    { type: 'nalozi_cekanje', name: '⏳ Nalozi na Čekanju' },
+    { type: 'trend_proizvodnje', name: '📈 Trend Proizvodnje' },
+    { type: 'live_feed', name: '⚡ Live Feed Pogon' },
+    { type: 'stanje_trupaca', name: '🪵 Trupci na Placu' },
+    { type: 'stanje_daske', name: '📦 Gotova Roba (Lager)' },
+    { type: 'top_duznici', name: '🚨 Top 5 Dužnika' },
 ];
 
 const defaultWidgetLayout = [

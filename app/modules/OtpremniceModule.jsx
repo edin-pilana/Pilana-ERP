@@ -271,44 +271,6 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
             });
             setSlobodniPaketi(Object.values(mapaPaketa));
 
-            // 🟢 AUTOMATSKA SANACIJA: Ako postoji isporučena otpremnica kojoj djelimični paket još nije umanjen (npr. OTP-2026-2567 za RUČNO-2026-7375), odmah ga uskladi!
-            for (let otp of sveOtp) {
-                if (otp.status === 'ISPORUČENO' && Array.isArray(otp.stavke_jsonb)) {
-                    let biloIzmjene = false;
-                    const azuriraneStavke = [];
-                    for (let st of otp.stavke_jsonb) {
-                        const pid = st.paket_id || (st.sifra && mapaPaketa[st.sifra] ? st.sifra : null);
-                        if (pid && !st.lager_umanjen && mapaPaketa[pid]) {
-                            const pakNaLageru = mapaPaketa[pid];
-                            const uzetoM3 = parseFloat(st.kolicina_obracun || 0);
-                            const uzetoKom = parseFloat(st.kolicina_unos || 0);
-                            if (uzetoM3 > 0 && uzetoM3 < pakNaLageru.ukupno_m3 - 0.0005) {
-                                const prviRed = pakNaLageru.redovi_baze[0];
-                                const noviM3 = parseFloat(Math.max(0.001, pakNaLageru.ukupno_m3 - uzetoM3).toFixed(4));
-                                const noviKom = Math.max(1, Math.round(pakNaLageru.ukupno_kom - uzetoKom));
-                                await supabase.from('paketi').update({
-                                    kolicina_final: noviM3,
-                                    kubikaza: noviM3,
-                                    kolicina_m3: noviM3,
-                                    kolicina_ulaz: noviKom,
-                                    komada: noviKom
-                                }).eq('id', prviRed.id);
-                                pakNaLageru.ukupno_m3 = noviM3;
-                                pakNaLageru.ukupno_kom = noviKom;
-                                biloIzmjene = true;
-                                azuriraneStavke.push({ ...st, lager_umanjen: true });
-                            } else {
-                                azuriraneStavke.push(st);
-                            }
-                        } else {
-                            azuriraneStavke.push(st);
-                        }
-                    }
-                    if (biloIzmjene) {
-                        await supabase.from('otpremnice').update({ stavke_jsonb: azuriraneStavke }).eq('id', otp.id);
-                    }
-                }
-            }
         } catch (err) {
             console.error("Greška pri učitavanju otpremnica:", err);
         } finally {
@@ -316,11 +278,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    const zapisiU_Log = async (akcija, detalji) => {
+    const zapisiU_Log = async (akcija, detalji, nivo = 'INFO') => {
         await supabase.from('sistem_audit_log').insert([{
             korisnik: currentUser.ime_prezime || 'Sistem',
             akcija,
-            detalji
+            detalji,
+            nivo_alarma: nivo,
+            pregledano: false,
+            vrijeme: new Date().toISOString()
         }]);
     };
 
@@ -547,19 +512,27 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    // 🟢 KLJUČNA FUNKCIJA ZA SKIDANJE SA LAGERA PRI STATUSU 'ISPORUČENO'
+    // Pomoćna funkcija koja nepogrešivo izvlači paket_id iz stavke (bilo iz st.paket_id ili iz teksta "[Paket: ...]" / "[Dio paketa: ...]")
+    const izvuciPaketIdIzStavke = (st) => {
+        if (st.paket_id) return String(st.paket_id).trim();
+        const m = String(st.naziv || '').match(/\[(?:Dio paketa|Paket):\s*([^\]]+)\]/i);
+        if (m && m[1]) return m[1].trim();
+        if (st.sifra && slobodniPaketi.some(sp => sp.paket_id === st.sifra)) return String(st.sifra).trim();
+        return null;
+    };
+
+    // 🟢 1. SKIDANJE SA LAGERA KADA JE OTPREMNICA 'ISPORUČENO'
     const izvrsiSkidanjeSaLageraZaStavke = async (otpId, listaStavki) => {
         const azuriraneStavke = [];
 
         for (let st of listaStavki) {
-            const pid = st.paket_id || (slobodniPaketi.some(sp => sp.paket_id === st.sifra) ? st.sifra : null);
+            const pid = izvuciPaketIdIzStavke(st);
 
-            if (!pid || st.lager_umanjen) {
-                azuriraneStavke.push(st);
+            if (!pid || st.lager_umanjen === true) {
+                azuriraneStavke.push(pid ? { ...st, paket_id: pid } : st);
                 continue;
             }
 
-            // Dohvati svježe stanje tog paketa iz baze
             const { data: redoviPaketa } = await supabase
                 .from('paketi')
                 .select('*')
@@ -569,7 +542,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                 .order('created_at', { ascending: true });
 
             if (!redoviPaketa || redoviPaketa.length === 0) {
-                azuriraneStavke.push({ ...st, lager_umanjen: true });
+                azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: true });
                 continue;
             }
 
@@ -577,11 +550,16 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
             const uzetoM3 = parseFloat(st.kolicina_obracun || 0);
 
             if (st.tip_utovara === 'CIJELI' || Math.abs(uzetoM3 - ukupnoUBaziM3) < 0.0005 || uzetoM3 >= ukupnoUBaziM3) {
-                // Cijeli paket se razdužuje sa lagera
                 await supabase.from('paketi').update({ otpremnica_id: otpId, status: 'ISPORUČENO' }).eq('paket_id', pid).is('otpremnica_id', null);
-                azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: true });
+                await supabase.from('sistem_audit_log').insert([{
+                    korisnik: currentUser.ime_prezime || 'Otprema',
+                    akcija: 'OTPREMA_CIJELOG_PAKETA',
+                    detalji: `Paket ${pid}: Cijeli paket (${ukupnoUBaziM3.toFixed(3)} m³) isporučen na otpremnici ${otpId} (${form.kupac_naziv}).`,
+                    stari_podaci: { paket_id: pid, status: 'NA STANJU', kolicina_final: ukupnoUBaziM3 },
+                    novi_podaci: { paket_id: pid, status: 'ISPORUČENO', otpremnica_id: otpId }
+                }]);
+                azuriraneStavke.push({ ...st, paket_id: pid, tip_utovara: 'CIJELI', lager_umanjen: true });
             } else {
-                // Djelimično skidanje (npr. 5 kom / 0.048 m3 od 20 kom / 0.192 m3 -> ostaje 15 kom / 0.144 m3!)
                 const prviRed = redoviPaketa[0];
                 const deb = parseFloat(prviRed.debljina || st.debljina || 0);
                 const sir = parseFloat(prviRed.sirina || st.sirina || 0);
@@ -608,8 +586,85 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     last_modified_at: new Date().toISOString()
                 }).eq('id', prviRed.id);
 
-                azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: true });
+                await supabase.from('sistem_audit_log').insert([{
+                    korisnik: currentUser.ime_prezime || 'Otprema',
+                    akcija: 'DJELIMIČNA_OTPREMA_PAKETA',
+                    detalji: `Paket ${pid}: Djelimična otprema na otpremnici ${otpId} (${form.kupac_naziv}). Isporučeno: ${uzetoKom} kom (${uzetoM3.toFixed(3)} m³). Stanje paketa umanjeno sa ${stariKom} kom (${ukupnoUBaziM3.toFixed(3)} m³) na ${noviKom} kom (${noviM3.toFixed(3)} m³).`,
+                    stari_podaci: { paket_id: pid, kolicina_ulaz: stariKom, kolicina_final: ukupnoUBaziM3 },
+                    novi_podaci: { paket_id: pid, kolicina_ulaz: noviKom, kolicina_final: noviM3, otpremnica_id: otpId }
+                }]);
+
+                azuriraneStavke.push({ ...st, paket_id: pid, tip_utovara: 'DJELIMICNO', lager_umanjen: true });
             }
+        }
+
+        return azuriraneStavke;
+    };
+
+    // 🟢 2. VRAĆANJE ZALIHE NA LAGER KADA SE OTPREMNICA VRATI IZ 'ISPORUČENO' U 'KREIRANA'
+    const vratiSkidanjeSaLageraZaStavke = async (otpId, listaStavki, prethodniStatusOtpremnice) => {
+        const azuriraneStavke = [];
+
+        for (let st of listaStavki) {
+            const pid = izvuciPaketIdIzStavke(st);
+            const trebaVratiti = Boolean(pid && (st.lager_umanjen === true || prethodniStatusOtpremnice === 'ISPORUČENO'));
+
+            if (!trebaVratiti) {
+                azuriraneStavke.push({ ...st, lager_umanjen: false });
+                continue;
+            }
+
+            const uzetoM3 = parseFloat(st.kolicina_obracun || 0);
+
+            if (st.tip_utovara === 'CIJELI') {
+                await supabase.from('paketi').update({ otpremnica_id: null, status: 'NA STANJU' }).eq('paket_id', pid);
+                await zapisiU_Log(
+                    'ALARM_POVRAT_OTPREMNICE_U_PRIPREMU',
+                    `🚨 Paket ${pid}: Otpremnica ${otpId} (${form.kupac_naziv}) vraćena iz ISPORUČENO u KREIRANA! Cijeli paket (${uzetoM3.toFixed(3)} m³) vraćen na stanje lagera.`,
+                    'CRVENO'
+                );
+            } else {
+                const { data: redoviPaketa } = await supabase.from('paketi').select('*').eq('paket_id', pid).order('created_at', { ascending: true });
+                if (redoviPaketa && redoviPaketa.length > 0) {
+                    const prviRed = redoviPaketa[0];
+                    const deb = parseFloat(prviRed.debljina || st.debljina || 0);
+                    const sir = parseFloat(prviRed.sirina || st.sirina || 0);
+                    const duz = parseFloat(prviRed.duzina || st.duzina || 0);
+                    const vol1Kom = (deb > 0 && sir > 0 && duz > 0) ? (deb / 100) * (sir / 100) * (duz / 100) : 0;
+
+                    const trenutniM3 = parseFloat(prviRed.kolicina_final || 0);
+                    const vraceniM3 = parseFloat((trenutniM3 + uzetoM3).toFixed(4));
+
+                    let trenutniKom = parseFloat(prviRed.kolicina_ulaz ?? prviRed.komada ?? 0);
+                    if (trenutniKom <= 0 && vol1Kom > 0) trenutniKom = Math.round(trenutniM3 / vol1Kom);
+
+                    let uzetoKom = parseFloat(st.kolicina_unos || 0);
+                    if ((st.jm_unos || 'kom').toLowerCase() !== 'kom' && vol1Kom > 0) {
+                        uzetoKom = Math.round(uzetoM3 / vol1Kom);
+                    }
+                    const vraceniKom = Math.round(trenutniKom + uzetoKom);
+
+                    await supabase.from('paketi').update({
+                        otpremnica_id: null,
+                        status: 'NA STANJU',
+                        kolicina_final: vraceniM3,
+                        kubikaza: vraceniM3,
+                        kolicina_m3: vraceniM3,
+                        kolicina_ulaz: vraceniKom,
+                        komada: vraceniKom,
+                        last_modified_by: currentUser.ime_prezime || 'Otprema',
+                        last_modified_at: new Date().toISOString()
+                    }).eq('id', prviRed.id);
+
+                    await zapisiU_Log(
+                        'ALARM_POVRAT_DJELIMIČNE_OTPREME',
+                        `🚨 Paket ${pid}: Otpremnica ${otpId} (${form.kupac_naziv}) vraćena iz ISPORUČENO u KREIRANA! Vraćeno ${uzetoKom} kom (${uzetoM3.toFixed(3)} m³) na lager -> Novo stanje paketa: ${vraceniKom} kom (${vraceniM3.toFixed(3)} m³).`,
+                        'CRVENO'
+                    );
+                }
+            }
+
+            azuriraneStavke.push({ ...st, paket_id: pid, lager_umanjen: false });
         }
 
         return azuriraneStavke;
@@ -622,9 +677,19 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         const otpId = form.id.toUpperCase().trim();
         let konacneStavke = [...stavke];
 
-        // Ako je status ISPORUČENO, odmah skini pakete ili umanji djelimične pakete sa lagera!
+        // Provjeri prethodni status ove otpremnice u bazi (ako se uređuje postojeća)
+        let prethodniStatus = null;
+        if (isEditingOtpremnica) {
+            const postojeca = otpremnice.find(o => o.id === otpId);
+            prethodniStatus = postojeca?.status || null;
+        }
+
         if (form.status === 'ISPORUČENO') {
             konacneStavke = await izvrsiSkidanjeSaLageraZaStavke(otpId, konacneStavke);
+        } else if (form.status === 'KREIRANA') {
+            if (prethodniStatus === 'ISPORUČENO' || konacneStavke.some(s => s.lager_umanjen)) {
+                konacneStavke = await vratiSkidanjeSaLageraZaStavke(otpId, konacneStavke, prethodniStatus);
+            }
         }
 
         const payload = {

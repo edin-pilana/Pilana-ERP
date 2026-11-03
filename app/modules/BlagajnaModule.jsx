@@ -88,8 +88,10 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         setRadnici(radRes.data || []);
     };
 
-    const zapisiU_Log = async (akcija, detalji) => {
-        await supabase.from('sistem_audit_log').insert([{ korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji }]);
+    const zapisiU_Log = async (akcija, detalji, nivo = 'INFO') => {
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: loggedUser.ime_prezime || 'Nepoznat', akcija, detalji, nivo_alarma: nivo, pregledano: false, vrijeme: new Date().toISOString()
+        }]);
     };
 
     const otvoriDokument = async (docId) => {
@@ -223,13 +225,39 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         prikaziDialog({
             tip: 'upozorenje',
             naslov: 'Brisanje Transakcije',
-            poruka: `Da li ste sigurni da želite OBRISATI ovu transakciju od ${t.iznos} KM?\nUkoliko je greška u unosu uplaćenog računa, napravite STORNIRANJE umjesto brisanja.`,
+            poruka: `Da li ste sigurni da želite OBRISATI ovu transakciju od ${t.iznos} KM?\nUkoliko je transakcija vezana za račun, status računa će biti automatski vraćen u skladu sa preostalim uplatama, a Superadmin će dobiti CRVENI alarm!`,
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 await supabase.from('blagajna').delete().eq('id', t.id);
-                await zapisiU_Log('KASA_BRISANJE', `Obrisana transakcija ${t.id} od ${t.iznos} KM (${t.kategorija}).`);
-                load();
+
+                // 🟢 Ako je obrisana ULAZ uplata vezana za račun, odmah preračunaj preostale uplate i vrati račun iz NAPLAĆENO u NENAPLAĆENO ili DJELIMIČNO PLAĆENO!
+                const vezaniId = (t.racun_id || '').trim().toUpperCase();
+                if (t.tip === 'ULAZ' && vezaniId) {
+                    const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status').ilike('id', vezaniId).maybeSingle();
+                    if (r) {
+                        const { data: preostaleUplate } = await supabase.from('blagajna').select('iznos').eq('tip', 'ULAZ').ilike('racun_id', r.id);
+                        const sumaPreostalih = (preostaleUplate || []).reduce((s, x) => s + parseFloat(x.iznos || 0), 0);
+                        const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+
+                        let noviStatusRacuna = 'NENAPLAĆENO';
+                        if (sumaPreostalih >= ukupnoRacun - 0.009 && ukupnoRacun > 0) {
+                            noviStatusRacuna = 'NAPLAĆENO';
+                        } else if (sumaPreostalih > 0) {
+                            noviStatusRacuna = 'DJELIMIČNO PLAĆENO';
+                        }
+                        await supabase.from('racuni').update({ status: noviStatusRacuna }).eq('id', r.id);
+                    }
+                }
+
+                // 🚨 Šalje CRVENI alarm na zvonce i mobitel!
+                await zapisiU_Log(
+                    'ALARM_KASA_BRISANJE_UPLATE',
+                    `🚨 OBRISANA TRANSAKCIJA IZ BLAGAJNE: ${t.id} (${t.tip}: ${parseFloat(t.iznos || 0).toFixed(2)} KM, Kategorija: ${t.kategorija}${t.racun_id ? `, Vezni dokument: ${t.racun_id}` : ''}).`,
+                    'CRVENO'
+                );
+
+                await load();
                 zatvoriDialog();
             },
             onCancel: zatvoriDialog

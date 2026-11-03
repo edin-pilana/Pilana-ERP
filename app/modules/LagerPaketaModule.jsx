@@ -197,9 +197,11 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
         const rawAuditData = auditRes.data || [];
         const auditData = rawAuditData.filter(a => {
+            if ((a.akcija || '').startsWith('KASA_')) return false;
             const tekst = `${a.akcija || ''} ${a.detalji || ''} ${JSON.stringify(a.stari_podaci || '')} ${JSON.stringify(a.novi_podaci || '')}`;
             const escaped = sid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(`(^|[^0-9A-Za-z-])${escaped}([^0-9A-Za-z-]|$)`, 'i');
+            // Ne dozvoljava tačku ili zarez ispred kratkog broja (da iznos "10200.65 KM" ne bi bio prepoznat kao paket "65")!
+            const regex = new RegExp(`(^|[^0-9A-Za-z.,-])${escaped}([^0-9A-Za-z.,-]|$)`, 'i');
             return regex.test(tekst);
         });
 

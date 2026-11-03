@@ -21,10 +21,15 @@ export default function DnevnikMasine({ modul, header, user }) {
     const snimiZastojIliRad = async () => {
         if (!header?.masina) return toast.warning("Prvo odaberite mašinu u zaglavlju!");
         if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
+        const siroviZastoj = String(form.zastoj_min ?? '').trim();
+        const zastojNum = siroviZastoj === '' ? 0 : Number(siroviZastoj);
+        if (isNaN(zastojNum) || !isFinite(zastojNum) || zastojNum < 0 || zastojNum > 1440 || /[eE]/.test(siroviZastoj)) {
+            return toast.error("Zastoj mora biti ispravan broj minuta između 0 i 1440 (negativne i nerealne vrijednosti nisu dozvoljene)!");
+        }
         const payload = {
             datum: header.datum, masina: header.masina, modul: modul,
             vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null,
-            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
+            zastoj_min: Math.round(zastojNum), napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
         };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
         if (error) return toast.error("Greška pri snimanju: " + error.message);
