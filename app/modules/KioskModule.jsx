@@ -15,6 +15,22 @@ const formatLocalISODate = (date) => {
     return `${y}-${m}-${d}`;
 };
 
+const parseISODateLocal = (isoStr) => {
+    if (!isoStr) return new Date();
+    if (isoStr instanceof Date) return new Date(isoStr.getFullYear(), isoStr.getMonth(), isoStr.getDate());
+    const clean = String(isoStr).split('T')[0];
+    const [y, m, d] = clean.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const prikazDatumaBHS = (isoStr) => {
+    if (!isoStr) return '';
+    const clean = String(isoStr).split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length !== 3) return String(isoStr);
+    return `${parts[2]}.${parts[1]}.${parts[0]}.`;
+};
+
 export default function KioskModule() {
     const [vrijeme, setVrijeme] = useState(new Date());
     const [aktivnaAkcija, setAktivaAkcija] = useState(null); 
@@ -71,13 +87,9 @@ export default function KioskModule() {
             if (odsustva) {
                 let mapa = {};
                 odsustva.forEach(z => {
-                    let start = new Date(z.datum_od); 
-                    let end = new Date(z.datum_do);
-                    
+                    let start = parseISODateLocal(z.datum_od); 
+                    let end = parseISODateLocal(z.datum_do);
                     if (isNaN(start.getTime()) || isNaN(end.getTime())) return; 
-                    
-                    start.setHours(0,0,0,0);
-                    end.setHours(0,0,0,0);
 
                     let d = new Date(start);
                     while (d <= end) {
@@ -85,7 +97,6 @@ export default function KioskModule() {
                         if(!mapa[dStr]) mapa[dStr] = { odobreno: 0, cekanje: 0 };
                         if (z.status === 'ODOBRENO') mapa[dStr].odobreno += 1;
                         else mapa[dStr].cekanje += 1;
-                        
                         d.setDate(d.getDate() + 1);
                     }
                 });
@@ -117,7 +128,7 @@ export default function KioskModule() {
     };
 
     const procesuirajSkenId = async (unos) => {
-        const unosZaObradu = unos || sken.trim();
+        const unosZaObradu = (unos || sken || '').trim();
         if (!unosZaObradu || isProcessingRef.current) return;
         
         isProcessingRef.current = true; 
@@ -126,16 +137,19 @@ export default function KioskModule() {
         setFilteredRadnici([]);
 
         try {
-            const { data: radniciPretraga } = await supabase.from('radnici').select('*')
-                .or(`username.ilike.${unosZaObradu},ime_prezime.ilike.${unosZaObradu},qr_kod.eq.${unosZaObradu}`)
-                .limit(1);
+            const { data: sviRad } = await supabase.from('radnici').select('*');
+            const q = unosZaObradu.toLowerCase();
+            const radnik = (sviRad || []).find(r =>
+                (r.qr_kod && r.qr_kod.toLowerCase() === q) ||
+                (r.username && r.username.toLowerCase() === q) ||
+                (r.ime_prezime && r.ime_prezime.toLowerCase() === q)
+            );
             
-            if (!radniciPretraga || radniciPretraga.length === 0) {
+            if (!radnik) {
                 prikaziPrivremenuPoruku('error', `Radnik/Kartica "${unosZaObradu}" nije pronađen u bazi.`);
                 return;
             }
 
-            const radnik = radniciPretraga[0];
             const ime = radnik.ime_prezime;
             const danas = formatLocalISODate(new Date()); 
             const sada = new Date().toISOString();
@@ -149,17 +163,29 @@ export default function KioskModule() {
                 } else if (zatvoreniZapis && zatvoreniZapis.length > 0) {
                     prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već završili smjenu za danas!`);
                 } else {
-                    const { error } = await supabase.from('radni_sati').insert([{ radnik_ime: ime, datum: danas, vrijeme_dolaska: sada, status: 'NA_POSLU' }]);
+                    const { error } = await supabase.from('radni_sati').insert([{
+                        radnik_ime: ime,
+                        datum: danas,
+                        vrijeme_dolaska: sada,
+                        status: 'NA_POSLU',
+                        obracunato_sati: 0
+                    }]);
                     if (error) throw error;
                     prikaziPrivremenuPoruku('success', `✅ Dobrodošli, ${ime}! Prijava u ${new Date().toLocaleTimeString('de-DE')}.`);
                 }
             } 
             else if (aktivnaAkcija === 'ODJAVA') {
-                const { data: otvoreniZapisi } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU');
+                const { data: otvoreniZapisi } = await supabase.from('radni_sati').select('*').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU');
                 
                 if (otvoreniZapisi && otvoreniZapisi.length > 0) {
                     for (let z of otvoreniZapisi) {
-                        await supabase.from('radni_sati').update({ vrijeme_odlaska: sada, status: 'ZAVRŠIO' }).eq('id', z.id);
+                        const dolazakMs = z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).getTime() : Date.now();
+                        const trajanjeSati = Math.max(0.05, parseFloat(((Date.now() - dolazakMs) / 3600000).toFixed(2)));
+                        await supabase.from('radni_sati').update({
+                            vrijeme_odlaska: sada,
+                            status: 'ZAVRŠIO',
+                            obracunato_sati: trajanjeSati
+                        }).eq('id', z.id);
                     }
                     prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')}.`);
                 } else {
@@ -167,14 +193,14 @@ export default function KioskModule() {
                 }
             }
             else if (aktivnaAkcija === 'PROFIL') {
-                const { data: zahtjevi } = await supabase.from('zahtjevi_odsustva').select('*').eq('radnik_ime', ime).order('created_at', { ascending: false }).limit(3);
+                const { data: zahtjevi } = await supabase.from('zahtjevi_odsustva').select('*').eq('radnik_ime', ime).order('created_at', { ascending: false }).limit(5);
                 setRadnikProfil({ radnik, zahtjevi: zahtjevi || [] });
                 setAktivaAkcija(null); 
             }
         } catch (err) {
             prikaziPrivremenuPoruku('error', `Sistemska greška: ${err.message}`);
         } finally {
-            setTimeout(() => { isProcessingRef.current = false; }, 2000);
+            setTimeout(() => { isProcessingRef.current = false; }, 1000);
         }
     };
 
@@ -251,8 +277,8 @@ export default function KioskModule() {
             d.setDate(d.getDate() + 1);
         }
 
-        const pocetakStr = startD.toLocaleDateString('bs-BA');
-        const krajStr = endD.toLocaleDateString('bs-BA');
+        const pocetakStr = formatLocalISODate(startD);
+        const krajStr = formatLocalISODate(endD);
         const istiDan = pocetakStr === krajStr;
         setPotvrdaModal({ radnik: formaOdmor.radnik_ime, tip: formaOdmor.tip, pocetakStr, krajStr, istiDan, brojDana, startD, endD });
     };
@@ -401,8 +427,7 @@ export default function KioskModule() {
                                             <div key={z.id} className="flex justify-between items-center p-3 border-b border-slate-700/50 last:border-0 bg-black/20 rounded-xl mb-2">
                                                 <div className="flex flex-col">
                                                     <span className="text-xs font-bold text-white uppercase">{z.tip_odsustva}</span>
-                                                    <span className="text-[10px] text-slate-400 mt-1">{new Date(z.datum_od).toLocaleDateString('de-DE')} - {new Date(z.datum_do).toLocaleDateString('de-DE')}</span>
-                                                </div>
+                                                    <span className="text-[10px] text-slate-400 mt-1">{prikazDatumaBHS(z.datum_od)} - {prikazDatumaBHS(z.datum_do)} ({z.datum_od} → {z.datum_do})</span>                                                </div>
                                                 <span className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg ${z.status === 'ODOBRENO' ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30' : (z.status === 'ODBIJENO' ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-amber-900/30 text-amber-400 border border-amber-500/30')}`}>
                                                     {z.status}
                                                 </span>

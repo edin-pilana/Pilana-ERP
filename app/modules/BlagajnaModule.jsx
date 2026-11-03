@@ -49,7 +49,15 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
 
     const [skener, setSkener] = useState('');
 
-    useEffect(() => { load(); }, []); 
+    useEffect(() => {
+        load();
+        const ch = supabase.channel(`blagajna_live_${Math.random()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => load())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'ponude' }, () => load())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'blagajna' }, () => load())
+            .subscribe();
+        return () => { supabase.removeChannel(ch); };
+    }, []); 
 
     const load = async () => {
         const { data: kat } = await supabase.from('blagajna_kategorije').select('*');
@@ -58,23 +66,26 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
             setForm(f => ({ ...f, kategorija: kat.find(k => k.tip === f.tip)?.naziv || '' }));
         }
 
-        const { data: rn } = await supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO');
-        const { data: otp } = await supabase.from('otpremnice').select('id, kupac_naziv, status').neq('status', 'ISPORUČENO');
-        const { data: pon } = await supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']);
-        const { data: rac } = await supabase.from('racuni').select('id, kupac_naziv, status').neq('status', 'NAPLAĆENO');
+        const [rnRes, otpRes, ponRes, racRes, bRes, mRes, radRes] = await Promise.all([
+            supabase.from('radni_nalozi').select('id, kupac_naziv, status').neq('status', 'ZAVRŠENO'),
+            supabase.from('otpremnice').select('id, kupac_naziv, status').neq('status', 'ISPORUČENO'),
+            supabase.from('ponude').select('id, kupac_naziv, status').in('status', ['POTVRĐENA', 'REALIZOVANA ✅']),
+            supabase.from('racuni').select('id, kupac_naziv, status, ukupno_sa_pdv').neq('status', 'NAPLAĆENO'),
+            supabase.from('blagajna').select('*').order('created_at', { ascending: false }),
+            supabase.from('masine').select('naziv'),
+            supabase.from('radnici').select('ime_prezime')
+        ]);
         
         setSviDokumenti([
-            ...(rac || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Račun' })),
-            ...(pon || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' })),
-            ...(rn || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
-            ...(otp || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Otpremnica' }))
+            ...(racRes.data || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Račun' })),
+            ...(ponRes.data || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Ponuda' })),
+            ...(rnRes.data || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Radni Nalog' })),
+            ...(otpRes.data || []).map(d => ({ id: d.id, kupac: d.kupac_naziv, tip: 'Otpremnica' }))
         ]);
 
-        const { data: b } = await supabase.from('blagajna').select('*').order('created_at', { ascending: false });
-        setSveTransakcije(b || []);
-
-        const { data: m } = await supabase.from('masine').select('naziv'); setMasine(m || []);
-        const { data: rad } = await supabase.from('radnici').select('ime_prezime'); setRadnici(rad || []);
+        setSveTransakcije(bRes.data || []);
+        setMasine(mRes.data || []);
+        setRadnici(radRes.data || []);
     };
 
     const zapisiU_Log = async (akcija, detalji) => {
@@ -161,10 +172,12 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         if (!form.iznos || parseFloat(form.iznos) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali iznos', poruka: "Unesite ispravan iznos!", onCancel: zatvoriDialog });
         if (!form.kategorija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali kategorija', poruka: "Odaberite kategoriju!", onCancel: zatvoriDialog });
 
+        const cistRacunId = form.racun_id ? form.racun_id.trim().toUpperCase() : null;
+
         const payload = {
             id: form.id, tip: form.tip, kategorija: form.kategorija,
             iznos: parseFloat(form.iznos), opis: form.opis || null,
-            racun_id: form.racun_id || null, masina_naziv: form.masina_naziv || null,
+            racun_id: cistRacunId, masina_naziv: form.masina_naziv || null,
             radnik_ime: form.radnik_ime || null, datum: form.datum,
             vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
             snimio_korisnik: loggedUser.ime_prezime || 'Nepoznat'
@@ -173,14 +186,18 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         const { error } = await supabase.from('blagajna').insert([payload]);
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
 
-        if (payload.tip === 'ULAZ' && payload.racun_id && payload.racun_id.startsWith('RAC-')) {
-            const {data: r} = await supabase.from('racuni').select('ukupno_sa_pdv').eq('id', payload.racun_id).maybeSingle();
+        // 🟢 Ažuriraj status povezanog računa bez obzira na prefiks ID-a (radi i za RAC-... i za QA5-FIN-...)
+        if (payload.tip === 'ULAZ' && cistRacunId) {
+            const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status').ilike('id', cistRacunId).maybeSingle();
             if (r) {
-                const sveUplate = sveTransakcije.filter(t => t.racun_id === payload.racun_id).reduce((a,b)=>a+parseFloat(b.iznos), 0) + payload.iznos;
-                if (sveUplate >= r.ukupno_sa_pdv) {
-                    await supabase.from('racuni').update({ status: 'NAPLAĆENO' }).eq('id', payload.racun_id);
-                } else {
-                    await supabase.from('racuni').update({ status: 'DJELOMIČNO PLAĆENO' }).eq('id', payload.racun_id);
+                const { data: sveUplateBaza } = await supabase.from('blagajna').select('iznos').eq('tip', 'ULAZ').ilike('racun_id', r.id);
+                const ukupnoUplaceno = (sveUplateBaza || []).reduce((s, x) => s + parseFloat(x.iznos || 0), 0);
+                const ukupnoZaPlatiti = parseFloat(r.ukupno_sa_pdv || 0);
+
+                if (ukupnoUplaceno >= ukupnoZaPlatiti - 0.009) {
+                    await supabase.from('racuni').update({ status: 'NAPLAĆENO' }).eq('id', r.id);
+                } else if (ukupnoUplaceno > 0) {
+                    await supabase.from('racuni').update({ status: 'DJELIMIČNO PLAĆENO' }).eq('id', r.id);
                 }
             }
         }
@@ -199,7 +216,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         
         setForm({ ...form, id: generisiID(), iznos: '', opis: '', racun_id: '', masina_naziv: '', radnik_ime: '' });
         setSkenDetalji(null);
-        load(); 
+        await load(); 
     };
 
     const obrisiTransakciju = async (t) => {
@@ -411,7 +428,7 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                         </div>
 
                         <div className="bg-theme-card p-6 rounded-box border border-theme-border space-y-5 shadow-inner">
-                            {(form.kategorija.toLowerCase().includes('račun') || form.kategorija.toLowerCase().includes('ponud') || form.kategorija.toLowerCase().includes('avans')) && (
+                        {(form.kategorija.toLowerCase().includes('račun') || form.kategorija.toLowerCase().includes('ponud') || form.kategorija.toLowerCase().includes('avans')) && (
                                 <div className="relative overflow-visible">
                                     <label className="text-[10px] text-emerald-400 uppercase font-black ml-2 block mb-1">Vezni Dokument (Kucaj ako unosiš ručno bez skenera)</label>
                                     
@@ -419,7 +436,8 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                         data={sviDokumenti.filter(d => d.tip === 'Račun' || d.tip === 'Ponuda')} 
                                         poljaZaPretragu={['id', 'kupac']} 
                                         value={form.racun_id}
-                                        onSelect={(doc) => { setForm({...form, racun_id: doc.id}); izvrsiSkeniranje(doc.id); }} 
+                                        onChange={(val) => setForm(prev => ({ ...prev, racun_id: val }))}
+                                        onSelect={(doc) => { setForm(prev => ({ ...prev, racun_id: doc.id })); izvrsiSkeniranje(doc.id); }} 
                                         placeholder="npr. RAC-123"
                                         renderItem={(p) => (
                                             <div className="flex justify-between items-center w-full">

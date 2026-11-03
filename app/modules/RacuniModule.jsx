@@ -141,13 +141,20 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
     const timerRef = useRef(null);
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        load();
+        const ch = supabase.channel(`racuni_blagajna_sync_${Math.random()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'blagajna' }, () => load())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'racuni' }, () => load())
+            .subscribe();
+        return () => { supabase.removeChannel(ch); };
+    }, []);
 
     const load = async () => {
         const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: r} = await supabase.from('racuni').select('*').order('datum', { ascending: false }); setRacuni(r||[]);
-        const {data: bData} = await supabase.from('blagajna').select('id, racun_id, iznos, tip').eq('tip', 'ULAZ'); setBlagajnaUplate(bData || []);
+        const {data: bData} = await supabase.from('blagajna').select('id, racun_id, iznos, tip, opis').eq('tip', 'ULAZ'); setBlagajnaUplate(bData || []);
         const {data: o} = await supabase.from('otpremnice').select('id, kupac_naziv, datum, broj_veze, stavke_jsonb, stavke').order('datum', { ascending: false }); setOtpremniceZaIzbor(o||[]);
     };
 
@@ -209,22 +216,27 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             cijenaBaza = katItem ? izracunajDinamickuCijenu(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
         }
 
-        let rabatProc = parseFloat(s.rabat_procenat);
+        let rabatProc = s.rabat_procenat !== undefined && s.rabat_procenat !== '' ? parseFloat(s.rabat_procenat) : NaN;
         if (isNaN(rabatProc)) {
             rabatProc = katItem && kupacObj ? izracunajRabat(katItem, kupacObj) : 0;
         }
 
-        let fiksnaCijena = parseFloat(s.fiksna_cijena);
-        if (isNaN(fiksnaCijena) || fiksnaCijena <= 0) {
-            fiksnaCijena = cijenaBaza - (cijenaBaza * (rabatProc / 100));
+        let fiksnaCijena = s.fiksna_cijena !== undefined && s.fiksna_cijena !== '' ? parseFloat(s.fiksna_cijena) : NaN;
+        if (isNaN(fiksnaCijena) || fiksnaCijena < 0) {
+            fiksnaCijena = cijenaBaza - (cijenaBaza * (Math.max(0, rabatProc) / 100));
         }
 
-        const ukupnoBezRabata = kolObr * cijenaBaza;
-        let ukupno = parseFloat(s.ukupno);
-        if (isNaN(ukupno) || (ukupno === 0 && kolObr > 0 && fiksnaCijena > 0)) {
-            ukupno = kolObr * fiksnaCijena;
+        // Ako je fiksna prodajna cijena veća od kataloške baze, tretiraj je kao novu baznu cijenu te stavke sa 0% rabata (da zbir Bez rabata - Rabat = Osnovica uvijek bude 100% tačan!)
+        if (fiksnaCijena > cijenaBaza) {
+            cijenaBaza = fiksnaCijena;
+            rabatProc = 0;
+        } else if (cijenaBaza > 0) {
+            rabatProc = Math.max(0, Math.min(100, ((cijenaBaza - fiksnaCijena) / cijenaBaza) * 100));
         }
-        const iznosRabata = Math.max(0, ukupnoBezRabata - ukupno);
+
+        const ukupnoBezRabata = parseFloat((kolObr * cijenaBaza).toFixed(2));
+        const ukupno = parseFloat((kolObr * fiksnaCijena).toFixed(2));
+        const iznosRabata = parseFloat(Math.max(0, ukupnoBezRabata - ukupno).toFixed(2));
 
         return {
             ...s,
@@ -238,8 +250,8 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             cijena_baza: parseFloat(cijenaBaza.toFixed(2)),
             rabat_procenat: parseFloat(rabatProc.toFixed(2)),
             fiksna_cijena: fiksnaCijena.toFixed(2),
-            iznos_rabata: parseFloat(iznosRabata.toFixed(2)),
-            ukupno: parseFloat(ukupno.toFixed(2))
+            iznos_rabata: iznosRabata,
+            ukupno: ukupno
         };
     };
 
@@ -376,15 +388,18 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const ukloniStavku = (id) => setStavke(stavke.filter(s => s.id !== id));
 
     const totals = useMemo(() => {
-        let suma_bez_rabata = 0, suma_rabata = 0, suma_krajnja = 0;
+        let suma_bez_rabata = 0, suma_krajnja = 0;
         stavke.forEach(raw => { 
             const s = normalizujStavkuRacuna(raw);
-            suma_bez_rabata += (s.kolicina_obracun * s.cijena_baza); 
-            suma_rabata += s.iznos_rabata; 
-            suma_krajnja += s.ukupno; 
+            suma_bez_rabata += parseFloat((s.kolicina_obracun * s.cijena_baza).toFixed(2)); 
+            suma_krajnja += parseFloat(s.ukupno || 0); 
         });
-        const pdv = form.ukljuciPDV ? suma_krajnja * 0.17 : 0;
-        return { bez_rabata: suma_bez_rabata.toFixed(2), rabat: suma_rabata.toFixed(2), osnovica: suma_krajnja.toFixed(2), pdv: pdv.toFixed(2), za_naplatu: (suma_krajnja + pdv).toFixed(2) };
+        const osnovicaZaokr = parseFloat(suma_krajnja.toFixed(2));
+        const bezRabataZaokr = parseFloat(Math.max(osnovicaZaokr, suma_bez_rabata).toFixed(2));
+        const rabatZaokr = parseFloat(Math.max(0, bezRabataZaokr - osnovicaZaokr).toFixed(2));
+        const pdvZaokr = form.ukljuciPDV ? parseFloat((osnovicaZaokr * 0.17).toFixed(2)) : 0;
+        const zaNaplatuZaokr = parseFloat((osnovicaZaokr + pdvZaokr).toFixed(2));
+        return { bez_rabata: bezRabataZaokr.toFixed(2), rabat: rabatZaokr.toFixed(2), osnovica: osnovicaZaokr.toFixed(2), pdv: pdvZaokr.toFixed(2), za_naplatu: zaNaplatuZaokr.toFixed(2) };
     }, [stavke, form.ukljuciPDV, katalog, odabraniKupac]);
 
     const snimiRacun = async () => {
@@ -524,10 +539,14 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
 
     // 🟢 Pomoćna funkcija za izračun uplaćenog iznosa i preostalog duga po računu
     const izracunajDugRacuna = (r) => {
-        const uplate = blagajnaUplate.filter(b => b.racun_id === r.id);
+        const rid = (r.id || '').toUpperCase().trim();
+        const uplate = blagajnaUplate.filter(b =>
+            (b.racun_id && b.racun_id.toUpperCase().trim() === rid) ||
+            (b.opis && b.opis.toUpperCase().includes(rid))
+        );
         const uplaceno = uplate.reduce((s, b) => s + parseFloat(b.iznos || 0), 0);
         const ukupno = parseFloat(r.ukupno_sa_pdv || 0);
-        const preostalo = Math.max(0, ukupno - uplaceno);
+        const preostalo = Math.max(0, parseFloat((ukupno - uplaceno).toFixed(2)));
         return { uplaceno, preostalo };
     };
 
@@ -640,9 +659,9 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end w-full min-w-0">
                                     <div className="w-full min-w-0"><label className="text-[8px] text-slate-400 uppercase ml-2 block mb-1 font-black">Unos: Količina i Jedinica</label><div className="flex gap-1.5 w-full min-w-0"><input type="number" value={stavkaForm.kolicina_unos} onChange={e=>setStavkaForm({...stavkaForm, kolicina_unos:e.target.value})} placeholder="Količina" className="flex-1 min-w-0 p-3 bg-theme-panel rounded-xl text-sm text-theme-text font-black text-center outline-none border border-theme-border focus:border-blue-500 shadow-inner" /><select value={stavkaForm.jm_unos} onChange={e=>setStavkaForm({...stavkaForm, jm_unos:e.target.value})} className="w-24 shrink-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black outline-none border border-theme-border cursor-pointer shadow-inner uppercase text-center"><option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option></select></div></div>
                                     <div className="w-full min-w-0"><label className="text-[8px] text-slate-400 uppercase ml-2 block mb-1 font-black">Obračunava se po</label><div className="flex gap-1.5 w-full min-w-0"><input type="number" value={stavkaForm.kolicina_obracun} readOnly className="flex-1 min-w-0 p-3 bg-theme-panel/50 rounded-xl text-sm text-slate-300 font-black text-center border border-theme-border outline-none cursor-not-allowed pointer-events-none opacity-90 shadow-inner" /><select value={stavkaForm.jm_obracun} onChange={e=>setStavkaForm({...stavkaForm, jm_obracun:e.target.value})} className="w-24 shrink-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text font-black outline-none border border-theme-border hover:border-blue-500 cursor-pointer transition-all shadow-inner uppercase text-center"><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option><option value="kom">kom</option></select></div></div>
-                                    <div className="col-span-1 md:col-span-2 grid grid-cols-2 gap-3 bg-black/20 p-3 rounded-xl border border-theme-border mt-1 shadow-inner w-full min-w-0">
-                                        <div className="min-w-0"><label className="text-[8px] text-emerald-500 uppercase ml-1 block mb-1 font-black truncate">Konačna Cijena ({form.valuta})</label><input type="number" value={stavkaForm.fiksna_cijena} onChange={e => { const val = e.target.value; const cijena = parseFloat(val) || 0; const rabat = dinamickaCijena > 0 ? ((dinamickaCijena - cijena) / dinamickaCijena) * 100 : 0; setStavkaForm({...stavkaForm, fiksna_cijena: val, konacni_rabat: rabat.toFixed(2)}); }} className="w-full min-w-0 p-3 bg-emerald-900/20 rounded-xl text-sm text-emerald-400 font-black text-center outline-none border border-emerald-500/50 shadow-inner" /></div>
-                                        <div className="min-w-0"><label className="text-[8px] text-blue-400 uppercase ml-1 block mb-1 font-black truncate">Ili Popust %</label><input type="number" value={stavkaForm.konacni_rabat} onChange={e => { const val = e.target.value; const rabat = parseFloat(val) || 0; const cijena = dinamickaCijena - (dinamickaCijena * (rabat / 100)); setStavkaForm({...stavkaForm, konacni_rabat: val, fiksna_cijena: cijena.toFixed(2)}); }} className="w-full min-w-0 p-3 bg-blue-900/20 rounded-xl text-sm text-blue-400 font-black text-center outline-none border border-blue-500/50 shadow-inner" /></div>
+                                    <div className="col-span-1 md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-black/20 p-3 rounded-xl border border-theme-border mt-1 shadow-inner w-full min-w-0">
+                                        <div className="min-w-0"><label className="text-[8px] text-emerald-500 uppercase ml-1 block mb-1 font-black truncate">Konačna Cijena ({form.valuta})</label><input type="number" value={stavkaForm.fiksna_cijena} onChange={e => { const val = e.target.value; const cijena = parseFloat(val) || 0; const rabat = dinamickaCijena > 0 ? ((dinamickaCijena - cijena) / dinamickaCijena) * 100 : 0; setStavkaForm({...stavkaForm, fiksna_cijena: val, konacni_rabat: rabat.toFixed(2)}); }} className="w-full min-w-0 px-2 py-3 bg-emerald-900/20 rounded-xl text-xs sm:text-sm text-emerald-400 font-black text-center outline-none border border-emerald-500/50 shadow-inner" /></div>
+                                        <div className="min-w-0"><label className="text-[8px] text-blue-400 uppercase ml-1 block mb-1 font-black truncate">Ili Popust %</label><input type="number" value={stavkaForm.konacni_rabat} onChange={e => { const val = e.target.value; const rabat = parseFloat(val) || 0; const cijena = dinamickaCijena - (dinamickaCijena * (rabat / 100)); setStavkaForm({...stavkaForm, konacni_rabat: val, fiksna_cijena: cijena.toFixed(2)}); }} className="w-full min-w-0 px-2 py-3 bg-blue-900/20 rounded-xl text-xs sm:text-sm text-blue-400 font-black text-center outline-none border border-blue-500/50 shadow-inner" /></div>
                                     </div>
                                 </div>
                                 <button onClick={dodajStavku} className={`w-full py-4 text-white font-black rounded-xl text-xs shadow-lg uppercase mt-2 transition-all ${stavkaForm.id ? 'bg-amber-600 hover:bg-amber-500' : 'bg-theme-accent hover:opacity-80'}`}>{stavkaForm.id ? '✅ Ažuriraj ovu stavku' : '➕ Dodaj stavku na račun'}</button>

@@ -253,24 +253,27 @@ background-color: #ffffff !important;
 color: #0f172a !important;
 }
 
-/* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini) */
-[data-theme="light"] .text-white,
+//* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini, OSIM kada su na obojenoj pozadini!) */
+[data-theme="light"] .text-white:not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-purple-"]):not([class*="bg-indigo-"]):not([class*="bg-orange-"]):not([class*="bg-pink-"]):not([class*="bg-theme-accent"]),
 [data-theme="light"] .text-slate-300,
 [data-theme="light"] .text-slate-400,
 [data-theme="light"] .text-slate-500 {
   color: #334155 !important;
 }
 
-/* Prisilno gaženje hardkodiranih bijelih slova iz Reacta (style="color: #ffffff") */
-[data-theme="light"] [style*="color: #ffffff"],
-[data-theme="light"] [style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] [style*="color: #f8fafc"] {
-  color: #0f172a !important;
-}
-
-/* Zadržavamo bijeli tekst SAAAAMO na dugmadima (jer su obojena) */
+/* Svi elementi i njihova djeca unutar obojenih dugmadi ili aktivnih stavki padajućeg menija ZADRŽAVAJU bijela slova! */
 [data-theme="light"] button.text-white,
-[data-theme="light"] button .text-white {
+[data-theme="light"] button .text-white,
+[data-theme="light"] .bg-theme-accent,
+[data-theme="light"] .bg-theme-accent *,
+[data-theme="light"] [class*="bg-blue-600"],
+[data-theme="light"] [class*="bg-blue-600"] *,
+[data-theme="light"] [class*="bg-emerald-600"],
+[data-theme="light"] [class*="bg-emerald-600"] *,
+[data-theme="light"] [class*="bg-amber-600"],
+[data-theme="light"] [class*="bg-amber-600"] *,
+[data-theme="light"] [class*="bg-red-600"],
+[data-theme="light"] [class*="bg-red-600"] * {
   color: #ffffff !important;
 }
 

@@ -212,9 +212,12 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     }, [brojDjece, majkaTrupac]);
 
     const calcVol = (l, d) => {
-        if (!l || !d) return 0;
-        const r = parseFloat(d) / 200;
-        return (r * r * Math.PI * parseFloat(l));
+        const len = parseFloat(l);
+        const dia = parseFloat(d);
+        if (isNaN(len) || isNaN(dia) || len <= 0 || dia <= 0 || len > 50 || dia > 300) return 0;
+        const r = dia / 200;
+        const vol = r * r * Math.PI * len;
+        return isFinite(vol) ? vol : 0;
     };
 
     const trenutnaDjecaVolume = useMemo(() => { return djecaTrupci.reduce((sum, dj) => sum + calcVol(dj.duzina, dj.promjer), 0); }, [djecaTrupci]);
@@ -395,13 +398,33 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const snimiTrupac = async () => {
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         if(!pHeader.otpremnica_broj || !pHeader.sumarija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Popunite Šumariju i Broj Otpremnice u Zaglavlju!", onCancel: zatvoriDialog });
-        if(!scan || !form.duzina || !form.promjer) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale podaci', poruka: "Skeniraj QR, unesi dužinu (m) i prečnik (cm).", onCancel: zatvoriDialog });
-        if (form.isKontrola && (!form.kontrolna_duzina || !form.kontrolni_promjer)) {
-            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale kontrolni podaci', poruka: "Uključili ste kontrolno mjerenje. Morate unijeti stvarnu dužinu (m) i prečnik (cm)!", onCancel: zatvoriDialog });
+        if(!scan || !scan.trim()) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali QR Kod', poruka: "Skenirajte ili unesite QR kod trupca!", onCancel: zatvoriDialog });
+
+        const duzVal = parseFloat(form.duzina);
+        const promVal = parseFloat(form.promjer);
+        if (isNaN(duzVal) || duzVal <= 0 || isNaN(promVal) || promVal <= 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Dužina (m) i Prečnik (cm) trupca moraju biti pozitivni brojevi veći od nule (0)!", onCancel: zatvoriDialog });
+        }
+        if (duzVal > 50 || promVal > 300 || !isFinite(duzVal) || !isFinite(promVal)) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Nerealne Dimenzije', poruka: "Unesene dimenzije prelaze maksimalne dozvoljene granice (max dužina 50 m, max prečnik 300 cm)!", onCancel: zatvoriDialog });
         }
 
-        const trupacID = scan.toUpperCase();
-        const zapreminaZaObracun = form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : parseFloat(calculatedZapremina);
+        if (form.isKontrola) {
+            const kDuz = parseFloat(form.kontrolna_duzina);
+            const kProm = parseFloat(form.kontrolni_promjer);
+            if (isNaN(kDuz) || kDuz <= 0 || isNaN(kProm) || kProm <= 0 || kDuz > 50 || kProm > 300) {
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Kontrolne Mjere', poruka: "Uključili ste kontrolno mjerenje. Stvarna dužina (m) i stvarni prečnik (cm) moraju biti veći od 0 (i u realnim granicama do 50m / 300cm)!", onCancel: zatvoriDialog });
+            }
+        }
+
+        const trupacID = scan.toUpperCase().trim();
+        const zapreminaPapir = parseFloat(calculatedZapremina);
+        const zapreminaKontrola = form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : null;
+        if (zapreminaPapir <= 0 || !isFinite(zapreminaPapir) || (form.isKontrola && (zapreminaKontrola <= 0 || !isFinite(zapreminaKontrola)))) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Zapremina', poruka: "Izračunata zapremina trupca mora biti veća od 0.00 m³!", onCancel: zatvoriDialog });
+        }
+
+        const zapreminaZaObracun = form.isKontrola ? zapreminaKontrola : zapreminaPapir;
         const podrObj = podruzniceBaza.find(p => p.naziv === pHeader.podruznica && p.sumarija_naziv === pHeader.sumarija);
         const prevozPoKubiku = podrObj ? parseFloat(podrObj.cijena_prevoza_po_m3 || 0) : 0;
         const cjenObj = cjenovnikBaza.find(c => c.sumarije?.naziv === pHeader.sumarija && c.vrste_drveta?.naziv === form.vrsta && c.klase_trupaca?.naziv === form.klasa);
@@ -410,9 +433,9 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
 
         const trupacData = {
             id: trupacID, broj_plocice: form.broj_plocice || null, redni_broj: form.redni_broj || null, 
-            vrsta: form.vrsta, klasa: form.klasa, duzina: parseFloat(form.duzina), promjer: parseFloat(form.promjer), 
-            zapremina: parseFloat(calculatedZapremina), kontrolna_duzina: form.isKontrola ? parseFloat(form.kontrolna_duzina) : null,
-            kontrolni_promjer: form.isKontrola ? parseFloat(form.kontrolni_promjer) : null, kontrolna_zapremina: form.isKontrola ? parseFloat(calculatedKontrolnaZapremina) : null,
+            vrsta: form.vrsta, klasa: form.klasa, duzina: duzVal, promjer: promVal, 
+            zapremina: zapreminaPapir, kontrolna_duzina: form.isKontrola ? parseFloat(form.kontrolna_duzina) : null,
+            kontrolni_promjer: form.isKontrola ? parseFloat(form.kontrolni_promjer) : null, kontrolna_zapremina: zapreminaKontrola,
             sumarija: pHeader.sumarija, podruznica: pHeader.podruznica || null, otpremnica_broj: pHeader.otpremnica_broj.trim(),
             otpremnica_datum: pHeader.otpremnica_datum, prevoznik: pHeader.prevoznik || null, odjel: pHeader.odjel || null,         
             snimio_korisnik: user?.ime_prezime || 'Nepoznat', datum_prijema: new Date().toISOString().split('T')[0], 

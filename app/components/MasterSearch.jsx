@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function MasterSearch({ data = [], value, onSelect, placeholder = "Pronađi...", poljaZaPretragu = ['id', 'naziv'], renderItem, onScanClick }) {
+export default function MasterSearch({ data = [], value, onSelect, onChange, placeholder = "Pronađi...", poljaZaPretragu = ['id', 'naziv'], renderItem, onScanClick }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value || '');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -36,11 +36,12 @@ export default function MasterSearch({ data = [], value, onSelect, placeholder =
     });
 
     const selectItem = (item) => {
-        // Ažuriraj lokalni state ODMAH zbog brzine UI-ja
-        setSearch(item[poljaZaPretragu[0]]);
+        const val = item[poljaZaPretragu[0]];
+        setSearch(val);
         setOpen(false);
+        if (onChange) onChange(val);
         if (onSelect) onSelect(item);
-        inputRef.current?.blur(); // Skloni fokus da dropdown nestane
+        inputRef.current?.blur();
     };
 
     const handleKeyDown = (e) => {
@@ -57,7 +58,7 @@ export default function MasterSearch({ data = [], value, onSelect, placeholder =
             setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0)); 
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            if (filtered.length > 0) {
+            if (filtered.length > 0 && filtered[selectedIndex]) {
                 selectItem(filtered[selectedIndex]);
             } else { 
                 setOpen(false); 
@@ -75,7 +76,12 @@ export default function MasterSearch({ data = [], value, onSelect, placeholder =
                 onFocus={() => setOpen(true)} 
                 onClick={() => setOpen(true)}
                 onKeyDown={handleKeyDown} 
-                onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} 
+                onChange={e => { 
+                    const v = e.target.value.toUpperCase();
+                    setSearch(v); 
+                    setOpen(true); 
+                    if (onChange) onChange(v);
+                }} 
                 placeholder={placeholder} 
                 className="flex-1 px-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10 min-w-0" 
                 autoComplete="off"
@@ -84,7 +90,6 @@ export default function MasterSearch({ data = [], value, onSelect, placeholder =
                 <button onClick={onScanClick} className="px-5 bg-theme-accent/20 text-theme-accent text-lg hover:bg-theme-accent hover:text-white transition-all border-l border-theme-accent/30 relative z-10 shrink-0">📷</button>
             )}
             
-            {/* Prikazuje se dropdown čim se fokusira, čak i ako je prazno */}
             {open && (
                 <div className="absolute top-full left-0 z-[9999] w-full mt-2 bg-theme-panel border border-theme-border shadow-2xl rounded-xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.length === 0 && <div className="p-4 text-xs text-theme-muted text-center italic">Nema rezultata...</div>}
@@ -92,7 +97,6 @@ export default function MasterSearch({ data = [], value, onSelect, placeholder =
                     {filtered.map((item, index) => (
                         <div 
                             key={index} 
-                            // OBAVEZNO: onMouseDown umjesto onClick garantuje momentalnu reakciju!
                             onMouseDown={(e) => { e.preventDefault(); selectItem(item); }} 
                             onMouseEnter={() => setSelectedIndex(index)} 
                             className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${index === selectedIndex ? 'bg-theme-accent text-white' : 'hover:bg-slate-800 text-theme-text'}`}

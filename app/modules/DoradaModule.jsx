@@ -218,6 +218,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const [razduziMod, setRazduziMod] = useState('potroseno'); 
     const [razduziKol, setRazduziKol] = useState('');
     const [razduziJm, setRazduziJm] = useState('kom'); 
+    const [potrosenoUlazM3Map, setPotrosenoUlazM3Map] = useState({});
 
     const [activeIzlazIds, setActiveIzlazIds] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
@@ -558,6 +559,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             const stariKomadi = parseFloat(razduziZapis.kolicina_ulaz ?? razduziZapis.komada ?? (vol1Kom > 0 ? Math.round(trenutnoNaStanju / vol1Kom) : 0));
             const potrosenoKom = Math.max(0, Math.round(stariKomadi - (novaKolM3 === 0 ? 0 : noviKomadi)));
 
+            setPotrosenoUlazM3Map(prev => ({
+                ...prev,
+                [razduziZapis.paket_id]: (prev[razduziZapis.paket_id] || 0) + potrosenoM3
+            }));
+
             if (novaKolM3 === 0) {
                 const { error } = await supabase
                     .from('paketi')
@@ -614,7 +620,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                     kolicina_ulaz: noviKomadi,
                     komada: noviKomadi
                 } : st));
-                toast.success(`✅ Razduženo ${unosM3.toFixed(3)} m³ sa paketa ${razduziZapis.paket_id}! Preostalo: ${novaKolM3.toFixed(3)} m³ (${noviKomadi} kom).`);
+                toast.success(`✅ Razduženo ${potrosenoM3.toFixed(3)} m³ sa paketa ${razduziZapis.paket_id}! Preostalo: ${novaKolM3.toFixed(3)} m³ (${noviKomadi} kom).`);
             }
 
             setRazduziZapis(null);
@@ -641,8 +647,12 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const ukloniIzAktivnihUlaza = (paket_id) => {
         setActiveUlazIds(prev => prev.filter(id => id !== paket_id));
         setUlazneStavke(prev => prev.filter(s => s.paket_id !== paket_id));
+        setPotrosenoUlazM3Map(prev => {
+            const kopija = { ...prev };
+            delete kopija[paket_id];
+            return kopija;
+        });
     };
-
     const processIzlaz = async (val) => {
         const id = val.toUpperCase().trim();
         if (!activeIzlazIds.includes(id)) {
@@ -862,7 +872,11 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    const ulazM3 = useMemo(() => ulazneStavke.reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0).toFixed(3), [ulazneStavke]);
+    const ulazM3 = useMemo(() => {
+        const ukupnoPotroseno = Object.values(potrosenoUlazM3Map).reduce((s, val) => s + parseFloat(val || 0), 0);
+        if (ukupnoPotroseno > 0) return ukupnoPotroseno.toFixed(3);
+        return ulazneStavke.reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0).toFixed(3);
+    }, [ulazneStavke, potrosenoUlazM3Map]);
     const izlazM3 = useMemo(() => izlazPackageItems.reduce((sum, p) => sum + parseFloat(p.kolicina_final || 0), 0).toFixed(3), [izlazPackageItems]);
     const livePreracunM3 = useMemo(() => {
         if(!razduziKol || isNaN(razduziKol) || !razduziZapis) return 0;

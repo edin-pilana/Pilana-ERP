@@ -187,15 +187,22 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
     const ucitajHistoriju = async (paket) => {
         setSelektovaniPaket(paket);
         setHistorija('load'); setIzvedeniPaketi([]);
-        const sid = paket.paket_id;
+        const sid = String(paket.paket_id || '').trim();
 
         const [auditRes, sveOtpRes, sviPaketiRes] = await Promise.all([
             supabase.from('sistem_audit_log').select('*').ilike('detalji', `%${sid}%`).order('vrijeme', { ascending: true }),
-            supabase.from('otpremnice').select('id, kupac_naziv, datum, status, stavke_jsonb, created_at'),
+            supabase.from('otpremnice').select('id, kupac_naziv, datum, status, stavke_jsonb, created_at, snimio_korisnik'),
             supabase.from('paketi').select('*')
         ]);
 
-        const auditData = auditRes.data || [];
+        const rawAuditData = auditRes.data || [];
+        const auditData = rawAuditData.filter(a => {
+            const tekst = `${a.akcija || ''} ${a.detalji || ''} ${JSON.stringify(a.stari_podaci || '')} ${JSON.stringify(a.novi_podaci || '')}`;
+            const escaped = sid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(^|[^0-9A-Za-z-])${escaped}([^0-9A-Za-z-]|$)`, 'i');
+            return regex.test(tekst);
+        });
+
         let dogadjaji = auditData.map(a => {
             let detaljanOpis = a.detalji || "Izmjena unutrašnjih parametara paketa.";
             if (a.akcija === 'DODAVANJE') detaljanOpis = `Kreiran paket na mašini: ${paket.masina || 'N/A'}. Količina: ${paket.kolicina_ulaz} kom (${paket.kolicina_final} m³).`;
@@ -217,7 +224,6 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             return { vrijeme: a.vrijeme || a.created_at || paket.created_at, naslov: a.akcija, opis: detaljanOpis, korisnik: a.korisnik || 'Sistem' };
         });
 
-        // Provjeri sve izlazne pakete iz Dorade kojima je ovaj paket bio ulazna sirovina (ai_sirovina_ids)
         const sviPaketi = sviPaketiRes.data || [];
         const forwardData = sviPaketi.filter(p => {
             if (!p.ai_sirovina_ids) return false;
@@ -240,19 +246,18 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             });
         }
 
-        // Provjeri sve otpremnice na kojima je ovaj paket djelimično ili potpuno otpremljen
         const sveOtpremnice = sveOtpRes.data || [];
         sveOtpremnice.forEach(otp => {
             const stavkeOtp = Array.isArray(otp.stavke_jsonb) ? otp.stavke_jsonb : [];
             stavkeOtp.forEach(st => {
-                const stPid = st.paket_id || (st.sifra === sid ? st.sifra : null) || ((st.naziv || '').includes(sid) ? sid : null);
-                if (stPid && stPid.toUpperCase() === sid.toUpperCase()) {
+                const stPid = st.paket_id || (st.sifra === sid ? st.sifra : null) || ((st.naziv || '').toUpperCase().includes(sid.toUpperCase()) ? sid : null);
+                if (stPid && String(stPid).toUpperCase() === sid.toUpperCase()) {
                     const vecUpisanaOtp = dogadjaji.some(d => d.opis.includes(otp.id));
                     if (!vecUpisanaOtp) {
                         dogadjaji.push({
                             vrijeme: otp.created_at || otp.datum || paket.created_at,
-                            naslov: st.tip_utovara === 'DJELIMICNO' ? 'DJELIMIČNA OTPREMA PAKETA' : 'OTPREMA PAKETA',
-                            opis: `Otpremnica ${otp.id} (Kupac: ${otp.kupac_naziv}, Status: ${otp.status}): Otpremljeno ${st.kolicina_unos} ${st.jm_unos || 'kom'} (${parseFloat(st.kolicina_obracun || 0).toFixed(3)} m³). Preostalo na paketu: ${paket.kolicina_ulaz} ${paket.jm || 'kom'} (${paket.kolicina_final} m³).`,
+                            naslov: st.tip_utovara === 'DJELIMICNO' ? 'DJELIMIČNA_OTPREMA_PAKETA' : 'OTPREMA_PAKETA',
+                            opis: `Otpremnica ${otp.id} (Kupac: ${otp.kupac_naziv}, Status: ${otp.status}): Isporučeno ${st.kolicina_unos} ${st.jm_unos || 'kom'} (${parseFloat(st.kolicina_obracun || 0).toFixed(3)} m³). Trenutno na paketu: ${paket.kolicina_ulaz} ${paket.jm || 'kom'} (${paket.kolicina_final} m³).`,
                             korisnik: otp.snimio_korisnik || 'Otprema'
                         });
                     }

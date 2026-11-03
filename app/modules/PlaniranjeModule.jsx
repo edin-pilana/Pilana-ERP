@@ -137,31 +137,43 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 let originalKol = parseFloat(st.kolicina_unos || 0);
 
                 const katItem = katalog.find(k => k.sifra === st.sifra) || {};
-                const v = parseFloat(katItem.visina) || 0; 
-                const sir = parseFloat(katItem.sirina) || 0; 
-                const d = parseFloat(katItem.duzina) || 0;
-                
-                const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
-                const area1kom = (sir > 0 && d > 0) ? (sir/100) * (d/100) : 0;
-                const len1kom = (d > 0) ? (d/100) : 0;
+                let v = parseFloat(katItem.visina) || 0; 
+                let sir = parseFloat(katItem.sirina) || 0; 
+                let d = parseFloat(katItem.duzina) || 0;
+                let dimPrikaz = st.dimenzije || (v > 0 ? `${v}x${sir}x${d}` : 'BEZ DIMENZIJE');
 
                 if (rn.tip_naloga === 'FAZNI') {
-                    const faza = (rn.tehnologija_jsonb?.[st.id] || []).find(f => f.masina === odabranaMasina);
+                    const faza = (rn.tehnologija_jsonb?.[st.id] || []).find(f => (f.masina || '').toUpperCase().trim() === (odabranaMasina || '').toUpperCase().trim());
                     if (faza) {
                         originalKol = parseFloat(faza.kolicina || 0); 
-                        jm_unos = faza.jm || jm_unos;
-                        
-                        let komada = originalKol;
-                        if (jm_unos === 'm3' && vol1kom > 0) komada = originalKol / vol1kom;
-                        else if (jm_unos === 'm2' && area1kom > 0) komada = originalKol / area1kom;
-                        else if (jm_unos === 'm1' && len1kom > 0) komada = originalKol / len1kom;
+                        jm_unos = (faza.jm || jm_unos || 'kom').toLowerCase();
 
-                        ukupnoZaUraditiM3 = komada * vol1kom;
-                        if (jm_unos === 'm3') ukupnoZaUraditiM3 = originalKol;
+                        // 🟢 Koristi ulazne dimenzije FAZE (npr. 2.4x17x420 cm) ako su unesene u BOM-u!
+                        const fazaDimStr = faza.dimenzija || faza.ulazne_dimenzije || '';
+                        const matchDim = fazaDimStr.match(/(\d+(?:[.,]\d+)?)\s*[xX*]\s*(\d+(?:[.,]\d+)?)\s*[xX*]\s*(\d+(?:[.,]\d+)?)/);
+                        if (matchDim) {
+                            v = parseFloat(matchDim[1].replace(',', '.'));
+                            sir = parseFloat(matchDim[2].replace(',', '.'));
+                            d = parseFloat(matchDim[3].replace(',', '.'));
+                            dimPrikaz = `${v}x${sir}x${d}`;
+                        }
                     } else return; 
+                }
+
+                const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v / 100) * (sir / 100) * (d / 100) : 0;
+                const area1kom = (sir > 0 && d > 0) ? (sir / 100) * (d / 100) : 0;
+                const len1kom = (d > 0) ? (d / 100) : 0;
+
+                if (rn.tip_naloga === 'FAZNI') {
+                    let komada = originalKol;
+                    if (jm_unos === 'm3' && vol1kom > 0) komada = originalKol / vol1kom;
+                    else if (jm_unos === 'm2' && area1kom > 0) komada = originalKol / area1kom;
+                    else if (jm_unos === 'm1' && len1kom > 0) komada = originalKol / len1kom;
+
+                    ukupnoZaUraditiM3 = komada * vol1kom;
+                    if (jm_unos === 'm3') ukupnoZaUraditiM3 = originalKol;
                 } else {
                     ukupnoZaUraditiM3 = parseFloat(st.kolicina_obracun || 0);
-                    
                     if (vol1kom > 0) {
                         if (jm_unos === 'kom') ukupnoZaUraditiM3 = originalKol * vol1kom;
                         else if (jm_unos === 'm2' && area1kom > 0) ukupnoZaUraditiM3 = (originalKol / area1kom) * vol1kom;
@@ -173,18 +185,17 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                     const vecZauzetoIliGotovo = (sviPlanovi || []).filter(p => p.rn_id === rn.id && p.stavka_id === st.id).reduce((s, p) => s + parseFloat(p.planirano_m3 || 0) + parseFloat(p.proizvedeno_m3 || 0), 0);
                     const preostaloM3 = ukupnoZaUraditiM3 - vecZauzetoIliGotovo;
 
-                    if (preostaloM3 > 0.001) {
+                    if (preostaloM3 > 0.0001) {
                         imaNerasporedjeno = true;
                         const ratio = preostaloM3 / ukupnoZaUraditiM3;
-                        const preostaloOriginal = (originalKol * ratio).toFixed(2);
-                        const dim = st.dimenzije || (st.visina ? `${st.visina}x${st.sirina}x${st.duzina}` : '') || (st.debljina ? `${st.debljina}x${st.sirina}x${st.duzina}` : 'BEZ DIMENZIJE');
+                        const preostaloOriginal = parseFloat((originalKol * ratio).toFixed(2));
 
                         stavkeZaMasinu.push({ 
                             ...st, 
                             preostalo: preostaloM3.toFixed(4), 
                             preostaloOriginal,
                             jm_unos, 
-                            dimenzije_prikaz: dim,
+                            dimenzije_prikaz: dimPrikaz,
                             ukupnoZaUraditiM3,
                             vol1kom, area1kom, len1kom,
                             maxKolicinaM3: ukupnoZaUraditiM3
@@ -485,19 +496,19 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 md:gap-4 shrink-0" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
-                <div className="flex items-center gap-2 w-full md:w-auto justify-center md:justify-start">
-                    <h2 className="text-amber-500 font-black tracking-widest uppercase text-xs md:text-sm flex items-center gap-2"><span>📅</span> Planer Proizvodnje (Dimenzije u cm)</h2>
+<div className="flex flex-wrap justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 shrink-0 w-full max-w-full overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
+                <div className="flex items-center gap-2 min-w-0">
+                    <h2 className="text-amber-500 font-black tracking-widest uppercase text-xs md:text-sm flex items-center gap-2 truncate"><span>📅</span> Planer Proizvodnje (Dimenzije u cm)</h2>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row w-full md:w-auto items-center gap-3">
-                    <div className="flex items-center justify-between w-full sm:w-auto bg-theme-panel rounded-xl border border-theme-border p-1 shadow-inner">
-                        <button onClick={()=>shiftWeek(-1)} className="px-3 py-1.5 md:py-2 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronLeft size={16}/></button>
-                        <span className="px-2 md:px-4 text-[9px] md:text-[10px] font-black uppercase text-amber-400 text-center whitespace-nowrap">{DaniUSedmici[0].iso.substring(5)} do {DaniUSedmici[6].iso.substring(5)}</span>
-                        <button onClick={()=>shiftWeek(1)} className="px-3 py-1.5 md:py-2 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronRight size={16}/></button>
+                <div className="flex flex-wrap w-full xl:w-auto items-center justify-end gap-2 sm:gap-3 min-w-0">
+                    <div className="flex items-center justify-between bg-theme-panel rounded-xl border border-theme-border p-1 shadow-inner shrink-0">
+                        <button onClick={()=>shiftWeek(-1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronLeft size={16}/></button>
+                        <span className="px-2 text-[9px] md:text-[10px] font-black uppercase text-amber-400 text-center whitespace-nowrap">{DaniUSedmici[0].iso.substring(5)} do {DaniUSedmici[6].iso.substring(5)}</span>
+                        <button onClick={()=>shiftWeek(1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronRight size={16}/></button>
                     </div>
 
-                    <select value={odabranaMasina} onChange={e => {setOdabranaMasina(e.target.value); setKapacitetMasine(parseFloat(masine.find(m=>m.naziv===e.target.value)?.dnevni_kapacitet_m3)||30); }} className="w-full sm:w-auto bg-theme-panel text-theme-text px-3 py-2 md:py-2.5 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
+                    <select value={odabranaMasina} onChange={e => {setOdabranaMasina(e.target.value); setKapacitetMasine(parseFloat(masine.find(m=>m.naziv===e.target.value)?.dnevni_kapacitet_m3)||30); }} className="flex-1 sm:flex-initial max-w-full sm:max-w-[260px] min-w-0 bg-theme-panel text-theme-text px-3 py-2 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
                         {masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv} (Kapacitet: {m.dnevni_kapacitet_m3}m³)</option>)}
                     </select>
                 </div>

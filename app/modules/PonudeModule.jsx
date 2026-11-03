@@ -224,30 +224,37 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         const katItem = (katLista || []).find(k => k.sifra === s.sifra) || null;
         const jmObr = (s.jm_obracun || katItem?.default_jedinica || 'm3').toLowerCase();
         const jmUnos = (s.jm_unos || 'kom').toLowerCase();
-        const kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? 0) || 0;
+
+        let kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? 0) || 0;
         const kolUnos = parseFloat(s.kolicina_unos ?? kolObr) || 0;
+
+        // Ako imamo dimenzije u katalogu i unos u m1/m2/kom, izračunaj punu preciznost (npr. 12.5 m1 5x3x400 = 0.01875 m3)
+        if (katItem && kolUnos > 0) {
+            const pr = preracunajKolicinu(kolUnos, jmUnos, jmObr, katItem.visina, katItem.sirina, katItem.duzina);
+            if (pr.ciljnaKolicina > 0) {
+                kolObr = parseFloat(pr.ciljnaKolicina.toFixed(6));
+            }
+        }
 
         let cijenaBaza = parseFloat(s.cijena_baza);
         if (isNaN(cijenaBaza) || cijenaBaza <= 0) {
             cijenaBaza = katItem ? izracunajDinamickuCijenu(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
         }
 
-        let rabatProc = parseFloat(s.rabat_procenat);
+        let rabatProc = s.rabat_procenat !== undefined && s.rabat_procenat !== '' ? parseFloat(s.rabat_procenat) : NaN;
         if (isNaN(rabatProc)) {
             rabatProc = katItem && kupacObj ? izracunajRabat(katItem, kupacObj) : 0;
         }
+        rabatProc = Math.max(0, Math.min(100, rabatProc));
 
-        let fiksnaCijena = parseFloat(s.fiksna_cijena);
-        if (isNaN(fiksnaCijena) || fiksnaCijena <= 0) {
-            fiksnaCijena = cijenaBaza - (cijenaBaza * (rabatProc / 100));
+        let fiksnaCijena = s.fiksna_cijena !== undefined && s.fiksna_cijena !== '' ? parseFloat(s.fiksna_cijena) : NaN;
+        if (isNaN(fiksnaCijena) || fiksnaCijena < 0 || Math.abs(rabatProc - 100) < 0.001) {
+            fiksnaCijena = cijenaBaza * (1 - rabatProc / 100);
         }
 
-        const ukupnoBezRabata = kolObr * cijenaBaza;
-        let ukupno = parseFloat(s.ukupno);
-        if (isNaN(ukupno) || (ukupno === 0 && kolObr > 0 && fiksnaCijena > 0)) {
-            ukupno = kolObr * fiksnaCijena;
-        }
-        const iznosRabata = Math.max(0, ukupnoBezRabata - ukupno);
+        const ukupnoBezRabata = parseFloat((kolObr * cijenaBaza).toFixed(2));
+        const ukupno = parseFloat((kolObr * fiksnaCijena).toFixed(2));
+        const iznosRabata = parseFloat(Math.max(0, ukupnoBezRabata - ukupno).toFixed(2));
 
         return {
             ...s,
@@ -257,13 +264,13 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             dimenzije: s.dimenzije || (katItem ? `${katItem.visina}x${katItem.sirina}x${katItem.duzina}` : ''),
             kolicina_unos: kolUnos,
             jm_unos: jmUnos,
-            kolicina_obracun: parseFloat(kolObr.toFixed(4)),
+            kolicina_obracun: parseFloat(kolObr.toFixed(6)),
             jm_obracun: jmObr,
             cijena_baza: parseFloat(cijenaBaza.toFixed(2)),
             rabat_procenat: parseFloat(rabatProc.toFixed(2)),
             fiksna_cijena: fiksnaCijena.toFixed(2),
-            iznos_rabata: parseFloat(iznosRabata.toFixed(2)),
-            ukupno: parseFloat(ukupno.toFixed(2))
+            iznos_rabata: iznosRabata,
+            ukupno: ukupno
         };
     };
 
@@ -300,31 +307,42 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         );
         const obracun = preracun.ciljnaKolicina;
         const kol = parseFloat(stavkaForm.kolicina_unos);
-        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : kol}));
+        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? parseFloat(obracun.toFixed(6)) : kol}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const dodajStavku = async () => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_obracun || parseFloat(stavkaForm.kolicina_obracun) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i provjerite količine!", onCancel: zatvoriDialog });
+        const kolUnosVal = parseFloat(stavkaForm.kolicina_unos);
+        const kolObrVal = parseFloat(stavkaForm.kolicina_obracun);
+        if(!trenutniProizvod || isNaN(kolUnosVal) || kolUnosVal <= 0 || isNaN(kolObrVal) || kolObrVal <= 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i unesite pozitivnu količinu veću od 0!", onCancel: zatvoriDialog });
+        }
         if(!odabraniKupac && !form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
-        
-        const kolicina = parseFloat(stavkaForm.kolicina_obracun) || 0;
-        const fiksna_cijena = parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena || 0;
-        const rabat_konacni = dinamickaCijena > 0 ? ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100 : 0;
+
+        const uneseniRabat = stavkaForm.konacni_rabat !== '' && stavkaForm.konacni_rabat !== null ? parseFloat(stavkaForm.konacni_rabat) : 0;
+        const unesenaCijena = stavkaForm.fiksna_cijena !== '' && stavkaForm.fiksna_cijena !== null ? parseFloat(stavkaForm.fiksna_cijena) : dinamickaCijena;
+
+        if (isNaN(uneseniRabat) || uneseniRabat < 0 || uneseniRabat > 100 || isNaN(unesenaCijena) || unesenaCijena < 0) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravan Popust / Cijena', poruka: "Popust mora biti između 0% i 100%, a konačna cijena ne smije biti negativna!", onCancel: zatvoriDialog });
+        }
+
+        const kolicina = kolObrVal;
+        const fiksna_cijena = Math.abs(uneseniRabat - 100) < 0.001 ? 0 : unesenaCijena;
+        const rabat_konacni = dinamickaCijena > 0 ? Math.max(0, Math.min(100, ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100)) : 0;
         
         if (rabat_konacni > stavkaForm.sistemski_rabat) { 
             await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Za "${trenutniProizvod.naziv}" kupcu "${form.kupac_naziv}" na ponudi ${form.id}, rabat ručno povećan na ${rabat_konacni.toFixed(2)}% (Sistem davao: ${stavkaForm.sistemski_rabat}%).`, 'ŽUTO'); 
         }
         
-        const ukupno_bez_rabata = kolicina * dinamickaCijena;
-        const ukupno_sa_rabatom = kolicina * fiksna_cijena;
-        const iznos_rabata = Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom);
+        const ukupno_bez_rabata = parseFloat((kolicina * dinamickaCijena).toFixed(2));
+        const ukupno_sa_rabatom = parseFloat((kolicina * fiksna_cijena).toFixed(2));
+        const iznos_rabata = parseFloat(Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom).toFixed(2));
 
         const novaStavka = normalizujStavkuPonude({
             id: stavkaForm.id || Math.random().toString(), 
             sifra: trenutniProizvod.sifra, 
             naziv: trenutniProizvod.naziv,
             dimenzije: `${trenutniProizvod.visina || 0}x${trenutniProizvod.sirina || 0}x${trenutniProizvod.duzina || 0}`,
-            kolicina_unos: parseFloat(stavkaForm.kolicina_unos), 
+            kolicina_unos: kolUnosVal, 
             jm_unos: stavkaForm.jm_unos, 
             kolicina_obracun: kolicina, 
             jm_obracun: stavkaForm.jm_obracun,
@@ -352,9 +370,9 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                 const noveStavke = stavke.map(st => {
                     const s = normalizujStavkuPonude(st);
                     const fiksna_cijena = s.cijena_baza - (s.cijena_baza * (rabat / 100));
-                    const ukupno_bez_rabata = s.kolicina_obracun * s.cijena_baza;
-                    const ukupno_sa_rabatom = s.kolicina_obracun * fiksna_cijena;
-                    return { ...s, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom), ukupno: parseFloat(ukupno_sa_rabatom.toFixed(2)) };
+                    const ukupno_bez_rabata = parseFloat((s.kolicina_obracun * s.cijena_baza).toFixed(2));
+                    const ukupno_sa_rabatom = parseFloat((s.kolicina_obracun * fiksna_cijena).toFixed(2));
+                    return { ...s, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: parseFloat(Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom).toFixed(2)), ukupno: ukupno_sa_rabatom };
                 });
                 setStavke(noveStavke); setGlobalRabat(''); 
                 await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Globalni rabat ${rabat}% primijenjen na ponudi ${form.id}`, 'ŽUTO'); 
@@ -374,26 +392,28 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
 
     const ukloniStavku = (id) => setStavke(stavke.filter(s => s.id !== id));
 
-    // 🟢 SIGURAN OBRAČUN SUMA (NULA NaN VRIJEDNOSTI)
     const totals = useMemo(() => {
         let suma_bez_rabata = 0, suma_rabata = 0, suma_krajnja = 0;
         stavke.forEach(raw => { 
             const s = normalizujStavkuPonude(raw);
             const kol = parseFloat(s.kolicina_obracun) || 0;
             const cBaza = parseFloat(s.cijena_baza) || 0;
-            const iznRab = parseFloat(s.iznos_rabata) || 0;
             const uk = parseFloat(s.ukupno) || 0;
-            suma_bez_rabata += (kol * cBaza); 
-            suma_rabata += iznRab; 
+            const bezRabStavka = parseFloat((kol * cBaza).toFixed(2));
+            suma_bez_rabata += bezRabStavka; 
             suma_krajnja += uk; 
         });
-        const pdv = form.ukljuciPDV ? suma_krajnja * 0.17 : 0;
+        const osnovicaZaokr = parseFloat(suma_krajnja.toFixed(2));
+        const bezRabataZaokr = parseFloat(Math.max(osnovicaZaokr, suma_bez_rabata).toFixed(2));
+        const rabatZaokr = parseFloat(Math.max(0, bezRabataZaokr - osnovicaZaokr).toFixed(2));
+        const pdvZaokr = form.ukljuciPDV ? parseFloat((osnovicaZaokr * 0.17).toFixed(2)) : 0;
+        const zaNaplatuZaokr = parseFloat((osnovicaZaokr + pdvZaokr).toFixed(2));
         return { 
-            bez_rabata: suma_bez_rabata.toFixed(2), 
-            rabat: suma_rabata.toFixed(2), 
-            osnovica: suma_krajnja.toFixed(2), 
-            pdv: pdv.toFixed(2), 
-            za_naplatu: (suma_krajnja + pdv).toFixed(2) 
+            bez_rabata: bezRabataZaokr.toFixed(2), 
+            rabat: rabatZaokr.toFixed(2), 
+            osnovica: osnovicaZaokr.toFixed(2), 
+            pdv: pdvZaokr.toFixed(2), 
+            za_naplatu: zaNaplatuZaokr.toFixed(2) 
         };
     }, [stavke, form.ukljuciPDV, katalog, odabraniKupac]);
 

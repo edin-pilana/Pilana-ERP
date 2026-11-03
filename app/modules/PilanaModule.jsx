@@ -655,8 +655,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         });
     };
 
+    const isConcludingRef = useRef(false);
+
     const zakljuciPaket = async (pid) => {
-        if(izlazPackageItems.length === 0) {
+        if (izlazPackageItems.length === 0) {
             if (selectedIzlazId === pid) setSelectedIzlazId('');
             return prikaziDialog({ tip: 'info', naslov: 'Prazan Paket', poruka: `Prazan paket ${pid} je zatvoren i oslobođen.`, onCancel: zatvoriDialog });
         }
@@ -665,29 +667,39 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             poruka: `Da li ste sigurni da želite ZAKLJUČITI paket ${pid}?`,
             confirmText: '🏁 ZAKLJUČI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
-                await zapisiU_Log('ZAKLJUČEN_PAKET', `Paket: ${pid} je uspješno zaključen.`);
-                
-                if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
-                ucitajSveZapoocetePakete(); 
+                if (isConcludingRef.current) return;
+                isConcludingRef.current = true;
                 zatvoriDialog();
-                
-                prikaziDialog({
-                    tip: 'uspjeh', naslov: 'Uspješno Zaključeno!',
-                    poruka: `Paket ${pid} je uspješno zaključen.\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`,
-                    confirmText: '🖨️ DA, ŠTAMPAJ', cancelText: '✕ NE TREBA',
-                    onConfirm: () => {
-                        const stavkaNaloga = rnStavke.find(s => s.naziv_proizvoda === izlazPackageItems[0]?.naziv_proizvoda);
-                        if (stavkaNaloga && stavkaNaloga.isFazni) {
-                            supabase.from('radni_nalozi').select('tehnologija_jsonb').eq('id', radniNalog).single().then(({data: rnDb}) => {
-                                const teh = rnDb?.tehnologija_jsonb?.[stavkaNaloga.id] || [];
-                                printFaznaDeklaracijaPaketa(pid, izlazPackageItems, radniNalog, header.masina, teh);
-                            });
-                        } else { printDeklaracijaPaketa(pid, izlazPackageItems, radniNalog); }
-                        zatvoriDialog();
-                    },
-                    onCancel: zatvoriDialog
-                });
+                try {
+                    const { data: vecZakljucen } = await supabase.from('paketi').select('closed_at').eq('paket_id', pid).not('closed_at', 'is', null).limit(1);
+                    await supabase.from('paketi').update({ closed_at: new Date().toISOString() }).eq('paket_id', pid);
+                    if (!vecZakljucen || vecZakljucen.length === 0) {
+                        await zapisiU_Log('ZAKLJUČEN_PAKET', `Paket: ${pid} je uspješno zaključen.`);
+                    }
+
+                    const stavkeZaPrint = [...izlazPackageItems];
+                    if (selectedIzlazId === pid) { setSelectedIzlazId(''); setIzlazPackageItems([]); }
+                    await ucitajSveZapoocetePakete();
+
+                    prikaziDialog({
+                        tip: 'uspjeh', naslov: 'Uspješno Zaključeno!',
+                        poruka: `Paket ${pid} je uspješno zaključen.\nŽelite li odmah isprintati A5 deklaraciju za ovaj paket?`,
+                        confirmText: '🖨️ DA, ŠTAMPAJ', cancelText: '✕ NE TREBA',
+                        onConfirm: () => {
+                            const stavkaNaloga = rnStavke.find(s => s.naziv_proizvoda === stavkeZaPrint[0]?.naziv_proizvoda);
+                            if (stavkaNaloga && stavkaNaloga.isFazni) {
+                                supabase.from('radni_nalozi').select('tehnologija_jsonb').eq('id', radniNalog).single().then(({ data: rnDb }) => {
+                                    const teh = rnDb?.tehnologija_jsonb?.[stavkaNaloga.id] || [];
+                                    printFaznaDeklaracijaPaketa(pid, stavkeZaPrint, radniNalog, header.masina, teh);
+                                });
+                            } else { printDeklaracijaPaketa(pid, stavkeZaPrint, radniNalog); }
+                            zatvoriDialog();
+                        },
+                        onCancel: zatvoriDialog
+                    });
+                } finally {
+                    isConcludingRef.current = false;
+                }
             },
             onCancel: zatvoriDialog
         });

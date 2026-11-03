@@ -17,6 +17,22 @@ const formatLocalISODate = (date) => {
     return `${y}-${m}-${d}`;
 };
 
+const parseISODateLocal = (isoStr) => {
+    if (!isoStr) return new Date();
+    if (isoStr instanceof Date) return new Date(isoStr.getFullYear(), isoStr.getMonth(), isoStr.getDate());
+    const clean = String(isoStr).split('T')[0];
+    const [y, m, d] = clean.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const prikazDatumaBHS = (isoStr) => {
+    if (!isoStr) return '';
+    const clean = String(isoStr).split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length !== 3) return String(isoStr);
+    return `${parts[2]}.${parts[1]}.${parts[0]}.`;
+};
+
 export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const saas = useSaaS('hr_modul', { boja_kartice: '#1e293b', boja_slova: '#ffffff', boja_akcenta: '#3b82f6' });
 
@@ -58,24 +74,32 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
         const snimljenKraj = localStorage.getItem('erp_kraj_smjene');
         if (snimljenPocetak) setPocetakSmjene(snimljenPocetak);
         if (snimljenKraj) setKrajSmjene(snimljenKraj);
-        loadAll(); 
+        loadAll();
+        const ch = supabase.channel(`hr_realtime_${Math.random()}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'radni_sati' }, () => loadAll())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'zahtjevi_odsustva' }, () => loadAll())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'radnici' }, () => loadAll())
+            .subscribe();
+        return () => { supabase.removeChannel(ch); };
     }, [mjesecPrikaza]);
 
     const loadAll = async () => {
-        const { data: rData } = await supabase.from('radnici').select('*').order('ime_prezime');
-        setRadnici(rData || []);
+        const [rRes, sRes, zRes, pRes] = await Promise.all([
+            supabase.from('radnici').select('*').order('ime_prezime'),
+            supabase.from('radni_sati').select('*').order('datum', { ascending: false }).order('vrijeme_dolaska', { ascending: false }),
+            supabase.from('zahtjevi_odsustva').select('*').order('created_at', { ascending: false }),
+            supabase.from('kalendar_izuzeci').select('*').order('datum')
+        ]);
 
-        const mOd = `${mjesecPrikaza}-01`;
-        const mDo = `${mjesecPrikaza}-31`;
-
-        const { data: sData } = await supabase.from('radni_sati').select('*').gte('datum', mOd).lte('datum', mDo).order('datum', { ascending: false });
-        setRadniSati(sData || []);
-
-        const { data: zData } = await supabase.from('zahtjevi_odsustva').select('*').order('created_at', { ascending: false });
-        setZahtjevi(zData || []);
-
-        const { data: pData } = await supabase.from('kalendar_izuzeci').select('*').order('datum');
-        setPraznici(pData || []);
+        const sviRadnici = rRes.data || [];
+        setRadnici(sviRadnici);
+        if (odabraniRadnik) {
+            const svjezi = sviRadnici.find(r => r.id === odabraniRadnik.id || r.ime_prezime === odabraniRadnik.ime_prezime);
+            if (svjezi) setOdabraniRadnik(svjezi);
+        }
+        setRadniSati(sRes.data || []);
+        setZahtjevi(zRes.data || []);
+        setPraznici(pRes.data || []);
     };
 
     const zapisiU_Log = async (akcija, detalji) => { 
@@ -171,11 +195,14 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                     const radnik = radnici.find(r => r.ime_prezime === z.radnik_ime);
                     if (radnik) {
                         const poljeUpdate = inicijativa === 'RADNIK' ? 'godisnji_iskoristeno_radnik' : 'godisnji_iskoristeno_poslodavac';
-                        const novaKvota = (radnik[poljeUpdate] || 0) + z.broj_radnih_dana;
-                        await supabase.from('radnici').update({ [poljeUpdate]: novaKvota }).eq('id', radnik.id);
+                        const novaKvota = (radnik[poljeUpdate] || 0) + (parseInt(z.broj_radnih_dana) || 0);
+                        const ukupno = radnik.godisnji_ukupno || 20;
+                        const drugoPolje = inicijativa === 'RADNIK' ? (radnik.godisnji_iskoristeno_poslodavac || 0) : (radnik.godisnji_iskoristeno_radnik || 0);
+                        const preostalo = Math.max(0, ukupno - novaKvota - drugoPolje);
+                        await supabase.from('radnici').update({ [poljeUpdate]: novaKvota, preostalo_godisnjeg: preostalo }).eq('id', radnik.id);
                     }
                 }
-                setSelektovaniZahtjev(null); loadAll(); zatvoriDialog();
+                setSelektovaniZahtjev(null); await loadAll(); zatvoriDialog();
                 toast.success(`Zahtjev radnika ${z.radnik_ime} je označen kao ${status}!`);
             },
             onCancel: zatvoriDialog
@@ -184,16 +211,52 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
     const rucniUpisOdsustva = async () => {
         if (!formaUpis.datum_od || !formaUpis.datum_do) return toast.warning("Odaberite početni i krajnji datum izostanka!");
-        let brojDana = 0;
-        for (let d = new Date(formaUpis.datum_od); d <= new Date(formaUpis.datum_do); d.setDate(d.getDate() + 1)) {
-            const day = d.getDay(); if (day !== 0 && day !== 6) brojDana++; 
+        if (formaUpis.datum_do < formaUpis.datum_od) {
+            return toast.error("Greška: Krajnji datum izostanka (Do Datuma) ne može biti prije početnog datuma (Od Datuma)!");
         }
 
-        const payload = { radnik_ime: odabraniRadnik.ime_prezime, tip_odsustva: formaUpis.tip_odsustva, datum_od: formaUpis.datum_od, datum_do: formaUpis.datum_do, broj_radnih_dana: brojDana, status: 'ODOBRENO', inicijativa: 'POSLODAVAC', razlog: formaUpis.razlog, odobrio_korisnik: user?.ime_prezime };
-        await supabase.from('zahtjevi_odsustva').insert([payload]); 
-        setShowRucniUpis(false); 
+        const startD = parseISODateLocal(formaUpis.datum_od);
+        const endD = parseISODateLocal(formaUpis.datum_do);
+        let brojDana = 0;
+        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+            const day = d.getDay();
+            if (day !== 0 && day !== 6) brojDana++;
+        }
+        if (brojDana <= 0) brojDana = 1;
+
+        // Provjeri da li već postoji identičan ili preklapajući zapis istog tipa za ovog radnika
+        const postojeciDuplikat = zahtjevi.find(z =>
+            z.radnik_ime === odabraniRadnik.ime_prezime &&
+            z.status === 'ODOBRENO' &&
+            z.tip_odsustva === formaUpis.tip_odsustva &&
+            z.datum_od === formaUpis.datum_od &&
+            z.datum_do === formaUpis.datum_do
+        );
+
+        if (postojeciDuplikat) {
+            await supabase.from('zahtjevi_odsustva').update({
+                razlog: formaUpis.razlog,
+                broj_radnih_dana: brojDana
+            }).eq('id', postojeciDuplikat.id);
+        } else {
+            const payload = {
+                radnik_ime: odabraniRadnik.ime_prezime,
+                tip_odsustva: formaUpis.tip_odsustva,
+                datum_od: formaUpis.datum_od,
+                datum_do: formaUpis.datum_do,
+                broj_radnih_dana: brojDana,
+                status: 'ODOBRENO',
+                inicijativa: 'POSLODAVAC',
+                razlog: formaUpis.razlog,
+                odobrio_korisnik: user?.ime_prezime
+            };
+            const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
+            if (error) return toast.error("Greška: " + error.message);
+        }
+
+        setShowRucniUpis(false);
         toast.success(`Izostanak za radnika ${odabraniRadnik.ime_prezime} je uspješno zaveden!`);
-        loadAll();
+        await loadAll();
     };
 
     const dodajPraznik = async () => {
@@ -281,11 +344,14 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const odsustvaZauzetost = useMemo(() => {
         let mapa = {};
         zahtjevi.filter(z => z.status === 'ODOBRENO').forEach(z => {
-            let start = new Date(z.datum_od); let end = new Date(z.datum_do);
+            let start = parseISODateLocal(z.datum_od);
+            let end = parseISODateLocal(z.datum_do);
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 let dStr = formatLocalISODate(d);
-                if(!mapa[dStr]) mapa[dStr] = [];
-                mapa[dStr].push(z.radnik_ime);
+                if (!mapa[dStr]) mapa[dStr] = [];
+                if (!mapa[dStr].includes(z.radnik_ime)) {
+                    mapa[dStr].push(z.radnik_ime);
+                }
             }
         });
         return mapa;
@@ -294,7 +360,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const prebrojZahtjeveUMjesecu = (godina, mjesec) => {
         let odobreno = 0; let naCekanju = 0;
         zahtjevi.forEach(z => {
-            const zOd = new Date(z.datum_od); const zDo = new Date(z.datum_do);
+            const zOd = parseISODateLocal(z.datum_od); const zDo = parseISODateLocal(z.datum_do);
             const mOd = new Date(godina, mjesec, 1); const mDo = new Date(godina, mjesec + 1, 0); 
             if (zOd <= mDo && zDo >= mOd) {
                 if (z.status === 'ODOBRENO') odobreno++;
@@ -305,8 +371,8 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     };
 
     const danasStr = formatLocalISODate(new Date());
-    const prisutniDanas = radniSati.filter(s => s.datum === danasStr);
-
+    const headerDatumStr = header?.datum || danasStr;
+    const prisutniDanas = radniSati.filter(s => s.datum === danasStr || s.datum === headerDatumStr || s.status === 'NA_POSLU');
     return (
         <div className="p-2 md:p-4 max-w-7xl mx-auto space-y-4 md:space-y-6 font-bold animate-in fade-in relative" style={{ color: saas.ui.boja_slova }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="hr_modul" saas={saas} hideMasina={true} />
@@ -401,12 +467,11 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                             {zahtjevi.filter(z => z.status === 'NA ČEKANJU').map(z => {
                                 const isSel = selektovaniZahtjev?.id === z.id;
                                 return (
-                                    <div key={z.id} onClick={() => {setSelektovaniZahtjev(z); setTrenutniMjesecKalendara(new Date(z.datum_od)); setPrikazKalendara('MJESEC');}} className={`p-3 md:p-4 rounded-xl md:rounded-2xl cursor-pointer transition-all border shadow-sm ${isSel ? 'bg-amber-900/10 border-amber-500/50' : 'bg-theme-panel border-theme-border hover:border-amber-500/30'}`}>
+                                    <div key={z.id} onClick={() => {setSelektovaniZahtjev(z); setTrenutniMjesecKalendara(nparseISODateLocal(z.datum_od)); setPrikazKalendara('MJESEC');}} className={`p-3 md:p-4 rounded-xl md:rounded-2xl cursor-pointer transition-all border shadow-sm ${isSel ? 'bg-amber-900/10 border-amber-500/50' : 'bg-theme-panel border-theme-border hover:border-amber-500/30'}`}>
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
                                             <span className="text-xs font-black text-theme-text uppercase">{z.radnik_ime}</span><span className="text-[8px] md:text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-black w-fit">{z.tip_odsustva}</span>
                                         </div>
-                                        <p className="text-[9px] md:text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1 md:mt-2">{new Date(z.datum_od).toLocaleDateString('bs-BA')} - {new Date(z.datum_do).toLocaleDateString('bs-BA')}</p>
-                                        
+                                        <p className="text-[9px] md:text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1 md:mt-2">{prikazDatumaBHS(z.datum_od)} - {prikazDatumaBHS(z.datum_do)} ({z.datum_od} → {z.datum_do})</p>                                        
                                         {isSel && (
                                             <div className="mt-3 md:mt-4 pt-2 md:pt-3 border-t border-theme-border/50">
                                                 <p className="text-[8px] md:text-[9px] text-slate-400 uppercase font-black mb-2">Čija je inicijativa?</p>
@@ -455,8 +520,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                     const iso = formatLocalISODate(dateObj);
                                     const zapisiNaOvajDan = odsustvaZauzetost[iso] || [];
                                     const jeVikend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                    const isReqRange = selektovaniZahtjev && dateObj >= new Date(selektovaniZahtjev.datum_od) && dateObj <= new Date(selektovaniZahtjev.datum_do);
-
+                                    const isReqRange = selektovaniZahtjev && dateObj >= parseISODateLocal(selektovaniZahtjev.datum_od) && dateObj <= parseISODateLocal(selektovaniZahtjev.datum_do);
                                     return (
                                         <div key={dan} className={`aspect-square rounded-lg md:rounded-2xl flex flex-col items-center justify-start pt-1 md:pt-2 border md:border-2 transition-all relative ${jeVikend ? 'bg-slate-900/50 border-slate-800' : 'bg-theme-panel border-theme-border'} ${isReqRange ? 'ring-2 ring-amber-500 ring-offset-1 md:ring-offset-2 ring-offset-theme-card bg-amber-900/20' : ''}`}>
                                             <span className="text-xs md:text-sm font-black text-theme-text">{dan}</span>
@@ -511,18 +575,26 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                 <p className="text-slate-400 font-bold uppercase tracking-widest text-center text-xs md:text-sm">Odaberite radnika za prikaz profila</p>
                             </div>
                         ) : (() => {
-                            const mjesecniZapis = radniSati.filter(s => s.radnik_ime === odabraniRadnik.ime_prezime);
+                            const mjesecniZapis = radniSati.filter(s =>
+                                s.radnik_ime === odabraniRadnik.ime_prezime &&
+                                (!mjesecPrikaza || (s.datum || '').startsWith(mjesecPrikaza))
+                            );
                             const totalKasnjenje = mjesecniZapis.reduce((s, z) => s + (z.kasnjenje_min || 0), 0);
                             const daniKasnjenja = mjesecniZapis.filter(z => (z.kasnjenje_min || 0) > 0).length;
                             
                             let ukupnoSatiMjesec = 0;
-                            let ukupnoRadnihDana = 0;
+                            const unikatniDaniPrisustva = new Set();
                             mjesecniZapis.forEach(z => {
-                                const h = parseFloat(z.obracunato_sati) || 0;
+                                let h = parseFloat(z.obracunato_sati) || 0;
+                                if (h === 0 && z.vrijeme_dolaska && z.vrijeme_odlaska) {
+                                    const diffH = (new Date(z.vrijeme_odlaska).getTime() - new Date(z.vrijeme_dolaska).getTime()) / 3600000;
+                                    if (diffH > 0) h = parseFloat(diffH.toFixed(2));
+                                }
                                 const prek = (z.prekovremeno_min || 0) / 60;
                                 ukupnoSatiMjesec += (h + prek);
-                                if (h > 0 || prek > 0) ukupnoRadnihDana++;
+                                if (z.datum) unikatniDaniPrisustva.add(z.datum);
                             });
+                            const ukupnoRadnihDana = Math.max(unikatniDaniPrisustva.size, mjesecniZapis.length);
                             
                             const kvotaUkupno = odabraniRadnik.godisnji_ukupno || 20;
                             const kvotaRadnik = odabraniRadnik.godisnji_iskoristeno_radnik || 0;
@@ -530,9 +602,24 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                             const kvotaOstalo = kvotaUkupno - kvotaRadnik - kvotaFirma;
 
                             const svaOdsustva = zahtjevi.filter(z => z.radnik_ime === odabraniRadnik.ime_prezime && z.status === 'ODOBRENO');
-                            const bolovanja = svaOdsustva.filter(z => z.tip_odsustva === 'BOLOVANJE').reduce((s, z) => s + z.broj_radnih_dana, 0);
-                            const neopravdani = svaOdsustva.filter(z => z.tip_odsustva === 'NEOPRAVDANO').reduce((s, z) => s + z.broj_radnih_dana, 0);
+                            
+                            // Brojanje unikatnih radnih dana za bolovanje i neopravdano (sprječava duplo brojanje ako se isti datum unese 2 puta!)
+                            const izracunajUnikatneDaneZaTip = (tip) => {
+                                const daniSet = new Set();
+                                svaOdsustva.filter(z => z.tip_odsustva === tip).forEach(z => {
+                                    const sD = parseISODateLocal(z.datum_od);
+                                    const eD = parseISODateLocal(z.datum_do);
+                                    for (let d = new Date(sD); d <= eD; d.setDate(d.getDate() + 1)) {
+                                        if (d.getDay() !== 0 && d.getDay() !== 6) {
+                                            daniSet.add(formatLocalISODate(d));
+                                        }
+                                    }
+                                });
+                                return daniSet.size;
+                            };
 
+                            const bolovanja = izracunajUnikatneDaneZaTip('BOLOVANJE');
+                            const neopravdani = izracunajUnikatneDaneZaTip('NEOPRAVDANO');
                             return (
                                 <div className="space-y-4 md:space-y-6 h-full flex flex-col">
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-theme-border pb-4 md:pb-6 gap-3 md:gap-4 shrink-0">
@@ -585,7 +672,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
                                                         return (
                                                             <tr key={z.id} className="hover:bg-slate-800/30 transition-colors">
-                                                                <td className="p-3 md:p-4 uppercase">{new Date(z.datum).toLocaleDateString('bs-BA')}</td>
+                                                                <td className="p-3 md:p-4 uppercase">{prikazDatumaBHS(z.datum)}</td>
                                                                 <td className="p-3 md:p-4 text-emerald-400">{z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).toLocaleTimeString('de-DE') : '-'}</td>
                                                                 <td className="p-3 md:p-4 text-amber-400">{z.vrijeme_odlaska ? new Date(z.vrijeme_odlaska).toLocaleTimeString('de-DE') : '-'}</td>
                                                                 <td className="p-3 md:p-4 text-center font-black text-theme-text">{ukupnoObacunato.toFixed(1)} h</td>
