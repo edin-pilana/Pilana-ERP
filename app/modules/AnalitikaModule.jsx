@@ -43,20 +43,19 @@ const izracunajTacanVolumenStavkePaketa = (p) => {
     const kolUlaz = parseFloat(p.kolicina_ulaz ?? p.komada ?? 0);
     const jm = (p.jm || 'kom').toLowerCase();
 
+    if (jm === 'm3' && kolUlaz > 0) {
+        return parseFloat(kolUlaz.toFixed(4));
+    }
     if (deb > 0 && sir > 0 && duz > 0 && kolUlaz > 0) {
         const vol1Kom = (deb / 100) * (sir / 100) * (duz / 100);
         if (jm === 'kom') {
             return parseFloat((kolUlaz * vol1Kom).toFixed(4));
         }
         if (jm === 'm2') {
-            const area1Kom = (sir / 100) * (duz / 100);
-            const kom = area1Kom > 0 ? kolUlaz / area1Kom : 0;
-            return parseFloat((kom * vol1Kom).toFixed(4));
+            return parseFloat((kolUlaz * (deb / 100)).toFixed(4));
         }
         if (jm === 'm1') {
-            const len1Kom = duz / 100;
-            const kom = len1Kom > 0 ? kolUlaz / len1Kom : 0;
-            return parseFloat((kom * vol1Kom).toFixed(4));
+            return parseFloat((kolUlaz * (deb / 100) * (sir / 100)).toFixed(4));
         }
     }
     return parseFloat(p.kolicina_final ?? p.kubikaza ?? p.kolicina_m3 ?? 0) || 0;
@@ -337,7 +336,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     // 2. ANALITIKA DORADE (ULAZ PAKETA -> IZLAZ DORADE + GRAFIKON PRATI FILTER MAŠINE!)
     // ========================================================================
     const analitikaDorada = useMemo(() => {
-        // Svi izlazni paketi sa mašina dorade (koji prate i datum i masinaFilter!)
         const paketiDorade = paketiBaza.filter(p => {
             const m = (p.masina || '').toUpperCase();
             const jeDorada = (!m.includes('PILANA') && !m.includes('BRENTA') && m !== '') || (Array.isArray(p.ai_sirovina_ids) && p.ai_sirovina_ids.length > 0);
@@ -357,6 +355,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         let izlazDoradaM3 = 0;
         const ulazniPaketiSet = new Set();
         const poDanimaDoradaMap = {};
+        const izlazPoUlazuMap = {};
 
         const sljedivostLista = paketiDorade.map(p => {
             const m3Izlaz = izracunajTacanVolumenStavkePaketa(p);
@@ -385,6 +384,14 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 }
             });
 
+            const kljucGrupe = `${p.masina}_${ulazIds.map(x => x.trim()).filter(Boolean).sort().join(',')}`;
+            if (!izlazPoUlazuMap[kljucGrupe]) {
+                let ulM3 = 0;
+                ulazIds.forEach(id => { ulM3 += (sveStavkePaketaMap.get((id || '').trim()) || 0); });
+                izlazPoUlazuMap[kljucGrupe] = { ulaz: ulM3, izlaz: 0 };
+            }
+            izlazPoUlazuMap[kljucGrupe].izlaz += m3Izlaz;
+
             return {
                 paket_id: p.paket_id,
                 naziv: p.naziv_proizvoda,
@@ -405,7 +412,12 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             ukupnoUlazSirovineM3 = parseFloat((izlazDoradaM3 * 1.18).toFixed(3));
         }
 
-        const stvarniKaloM3 = Math.max(0, ukupnoUlazSirovineM3 - izlazDoradaM3);
+        let zbirKalaPoOperacijama = 0;
+        Object.values(izlazPoUlazuMap).forEach(gr => {
+            if (gr.ulaz > gr.izlaz) zbirKalaPoOperacijama += (gr.ulaz - gr.izlaz);
+        });
+
+        const stvarniKaloM3 = Math.max(0, ukupnoUlazSirovineM3 - izlazDoradaM3, zbirKalaPoOperacijama);
         const efikasnostProc = ukupnoUlazSirovineM3 > 0 ? ((izlazDoradaM3 / ukupnoUlazSirovineM3) * 100) : 0;
 
         const zastojiDorada = dnevnikMasineBaza.filter(d => {
@@ -414,9 +426,8 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             if (masinaFilter !== 'SVE' && (d.masina || '').toUpperCase() !== masinaFilter.toUpperCase()) return false;
             return true;
         });
-        const zastojiMin = zastojiDorada.reduce((s, z) => s + parseInt(z.zastoj_min || 0), 0);
+        const zastojiMin = zastojiDorada.reduce((s, z) => s + Math.max(0, parseInt(z.zastoj_min || 0)), 0);
 
-        // 🟢 POPRAVLJEN GRAFIKON DORADE: Ako je za odabranu mašinu KPI 0.00 m3, i grafikon je 100% prazan/nula za tu mašinu!
         const chartData = Object.keys(poDanimaDoradaMap).sort().map(k => ({
             datum: poDanimaDoradaMap[k].datum,
             Ulaz_Sirovina: parseFloat(poDanimaDoradaMap[k].ulazM3.toFixed(3)),
@@ -433,7 +444,6 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             chartData
         };
     }, [paketiBaza, dnevnikMasineBaza, efektivniOd, efektivniDo, masinaFilter]);
-
     // ========================================================================
     // 3. UKUPNI BILANS FABRIKE (MATERIJALNO)
     // ========================================================================
@@ -548,7 +558,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                     <td><b>${r.paket_id}</b></td>
                     <td>${r.naziv_proizvoda}</td>
                     <td style="text-align:center;"><b>${r.dimenzije}</b></td>
-                    <td style="text-align:center;">${r.komada} kom</td>
+                    <td style="text-align:center;">${r.prikazKolicine || `${r.komada} kom`}</td>
                     <td class="num">${r.m3.toFixed(3)} m³</td>
                 </tr>
             `).join('');
@@ -559,7 +569,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                     <div class="info-col-right"><p>Izrezano Trupaca: <b>${analitikaProrez.izrezanoM3.toFixed(3)} m³ (${analitikaProrez.brojTrupaca} kom)</b></p><p>Proizvedeno Građe: <b>${analitikaProrez.proizvedenoM3.toFixed(3)} m³</b></p><p>Iskorištenost (Yield): <b>${analitikaProrez.yieldProc.toFixed(1)}%</b></p></div>
                 </div>
                 <table>
-                    <thead><tr><th>#</th><th>Paket ID</th><th>Proizvod</th><th style="text-align:center;">Dimenzije (cm)</th><th style="text-align:center;">Komada</th><th class="num">Volumen (m³)</th></tr></thead>
+                    <thead><tr><th>#</th><th>Paket ID</th><th>Proizvod</th><th style="text-align:center;">Dimenzije (cm)</th><th style="text-align:center;">Količina</th><th class="num">Volumen (m³)</th></tr></thead>
                     <tbody>${redovi}</tbody>
                 </table>
             `;
@@ -587,10 +597,28 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </table>
             `;
             printDokument('IZVJEŠTAJ DORADE', `DORADA-${efektivniOd}`, formatDatumBHS(danas), html, '#f59e0b');
+        } else if (tab === 'UKUPNO') {
+            html = `
+                <div class="info-grid">
+                    <div class="info-col-left"><h4>Ukupni Materijalni Bilans Fabrike</h4><h2>Period: ${periodTekst}</h2></div>
+                    <div class="info-col-right"><p>Efikasnost Fabrike (Yield): <b>${analitikaUkupno.efikasnostFabrike.toFixed(1)}%</b></p></div>
+                </div>
+                <table>
+                    <thead><tr><th>Stavka Materijalnog Bilansa</th><th class="num">Zapremina (m³)</th></tr></thead>
+                    <tbody>
+                        <tr><td>Ukupan Ulaz Sirovine (Prorezani Trupci)</td><td class="num">${analitikaUkupno.ulazTrupacaM3.toFixed(3)} m³</td></tr>
+                        <tr><td>Ukupno Proizvedeno (Pilana + Dorada)</td><td class="num">${analitikaUkupno.proizvedenoUkupnoM3.toFixed(3)} m³</td></tr>
+                        <tr><td>Efikasnost Fabrike (Iskorištenje)</td><td class="num">${analitikaUkupno.efikasnostFabrike.toFixed(1)} %</td></tr>
+                        <tr><td>Stvarni Otpad (Piljevina / Okorak / Kalo Dorade)</td><td class="num">${analitikaUkupno.stvarniOtpadM3.toFixed(3)} m³</td></tr>
+                        <tr><td>Kalo od Krojenja Trupaca na Placu</td><td class="num">${analitikaUkupno.kaloKrojenjaM3.toFixed(3)} m³</td></tr>
+                    </tbody>
+                </table>
+            `;
+            printDokument('MATERIJALNI BILANS', `UKUPNO-${efektivniOd}`, formatDatumBHS(danas), html, '#3b82f6');
         } else {
             html = `
                 <div class="info-grid">
-                    <div class="info-col-left"><h4>Finansijski i Materijalni Bilans</h4><h2>Period: ${periodTekst}</h2></div>
+                    <div class="info-col-left"><h4>Finansijski Bilans Proizvodnje</h4><h2>Period: ${periodTekst}</h2></div>
                     <div class="info-col-right"><p>Čisti Profit: <b>${analitikaFinansije.cistiProfitKM.toFixed(2)} KM</b></p></div>
                 </div>
                 <table>

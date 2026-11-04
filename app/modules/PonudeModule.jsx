@@ -228,7 +228,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         let kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? 0) || 0;
         const kolUnos = parseFloat(s.kolicina_unos ?? kolObr) || 0;
 
-        // Ako imamo dimenzije u katalogu i unos u m1/m2/kom, izračunaj punu preciznost (npr. 12.5 m1 5x3x400 = 0.01875 m3)
         if (katItem && kolUnos > 0) {
             const pr = preracunajKolicinu(kolUnos, jmUnos, jmObr, katItem.visina, katItem.sirina, katItem.duzina);
             if (pr.ciljnaKolicina > 0) {
@@ -241,16 +240,24 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             cijenaBaza = katItem ? izracunajDinamickuCijenu(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
         }
 
-        let rabatProc = s.rabat_procenat !== undefined && s.rabat_procenat !== '' ? parseFloat(s.rabat_procenat) : NaN;
+        // Ako je rabat_procenat eksplicitno 0 ili "0" ili "0.00", zadrži 0 (ne vraćaj defaultni rabat kupca!)
+        let rabatProc = (s.rabat_procenat !== undefined && s.rabat_procenat !== null && String(s.rabat_procenat).trim() !== '')
+            ? parseFloat(s.rabat_procenat)
+            : NaN;
         if (isNaN(rabatProc)) {
             rabatProc = katItem && kupacObj ? izracunajRabat(katItem, kupacObj) : 0;
         }
         rabatProc = Math.max(0, Math.min(100, rabatProc));
 
-        let fiksnaCijena = s.fiksna_cijena !== undefined && s.fiksna_cijena !== '' ? parseFloat(s.fiksna_cijena) : NaN;
-        if (isNaN(fiksnaCijena) || fiksnaCijena < 0 || Math.abs(rabatProc - 100) < 0.001) {
+        let fiksnaCijena = (s.fiksna_cijena !== undefined && s.fiksna_cijena !== null && String(s.fiksna_cijena).trim() !== '')
+            ? parseFloat(s.fiksna_cijena)
+            : NaN;
+
+        // Uvijek uskladi fiksnu cijenu sa rabatom ako je rabat 0% ili 100%, ili ako fiksna cijena nije validna
+        if (isNaN(fiksnaCijena) || fiksnaCijena < 0 || Math.abs(rabatProc - 100) < 0.001 || Math.abs(rabatProc) < 0.001) {
             fiksnaCijena = cijenaBaza * (1 - rabatProc / 100);
         }
+
         if (fiksnaCijena > cijenaBaza) {
             cijenaBaza = fiksnaCijena;
             rabatProc = 0;
@@ -258,7 +265,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
 
         const ukupnoBezRabata = parseFloat((kolObr * cijenaBaza).toFixed(2));
         const ukupno = parseFloat((kolObr * fiksnaCijena).toFixed(2));
-        const iznosRabata = parseFloat(Math.max(0, ukupnoBezRabata - ukupno).toFixed(2));
+        const iznosRabata = rabatProc === 0 ? 0 : parseFloat(Math.max(0, ukupnoBezRabata - ukupno).toFixed(2));
 
         return {
             ...s,
@@ -274,7 +281,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             rabat_procenat: parseFloat(rabatProc.toFixed(2)),
             fiksna_cijena: fiksnaCijena.toFixed(2),
             iznos_rabata: iznosRabata,
-            ukupno: ukupno
+            ukupno: rabatProc === 0 ? ukupnoBezRabata : ukupno
         };
     };
 

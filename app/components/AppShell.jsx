@@ -672,16 +672,10 @@ export default function AppShell({
                 onCancel={() => setLogoutDialog(false)}
             />
 
-            <div className="hidden md:block">
-                {localLayout === 'sidebar' && renderSidebarLayout()}
-                {localLayout === 'kiosk' && renderKioskLayout()}
-                {localLayout === 'bento' && renderBentoLayout()}
-                {localLayout === 'topnav' && renderTopNavLayout()}
-            </div>
-            
-            <div className="md:hidden">
-                {renderTopNavLayout()}
-            </div>
+{localLayout === 'sidebar' && renderSidebarLayout()}
+            {localLayout === 'kiosk' && renderKioskLayout()}
+            {localLayout === 'bento' && renderBentoLayout()}
+            {localLayout === 'topnav' && renderTopNavLayout()}
             
             <Toaster theme={localTheme === 'light' ? 'light' : 'dark'} richColors position="top-right" expand={true}/>
             

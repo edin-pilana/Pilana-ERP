@@ -211,8 +211,23 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const katItem = (katLista || []).find(k => k.sifra === s.sifra) || null;
         const jmObr = (s.jm_obracun || katItem?.default_jedinica || 'm3').toLowerCase();
         const jmUnos = (s.jm_unos || jmObr || 'kom').toLowerCase();
-        const kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? 0) || 0;
+        let kolObr = parseFloat(s.kolicina_obracun ?? s.kolicina ?? 0) || 0;
         const kolUnos = parseFloat(s.kolicina_unos ?? kolObr) || 0;
+
+        if (katItem && kolUnos > 0) {
+            const v = (parseFloat(katItem.visina) || 1) / 100;
+            const sir = (parseFloat(katItem.sirina) || 1) / 100;
+            const d = (parseFloat(katItem.duzina) || 1) / 100;
+            let komada = kolUnos;
+            if (jmUnos === 'm3') komada = kolUnos / (v * sir * d);
+            else if (jmUnos === 'm2') komada = kolUnos / (sir * d);
+            else if (jmUnos === 'm1') komada = kolUnos / d;
+
+            if (jmObr === 'm3') kolObr = parseFloat((komada * v * sir * d).toFixed(6));
+            else if (jmObr === 'm2') kolObr = parseFloat((komada * sir * d).toFixed(6));
+            else if (jmObr === 'm1') kolObr = parseFloat((komada * d).toFixed(6));
+            else if (jmObr === 'kom') kolObr = parseFloat(komada.toFixed(6));
+        }
 
         let cijenaBaza = parseFloat(s.cijena_baza);
         if (isNaN(cijenaBaza) || cijenaBaza <= 0) {
@@ -229,7 +244,6 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             fiksnaCijena = cijenaBaza - (cijenaBaza * (Math.max(0, rabatProc) / 100));
         }
 
-        // Ako je fiksna prodajna cijena veća od kataloške baze, tretiraj je kao novu baznu cijenu te stavke sa 0% rabata (da zbir Bez rabata - Rabat = Osnovica uvijek bude 100% tačan!)
         if (fiksnaCijena > cijenaBaza) {
             cijenaBaza = fiksnaCijena;
             rabatProc = 0;
@@ -248,7 +262,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             naziv: s.naziv || katItem?.naziv || '',
             kolicina_unos: kolUnos,
             jm_unos: jmUnos,
-            kolicina_obracun: parseFloat(kolObr.toFixed(4)),
+            kolicina_obracun: parseFloat(kolObr.toFixed(6)),
             jm_obracun: jmObr,
             cijena_baza: parseFloat(cijenaBaza.toFixed(2)),
             rabat_procenat: parseFloat(rabatProc.toFixed(2)),
@@ -283,7 +297,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const v = (parseFloat(trenutniProizvod.visina) || 1) / 100; const s = (parseFloat(trenutniProizvod.sirina) || 1) / 100; const d = (parseFloat(trenutniProizvod.duzina) || 1) / 100;
         let komada = kol; if (stavkaForm.jm_unos === 'm3') komada = kol / (v * s * d); if (stavkaForm.jm_unos === 'm2') komada = kol / (s * d); if (stavkaForm.jm_unos === 'm1') komada = kol / d;
         if (stavkaForm.jm_obracun === 'm3') obracun = komada * (v * s * d); else if (stavkaForm.jm_obracun === 'm2') obracun = komada * (s * d); else if (stavkaForm.jm_obracun === 'm1') obracun = komada * d; else if (stavkaForm.jm_obracun === 'kom') obracun = komada;
-        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : kol}));
+        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? parseFloat(obracun.toFixed(6)) : kol}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const handleOtpremnicaInput = (val, isEnterOrClick = false) => {

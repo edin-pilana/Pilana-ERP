@@ -663,7 +663,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         if (!activeIzlazIds.includes(id)) {
             const { data: existing } = await supabase.from('paketi').select('*').eq('paket_id', id);
             if (existing && existing.length > 0) {
-                const spisak = existing.map(i => `- ${i.naziv_proizvoda}: ${i.kolicina_final} ${i.jm}`).join('\n');
+                const spisak = existing.map(i => `- ${i.naziv_proizvoda}: ${i.kolicina_ulaz || 0} ${i.jm || 'kom'} (${i.kolicina_final} m³)`).join('\n');
                 return prikaziDialog({
                     tip: 'info', naslov: 'Paket Pronađen',
                     poruka: `📦 PAKET VEĆ POSTOJI: ${id}\n\nTrenutno sadrži:\n${spisak}\n\nDa li želite AŽURIRATI ovaj paket?`,

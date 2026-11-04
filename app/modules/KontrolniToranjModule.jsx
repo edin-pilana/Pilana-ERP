@@ -238,28 +238,27 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         let nalogIdZaLanac = null; let otpremnicaIdZaLanac = null; let racunIdZaLanac = null; let ponudaIdZaLanac = null;
 
-        if (val.startsWith('RN-')) nalogIdZaLanac = val;
-        else if (val.startsWith('OTP-')) otpremnicaIdZaLanac = val;
-        else if (val.startsWith('RAC-')) racunIdZaLanac = val;
-        else if (val.startsWith('PON-')) ponudaIdZaLanac = val;
+        if (val.includes('RN-')) nalogIdZaLanac = val;
+        else if (val.includes('OTP-')) otpremnicaIdZaLanac = val;
+        else if (val.includes('RAC-')) racunIdZaLanac = val;
+        else if (val.includes('PON-')) ponudaIdZaLanac = val;
         else {
             const { data: pData } = await supabase.from('paketi').select('broj_veze, rn_id, otpremnica_id').eq('paket_id', val).limit(1).maybeSingle();
             if (pData) {
                 const veza = pData.broj_veze || pData.rn_id || '';
-                if (veza.startsWith('RN-')) nalogIdZaLanac = veza;
-                else if (veza.startsWith('PON-')) ponudaIdZaLanac = veza;
+                if (veza.includes('RN-')) nalogIdZaLanac = veza;
+                else if (veza.includes('PON-')) ponudaIdZaLanac = veza;
                 if (pData.otpremnica_id) otpremnicaIdZaLanac = pData.otpremnica_id;
             }
         }
 
-        // 🟢 POPRAVLJENO PRAĆENJE LANCA: Iz Računa -> u Otpremnicu / Nalog / Ponudu
         if (racunIdZaLanac) {
             const { data: racDb } = await supabase.from('racuni').select('broj_veze, napomena').eq('id', racunIdZaLanac).maybeSingle();
             if (racDb) {
-                if (racDb.broj_veze?.startsWith('OTP-')) otpremnicaIdZaLanac = racDb.broj_veze;
-                else if (racDb.broj_veze?.startsWith('RN-')) nalogIdZaLanac = racDb.broj_veze;
-                else if (racDb.broj_veze?.startsWith('PON-')) ponudaIdZaLanac = racDb.broj_veze;
-                const ponMatch = (racDb.napomena || '').match(/PON-\d{4}-\d+/i);
+                if (racDb.broj_veze?.includes('OTP-')) otpremnicaIdZaLanac = racDb.broj_veze;
+                else if (racDb.broj_veze?.includes('RN-')) nalogIdZaLanac = racDb.broj_veze;
+                else if (racDb.broj_veze?.includes('PON-')) ponudaIdZaLanac = racDb.broj_veze;
+                const ponMatch = (racDb.napomena || '').match(/(?:[A-Z0-9-]+-)?PON-[A-Z0-9-]+/i);
                 if (ponMatch && !ponudaIdZaLanac) ponudaIdZaLanac = ponMatch[0].toUpperCase();
             }
         }
@@ -267,13 +266,13 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         if (otpremnicaIdZaLanac) {
             const { data: otpDb } = await supabase.from('otpremnice').select('broj_veze, napomena').eq('id', otpremnicaIdZaLanac).maybeSingle();
             if (otpDb) {
-                if (otpDb.broj_veze?.startsWith('RN-') && !nalogIdZaLanac) nalogIdZaLanac = otpDb.broj_veze;
-                else if (otpDb.broj_veze?.startsWith('PON-') && !ponudaIdZaLanac) ponudaIdZaLanac = otpDb.broj_veze;
-                const ponMatchOtp = (otpDb.napomena || '').match(/PON-\d{4}-\d+/i);
+                if (otpDb.broj_veze?.includes('RN-') && !nalogIdZaLanac) nalogIdZaLanac = otpDb.broj_veze;
+                else if (otpDb.broj_veze?.includes('PON-') && !ponudaIdZaLanac) ponudaIdZaLanac = otpDb.broj_veze;
+                const ponMatchOtp = (otpDb.napomena || '').match(/(?:[A-Z0-9-]+-)?PON-[A-Z0-9-]+/i);
                 if (ponMatchOtp && !ponudaIdZaLanac) ponudaIdZaLanac = ponMatchOtp[0].toUpperCase();
             }
             if (!racunIdZaLanac) {
-                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).maybeSingle();
+                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).limit(1).maybeSingle();
                 if (racDb) racunIdZaLanac = racDb.id;
             }
         }
@@ -291,7 +290,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 if (otpDb) otpremnicaIdZaLanac = otpDb.id;
             }
             if (otpremnicaIdZaLanac && !racunIdZaLanac) {
-                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaZaLanac || otpremnicaIdZaLanac).limit(1).maybeSingle();
+                const { data: racDb } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).limit(1).maybeSingle();
                 if (racDb) racunIdZaLanac = racDb.id;
             }
         }
@@ -305,13 +304,13 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 const { data: racDir } = await supabase.from('racuni').select('id, broj_veze').or(`broj_veze.eq.${ponudaIdZaLanac},napomena.ilike.%${ponudaIdZaLanac}%`).limit(1).maybeSingle();
                 if (racDir) {
                     racunIdZaLanac = racDir.id;
-                    if (!otpremnicaIdZaLanac && racDir.broj_veze?.startsWith('OTP-')) otpremnicaIdZaLanac = racDir.broj_veze;
+                    if (!otpremnicaIdZaLanac && racDir.broj_veze?.includes('OTP-')) otpremnicaIdZaLanac = racDir.broj_veze;
                 }
             }
         }
+
         let cistiIdovi = [val, nalogIdZaLanac, otpremnicaIdZaLanac, racunIdZaLanac, ponudaIdZaLanac].filter(Boolean);
 
-        // 🟢 FILTRIRANJE AUDIT LOGOVA SA GRANICOM RIJEČI (Da kratki ID paketa npr. "57" ne pokupi "PON-2026-8578")
         const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
         const { data: sLogs } = await (orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] });
         
@@ -322,22 +321,26 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 return cistiIdovi.some(cid => {
                     if (cid.length <= 4) {
                         const escaped = cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const regex = new RegExp(`(^|[^0-9A-Z-])${escaped}([^0-9A-Z-]|$)`, 'i');
+                        const regex = new RegExp(`(^|[^0-9A-Z.,-])${escaped}([^0-9A-Z.,-]|$)`, 'i');
                         return regex.test(tekst);
                     }
                     return tekst.includes(cid);
                 });
             });
 
-            // Ako je u audit logovima ovog dokumenta (npr. RAC-2026-352) zabilježena izvorna ponuda (npr. PON-2026-8578), poveži je u lanac!
-            if (!ponudaIdZaLanac && (val.startsWith('RAC-') || val.startsWith('OTP-') || val.startsWith('RN-'))) {
-                for (let lg of sysLogsRaw) {
-                    const m = `${lg.detalji || ''} ${JSON.stringify(lg.novi_podaci || '')} ${JSON.stringify(lg.stari_podaci || '')}`.match(/PON-\d{4}-\d+/i);
-                    if (m) {
-                        ponudaIdZaLanac = m[0].toUpperCase();
-                        if (!cistiIdovi.includes(ponudaIdZaLanac)) cistiIdovi.push(ponudaIdZaLanac);
-                        break;
-                    }
+            for (let lg of sysLogsRaw) {
+                const txt = `${lg.detalji || ''} ${JSON.stringify(lg.novi_podaci || '')} ${JSON.stringify(lg.stari_podaci || '')}`;
+                if (!ponudaIdZaLanac) {
+                    const mPon = txt.match(/(?:[A-Z0-9-]+-)?PON-[A-Z0-9-]+/i);
+                    if (mPon) { ponudaIdZaLanac = mPon[0].toUpperCase(); if (!cistiIdovi.includes(ponudaIdZaLanac)) cistiIdovi.push(ponudaIdZaLanac); }
+                }
+                if (!racunIdZaLanac) {
+                    const mRac = txt.match(/(?:[A-Z0-9-]+-)?RAC-[A-Z0-9-]+/i);
+                    if (mRac) { racunIdZaLanac = mRac[0].toUpperCase(); if (!cistiIdovi.includes(racunIdZaLanac)) cistiIdovi.push(racunIdZaLanac); }
+                }
+                if (!otpremnicaIdZaLanac) {
+                    const mOtp = txt.match(/(?:[A-Z0-9-]+-)?OTP-[A-Z0-9-]+/i);
+                    if (mOtp) { otpremnicaIdZaLanac = mOtp[0].toUpperCase(); if (!cistiIdovi.includes(otpremnicaIdZaLanac)) cistiIdovi.push(otpremnicaIdZaLanac); }
                 }
             }
         }
@@ -390,7 +393,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 const { data } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').in('paket_id', [...new Set(paketiIds)]);
                 if (data) dataChain.ulazniPaketi = [...new Map(data.map(i => [i.paket_id, i])).values()];
             }
-            // 🟢 POPRAVLJENO: ai_sirovina_ids je text[] niz u bazi, pa koristimo .contains()
             const { data: forward } = await supabase.from('paketi').select('paket_id, naziv_proizvoda, kolicina_final, masina').contains('ai_sirovina_ids', [glavniPaketId]);
             if (forward) dataChain.izlazniPaketi = [...new Map(forward.map(i => [i.paket_id, i])).values()];
         }
@@ -432,7 +434,6 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         dataChain.logovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values()).filter(l => l.created_at > 0).sort((a, b) => a.created_at - b.created_at);
         setForenzika(dataChain); setLoading(false); setSken(val); 
     };
-
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.ui.boja_pozadine || undefined }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-indigo-500" user={user} hideMasina={true} modulIme="forenzika" saas={saas} />
