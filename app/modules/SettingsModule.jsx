@@ -1252,12 +1252,13 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ TRAJNO OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('kupci').delete().eq('id', id); 
-                await zapisiU_Log('BRISANJE_KUPCA', `Obrisan kupac: ${naziv}`); 
-                if (isEditing && form.id === id) ponistiIzmjenu();
+                const { error } = await supabase.from('kupci').delete().eq('id', id); 
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje kupca'));
+                if (isEditing && form.id === id) ponistiIzmjenu();
                 toast.info(`Kupac ${naziv} obrisan.`);
                 load();
+                await zapisiU_Log('BRISANJE_KUPCA', `Obrisan kupac: ${naziv}`); 
             },
             onCancel: zatvoriDialog
         });

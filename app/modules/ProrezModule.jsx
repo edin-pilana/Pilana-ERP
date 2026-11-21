@@ -227,20 +227,22 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     };
 
     const handleBrentistaChange = async (novoIme) => {
+        setBrentista(novoIme);
         if (header?.masina) {
+            localStorage.setItem('zajednicki_brentista_' + header.masina, novoIme);
+            emitRadniciUpdate(novoIme, viljuskarista);
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'brentista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
-            setBrentista(novoIme); localStorage.setItem('zajednicki_brentista_' + header.masina, novoIme);
-            emitRadniciUpdate(novoIme, viljuskarista);
         }
     };
 
     const handleViljuskaristaChange = async (novoIme) => {
+        setViljuskarista(novoIme);
         if (header?.masina) {
+            localStorage.setItem('zajednicki_viljuskarista_' + header.masina, novoIme);
+            emitRadniciUpdate(brentista, novoIme);
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
-            setViljuskarista(novoIme); localStorage.setItem('zajednicki_viljuskarista_' + header.masina, novoIme);
-            emitRadniciUpdate(brentista, novoIme);
         }
     };
 
