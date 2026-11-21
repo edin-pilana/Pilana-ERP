@@ -4,11 +4,14 @@ import { supabase } from '../utils/supabaseClient';
 import { preracunajKolicinu, preracunajCijenuPoJedinici } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
+import NotificationDetailModal from '../components/NotificationDetailModal';
+import { ocistiTekstDetalja } from '../utils/notificationHelpers';
 import { toast } from 'sonner';
 
 export default function NadzorModule({ user, header, setHeader, onExit }) {
     const [logovi, setLogovi] = useState([]);
     const [filter, setFilter] = useState('AKTIVNI'); // 'AKTIVNI' | 'ARHIVA' | 'AUTOTEST'
+    const [odabraniLog, setOdabraniLog] = useState(null);
 
     // State za AI Auto-Test Sistema
     const [testRunning, setTestRunning] = useState(false);
@@ -536,7 +539,11 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
                                     const datum = new Date(log.vrijeme || log.created_at).toLocaleString('de-DE');
 
                                     return (
-                                        <div key={log.id} className={`flex flex-col md:flex-row justify-between md:items-center p-5 rounded-2xl border-l-4 shadow-sm transition-all hover:scale-[1.01] ${isCrveno ? 'bg-red-900/10 border-red-500' : isZuto ? 'bg-amber-900/10 border-amber-500' : 'bg-theme-panel border-slate-500'}`}>
+                                        <div
+                                            key={log.id}
+                                            onClick={() => setOdabraniLog(log)}
+                                            className={`flex flex-col md:flex-row justify-between md:items-center p-5 rounded-2xl border-l-4 shadow-sm transition-all hover:scale-[1.01] cursor-pointer ${isCrveno ? 'bg-red-900/10 border-red-500' : isZuto ? 'bg-amber-900/10 border-amber-500' : 'bg-theme-panel border-slate-500'}`}
+                                        >
                                             
                                             <div className="flex-1 mb-4 md:mb-0">
                                                 <div className="flex items-center gap-3 mb-2">
@@ -547,10 +554,13 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
                                                 </div>
                                                 
                                                 <h3 className="text-sm font-black text-theme-text uppercase">{log.akcija}</h3>
-                                                <p className="text-xs text-theme-muted mt-1 font-bold">{log.detalji}</p>
+                                                <p className="text-xs text-theme-muted mt-1 font-bold">{ocistiTekstDetalja(log.detalji)}</p>
                                                 
-                                                <div className="mt-3 inline-block bg-theme-card px-3 py-1 rounded-lg border border-theme-border text-[10px] font-black uppercase text-theme-text shadow-inner">
-                                                    👤 Izvršio: <span className="text-blue-500">{log.korisnik}</span>
+                                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                    <span className="inline-block bg-theme-card px-3 py-1 rounded-lg border border-theme-border text-[10px] font-black uppercase text-theme-text shadow-inner">
+                                                        👤 Izvršio: <span className="text-blue-500">{log.korisnik}</span>
+                                                    </span>
+                                                    <span className="text-[10px] text-theme-accent font-black uppercase">📜 Klikni za kompletnu historiju →</span>
                                                 </div>
                                             </div>
 
@@ -559,7 +569,7 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
                                                     <span className="text-[10px] text-emerald-500 font-black uppercase flex items-center gap-1"><span className="text-lg">✓</span> Pročitano</span>
                                                 ) : (
                                                     <button 
-                                                        onClick={() => oznaciKaoRijeseno(log.id)}
+                                                        onClick={(e) => { e.stopPropagation(); oznaciKaoRijeseno(log.id); }}
                                                         className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:scale-105 ${isCrveno ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-amber-600 hover:bg-amber-500 text-white'}`}
                                                     >
                                                         ✓ Označi Riješeno
@@ -573,6 +583,15 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
                         )}
                     </div>
                 </>
+            )}
+
+            {odabraniLog && (
+                <NotificationDetailModal
+                    notification={odabraniLog}
+                    user={user}
+                    onClose={() => setOdabraniLog(null)}
+                    onActionComplete={ucitajLogove}
+                />
             )}
         </div>
     );

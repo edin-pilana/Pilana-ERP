@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { posaljiNotifikaciju } from '../utils/notificationHelpers';
 import { CalendarDays, CheckCircle2, AlertCircle, ScanLine, X, LogIn, LogOut, UserCircle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
@@ -305,9 +306,25 @@ export default function KioskModule() {
                 datum_do: formatLocalISODate(p.endD), 
                 broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' 
             };
-            const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
+            const { data: insertedRows, error } = await supabase.from('zahtjevi_odsustva').insert([payload]).select('id');
             if (error) { prikaziPrivremenuPoruku('error', error.message); }
             else {
+                const noviId = insertedRows?.[0]?.id;
+                await posaljiNotifikaciju({
+                    korisnik: p.radnik,
+                    akcija: 'ZAHTJEV_ODMOR',
+                    detalji: `Radnik ${p.radnik} podnio zahtjev za ${p.tip} (${payload.datum_od} → ${payload.datum_do}, ${p.brojDana} radnih dana).${formaOdmor.razlog ? ` Razlog: ${formaOdmor.razlog}` : ''}`,
+                    nivo_alarma: 'ŽUTO',
+                    meta: {
+                        modul: 'hr_modul',
+                        approval_type: 'ZAHTJEV_ODMOR',
+                        approval_id: noviId,
+                        entity_type: 'zahtjev_odsustva',
+                        entity_id: noviId ? String(noviId) : undefined,
+                        radnik_ime: p.radnik,
+                        target_permission: 'HR Dashboard',
+                    },
+                });
                 setFormaOdmor({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
                 zatvoriSveModale();
                 prikaziPrivremenuPoruku('success', `✅ Zahtjev za odmor (${p.brojDana} radnih dana) uspješno poslan!`);

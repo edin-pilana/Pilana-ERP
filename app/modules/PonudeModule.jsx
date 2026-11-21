@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
+import { ocistiTekstDetalja } from '../utils/notificationHelpers';
 import { preracunajKolicinu, preracunajCijenuPoJedinici } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
@@ -1120,7 +1121,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                                 <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                                     {superadminLogs.map(l => (
                                         <div key={l.id} className="text-[10px] text-slate-300 flex flex-col md:flex-row md:justify-between md:items-center border-b border-red-500/20 pb-2">
-                                            <span className="flex-1"><b className="text-red-400">{l.korisnik}</b>: {l.detalji}</span>
+                                            <span className="flex-1"><b className="text-red-400">{l.korisnik}</b>: {ocistiTekstDetalja(l.detalji)}</span>
                                             <div className="flex items-center gap-4 mt-2 md:mt-0 shrink-0">
                                                 <span className="text-slate-500">{new Date(l.vrijeme).toLocaleString('de-DE')}</span>
                                                 <button onClick={() => potvrdiUpozorenje(l.id)} className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-3 py-1 rounded transition-all font-black uppercase border border-red-500/30 shadow-md">✓ Pročitano</button>

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
+import { posaljiNotifikaciju } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
@@ -257,6 +258,20 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                         await supabase.from('radnici').update({ [poljeUpdate]: novaKvota, godisnji_ukupno: ukupno, preostalo_godisnjeg: preostalo }).eq('id', radnik.id);
                     }
                 }
+                await posaljiNotifikaciju({
+                    korisnik: user?.ime_prezime || 'HR Admin',
+                    akcija: status === 'ODOBRENO' ? 'ODOBREN_ZAHTJEV_ODMOR' : 'ODBIJEN_ZAHTJEV_ODMOR',
+                    detalji: `Vaš zahtjev za ${z.tip_odsustva} (${z.datum_od} → ${z.datum_do}, ${z.broj_radnih_dana} radnih dana) je ${status === 'ODOBRENO' ? 'ODOBREN' : 'ODBIJEN'} od strane ${user?.ime_prezime || 'Admina'}.`,
+                    nivo_alarma: status === 'ODOBRENO' ? 'INFO' : 'ŽUTO',
+                    meta: {
+                        modul: 'hr_modul',
+                        target_user: z.radnik_ime,
+                        entity_type: 'zahtjev_odsustva',
+                        entity_id: String(z.id),
+                        radnik_ime: z.radnik_ime,
+                        status,
+                    },
+                });
                 setSelektovaniZahtjev(null); await loadAll(); zatvoriDialog();
                 toast.success(`Zahtjev radnika ${z.radnik_ime} je označen kao ${status}!`);
             },
@@ -316,8 +331,21 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                 razlog: formaUpis.razlog,
                 odobrio_korisnik: user?.ime_prezime
             };
-            const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
+            const { data: insertedOds, error } = await supabase.from('zahtjevi_odsustva').insert([payload]).select('id');
             if (error) return toast.error("Greška: " + error.message);
+            await posaljiNotifikaciju({
+                korisnik: user?.ime_prezime || 'HR Admin',
+                akcija: 'EVIDENTIRANO_ODSUSTVO',
+                detalji: `Evidentirano vam je odsustvo (${formaUpis.tip_odsustva}: ${formaUpis.datum_od} → ${formaUpis.datum_do}, ${brojDana} radnih dana).${formaUpis.razlog ? ` Napomena: ${formaUpis.razlog}` : ''}`,
+                nivo_alarma: 'INFO',
+                meta: {
+                    modul: 'hr_modul',
+                    target_user: odabraniRadnik.ime_prezime,
+                    entity_type: 'zahtjev_odsustva',
+                    entity_id: insertedOds?.[0]?.id ? String(insertedOds[0].id) : undefined,
+                    radnik_ime: odabraniRadnik.ime_prezime,
+                },
+            });
         }
 
         setFormaUpis({ tip_odsustva: 'BOLOVANJE', datum_od: '', datum_do: '', razlog: '' });

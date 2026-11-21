@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from './utils/supabaseClient';
 import { toLocalIso } from './utils/dateHelpers';
+import { ocistiTekstDetalja } from './utils/notificationHelpers';
 import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck, Hammer } from 'lucide-react';
@@ -123,13 +124,26 @@ export default function Page() {
     });
     const [dashLoading, setDashLoading] = useState(true);
 
-    // 🟢 GLOBALNI SLUŠAOC ZA ZVONCE (NADZORNI CENTAR)
+    // 🟢 GLOBALNI SLUŠAOC ZA ZVONCE (NADZORNI CENTAR + DEEP-LINK NA BILO KOJI MODUL)
     useEffect(() => {
         const handleNadzorNavigacija = () => {
             setActiveModule('nadzor');
         };
+        const handleModulNavigacija = (ev) => {
+            const detail = ev?.detail || {};
+            if (!detail.modul) return;
+            localStorage.removeItem('erp_auto_open_id');
+            localStorage.removeItem('erp_auto_action');
+            if (detail.autoOpenId) localStorage.setItem('erp_auto_open_id', detail.autoOpenId);
+            if (detail.autoAction) localStorage.setItem('erp_auto_action', detail.autoAction);
+            setActiveModule(detail.modul);
+        };
         window.addEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
-        return () => window.removeEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
+        window.addEventListener('navigacija_na_modul', handleModulNavigacija);
+        return () => {
+            window.removeEventListener('navigacija_na_nadzor', handleNadzorNavigacija);
+            window.removeEventListener('navigacija_na_modul', handleModulNavigacija);
+        };
     }, []);
 
     const ucitajDashboardPodatke = async () => {
@@ -568,7 +582,7 @@ export default function Page() {
                                         <span className="font-black text-white">{log.korisnik}</span>
                                         <span className="text-[8px] text-slate-500 font-mono">{new Date(log.vrijeme).toLocaleTimeString('bs-BA')}</span>
                                     </div>
-                                    <p className="text-slate-400 text-[10px] leading-tight line-clamp-2">{log.akcija}</p>
+                                    <p className="text-slate-400 text-[10px] leading-tight line-clamp-2">{log.akcija}: {ocistiTekstDetalja(log.detalji)}</p>
                                 </div>
                             ))}
                         </div>

@@ -24,10 +24,18 @@ const escapeTelegramHtml = (str) => String(str ?? '')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
+const stripMetaTag = (str) => String(str ?? '').replace(/\s*\[\[META:\{[\s\S]*?\}\]\]\s*$/, '').trim();
+
 export const posaljiEksterniPushAlarm = async (zapis) => {
     if (!zapis) return;
     const akcija = zapis.akcija || 'SISTEMSKI ALARM';
     const nivo = zapis.nivo_alarma || 'INFO';
+    const rawDetalji = String(zapis.detalji || '');
+    const cistiDetalji = stripMetaTag(rawDetalji);
+
+    // Lične INFO notifikacije za pojedinačnog radnika ostaju unutar aplikacije (ne spamuju globalni Telegram/Webhook)
+    const jeLicnaInfo = nivo === 'INFO' && rawDetalji.includes('"target_user"');
+    if (jeLicnaInfo) return;
 
     const jeHitno =
         nivo === 'CRVENO' ||
@@ -42,7 +50,7 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
     if (!jeHitno) return;
 
     const ikona = nivo === 'CRVENO' ? '🚨' : '⚠️';
-    const porukaTekst = `${ikona} <b>PILANA ERP ALARM (${escapeTelegramHtml(nivo)})</b>\n\n👤 <b>Radnik:</b> ${escapeTelegramHtml(zapis.korisnik || 'Nepoznat')}\n📋 <b>Akcija:</b> ${escapeTelegramHtml(akcija)}\n📝 <b>Detalji:</b> ${escapeTelegramHtml(zapis.detalji || '-')}\n🕒 <b>Vrijeme:</b> ${escapeTelegramHtml(new Date().toLocaleString('bs-BA'))}`;
+    const porukaTekst = `${ikona} <b>PILANA ERP ALARM (${escapeTelegramHtml(nivo)})</b>\n\n👤 <b>Radnik:</b> ${escapeTelegramHtml(zapis.korisnik || 'Nepoznat')}\n📋 <b>Akcija:</b> ${escapeTelegramHtml(akcija)}\n📝 <b>Detalji:</b> ${escapeTelegramHtml(cistiDetalji || '-')}\n🕒 <b>Vrijeme:</b> ${escapeTelegramHtml(new Date().toLocaleString('bs-BA'))}`;
 
     try {
         const botToken = TELEGRAM_BOT_TOKEN || (typeof window !== 'undefined' ? localStorage.getItem('erp_tg_token') : '');
@@ -70,7 +78,7 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
                     nivo,
                     korisnik: zapis.korisnik,
                     akcija,
-                    detalji: zapis.detalji,
+                    detalji: cistiDetalji,
                     vrijeme: new Date().toISOString()
                 })
             }).catch(() => {});

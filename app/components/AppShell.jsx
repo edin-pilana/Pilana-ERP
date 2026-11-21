@@ -1,11 +1,24 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify, LogOut, Move, Eye, EyeOff, Save, Sliders } from 'lucide-react';
+import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify, LogOut, Move, Eye, EyeOff, Save, Sliders, Bell } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster, toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 import PametniDialog from './PametniDialog';
+import NotificationDetailModal from './NotificationDetailModal';
+import {
+    MODUL_META,
+    odrediModuleNotifikacije,
+    getNazivModula,
+    ocistiTekstDetalja,
+    daLiJeNotifikacijaZaKorisnika,
+    daLiJeLicnaNotifikacijaZaKorisnika,
+    daLiJeProcitanoZaKorisnika,
+    ucitajNotifikacijeZaKorisnika,
+    oznaciNotifikacijuProcitanom,
+    oznaciNotifikacijeProcitanim,
+} from '../utils/notificationHelpers';
 
 const DEFAULT_MENU_STYLE = {
     sidebarWidth: 260,
@@ -32,6 +45,15 @@ export default function AppShell({
     const [isLoaded, setIsLoaded] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true));
     const [logoutDialog, setLogoutDialog] = useState(false);
+
+    // 🔔 Lični centar obavještenja za svakog prijavljenog korisnika (strogo izolovano po korisniku)
+    const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
+    const [notifTab, setNotifTab] = useState('AKTIVNA'); // 'AKTIVNA' | 'ARHIVA'
+    const [mojeNotifikacije, setMojeNotifikacije] = useState([]);
+    const [brojMojeNotif, setBrojMojeNotif] = useState(0);
+    const [selectedNotif, setSelectedNotif] = useState(null);
+    const seenToastIdsRef = useRef(new Set());
+    const initialNotifLoadedRef = useRef(false);
 
     // State za uređivanje menija sa backup snapshotom (da Odustani zaista vrati prethodno stanje)
     const [isMenuEditMode, setIsMenuEditMode] = useState(false);
@@ -107,6 +129,130 @@ export default function AppShell({
     useEffect(() => {
         initSettings(user?.ime_prezime || 'Korisnik');
     }, [user, initSettings]);
+
+    const prikaziInAppNotifikaciju = useCallback((novi) => {
+        if (!novi || !novi.id || !daLiJeNotifikacijaZaKorisnika(novi, user)) return;
+        if (seenToastIdsRef.current.has(novi.id)) return;
+        seenToastIdsRef.current.add(novi.id);
+        if (seenToastIdsRef.current.size > 150) {
+            const first = seenToastIdsRef.current.values().next().value;
+            seenToastIdsRef.current.delete(first);
+        }
+
+        if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+            window.navigator.vibrate([180, 90, 180]);
+        }
+
+        const tekst = ocistiTekstDetalja(novi.detalji);
+        const jeLicno = daLiJeLicnaNotifikacijaZaKorisnika(novi, user);
+        const toastOpts = {
+            duration: novi.nivo_alarma === 'CRVENO' ? 8500 : 6500,
+            action: {
+                label: 'Otvori',
+                onClick: () => setSelectedNotif(novi),
+            },
+        };
+
+        if (novi.nivo_alarma === 'CRVENO') {
+            toast.error(`🚨 ${novi.akcija}: ${tekst}`, toastOpts);
+        } else if (novi.nivo_alarma === 'ŽUTO') {
+            toast.warning(`⚠️ ${novi.akcija}: ${tekst}`, toastOpts);
+        } else if (jeLicno) {
+            toast.info(`🔔 ${novi.akcija}: ${tekst}`, toastOpts);
+        }
+    }, [user]);
+
+    const ucitajMojeNotifikacije = useCallback(async ({ emitNewToasts = false } = {}) => {
+        if (!user || (!user.ime_prezime && !user.username)) {
+            setMojeNotifikacije([]);
+            setBrojMojeNotif(0);
+            return;
+        }
+        const neprocitane = await ucitajNotifikacijeZaKorisnika(user, null, { includeRead: false, limit: 50 });
+
+        if (!initialNotifLoadedRef.current) {
+            // Na prvom učitavanju zapamti postojeće ID-eve da prijava ne zatrpa ekran starim popupovima
+            neprocitane.forEach((n) => { if (n?.id) seenToastIdsRef.current.add(n.id); });
+            initialNotifLoadedRef.current = true;
+        } else if (emitNewToasts) {
+            const nove = neprocitane.filter((n) => n?.id && !seenToastIdsRef.current.has(n.id));
+            if (nove.length > 0) {
+                nove.slice(0, 3).forEach((n) => prikaziInAppNotifikaciju(n));
+                window.dispatchEvent(new CustomEvent('notifikacije_updated'));
+            }
+        }
+
+        setBrojMojeNotif(neprocitane.length);
+        if (notifTab === 'ARHIVA') {
+            const sve = await ucitajNotifikacijeZaKorisnika(user, null, { includeRead: true, limit: 50 });
+            setMojeNotifikacije(sve);
+        } else {
+            setMojeNotifikacije(neprocitane);
+        }
+    }, [user, notifTab, prikaziInAppNotifikaciju]);
+
+    // Resetuj praćenje kad se promijeni prijavljeni korisnik
+    useEffect(() => {
+        seenToastIdsRef.current = new Set();
+        initialNotifLoadedRef.current = false;
+    }, [user?.id, user?.username, user?.ime_prezime]);
+
+    // 🔔 JEDAN globalni Realtime + pouzdani pozadinski sync za trenutno prijavljenog korisnika
+    useEffect(() => {
+        if (!user || (!user.ime_prezime && !user.username)) return;
+
+        ucitajMojeNotifikacije({ emitNewToasts: false });
+
+        const kanalIme = `user_notif_global_${Math.random().toString(36).substring(2)}`;
+        const channel = supabase.channel(kanalIme)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sistem_audit_log' }, (payload) => {
+                const novi = payload?.new;
+                if (!novi || !daLiJeNotifikacijaZaKorisnika(novi, user)) return;
+                prikaziInAppNotifikaciju(novi);
+                ucitajMojeNotifikacije({ emitNewToasts: false });
+                window.dispatchEvent(new CustomEvent('notifikacije_updated'));
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sistem_audit_log' }, () => {
+                ucitajMojeNotifikacije({ emitNewToasts: false });
+            })
+            .subscribe();
+
+        // Pouzdani fallback sync svakih 5s dok je tab aktivan (radi i ako Supabase Realtime publication nije uključen ili pukne WiFi)
+        const intervalId = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            ucitajMojeNotifikacije({ emitNewToasts: true });
+        }, 5000);
+
+        const handleSync = () => ucitajMojeNotifikacije({ emitNewToasts: false });
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible') ucitajMojeNotifikacije({ emitNewToasts: true });
+        };
+        window.addEventListener('notifikacije_updated', handleSync);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            clearInterval(intervalId);
+            supabase.removeChannel(channel);
+            window.removeEventListener('notifikacije_updated', handleSync);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, [user, ucitajMojeNotifikacije, prikaziInAppNotifikaciju]);
+
+    const handleMarkOneRead = async (notif, e) => {
+        if (e) e.stopPropagation();
+        const { error } = await oznaciNotifikacijuProcitanom(notif, user);
+        if (error) return toast.error('Greška pri označavanju obavještenja.');
+        ucitajMojeNotifikacije();
+    };
+
+    const handleMarkAllRead = async () => {
+        const neprocitane = mojeNotifikacije.filter((n) => !daLiJeProcitanoZaKorisnika(n, user));
+        if (neprocitane.length === 0) return;
+        const { error } = await oznaciNotifikacijeProcitanim(neprocitane, user);
+        if (error) return toast.error('Greška pri označavanju obavještenja.');
+        toast.success('Sva vaša obavještenja su označena kao pročitana.');
+        ucitajMojeNotifikacije();
+    };
 
     const changeLayout = (noviLayout) => {
         setLayout(noviLayout);
@@ -383,6 +529,167 @@ export default function AppShell({
         );
     };
 
+    const renderNotifBellButton = (extraClass = '', iconSize = 18) => (
+        <button
+            type="button"
+            data-testid="user-profile-bell"
+            onClick={() => {
+                setIsNotifDrawerOpen(true);
+                setMobileMenuOpen(false);
+                ucitajMojeNotifikacije();
+            }}
+            className={`relative flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all shadow-sm ${extraClass}`}
+            title={`Moja obavještenja (${brojMojeNotif})`}
+        >
+            <Bell size={iconSize} />
+            {brojMojeNotif > 0 && (
+                <span data-testid="user-profile-bell-badge" className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                    {brojMojeNotif > 99 ? '99+' : brojMojeNotif}
+                </span>
+            )}
+        </button>
+    );
+
+    const renderNotifDrawer = () => (
+        <AnimatePresence>
+            {isNotifDrawerOpen && (
+                <>
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setIsNotifDrawerOpen(false)}
+                        className="erp-modal-backdrop fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[5050]"
+                    />
+                    <motion.div
+                        data-testid="user-notif-drawer"
+                        initial={{ opacity: 0, x: 50 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 50 }}
+                        className="fixed top-0 right-0 h-full w-full max-w-[100vw] sm:w-[26rem] bg-theme-card border-l border-theme-border shadow-2xl z-[5060] p-4 sm:p-5 flex flex-col backdrop-blur-[var(--glass-blur)] overflow-x-hidden"
+                    >
+                        <div className="flex justify-between items-start gap-2 mb-4 border-b border-theme-border pb-4">
+                            <div className="min-w-0">
+                                <h2 className="text-sm font-black text-theme-text uppercase tracking-widest flex items-center gap-2">
+                                    <Bell size={17} className="text-theme-accent shrink-0" />
+                                    <span className="truncate">Moja Obavještenja ({brojMojeNotif})</span>
+                                </h2>
+                                <p className="text-[10px] text-theme-muted font-bold mt-1 truncate">
+                                    Profil: {user?.ime_prezime || user?.username || 'Korisnik'} • Samo vaše notifikacije i odobrenja
+                                </p>
+                            </div>
+                            <button type="button" onClick={() => setIsNotifDrawerOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <div className="flex gap-1.5 flex-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setNotifTab('AKTIVNA')}
+                                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-colors ${notifTab === 'AKTIVNA' ? 'bg-theme-accent text-white' : 'bg-theme-panel text-theme-muted border border-theme-border hover:text-theme-text'}`}
+                                >
+                                    Nepročitana ({brojMojeNotif})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNotifTab('ARHIVA')}
+                                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-colors ${notifTab === 'ARHIVA' ? 'bg-theme-accent text-white' : 'bg-theme-panel text-theme-muted border border-theme-border hover:text-theme-text'}`}
+                                >
+                                    Historija
+                                </button>
+                            </div>
+                            {brojMojeNotif > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={handleMarkAllRead}
+                                    className="px-2.5 py-2 rounded-xl bg-theme-panel border border-theme-border text-[9px] font-black uppercase text-theme-muted hover:text-emerald-500 hover:border-emerald-500 transition-colors shrink-0"
+                                >
+                                    ✓ Sve
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
+                            {mojeNotifikacije.length === 0 ? (
+                                <div className="p-10 text-center text-theme-muted text-[11px] font-black uppercase border-2 border-dashed border-theme-border rounded-2xl">
+                                    Nemate novih obavještenja za vaš profil. ✅
+                                </div>
+                            ) : (
+                                mojeNotifikacije.map((notif) => {
+                                    const jeLicno = daLiJeLicnaNotifikacijaZaKorisnika(notif, user);
+                                    const jeProcitano = daLiJeProcitanoZaKorisnika(notif, user);
+                                    const modKeys = odrediModuleNotifikacije(notif);
+                                    const modKey = modKeys[0];
+                                    const borderTone = notif.nivo_alarma === 'CRVENO'
+                                        ? 'border-l-red-500'
+                                        : notif.nivo_alarma === 'ŽUTO'
+                                            ? 'border-l-amber-500'
+                                            : 'border-l-blue-500';
+
+                                    return (
+                                        <div
+                                            key={notif.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => {
+                                                setSelectedNotif(notif);
+                                                setIsNotifDrawerOpen(false);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    setSelectedNotif(notif);
+                                                    setIsNotifDrawerOpen(false);
+                                                }
+                                            }}
+                                            className={`p-3.5 rounded-2xl bg-theme-panel border border-theme-border border-l-4 ${borderTone} hover:border-theme-accent transition-all cursor-pointer relative group ${jeProcitano ? 'opacity-70' : ''}`}
+                                        >
+                                            <div className="flex flex-wrap items-center gap-1.5 mb-1.5 pr-8">
+                                                {jeLicno && (
+                                                    <span className="text-[8px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                                                        🎯 Za mene
+                                                    </span>
+                                                )}
+                                                {modKey && (
+                                                    <span className="text-[8px] font-black uppercase bg-theme-card text-theme-accent border border-theme-border px-2 py-0.5 rounded-full">
+                                                        {MODUL_META[modKey]?.ikona || '📌'} {getNazivModula(modKey)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex justify-between items-center gap-2 mb-1">
+                                                <span className="text-[11px] font-black text-theme-text uppercase truncate">{notif.akcija}</span>
+                                                <span className="text-[9px] text-theme-muted shrink-0">
+                                                    {notif.vrijeme ? new Date(notif.vrijeme).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-theme-muted leading-snug line-clamp-2">{ocistiTekstDetalja(notif.detalji)}</p>
+                                            <div className="flex items-center justify-between mt-2 text-[9px] font-bold text-theme-muted">
+                                                <span>👤 {notif.korisnik}</span>
+                                                <span className="text-theme-accent font-black uppercase group-hover:underline">Detalji / Odobrenje →</span>
+                                            </div>
+                                            {!jeProcitano && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleMarkOneRead(notif, e)}
+                                                    className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg bg-theme-card border border-theme-border text-theme-muted hover:text-emerald-500 hover:border-emerald-500 transition-colors"
+                                                    title="Označi pročitano"
+                                                >
+                                                    ✓
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    </motion.div>
+                </>
+            )}
+        </AnimatePresence>
+    );
+
     const renderSettingsPanel = () => (
         <AnimatePresence>
             {isSettingsOpen && (
@@ -543,7 +850,10 @@ export default function AppShell({
                         <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-theme-card border-b border-theme-border flex items-center justify-between px-4 z-40 backdrop-blur-md">
                             <button type="button" onClick={() => setMobileMenuOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Menu size={20} /></button>
                             {renderLogoDisplay(true)}
-                            <button type="button" onClick={() => setIsSettingsOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Settings size={20} /></button>
+                            <div className="flex items-center gap-2">
+                                {renderNotifBellButton('w-10 h-10', 18)}
+                                <button type="button" onClick={() => setIsSettingsOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Settings size={20} /></button>
+                            </div>
                         </div>
 
                         <motion.aside
@@ -585,11 +895,14 @@ export default function AppShell({
                                         ✏️ Uredi Meni (Redoslijed / Redovi)
                                     </button>
                                 )}
-                                <div className={`flex items-center gap-3 p-2.5 mb-2.5 bg-theme-panel rounded-xl border border-theme-border shadow-inner ${!isSidebarOpen ? 'justify-center' : ''}`}>
-                                    <div className="w-7 h-7 rounded-full bg-theme-accent flex items-center justify-center text-white font-black shrink-0"><User size={14} /></div>
-                                    {isSidebarOpen && (
-                                        <div className="text-left overflow-hidden"><p className="text-[8px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate">{user?.ime_prezime || 'Korisnik'}</p></div>
-                                    )}
+                                <div className={`flex items-center gap-2 p-2.5 mb-2.5 bg-theme-panel rounded-xl border border-theme-border shadow-inner ${!isSidebarOpen ? 'flex-col justify-center' : 'justify-between'}`}>
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-7 h-7 rounded-full bg-theme-accent flex items-center justify-center text-white font-black shrink-0"><User size={14} /></div>
+                                        {isSidebarOpen && (
+                                            <div className="text-left overflow-hidden"><p className="text-[8px] text-theme-muted uppercase font-black tracking-widest">Prijavljen</p><p className="text-xs text-theme-text font-black truncate">{user?.ime_prezime || 'Korisnik'}</p></div>
+                                        )}
+                                    </div>
+                                    {renderNotifBellButton('w-8 h-8 shrink-0', 15)}
                                 </div>
                                 <div className={`flex ${isSidebarOpen ? 'gap-2' : 'flex-col gap-2'}`}>
                                     <button type="button" onClick={() => setIsSettingsOpen(true)} className={`flex-1 flex items-center justify-center gap-1.5 p-2.5 bg-theme-panel rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all text-[9px] font-black uppercase border border-theme-border ${!isSidebarOpen ? 'px-0' : ''}`} title="Postavke"><Settings size={14} /> {isSidebarOpen && "Postavke"}</button>
@@ -607,6 +920,7 @@ export default function AppShell({
                             <button type="button" onClick={() => setMobileMenuOpen(true)} className="md:hidden shrink-0 p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border shadow-sm"><Menu size={18} /></button>
                             <div className="min-w-0 truncate">{renderLogoDisplay(true)}</div>
                             <div className="md:hidden flex items-center gap-1.5 shrink-0">
+                                {renderNotifBellButton('w-9 h-9 shrink-0', 16)}
                                 <button type="button" onClick={() => setIsSettingsOpen(true)} className="w-9 h-9 shrink-0 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm"><Settings size={16} /></button>
                                 <button type="button" onClick={handleLogout} className="w-9 h-9 shrink-0 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm"><LogOut size={16} /></button>
                             </div>
@@ -653,6 +967,7 @@ export default function AppShell({
                                 <div className="w-5 h-5 rounded-full bg-theme-accent flex items-center justify-center text-white"><User size={11} /></div>
                                 <span className="text-[10px] font-black text-theme-text uppercase tracking-widest truncate max-w-[100px]">{user?.ime_prezime || 'Korisnik'}</span>
                             </div>
+                            {renderNotifBellButton('w-10 h-10 shrink-0', 18)}
                             <button type="button" onClick={() => setIsSettingsOpen(true)} className="w-10 h-10 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-muted hover:text-white hover:bg-theme-accent transition-all shadow-sm" title="Postavke"><Settings size={18} /></button>
                             <button type="button" onClick={handleLogout} className="w-10 h-10 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:text-white hover:bg-red-500 transition-all shadow-sm" title="Odjava"><LogOut size={18} /></button>
                         </div>
@@ -697,6 +1012,7 @@ export default function AppShell({
                                 </>
                             )}
                             <div className="h-8 w-px bg-theme-border mx-1 hidden sm:block"></div>
+                            {renderNotifBellButton('w-11 h-11 shrink-0', 20)}
                             <button type="button" onClick={() => setIsSettingsOpen(true)} className="w-11 h-11 shrink-0 flex items-center justify-center bg-theme-panel border border-theme-border rounded-xl text-theme-text hover:bg-theme-accent hover:text-white transition-all shadow-sm"><Settings size={20} /></button>
                             <button type="button" onClick={handleLogout} className="w-11 h-11 shrink-0 flex items-center justify-center bg-red-900/20 border border-red-500/30 rounded-xl text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm" title="Odjava"><LogOut size={20} /></button>
                         </div>
@@ -741,6 +1057,7 @@ export default function AppShell({
                             </>
                         )}
                         <div className="shrink-0 w-px h-8 bg-theme-border mx-2"></div>
+                        {renderNotifBellButton('shrink-0 w-12 h-12 rounded-2xl', 20)}
                         <button type="button" onClick={() => setIsSettingsOpen(true)} className="shrink-0 p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all" title="Postavke"><Settings size={20} /></button>
                         <button type="button" onClick={handleLogout} className="shrink-0 p-4 rounded-2xl text-red-500 hover:bg-red-500 hover:text-white transition-all" title="Odjava sa sistema"><LogOut size={20} /></button>
                     </motion.div>
@@ -762,6 +1079,16 @@ export default function AppShell({
             />
 
             {renderSettingsPanel()}
+            {renderNotifDrawer()}
+
+            {selectedNotif && (
+                <NotificationDetailModal
+                    notification={selectedNotif}
+                    user={user}
+                    onClose={() => setSelectedNotif(null)}
+                    onActionComplete={ucitajMojeNotifikacije}
+                />
+            )}
         </div>
     );
 }

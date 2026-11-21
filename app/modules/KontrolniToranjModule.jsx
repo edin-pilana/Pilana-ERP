@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { ocistiTekstDetalja } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import { useSaaS } from '../utils/useSaaS';
 import { AlertTriangle, History } from 'lucide-react';
@@ -479,7 +480,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         }));
 
         const sviLogovi = [
-            ...sysLogsRaw.map(l => ({ id: 'sys_' + l.id, created_at: getSortableTime(l.created_at, l.vrijeme, l.datum), datum_prikaz: formatirajTacanDatum(l.created_at, l.vrijeme, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: l.detalji || 'Zapis sistema.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
+            ...sysLogsRaw.map(l => ({ id: 'sys_' + l.id, created_at: getSortableTime(l.created_at, l.vrijeme, l.datum), datum_prikaz: formatirajTacanDatum(l.created_at, l.vrijeme, l.datum), korisnik: l.korisnik, akcija: l.akcija, detalji: ocistiTekstDetalja(l.detalji) || 'Zapis sistema.', stari_podaci: l.stari_podaci || null, novi_podaci: l.novi_podaci || null })),
             ...reklamacijskiLogovi
         ];
 

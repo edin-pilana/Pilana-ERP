@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
+import { posaljiNotifikaciju } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
@@ -218,17 +219,24 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             snimio_korisnik: user?.ime_prezime || 'Nepoznat'
         };
 
-        const { error } = await supabase.from('reklamacije').insert([payload]);
+        const { data: insertedRek, error } = await supabase.from('reklamacije').insert([payload]).select('id');
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Reklamacija'), onCancel: zatvoriDialog });
 
-        await supabase.from('sistem_audit_log').insert([{
+        await posaljiNotifikaciju({
             korisnik: user?.ime_prezime || 'Nepoznat',
             akcija: 'NOVA_REKLAMACIJA',
             detalji: `Podnesena reklamacija za paket ${paket.paket_id} (${payload.kolicina} m³). Razlog: ${form.razlog}`,
             nivo_alarma: 'CRVENO',
-            pregledano: false,
-            vrijeme: new Date().toISOString()
-        }]);
+            meta: {
+                modul: 'reklamacije',
+                entity_type: 'reklamacija',
+                entity_id: paket.paket_id,
+                paket_id: paket.paket_id,
+                approval_type: 'REKLAMACIJA',
+                approval_id: insertedRek?.[0]?.id,
+                target_permission: 'Reklamacije i Povrati',
+            },
+        });
 
         setPaket(null); setTrenutniProizvod(null);
         setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true });
@@ -354,14 +362,20 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                         }
                     }
 
-                    await supabase.from('sistem_audit_log').insert([{
+                    await posaljiNotifikaciju({
                         korisnik: user?.ime_prezime || 'Admin',
                         akcija: 'ODOBRENA_REKLAMACIJA',
                         detalji: `Odobrena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rekM3.toFixed(3)} m³).`,
                         nivo_alarma: 'INFO',
-                        pregledano: true,
-                        vrijeme: new Date().toISOString()
-                    }]);
+                        meta: {
+                            modul: 'reklamacije',
+                            entity_type: 'reklamacija',
+                            entity_id: rek.paket_id,
+                            paket_id: rek.paket_id,
+                            approval_id: rek.id,
+                            target_user: rek.snimio_korisnik && rek.snimio_korisnik !== (user?.ime_prezime || 'Admin') ? rek.snimio_korisnik : undefined,
+                        },
+                    });
 
                     await loadReklamacije();
                     prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: "Reklamacija je uspješno obrađena! Zalihe i nalozi su ažurirani.", onCancel: zatvoriDialog });
@@ -391,6 +405,20 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     toast.warning('Ova reklamacija je već obrađena.');
                     return loadReklamacije();
                 }
+                await posaljiNotifikaciju({
+                    korisnik: user?.ime_prezime || 'Admin',
+                    akcija: 'ODBIJENA_REKLAMACIJA',
+                    detalji: `Odbijena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rek.kolicina} m³).`,
+                    nivo_alarma: 'ŽUTO',
+                    meta: {
+                        modul: 'reklamacije',
+                        entity_type: 'reklamacija',
+                        entity_id: rek.paket_id,
+                        paket_id: rek.paket_id,
+                        approval_id: rek.id,
+                        target_user: rek.snimio_korisnik && rek.snimio_korisnik !== (user?.ime_prezime || 'Admin') ? rek.snimio_korisnik : undefined,
+                    },
+                });
                 toast.info(`Reklamacija za paket ${rek.paket_id} je odbijena.`);
                 loadReklamacije();
             },

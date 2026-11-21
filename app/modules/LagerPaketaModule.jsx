@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
+import { ocistiTekstDetalja } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
@@ -912,7 +913,8 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         });
 
         let dogadjaji = auditData.map(a => {
-            let detaljanOpis = a.detalji || "Izmjena unutrašnjih parametara paketa.";
+            const cistOpis = ocistiTekstDetalja(a.detalji);
+            let detaljanOpis = cistOpis || "Izmjena unutrašnjih parametara paketa.";
             if (a.akcija === 'DODAVANJE') detaljanOpis = `Kreiran paket na mašini: ${paket.masina || 'N/A'}. Količina: ${paket.kolicina_ulaz} kom (${paket.kolicina_final} m³).`;
             if (a.stari_podaci && a.novi_podaci) {
                 try {
@@ -925,7 +927,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         }
                     });
                     if (promjene.length > 0) {
-                        detaljanOpis = a.detalji ? `${a.detalji}\n(${promjene.join(' | ')})` : promjene.join(' | ');
+                        detaljanOpis = cistOpis ? `${cistOpis}\n(${promjene.join(' | ')})` : promjene.join(' | ');
                     }
                 } catch(e) {}
             }

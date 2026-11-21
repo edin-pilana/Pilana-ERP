@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
+import { posaljiNotifikaciju } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
@@ -588,14 +589,21 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         
         if (jeModifikovan && form.broj_ponude) {
             await supabase.from('ponude').update({ rn_modifikovan: true }).eq('id', form.broj_ponude);
-            await supabase.from('sistem_audit_log').insert([{
+            await posaljiNotifikaciju({
                 korisnik: currentUser.ime_prezime || 'Pogon',
                 akcija: 'TRAŽI_ODOBRENJE_PONUDE',
                 detalji: `Radni Nalog ${form.id} je izmijenjen u pogonu i odstupa od Ponude ${form.broj_ponude} (${form.kupac_naziv}). Potrebno odobrenje Admina!`,
                 nivo_alarma: 'CRVENO',
-                pregledano: false,
-                vrijeme: new Date().toISOString()
-            }]);
+                meta: {
+                    modul: 'ponude',
+                    moduli: ['ponude', 'radni_nalog'],
+                    entity_type: 'ponuda',
+                    entity_id: form.broj_ponude,
+                    rn_id: form.id,
+                    approval_type: 'ODOBRENJE_PONUDE',
+                    target_permission: 'Ponude',
+                },
+            });
         } else {
             await zapisiU_Log(isEditingNalog ? 'IZMJENA_RN' : 'KREIRAN_RN', `Radni Nalog ${form.id}`);
         }
