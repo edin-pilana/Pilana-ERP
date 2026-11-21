@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import SmartChart from './SmartChart';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -291,27 +292,18 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                         </table>
                     </Card>
 
-                    <Card className="bg-theme-card h-[300px] flex flex-col">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-4 text-center">Sveukupni Finansijski Rezultat (KM)</Title>
-                        <div className="flex-1 flex justify-center items-center w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                    <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v / 1000}k`} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} cursor={{ fill: '#1e293b' }} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
-                                    <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {data.grafikonFinansija.map((entry, index) => {
-                                            let boja = '#f59e0b';
-                                            if (entry.name === 'Totalni Trošak') boja = '#ef4444';
-                                            if (entry.name === 'Gubitak (Reklamacije)') boja = '#f97316';
-                                            if (entry.name === 'Čisti Profit') boja = '#10b981';
-                                            return <Cell key={`cell-${index}`} fill={boja} />;
-                                        })}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+                    <Card className="bg-theme-card min-h-[320px] flex flex-col">
+                        <SmartChart
+                            chartId="tab_finansije_rezultat"
+                            title="Sveukupni Finansijski Rezultat (KM)"
+                            data={data.grafikonFinansija}
+                            xKey="name"
+                            series={[{ key: 'Iznos', name: 'Iznos', color: '#10b981', unit: 'KM' }]}
+                            colorMap={{ 'Totalni Trošak': '#ef4444', 'Gubitak (Reklamacije)': '#f97316', 'Čisti Profit': '#10b981' }}
+                            defaultType="bar"
+                            unit="KM"
+                            height={240}
+                        />
                     </Card>
                 </div>
             </div>
@@ -388,22 +380,18 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
 
                 <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                     <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Sveukupni Finansijski Rezultat (KM)</div>
-                    <div style={{ display: 'flex', justifyItems: 'center' }}>
-                        <BarChart width={600} height={200} data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                            <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${v / 1000}k`} />
-                            <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={50}>
-                                {data.grafikonFinansija.map((entry, index) => {
-                                    let boja = '#f59e0b';
-                                    if (entry.name === 'Totalni Trošak') boja = '#ef4444';
-                                    if (entry.name === 'Gubitak (Reklamacije)') boja = '#f97316';
-                                    if (entry.name === 'Čisti Profit') boja = '#10b981';
-                                    return <Cell key={`cell-${index}`} fill={boja} />;
-                                })}
-                            </Bar>
-                        </BarChart>
-                    </div>
+                    <SmartChart
+                        chartId="tab_finansije_rezultat"
+                        data={data.grafikonFinansija}
+                        xKey="name"
+                        series={[{ key: 'Iznos', name: 'Iznos', color: '#10b981', unit: 'KM' }]}
+                        colorMap={{ 'Totalni Trošak': '#ef4444', 'Gubitak (Reklamacije)': '#f97316', 'Čisti Profit': '#10b981' }}
+                        defaultType="bar"
+                        unit="KM"
+                        printMode={true}
+                        width={600}
+                        height={200}
+                    />
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #1e293b', paddingTop: '15px', marginTop: '20px', pageBreakInside: 'avoid' }}>

@@ -2,6 +2,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import PametniDialog from '../components/PametniDialog';
+import {
+    NOTIF_KATEGORIJE,
+    ucitajPravilaNotifikacija,
+    spasiPravilaNotifikacija,
+    getEfektivnaPravilaZaKorisnika,
+} from '../utils/notificationHelpers';
 import { toast } from 'sonner';
 
 function SettingsSearchable({ label, value, onChange, list = [], placeholder="..." }) {
@@ -1378,6 +1384,8 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     const [radnici, setRadnici] = useState([]);
     const [editId, setEditId] = useState(null); 
     const [form, setForm] = useState({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [], qr_kod: '' });
+    const [notifPravila, setNotifPravila] = useState({});
+    const [savingMatrix, setSavingMatrix] = useState(false);
 
     const sviModuliKategorisano = {
         "📦 PROIZVODNJA": ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje', 'Planiranje (Samo Pregled)'],
@@ -1389,7 +1397,46 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     const sviModuli = Object.values(sviModuliKategorisano).flat();
 
     useEffect(() => { load(); }, []);
-    const load = async () => { const {data} = await supabase.from('radnici').select('*').order('ime_prezime'); setRadnici(data||[]); };
+    const load = async () => {
+        const [{ data }, pravila] = await Promise.all([
+            supabase.from('radnici').select('*').order('ime_prezime'),
+            ucitajPravilaNotifikacija(true),
+        ]);
+        setRadnici(data || []);
+        setNotifPravila(pravila || {});
+    };
+
+    const getUserMatrixKey = (r) => String(r?.username || r?.ime_prezime || '').trim().toLowerCase();
+
+    const toggleMatrixRule = (r, katId) => {
+        const uKey = getUserMatrixKey(r);
+        if (!uKey) return;
+        setNotifPravila((prev) => {
+            const efektivno = getEfektivnaPravilaZaKorisnika(r, prev);
+            const noviRed = { ...efektivno, [katId]: !efektivno[katId] };
+            return { ...prev, [uKey]: noviRed };
+        });
+    };
+
+    const postaviPresetZaKorisnika = (r, mod) => {
+        const uKey = getUserMatrixKey(r);
+        if (!uKey) return;
+        const noviRed = {};
+        NOTIF_KATEGORIJE.forEach((cat) => {
+            if (mod === 'SVE') noviRed[cat.id] = true;
+            else if (mod === 'SAMO_LICNE') noviRed[cat.id] = cat.id === 'LICNE_PORUKE';
+            else noviRed[cat.id] = false;
+        });
+        setNotifPravila((prev) => ({ ...prev, [uKey]: noviRed }));
+    };
+
+    const spasiMatricuNotifikacija = async () => {
+        setSavingMatrix(true);
+        const { error } = await spasiPravilaNotifikacija(notifPravila);
+        setSavingMatrix(false);
+        if (error) return toast.error('Greška pri spašavanju matrice obavještenja: ' + error.message);
+        toast.success('✅ Matrica obavještenja i odobrenja uspješno spašena za sve korisnike!');
+    };
 
     const toggleDozvola = (modul) => {
         setForm(prev => {
@@ -1620,6 +1667,90 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
                             </div>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* 🔔 MATRICA OBAVJEŠTENJA I ODOBRENJA PO KORISNIKU (NEZAVISNA OD DOZVOLA PRISTUPA MODULIMA) */}
+            <div data-testid="notif-matrix-section" className="lg:col-span-12 bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border-2 border-theme-accent/40 shadow-2xl space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-theme-border pb-4">
+                    <div>
+                        <h3 className="text-sm font-black uppercase tracking-widest text-theme-text flex items-center gap-2">
+                            <span>🔔</span> Matrica Obavještenja i Odobrenja po Korisniku
+                        </h3>
+                        <p className="text-xs text-theme-muted font-medium mt-1">
+                            Kvačice u ovoj matrici imaju prednost iznad dozvola pristupa — npr. ako radnik ima pristup <b>Ponudama</b>, a ovdje isključite <b>Rabat</b> ili <b>Ponuda/RN</b>, taj radnik NEĆE dobijati te obavijesti ni u zvoncu, ni kao popup, ni kao Push notifikaciju.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        data-testid="save-notif-matrix-btn"
+                        disabled={savingMatrix}
+                        onClick={spasiMatricuNotifikacija}
+                        className="shrink-0 px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-xs rounded-xl shadow-lg transition-all disabled:opacity-50"
+                    >
+                        {savingMatrix ? '⏳ Spašavam...' : '💾 Spasi Matricu Obavještenja'}
+                    </button>
+                </div>
+
+                <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse min-w-[820px]">
+                        <thead>
+                            <tr className="border-b border-theme-border text-[9px] uppercase font-black text-theme-muted">
+                                <th className="py-3 px-3 sticky left-0 bg-theme-card z-10">Korisnik / Uloga</th>
+                                {NOTIF_KATEGORIJE.map((cat) => (
+                                    <th key={cat.id} className="py-3 px-2 text-center" title={cat.opis}>
+                                        <span className="block text-sm mb-0.5">{cat.ikona}</span>
+                                        <span>{cat.kratki}</span>
+                                    </th>
+                                ))}
+                                <th className="py-3 px-2 text-right">Brze opcije</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-theme-border/60">
+                            {radnici.map((r) => {
+                                const efektivno = getEfektivnaPravilaZaKorisnika(r, notifPravila);
+                                const uKey = getUserMatrixKey(r);
+                                return (
+                                    <tr key={r.id} data-testid={`matrix-row-${uKey}`} className="hover:bg-theme-panel/60 transition-colors">
+                                        <td className="py-3 px-3 sticky left-0 bg-theme-card/95 z-10">
+                                            <div className="font-black text-xs text-theme-text uppercase">{r.ime_prezime}</div>
+                                            <div className="text-[9px] text-theme-muted font-bold">
+                                                @{r.username} • <span className="uppercase text-theme-accent">{r.uloga}</span>
+                                            </div>
+                                        </td>
+                                        {NOTIF_KATEGORIJE.map((cat) => {
+                                            const checked = Boolean(efektivno[cat.id]);
+                                            return (
+                                                <td key={cat.id} className="py-2.5 px-2 text-center">
+                                                    <button
+                                                        type="button"
+                                                        data-testid={`matrix-cell-${uKey}-${cat.id}`}
+                                                        aria-pressed={checked}
+                                                        onClick={() => toggleMatrixRule(r, cat.id)}
+                                                        title={`${r.ime_prezime} — ${cat.naziv}: ${checked ? 'UKLJUČENO (klikni za isključivanje)' : 'ISKLJUČENO (klikni za uključivanje)'}`}
+                                                        className={`w-9 h-9 rounded-xl border-2 font-black text-sm transition-all inline-flex items-center justify-center ${
+                                                            checked
+                                                                ? 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] hover:bg-emerald-500'
+                                                                : 'bg-theme-panel border-theme-border text-theme-muted hover:border-red-400 hover:text-red-400'
+                                                        }`}
+                                                    >
+                                                        {checked ? '✓' : '✕'}
+                                                    </button>
+                                                </td>
+                                            );
+                                        })}
+                                        <td className="py-2.5 px-2 text-right whitespace-nowrap">
+                                            <div className="inline-flex gap-1">
+                                                <button type="button" onClick={() => postaviPresetZaKorisnika(r, 'SVE')} className="px-2 py-1 rounded-lg bg-emerald-900/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white text-[8px] font-black uppercase">Sve</button>
+                                                <button type="button" onClick={() => postaviPresetZaKorisnika(r, 'SAMO_LICNE')} className="px-2 py-1 rounded-lg bg-blue-900/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600 hover:text-white text-[8px] font-black uppercase">Lične</button>
+                                                <button type="button" onClick={() => postaviPresetZaKorisnika(r, 'NISTA')} className="px-2 py-1 rounded-lg bg-red-900/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white text-[8px] font-black uppercase">Ništa</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

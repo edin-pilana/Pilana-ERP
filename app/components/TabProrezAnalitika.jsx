@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import SmartChart from './SmartChart';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -319,32 +320,33 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-theme-card h-[300px]">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Učešće proizvoda u prorezu</Title>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <PieChart>
-                                <Pie isAnimationActive={false} data={data.grafikonProizvoda} innerRadius="40%" outerRadius="80%" paddingAngle={2} dataKey="value" stroke="none">
-                                    {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                </Pie>
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(v) => `${v} m³`} />
-                                <Legend wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#fff' }} />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    <Card className="bg-theme-card min-h-[320px]">
+                        <SmartChart
+                            chartId="tab_prorez_proizvodi"
+                            title="Učešće proizvoda u prorezu"
+                            data={data.grafikonProizvoda}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            height={240}
+                        />
                     </Card>
 
-                    <Card className="bg-theme-card h-[300px]">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Trend Iskorištenja (30 Dana)</Title>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <LineChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} />
-                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} unit="%" />
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                                <Legend wrapperStyle={{ fontSize: '9px' }} />
-                                <Line isAnimationActive={false} type="monotone" dataKey="PilanaYield" name="Prosjek Pilane" stroke="#94a3b8" strokeWidth={2} dot={false} />
-                                <Line isAnimationActive={false} type="monotone" dataKey="BrentistaYield" name={brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter} stroke="#10b981" strokeWidth={3} dot={{ r: 2 }} />
-                            </LineChart>
-                        </ResponsiveContainer>
+                    <Card className="bg-theme-card min-h-[320px]">
+                        <SmartChart
+                            chartId="tab_prorez_trend"
+                            title="Trend Iskorištenja (30 Dana)"
+                            data={data.trendChartData}
+                            xKey="dan"
+                            series={[
+                                { key: 'PilanaYield', name: 'Prosjek Pilane', color: '#94a3b8', unit: '%' },
+                                { key: 'BrentistaYield', name: brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter, color: '#10b981', unit: '%' },
+                            ]}
+                            defaultType="line"
+                            unit="%"
+                            height={240}
+                        />
                     </Card>
                 </div>
             </div>
@@ -441,28 +443,35 @@ export default function TabProrezAnalitika({ datumOd, datumDo, masinaFilter, saa
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Učešće proizvoda u prorezu</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <PieChart width={320} height={180}>
-                                <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                    {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                </Pie>
-                                <Legend wrapperStyle={{ fontSize: '8px', fontWeight: 'bold', color: '#000' }} />
-                            </PieChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_prorez_proizvodi"
+                            data={data.grafikonProizvoda}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            printMode={true}
+                            width={320}
+                            height={180}
+                        />
                     </div>
 
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Trend Iskorištenja (30 Dana)</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <LineChart width={320} height={180} data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="dan" stroke="#64748b" fontSize={8} tickLine={false} />
-                                <YAxis stroke="#64748b" fontSize={8} tickLine={false} unit="%" />
-                                <Legend wrapperStyle={{ fontSize: '8px' }} />
-                                <Line isAnimationActive={false} type="monotone" dataKey="PilanaYield" name="Prosjek Pilane" stroke="#94a3b8" strokeWidth={2} dot={false} />
-                                <Line isAnimationActive={false} type="monotone" dataKey="BrentistaYield" name={brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter} stroke="#10b981" strokeWidth={3} dot={{ r: 2 }} />
-                            </LineChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_prorez_trend"
+                            data={data.trendChartData}
+                            xKey="dan"
+                            series={[
+                                { key: 'PilanaYield', name: 'Prosjek Pilane', color: '#94a3b8', unit: '%' },
+                                { key: 'BrentistaYield', name: brentistaFilter === 'SVI' ? 'Svi radnici' : brentistaFilter, color: '#10b981', unit: '%' },
+                            ]}
+                            defaultType="line"
+                            unit="%"
+                            printMode={true}
+                            width={320}
+                            height={180}
+                        />
                     </div>
                 </div>
 

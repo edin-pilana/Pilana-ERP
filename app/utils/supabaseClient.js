@@ -33,9 +33,8 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
     const rawDetalji = String(zapis.detalji || '');
     const cistiDetalji = stripMetaTag(rawDetalji);
 
-    // Lične INFO notifikacije za pojedinačnog radnika ostaju unutar aplikacije (ne spamuju globalni Telegram/Webhook)
+    // Lične INFO notifikacije za pojedinačnog radnika ostaju unutar aplikacije + Web Push (ne spamuju globalni Telegram/Webhook)
     const jeLicnaInfo = nivo === 'INFO' && rawDetalji.includes('"target_user"');
-    if (jeLicnaInfo) return;
 
     const jeHitno =
         nivo === 'CRVENO' ||
@@ -45,9 +44,19 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
         akcija.includes('REKLAMACIJ') ||
         akcija.includes('OBRISAN') ||
         akcija.includes('ALARM') ||
-        akcija.includes('OTKLJUČAN');
+        akcija.includes('OTKLJUČAN') ||
+        akcija.includes('ZAHTJEV_ODMOR');
 
-    if (!jeHitno) return;
+    // Pozadinski W3C Web Push (stiže na zadnji računar i mobitel čak i kad je aplikacija zatvorena!)
+    if ((jeHitno || jeLicnaInfo) && typeof window !== 'undefined') {
+        fetch('/api/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notification: zapis }),
+        }).catch(() => {});
+    }
+
+    if (jeLicnaInfo || !jeHitno) return;
 
     const ikona = nivo === 'CRVENO' ? '🚨' : '⚠️';
     const porukaTekst = `${ikona} <b>PILANA ERP ALARM (${escapeTelegramHtml(nivo)})</b>\n\n👤 <b>Radnik:</b> ${escapeTelegramHtml(zapis.korisnik || 'Nepoznat')}\n📋 <b>Akcija:</b> ${escapeTelegramHtml(akcija)}\n📝 <b>Detalji:</b> ${escapeTelegramHtml(cistiDetalji || '-')}\n🕒 <b>Vrijeme:</b> ${escapeTelegramHtml(new Date().toLocaleString('bs-BA'))}`;
@@ -123,7 +132,8 @@ if (!rawSupabase.__pilana_audit_patched) {
                 query.then = (onfulfilled, onrejected) => origThen((res) => {
                     if (!alarmSent && !res?.error) {
                         alarmSent = true;
-                        niz.forEach(item => posaljiEksterniPushAlarm(item));
+                        const insertedRows = Array.isArray(res?.data) && res.data.length > 0 ? res.data : niz;
+                        insertedRows.forEach(item => posaljiEksterniPushAlarm(item));
                     }
                     return onfulfilled ? onfulfilled(res) : res;
                 }, onrejected);

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import SmartChart from './SmartChart';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -190,42 +191,31 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-theme-card h-[300px] flex flex-col">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-4 text-center">Bilans Materijala (Ulaz / Izlaz / Kalo)</Title>
-                        <div className="flex-1 flex justify-center items-center w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={data.grafikonTokMaterijala} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                    <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} cursor={{ fill: '#1e293b' }} formatter={(v) => `${v} m³`} />
-                                    <Bar isAnimationActive={false} dataKey="M3" radius={[4, 4, 0, 0]} barSize={40}>
-                                        {data.grafikonTokMaterijala.map((entry, index) => {
-                                            let boja = '#10b981';
-                                            if (entry.name === 'Otpad od Rezova') boja = '#ef4444';
-                                            if (entry.name === 'Sirovina (Ulaz)') boja = '#3b82f6';
-                                            if (entry.name === 'Kalo (Krojenje)') boja = '#f97316';
-                                            return <Cell key={`cell-${index}`} fill={boja} />;
-                                        })}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
+                    <Card className="bg-theme-card min-h-[320px] flex flex-col">
+                        <SmartChart
+                            chartId="tab_ukupno_bilans"
+                            title="Bilans Materijala (Ulaz / Izlaz / Kalo)"
+                            data={data.grafikonTokMaterijala}
+                            xKey="name"
+                            series={[{ key: 'M3', name: 'Volumen', color: '#10b981', unit: 'm³' }]}
+                            colorMap={{ 'Sirovina (Ulaz)': '#3b82f6', 'Otpad od Rezova': '#ef4444', 'Kalo (Krojenje)': '#f97316' }}
+                            defaultType="bar"
+                            unit="m³"
+                            height={240}
+                        />
                     </Card>
 
-                    <Card className="bg-theme-card h-[300px] flex flex-col">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-4 text-center">Učešće Gotovih Proizvoda (m³)</Title>
-                        <div className="flex-1 flex justify-center items-center w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                        {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(v) => `${v} m³`} />
-                                    <Legend wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#fff' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
+                    <Card className="bg-theme-card min-h-[320px] flex flex-col">
+                        <SmartChart
+                            chartId="tab_ukupno_proizvodi"
+                            title="Učešće Gotovih Proizvoda (m³)"
+                            data={data.grafikonProizvoda}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            height={240}
+                        />
                     </Card>
                 </div>
             </div>
@@ -270,34 +260,33 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Bilans Materijala (Ulaz / Izlaz / Kalo)</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <BarChart width={320} height={180} data={data.grafikonTokMaterijala} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
-                                <Bar isAnimationActive={false} dataKey="M3" radius={[4, 4, 0, 0]} barSize={40}>
-                                    {data.grafikonTokMaterijala.map((entry, index) => {
-                                        let boja = '#10b981';
-                                        if (entry.name === 'Otpad od Rezova') boja = '#ef4444';
-                                        if (entry.name === 'Sirovina (Ulaz)') boja = '#3b82f6';
-                                        if (entry.name === 'Kalo (Krojenje)') boja = '#f97316';
-                                        return <Cell key={`cell-${index}`} fill={boja} />;
-                                    })}
-                                </Bar>
-                            </BarChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_ukupno_bilans"
+                            data={data.grafikonTokMaterijala}
+                            xKey="name"
+                            series={[{ key: 'M3', name: 'Volumen', color: '#10b981', unit: 'm³' }]}
+                            colorMap={{ 'Sirovina (Ulaz)': '#3b82f6', 'Otpad od Rezova': '#ef4444', 'Kalo (Krojenje)': '#f97316' }}
+                            defaultType="bar"
+                            unit="m³"
+                            printMode={true}
+                            width={320}
+                            height={180}
+                        />
                     </div>
 
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Učešće Gotovih Proizvoda (m³)</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <PieChart width={320} height={180}>
-                                <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={2} dataKey="value" stroke="none">
-                                    {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                </Pie>
-                                <Legend wrapperStyle={{ fontSize: '8px', fontWeight: 'bold', color: '#000' }} />
-                            </PieChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_ukupno_proizvodi"
+                            data={data.grafikonProizvoda}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            printMode={true}
+                            width={320}
+                            height={180}
+                        />
                     </div>
                 </div>
 

@@ -1,0 +1,17 @@
+{
+  "name": "Pilana ERP — Sistem za Upravljanje Proizvodnjom",
+  "short_name": "Pilana ERP",
+  "description": "Napredni ERP sistem za pilanu, proizvodnju, lager, komercijalu, finansije i HR.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090e17",
+  "theme_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

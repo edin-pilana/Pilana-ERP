@@ -10,6 +10,7 @@ import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck
 
 import AppShell from './components/AppShell';
 import PametniDialog from './components/PametniDialog';
+import SmartChart from './components/SmartChart';
 import { useAppStore } from './store/useAppStore'; 
 
 // Import moduli
@@ -69,6 +70,7 @@ const DOSTUPNI_WIDGETI = [
     { type: 'stanje_trupaca', name: '🪵 Trupci na Placu' },
     { type: 'stanje_daske', name: '📦 Gotova Roba (Lager)' },
     { type: 'top_duznici', name: '🚨 Top 5 Dužnika' },
+    { type: 'prilagodjeni_dijagram', name: '🎨 Prilagođeni Dijagram (Studio)' },
 ];
 
 const defaultWidgetLayout = [
@@ -117,6 +119,8 @@ export default function Page() {
     const widgetDragItem = useRef(null);
     const widgetDragOverItem = useRef(null);
     const [isDraggingWidget, setIsDraggingWidget] = useState(false); 
+
+    const [customDatasetMap, setCustomDatasetMap] = useState({});
 
     const [dashboardData, setDashboardData] = useState({ 
         kpi: {}, feed: [], trend: [], trupciChart: [], paketiChart: [], 
@@ -503,71 +507,119 @@ export default function Page() {
             case 'top_duznici':
                 return (
                     <div className="flex flex-col h-full">
-                        <h3 className="text-[10px] text-red-500 font-black uppercase mb-4 flex items-center gap-2">🚨 Top 5 Dužnika</h3>
-                        <div className="flex-1 min-h-[150px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={dashboardData.topDuznici} layout="vertical" margin={{ top: 0, right: 20, left: 20, bottom: 0 }} onClick={(data) => { if(data?.activeLabel) handleDeepLink('racuni', null,'otvoreni'); }}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                                    <XAxis type="number" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} width={80} style={{ cursor: 'pointer' }} />
-                                    <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'10px'}} formatter={(value) => `${value.toLocaleString('bs-BA')} KM`} cursor={{fill: '#1e293b'}} />
-                                    <Bar dataKey="dug" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={15} style={{ cursor: 'pointer' }} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                     </div>
+                        <SmartChart
+                            chartId="dash_top_duznici"
+                            title="🚨 Top Dužnici"
+                            data={dashboardData.topDuznici}
+                            xKey="name"
+                            series={[{ key: 'dug', name: 'Otvoreni dug', color: '#ef4444', unit: 'KM' }]}
+                            defaultType="hbar"
+                            unit="KM"
+                            height={190}
+                            compact={true}
+                            onItemClick={() => handleDeepLink('racuni', null, 'otvoreni')}
+                        />
+                    </div>
                 );
             case 'trend_proizvodnje':
                 return (
-                    <div className="flex flex-col h-full cursor-pointer hover:bg-theme-panel/50 rounded-xl transition-colors p-2 -m-2" onClick={() => handleDeepLink('analitika', null)}>
-                        <h3 className="text-[10px] text-slate-400 font-black uppercase mb-4 tracking-widest pl-2">📈 Trend Proizvodnje (Zadnjih 7 dana)</h3>
-                        <div className="flex-1 min-h-[150px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={dashboardData.trend} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                                    <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: '#1e293b'}} />
-                                    <Area type="monotone" dataKey="m3" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} strokeWidth={3} isAnimationActive={false} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
+                    <div className="flex flex-col h-full">
+                        <SmartChart
+                            chartId="dash_trend_proizvodnje"
+                            title="📈 Trend Proizvodnje (Zadnjih 7 dana)"
+                            data={dashboardData.trend}
+                            xKey="dan"
+                            series={[{ key: 'm3', name: 'Proizvedeno', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="area"
+                            unit="m³"
+                            height={190}
+                            compact={true}
+                            onItemClick={() => handleDeepLink('analitika', null)}
+                        />
                     </div>
                 );
             case 'stanje_trupaca':
                 return (
-                    <div className="flex flex-col h-full cursor-pointer hover:bg-theme-panel/50 rounded-xl transition-colors p-2 -m-2" onClick={() => handleDeepLink('lager', null)}>
-                        <h3 className="text-[10px] text-emerald-500 font-black uppercase mb-4 tracking-widest pl-2">🪵 Trupci na stanju (po dužinama)</h3>
-                        <div className="flex-1 min-h-[150px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={dashboardData.trupciChart} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                                    <XAxis dataKey="duzina" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v} m³`} />
-                                    <Bar isAnimationActive={false} dataKey="m3" fill="#10b981" radius={[4, 4, 0, 0]} barSize={25} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                     </div>
+                    <div className="flex flex-col h-full">
+                        <SmartChart
+                            chartId="dash_stanje_trupaca"
+                            title="🪵 Trupci na stanju (po dužinama)"
+                            data={dashboardData.trupciChart}
+                            xKey="duzina"
+                            series={[{ key: 'm3', name: 'Volumen trupaca', color: '#10b981', unit: 'm³' }]}
+                            defaultType="bar"
+                            unit="m³"
+                            height={190}
+                            compact={true}
+                            onItemClick={() => handleDeepLink('lager', null)}
+                        />
+                    </div>
                 );
             case 'stanje_daske':
                 return (
-                    <div className="flex flex-col h-full cursor-pointer hover:bg-theme-panel/50 rounded-xl transition-colors p-2 -m-2" onClick={() => handleDeepLink('lager', null)}>
-                        <h3 className="text-[10px] text-blue-500 font-black uppercase mb-4 tracking-widest pl-2">📦 Gotova roba na stanju (Udio)</h3>
-                        <div className="flex-1 min-h-[150px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie isAnimationActive={false} data={dashboardData.paketiChart} innerRadius="50%" outerRadius="80%" paddingAngle={2} dataKey="m3" stroke="none">
-                                        {dashboardData.paketiChart.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                    </Pie>
-                                    <RechartsTooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
-                                    <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#cbd5e1'}} />
-                                 </PieChart>
-                            </ResponsiveContainer>
-                        </div>
+                    <div className="flex flex-col h-full">
+                        <SmartChart
+                            chartId="dash_stanje_daske"
+                            title="📦 Gotova roba na stanju"
+                            data={dashboardData.paketiChart}
+                            xKey="naziv"
+                            series={[{ key: 'm3', name: 'Na lageru', color: '#8b5cf6', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            height={210}
+                            compact={true}
+                            onItemClick={() => handleDeepLink('lager', null)}
+                        />
                     </div>
-                 );
+                );
+            case 'prilagodjeni_dijagram': {
+                const odabraniIzvor = customDatasetMap[widget.id] || widget.dataset || 'trend';
+                const izvori = {
+                    trend: { label: 'Proizvodnja (7 dana)', data: dashboardData.trend, xKey: 'dan', series: [{ key: 'm3', name: 'Proizvedeno', color: '#3b82f6', unit: 'm³' }], unit: 'm³', defaultType: 'area' },
+                    trupci: { label: 'Trupci po dužinama', data: dashboardData.trupciChart, xKey: 'duzina', series: [{ key: 'm3', name: 'Trupci na placu', color: '#10b981', unit: 'm³' }], unit: 'm³', defaultType: 'bar' },
+                    lager: { label: 'Gotova roba (Lager)', data: dashboardData.paketiChart, xKey: 'naziv', series: [{ key: 'm3', name: 'Lager', color: '#8b5cf6', unit: 'm³' }], unit: 'm³', defaultType: 'donut' },
+                    duznici: { label: 'Top dužnici (KM)', data: dashboardData.topDuznici, xKey: 'name', series: [{ key: 'dug', name: 'Dug', color: '#ef4444', unit: 'KM' }], unit: 'KM', defaultType: 'hbar' },
+                    nalozi: {
+                        label: 'Progres naloga (%)',
+                        data: (dashboardData.naloziProgres || []).map(n => ({ id: n.id, uradjeno: parseFloat(n.uradjeno || 0), cilj: parseFloat(n.cilj || 0), procenat: n.procenat || 0 })),
+                        xKey: 'id',
+                        series: [
+                            { key: 'uradjeno', name: 'Urađeno', color: '#10b981', unit: 'm³' },
+                            { key: 'cilj', name: 'Cilj', color: '#3b82f6', unit: 'm³' },
+                        ],
+                        unit: 'm³',
+                        defaultType: 'composed',
+                    },
+                    spremno: {
+                        label: 'Spremno za isporuku',
+                        data: (dashboardData.spremnoZaIsporuku || []).map(s => ({ id: s.id, kolicina: parseFloat(s.kolicina || 0) })),
+                        xKey: 'id',
+                        series: [{ key: 'kolicina', name: 'Spremno', color: '#f59e0b', unit: 'm³' }],
+                        unit: 'm³',
+                        defaultType: 'bar',
+                    },
+                };
+                const aktivni = izvori[odabraniIzvor] || izvori.trend;
+                return (
+                    <div className="flex flex-col h-full">
+                        <SmartChart
+                            chartId={`dash_custom_${widget.id}`}
+                            title="🎨 Dijagram Studio"
+                            data={aktivni.data}
+                            xKey={aktivni.xKey}
+                            series={aktivni.series}
+                            defaultType={aktivni.defaultType}
+                            unit={aktivni.unit}
+                            height={220}
+                            datasetSelector={{
+                                value: odabraniIzvor,
+                                options: Object.entries(izvori).map(([id, v]) => ({ id, label: v.label })),
+                                onChange: (val) => setCustomDatasetMap(prev => ({ ...prev, [widget.id]: val })),
+                            }}
+                        />
+                    </div>
+                );
+            }
             case 'live_feed':
                 return (
                     <div className="flex flex-col h-full">

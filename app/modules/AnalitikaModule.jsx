@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import TabAiAnalitika from '../components/TabAiAnalitika';
+import SmartChart, { uhvatiSmartChartSvgHtml } from '../components/SmartChart';
 import { printDokument } from '../utils/printHelpers';
 import { escapeHtml } from '../utils/dateHelpers';
 import { useSaaS } from '../utils/useSaaS';
@@ -569,11 +570,14 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </tr>
             `).join('');
 
+            const chartHtml = uhvatiSmartChartSvgHtml('analitika_prorez_trend', `Dnevni Trend Proreza (${masinaFilter})`, periodTekst);
+
             html = `
                 <div class="info-grid">
                     <div class="info-col-left"><h4>Izvještaj Proreza i Pilane</h4><h2>Period: ${escapeHtml(periodTekst)}</h2><p>Mašina: <b>${escapeHtml(masinaFilter)}</b></p></div>
                     <div class="info-col-right"><p>Izrezano Trupaca: <b>${analitikaProrez.izrezanoM3.toFixed(3)} m³ (${analitikaProrez.brojTrupaca} kom)</b></p><p>Proizvedeno Građe: <b>${analitikaProrez.proizvedenoM3.toFixed(3)} m³</b></p><p>Iskorištenost (Yield): <b>${analitikaProrez.yieldProc.toFixed(1)}%</b></p></div>
                 </div>
+                ${chartHtml}
                 <table>
                     <thead><tr><th>#</th><th>Paket ID</th><th>Proizvod</th><th style="text-align:center;">Dimenzije (cm)</th><th style="text-align:center;">Količina</th><th class="num">Volumen (m³)</th></tr></thead>
                     <tbody>${redovi}</tbody>
@@ -591,12 +595,14 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                     <td class="num">${r.izlazM3.toFixed(3)} m³</td>
                 </tr>
             `).join('');
+            const chartHtml = uhvatiSmartChartSvgHtml('analitika_dorada_trend', `Proizvodnja Dorade (${masinaFilter})`, periodTekst);
 
             html = `
                 <div class="info-grid">
                     <div class="info-col-left"><h4>Izvještaj Dorade</h4><h2>Period: ${escapeHtml(periodTekst)}</h2><p>Mašina: <b>${escapeHtml(masinaFilter)}</b></p></div>
                     <div class="info-col-right"><p>Ulaz Sirovine: <b>${analitikaDorada.ulazSirovinaM3.toFixed(3)} m³</b></p><p>Izlaz Gotove Robe: <b>${analitikaDorada.izlazGotovoM3.toFixed(3)} m³</b></p><p>Stvarni Kalo: <b>${analitikaDorada.stvarniKaloM3.toFixed(3)} m³</b></p></div>
                 </div>
+                ${chartHtml}
                 <table>
                     <thead><tr><th>#</th><th>Izlazni Paket</th><th>Proizvod (cm)</th><th>Ulazna Sirovina</th><th>Mašina</th><th class="num">Izlaz (m³)</th></tr></thead>
                     <tbody>${redovi}</tbody>
@@ -604,11 +610,13 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             `;
             printDokument('IZVJEŠTAJ DORADE', `DORADA-${efektivniOd}`, formatDatumBHS(danas), html, '#f59e0b');
         } else if (tab === 'UKUPNO') {
+            const chartHtml = uhvatiSmartChartSvgHtml('analitika_ukupno_bilans', 'Ukupni Materijalni Bilans Fabrike (m³)', periodTekst);
             html = `
                 <div class="info-grid">
                     <div class="info-col-left"><h4>Ukupni Materijalni Bilans Fabrike</h4><h2>Period: ${periodTekst}</h2></div>
                     <div class="info-col-right"><p>Efikasnost Fabrike (Yield): <b>${analitikaUkupno.efikasnostFabrike.toFixed(1)}%</b></p></div>
                 </div>
+                ${chartHtml}
                 <table>
                     <thead><tr><th>Stavka Materijalnog Bilansa</th><th class="num">Zapremina (m³)</th></tr></thead>
                     <tbody>
@@ -622,11 +630,13 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             `;
             printDokument('MATERIJALNI BILANS', `UKUPNO-${efektivniOd}`, formatDatumBHS(danas), html, '#3b82f6');
         } else {
+            const chartHtml = uhvatiSmartChartSvgHtml('analitika_finansije_bilans', 'Finansijski Bilans Proizvodnje (KM)', periodTekst);
             html = `
                 <div class="info-grid">
                     <div class="info-col-left"><h4>Finansijski Bilans Proizvodnje</h4><h2>Period: ${periodTekst}</h2></div>
                     <div class="info-col-right"><p>Čisti Profit: <b>${analitikaFinansije.cistiProfitKM.toFixed(2)} KM</b></p></div>
                 </div>
+                ${chartHtml}
                 <table>
                     <thead><tr><th>Stavka Bilansa</th><th class="num">Vrijednost</th></tr></thead>
                     <tbody>
@@ -724,26 +734,22 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    {/* GRAFIKON PROREZA */}
+                    {/* GRAFIKON PROREZA — SMARTCHART STUDIO */}
                     <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-2xl">
-                        <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">📈 Dnevni Trend Proreza ({masinaFilter})</h3>
-                        <div className="h-72 w-full">
-                            {analitikaProrez.chartData.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-xs text-slate-500 italic border border-dashed border-theme-border rounded-xl">Nema podataka za odabrani period i mašinu ({masinaFilter}).</div>
-                            ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={analitikaProrez.chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-                                        <XAxis dataKey="datum" stroke="#94a3b8" fontSize={10} />
-                                        <YAxis stroke="#94a3b8" fontSize={10} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px' }} />
-                                        <Legend />
-                                        <Area type="monotone" dataKey="Ulaz_Trupci" name="Ulaz Trupci (m³)" stroke="#ef4444" fill="#ef4444" fillOpacity={0.2} />
-                                        <Area type="monotone" dataKey="Izlaz_Daska" name="Izlaz Građa (m³)" stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            )}
-                        </div>
+                        <SmartChart
+                            chartId="analitika_prorez_trend"
+                            title={`📈 Dnevni Trend Proreza (${masinaFilter})`}
+                            subtitle="Odaberi tip dijagrama, metrike ili stavke — automatski se printa u izvještaju"
+                            data={analitikaProrez.chartData}
+                            xKey="datum"
+                            series={[
+                                { key: 'Ulaz_Trupci', name: 'Ulaz Trupci', color: '#ef4444', unit: 'm³' },
+                                { key: 'Izlaz_Daska', name: 'Izlaz Građa', color: '#10b981', unit: 'm³' },
+                            ]}
+                            defaultType="area"
+                            unit="m³"
+                            height={280}
+                        />
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -821,28 +827,22 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    {/* 🟢 GRAFIKON DORADE KOJI 100% PRATI FILTER MAŠINE */}
+                    {/* 🟢 GRAFIKON DORADE — SMARTCHART STUDIO */}
                     <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-2xl">
-                        <h3 className="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">📊 Proizvodnja Dorade po danima ({masinaFilter})</h3>
-                        <div className="h-72 w-full">
-                            {analitikaDorada.chartData.length === 0 ? (
-                                <div className="h-full flex items-center justify-center text-xs text-slate-500 italic border border-dashed border-theme-border rounded-xl">
-                                    Nema evidentirane proizvodnje za mašinu "{masinaFilter}" u odabranom periodu (0.00 m³).
-                                </div>
-                            ) : (
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={analitikaDorada.chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-                                        <XAxis dataKey="datum" stroke="#94a3b8" fontSize={10} />
-                                        <YAxis stroke="#94a3b8" fontSize={10} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', fontSize: '12px' }} />
-                                        <Legend />
-                                        <Bar dataKey="Ulaz_Sirovina" name="Ulaz Sirovina (m³)" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                                        <Bar dataKey="Izlaz_Gotovo" name="Izlaz Gotovo (m³)" fill="#10b981" radius={[6, 6, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            )}
-                        </div>
+                        <SmartChart
+                            chartId="analitika_dorada_trend"
+                            title={`📊 Proizvodnja Dorade po danima (${masinaFilter})`}
+                            subtitle="Prilagodi tip dijagrama i podatke — automatski se printa u PDF izvještaju"
+                            data={analitikaDorada.chartData}
+                            xKey="datum"
+                            series={[
+                                { key: 'Ulaz_Sirovina', name: 'Ulaz Sirovina', color: '#f59e0b', unit: 'm³' },
+                                { key: 'Izlaz_Gotovo', name: 'Izlaz Gotovo', color: '#10b981', unit: 'm³' },
+                            ]}
+                            defaultType="bar"
+                            unit="m³"
+                            height={280}
+                        />
                     </div>
 
                     <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-xl">
@@ -903,6 +903,26 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                             <p className="text-3xl font-black text-amber-400">{analitikaUkupno.kaloKrojenjaM3.toFixed(3)} <span className="text-xs">m³</span></p>
                         </div>
                     </div>
+
+                    <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-2xl">
+                        <SmartChart
+                            chartId="analitika_ukupno_bilans"
+                            title="🏭 Materijalni Bilans Fabrike (Ulaz / Izlaz / Otpad / Kalo)"
+                            subtitle="Biraj način prikaza i stavke — uključeno u A4 print izvještaj"
+                            data={[
+                                { stavka: 'Ulaz Sirovine', m3: parseFloat(analitikaUkupno.ulazTrupacaM3.toFixed(3)) },
+                                { stavka: 'Proizvedeno', m3: parseFloat(analitikaUkupno.proizvedenoUkupnoM3.toFixed(3)) },
+                                { stavka: 'Stvarni Otpad', m3: parseFloat(analitikaUkupno.stvarniOtpadM3.toFixed(3)) },
+                                { stavka: 'Kalo Krojenja', m3: parseFloat(analitikaUkupno.kaloKrojenjaM3.toFixed(3)) },
+                            ]}
+                            xKey="stavka"
+                            series={[{ key: 'm3', name: 'Volumen', color: '#3b82f6', unit: 'm³' }]}
+                            colorMap={{ 'Ulaz Sirovine': '#3b82f6', 'Proizvedeno': '#10b981', 'Stvarni Otpad': '#ef4444', 'Kalo Krojenja': '#f59e0b' }}
+                            defaultType="bar"
+                            unit="m³"
+                            height={280}
+                        />
+                    </div>
                 </div>
             )}
 
@@ -933,6 +953,27 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                             <p className="text-3xl font-black text-emerald-400">{analitikaFinansije.cistiProfitKM.toFixed(2)} <span className="text-sm">KM</span></p>
                             <p className="text-[10px] text-slate-400 mt-2">Tačna formula: (1) - (2) - (3)</p>
                         </div>
+                    </div>
+
+                    <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-2xl">
+                        <SmartChart
+                            chartId="analitika_finansije_bilans"
+                            title="💰 Finansijska Struktura (Vrijednost / Trošak / Reklamacije / Profit)"
+                            subtitle="Odaberi prikaz i stavke — automatski se štampa u Finansijskom izvještaju"
+                            data={[
+                                { stavka: 'Vrijednost Robe', km: parseFloat(analitikaFinansije.trzisnaVrijednostKM.toFixed(2)) },
+                                { stavka: 'Trošak Sirovina', km: parseFloat(analitikaFinansije.trosakSirovineKM.toFixed(2)) },
+                                { stavka: 'Trošak Blagajna', km: parseFloat(analitikaFinansije.izlazBlagajnaKM.toFixed(2)) },
+                                { stavka: 'Reklamacije', km: parseFloat(analitikaFinansije.gubitakReklamacijeKM.toFixed(2)) },
+                                { stavka: 'Čisti Profit', km: parseFloat(analitikaFinansije.cistiProfitKM.toFixed(2)) },
+                            ]}
+                            xKey="stavka"
+                            series={[{ key: 'km', name: 'Iznos', color: '#10b981', unit: 'KM' }]}
+                            colorMap={{ 'Vrijednost Robe': '#3b82f6', 'Trošak Sirovina': '#f59e0b', 'Trošak Blagajna': '#f97316', 'Reklamacije': '#ef4444', 'Čisti Profit': '#10b981' }}
+                            defaultType="bar"
+                            unit="KM"
+                            height={280}
+                        />
                     </div>
                 </div>
             )}

@@ -16,9 +16,16 @@ import {
     daLiJeLicnaNotifikacijaZaKorisnika,
     daLiJeProcitanoZaKorisnika,
     ucitajNotifikacijeZaKorisnika,
+    ucitajPravilaNotifikacija,
     oznaciNotifikacijuProcitanom,
     oznaciNotifikacijeProcitanim,
 } from '../utils/notificationHelpers';
+import {
+    aktivirajPushNaUredjaju,
+    ukloniPushSaOvogUredjaja,
+    provjeriPushStatusKorisnika,
+    posaljiTestnuPushNotifikaciju,
+} from '../utils/pushConfig';
 
 const DEFAULT_MENU_STYLE = {
     sidebarWidth: 260,
@@ -54,6 +61,10 @@ export default function AppShell({
     const [selectedNotif, setSelectedNotif] = useState(null);
     const seenToastIdsRef = useRef(new Set());
     const initialNotifLoadedRef = useRef(false);
+
+    // 📲 Pozadinski Web Push status za trenutno prijavljenog korisnika (zadnji računar & zadnji mobitel)
+    const [pushStatus, setPushStatus] = useState({ supported: false, permission: 'default', thisDeviceActive: false, deviceType: 'desktop', desktopLabel: null, mobileLabel: null });
+    const [pushBusy, setPushBusy] = useState(false);
 
     // State za uređivanje menija sa backup snapshotom (da Odustani zaista vrati prethodno stanje)
     const [isMenuEditMode, setIsMenuEditMode] = useState(false);
@@ -191,11 +202,103 @@ export default function AppShell({
         }
     }, [user, notifTab, prikaziInAppNotifikaciju]);
 
-    // Resetuj praćenje kad se promijeni prijavljeni korisnik
+    // Resetuj praćenje kad se promijeni prijavljeni korisnik + automatski sinhronizuj Push za zadnji uređaj
     useEffect(() => {
         seenToastIdsRef.current = new Set();
         initialNotifLoadedRef.current = false;
+        if (!user || (!user.ime_prezime && !user.username)) return;
+
+        ucitajPravilaNotifikacija(true);
+
+        (async () => {
+            const st = await provjeriPushStatusKorisnika(user);
+            setPushStatus(st);
+            // Ako je korisnik već ranije odobrio obavještenja u ovom pregledniku, automatski veži ovaj uređaj kao zadnji aktivni uređaj za ovog korisnika!
+            if (st.supported && st.permission === 'granted') {
+                const res = await aktivirajPushNaUredjaju(user, { silentIfDenied: true });
+                if (res.ok) {
+                    const fresh = await provjeriPushStatusKorisnika(user);
+                    setPushStatus(fresh);
+                }
+            }
+        })();
     }, [user?.id, user?.username, user?.ime_prezime]);
+
+    // Deep-link iz kliknute pozadinske Push notifikacije (/?notif=<id> ili Service Worker postMessage)
+    useEffect(() => {
+        if (!user || typeof window === 'undefined') return;
+
+        const otvoriNotifPoId = async (notifId) => {
+            if (!notifId) return;
+            const { data } = await supabase.from('sistem_audit_log').select('*').eq('id', notifId).maybeSingle();
+            if (data && daLiJeNotifikacijaZaKorisnika(data, user)) {
+                setSelectedNotif(data);
+            }
+        };
+
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const urlNotifId = params.get('notif');
+            if (urlNotifId) {
+                otvoriNotifPoId(urlNotifId);
+                params.delete('notif');
+                const nextUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
+                window.history.replaceState({}, '', nextUrl);
+            }
+        } catch (e) {}
+
+        const onSwMessage = (ev) => {
+            if (ev?.data?.type === 'OPEN_NOTIFICATION' && ev.data.notifId) {
+                otvoriNotifPoId(ev.data.notifId);
+            }
+        };
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', onSwMessage);
+            return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+        }
+    }, [user]);
+
+    const handleTogglePush = async () => {
+        if (!user) return;
+        setPushBusy(true);
+        try {
+            if (pushStatus.thisDeviceActive) {
+                await ukloniPushSaOvogUredjaja(user);
+                toast.info('Pozadinske push notifikacije su isključene na ovom uređaju.');
+            } else {
+                const res = await aktivirajPushNaUredjaju(user, { silentIfDenied: false });
+                if (res.ok) {
+                    toast.success(`✅ Push notifikacije su uključene na ovom uređaju (${res.deviceLabel})!`);
+                } else if (res.reason === 'denied') {
+                    toast.error('Preglednik blokira obavještenja. Omogućite ih u postavkama stranice (ikona lokota pored adrese).');
+                } else if (res.reason === 'unsupported') {
+                    toast.warning('Ovaj preglednik ne podržava Web Push (na iPhone-u prvo dodajte aplikaciju na početni ekran preko Share → Add to Home Screen).');
+                } else {
+                    toast.error('Nije moguće uključiti Push: ' + (res.reason || 'nepoznata greška'));
+                }
+            }
+            const fresh = await provjeriPushStatusKorisnika(user);
+            setPushStatus(fresh);
+        } finally {
+            setPushBusy(false);
+        }
+    };
+
+    const handleTestPush = async () => {
+        setPushBusy(true);
+        try {
+            const res = await posaljiTestnuPushNotifikaciju(user);
+            if (res?.ok && res.sent > 0) {
+                toast.success(`📲 Testna push notifikacija poslana na ${res.sent} uređaj(a)!`);
+            } else {
+                toast.warning(res?.error || 'Nema aktivnih push uređaja. Prvo uključite Push iznad.');
+            }
+        } catch (e) {
+            toast.error('Greška pri slanju test push poruke.');
+        } finally {
+            setPushBusy(false);
+        }
+    };
 
     // 🔔 JEDAN globalni Realtime + pouzdani pozadinski sync za trenutno prijavljenog korisnika
     useEffect(() => {
@@ -269,8 +372,9 @@ export default function AppShell({
         setLogoutDialog(true);
     };
 
-    const potvrdiOdjavu = () => {
+    const potvrdiOdjavu = async () => {
         try {
+            await ukloniPushSaOvogUredjaja(user);
             const keysToClear = ['smart_timber_user', 'last_masina', 'last_loc', 'erp_auto_open_id', 'erp_auto_action'];
             keysToClear.forEach(k => localStorage.removeItem(k));
         } catch (e) {}
@@ -581,6 +685,48 @@ export default function AppShell({
                             <button type="button" onClick={() => setIsNotifDrawerOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors">
                                 <X size={20} />
                             </button>
+                        </div>
+
+                        {/* 📲 POZADINSKE PUSH NOTIFIKACIJE (I KAD JE APLIKACIJA ZATVORENA — RAČUNAR + MOBITEL) */}
+                        <div className="mb-3 p-3 rounded-2xl bg-theme-panel border border-theme-border space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-theme-text">
+                                    📲 Push i kad je app zatvoren
+                                </span>
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${pushStatus.thisDeviceActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'}`}>
+                                    {pushStatus.thisDeviceActive ? '● Aktivan' : '○ Isključen'}
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 text-[9px] text-theme-muted font-bold">
+                                <span className={`px-2 py-0.5 rounded-lg border ${pushStatus.desktopLabel ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' : 'bg-theme-card border-theme-border'}`}>
+                                    💻 {pushStatus.desktopLabel || 'Računar nije vezan'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-lg border ${pushStatus.mobileLabel ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' : 'bg-theme-card border-theme-border'}`}>
+                                    📱 {pushStatus.mobileLabel || 'Mobitel nije vezan'}
+                                </span>
+                            </div>
+                            <div className="flex gap-1.5 pt-0.5">
+                                <button
+                                    type="button"
+                                    disabled={pushBusy}
+                                    onClick={handleTogglePush}
+                                    data-testid="toggle-web-push-btn"
+                                    className={`flex-1 py-2 px-3 rounded-xl text-[9px] font-black uppercase transition-all disabled:opacity-50 ${pushStatus.thisDeviceActive ? 'bg-red-900/20 text-red-400 border border-red-500/30 hover:bg-red-600 hover:text-white' : 'bg-theme-accent text-white hover:opacity-90 shadow-md'}`}
+                                >
+                                    {pushStatus.thisDeviceActive ? '🔕 Isključi ovaj uređaj' : '🔔 Uključi na ovom uređaju'}
+                                </button>
+                                {(pushStatus.desktopLabel || pushStatus.mobileLabel) && (
+                                    <button
+                                        type="button"
+                                        disabled={pushBusy}
+                                        onClick={handleTestPush}
+                                        className="py-2 px-3 rounded-xl bg-theme-card border border-theme-border text-[9px] font-black uppercase text-theme-text hover:border-theme-accent transition-all disabled:opacity-50"
+                                        title="Pošalji testnu push poruku na vaše prijavljene uređaje"
+                                    >
+                                        🧪 Test
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         <div className="flex items-center justify-between gap-2 mb-3">

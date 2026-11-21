@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import SmartChart from './SmartChart';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -243,45 +244,45 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-theme-card h-[300px]">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Prinos (Yield %) po obrađenom artiklu</Title>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <BarChart data={data.yieldChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} unit="%" />
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} cursor={{ fill: '#1e293b' }} />
-                                <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <Card className="bg-theme-card min-h-[320px]">
+                        <SmartChart
+                            chartId="tab_dorada_yield"
+                            title="Prinos (Yield %) po obrađenom artiklu"
+                            data={data.yieldChart}
+                            xKey="name"
+                            series={[{ key: 'Yield', name: 'Prinos', color: saas?.ui?.boja_akcenta_dorada || '#3b82f6', unit: '%' }]}
+                            defaultType="bar"
+                            unit="%"
+                            height={240}
+                        />
                     </Card>
 
-                    <Card className="bg-theme-card h-[300px]">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Raspodjela Operacija (m³)</Title>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <PieChart>
-                                <Pie isAnimationActive={false} data={data.grafikonOperacija} innerRadius="40%" outerRadius="80%" paddingAngle={2} dataKey="value" stroke="none">
-                                    {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                </Pie>
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(v) => `${v} m³`} />
-                                <Legend wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#fff' }} />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    <Card className="bg-theme-card min-h-[320px]">
+                        <SmartChart
+                            chartId="tab_dorada_operacije"
+                            title="Raspodjela Operacija (m³)"
+                            data={data.grafikonOperacija}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#10b981', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            height={240}
+                        />
                     </Card>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6">
-                    <Card className="bg-theme-card h-[250px]">
-                        <Title className="text-slate-300 font-black text-[10px] uppercase mb-2 text-center">Dinamika rada (30 Dana): Volumen dorade (m³)</Title>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <AreaChart data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} />
-                                <YAxis stroke="#64748b" fontSize={9} tickLine={false} />
-                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                                <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                    <Card className="bg-theme-card min-h-[280px]">
+                        <SmartChart
+                            chartId="tab_dorada_dinamika"
+                            title="Dinamika rada (30 Dana): Volumen dorade (m³)"
+                            data={data.trendChartData}
+                            xKey="dan"
+                            series={[{ key: 'M3', name: data.smjenaInfo.glavniRadnik || 'Dorada', color: '#3b82f6', unit: 'm³' }]}
+                            defaultType="area"
+                            unit="m³"
+                            height={220}
+                        />
                     </Card>
 
                     <Card className="bg-theme-card border-none">
@@ -353,39 +354,48 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Prinos (Yield %) po obrađenom artiklu</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <BarChart width={320} height={160} data={data.yieldChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                <XAxis dataKey="name" stroke="#64748b" fontSize={7} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#64748b" fontSize={7} tickLine={false} axisLine={false} unit="%" />
-                                <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_dorada_yield"
+                            data={data.yieldChart}
+                            xKey="name"
+                            series={[{ key: 'Yield', name: 'Prinos', color: saas?.ui?.boja_akcenta_dorada || '#3b82f6', unit: '%' }]}
+                            defaultType="bar"
+                            unit="%"
+                            printMode={true}
+                            width={320}
+                            height={160}
+                        />
                     </div>
 
                     <div style={{ width: '48%', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px' }}>
                         <div style={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Raspodjela Operacija (m³)</div>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <PieChart width={320} height={160}>
-                                <Pie isAnimationActive={false} data={data.grafikonOperacija} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
-                                    {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
-                                </Pie>
-                                <Legend wrapperStyle={{ fontSize: '8px', fontWeight: 'bold', color: '#000' }} />
-                            </PieChart>
-                        </div>
+                        <SmartChart
+                            chartId="tab_dorada_operacije"
+                            data={data.grafikonOperacija}
+                            xKey="name"
+                            series={[{ key: 'value', name: 'Volumen', color: '#10b981', unit: 'm³' }]}
+                            defaultType="donut"
+                            unit="m³"
+                            printMode={true}
+                            width={320}
+                            height={160}
+                        />
                     </div>
                 </div>
 
                 <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px', marginBottom: '15px', pageBreakInside: 'avoid' }}>
                     <div style={{ fontSize: '9px', color: '#0f172a', fontWeight: '900', textTransform: 'uppercase', textAlign: 'center', marginBottom: '10px' }}>Dinamika rada (30 Dana): Volumen dorade (m³)</div>
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <AreaChart width={680} height={150} data={data.trendChartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                            <XAxis dataKey="dan" stroke="#64748b" fontSize={7} tickLine={false} />
-                            <YAxis stroke="#64748b" fontSize={7} tickLine={false} />
-                            <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
-                        </AreaChart>
-                    </div>
+                    <SmartChart
+                        chartId="tab_dorada_dinamika"
+                        data={data.trendChartData}
+                        xKey="dan"
+                        series={[{ key: 'M3', name: data.smjenaInfo.glavniRadnik || 'Dorada', color: '#3b82f6', unit: 'm³' }]}
+                        defaultType="area"
+                        unit="m³"
+                        printMode={true}
+                        width={680}
+                        height={150}
+                    />
                 </div>
 
                 <div style={{ width: '100%', marginBottom: '15px', pageBreakInside: 'auto' }}>

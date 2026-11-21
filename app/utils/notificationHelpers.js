@@ -1,6 +1,19 @@
 import { supabase } from './supabaseClient';
 
 const META_REGEX = /\s*\[\[META:(\{[\s\S]*?\})\]\]\s*$/;
+const PRAVILA_MODUL_IME = 'notifikacije_pravila';
+const PRAVILA_LS_KEY = 'erp_notifikacije_pravila_cache';
+
+export const NOTIF_KATEGORIJE = [
+    { id: 'PONUDE_RABAT', kratki: 'Rabat', naziv: 'Ručni rabat (Ponude)', ikona: '🏷️', opis: 'Upozorenja kada neko ručno promijeni rabat ili cijenu na ponudi' },
+    { id: 'PONUDE_ODOBRENJE', kratki: 'Ponuda/RN', naziv: 'Odobrenje Ponuda ↔ RN', ikona: '📝', opis: 'Zahtjevi za odobrenje kada Radni Nalog odstupa od Ponude' },
+    { id: 'REKLAMACIJE', kratki: 'Reklamacije', naziv: 'Reklamacije i Povrati', ikona: '⚠️', opis: 'Nove reklamacije paketa i zahtjevi za odobrenje povrata' },
+    { id: 'HR_ODMOR', kratki: 'HR Odmor', naziv: 'HR Zahtjevi za Odmor', ikona: '🏖️', opis: 'Zahtjevi radnika za godišnji odmor, bolovanje i korekcije sati' },
+    { id: 'BLAGAJNA_ALARM', kratki: 'Blagajna', naziv: 'Alarmi Blagajne / Kase', ikona: '💵', opis: 'Kritične izmjene, storniranja i brisanja uplata u blagajni' },
+    { id: 'OTPREMNICE_ALARM', kratki: 'Otpremnice', naziv: 'Alarmi Otpremnica', ikona: '🚚', opis: 'Povrati djelimične otpreme i kritične izmjene otpremnica' },
+    { id: 'PROIZVODNJA_LAGER', kratki: 'Pogon/Lager', naziv: 'Pogon, Prijem i Lager', ikona: '🏭', opis: 'Alarmi u prijemu, prorezu, pilani, doradi, planiranju i lageru' },
+    { id: 'LICNE_PORUKE', kratki: 'Lične', naziv: 'Lične notifikacije za korisnika', ikona: '🎯', opis: 'Poruke naslovljene direktno na tog korisnika (npr. odobren godišnji)' },
+];
 
 export const MODUL_META = {
     prijem: { naziv: 'Prijem Trupaca', appId: 'prijem', dozvola: 'Prijem trupaca', ikona: '🌲' },
@@ -24,6 +37,105 @@ export const MODUL_META = {
 };
 
 const normText = (v) => String(v || '').trim().toLowerCase();
+
+let pravilaCache = null;
+let pravilaLoadedAt = 0;
+
+export const getCachedPravilaNotifikacija = () => {
+    if (pravilaCache && typeof pravilaCache === 'object') return pravilaCache;
+    if (typeof window !== 'undefined') {
+        try {
+            const raw = localStorage.getItem(PRAVILA_LS_KEY);
+            if (raw) {
+                pravilaCache = JSON.parse(raw);
+                return pravilaCache;
+            }
+        } catch (e) {}
+    }
+    return {};
+};
+
+export const ucitajPravilaNotifikacija = async (force = false) => {
+    const now = Date.now();
+    if (!force && pravilaCache && now - pravilaLoadedAt < 8000) {
+        return pravilaCache;
+    }
+    try {
+        const { data } = await supabase
+            .from('ui_postavke')
+            .select('postavke_jsonb')
+            .eq('modul_ime', PRAVILA_MODUL_IME)
+            .maybeSingle();
+        const mapa = (data?.postavke_jsonb && typeof data.postavke_jsonb === 'object') ? data.postavke_jsonb : {};
+        pravilaCache = mapa;
+        pravilaLoadedAt = now;
+        if (typeof window !== 'undefined') {
+            try { localStorage.setItem(PRAVILA_LS_KEY, JSON.stringify(mapa)); } catch (e) {}
+        }
+        return mapa;
+    } catch (e) {
+        return getCachedPravilaNotifikacija();
+    }
+};
+
+export const spasiPravilaNotifikacija = async (mapa) => {
+    const clean = (mapa && typeof mapa === 'object') ? mapa : {};
+    const { error } = await supabase
+        .from('ui_postavke')
+        .upsert([{ modul_ime: PRAVILA_MODUL_IME, postavke_jsonb: clean }], { onConflict: 'modul_ime' });
+    if (!error) {
+        pravilaCache = clean;
+        pravilaLoadedAt = Date.now();
+        if (typeof window !== 'undefined') {
+            try { localStorage.setItem(PRAVILA_LS_KEY, JSON.stringify(clean)); } catch (e) {}
+            window.dispatchEvent(new CustomEvent('notifikacije_updated'));
+        }
+    }
+    return { error };
+};
+
+export const getPraviloKorisnika = (user, pravilaMapa = null) => {
+    if (!user) return null;
+    const mapa = pravilaMapa || getCachedPravilaNotifikacija();
+    if (!mapa || typeof mapa !== 'object') return null;
+    const uKey = normText(user.username);
+    const iKey = normText(user.ime_prezime);
+    if (uKey && mapa[uKey]) return mapa[uKey];
+    if (iKey && mapa[iKey]) return mapa[iKey];
+    const matchKey = Object.keys(mapa).find((k) => {
+        const nk = normText(k);
+        return (uKey && nk === uKey) || (iKey && nk === iKey);
+    });
+    return matchKey ? mapa[matchKey] : null;
+};
+
+export const getPodrazumijevanaPravilaZaKorisnika = (user) => {
+    const isAdminOrSuper = user?.uloga === 'superadmin' || user?.uloga === 'admin';
+    const dozvole = Array.isArray(user?.dozvole) ? user.dozvole : [];
+    return {
+        PONUDE_RABAT: isAdminOrSuper || dozvole.includes('Ponude'),
+        PONUDE_ODOBRENJE: isAdminOrSuper || dozvole.includes('Ponude'),
+        REKLAMACIJE: isAdminOrSuper || dozvole.includes('Reklamacije i Povrati'),
+        HR_ODMOR: isAdminOrSuper || dozvole.includes('HR Dashboard'),
+        BLAGAJNA_ALARM: isAdminOrSuper || dozvole.includes('Blagajna (Keš)'),
+        OTPREMNICE_ALARM: isAdminOrSuper || dozvole.includes('Otpremnice i Izdatnice'),
+        PROIZVODNJA_LAGER: isAdminOrSuper || dozvole.some((d) => ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Lager Paketa', 'Planiranje Proizvodnje'].includes(d)),
+        LICNE_PORUKE: true,
+    };
+};
+
+export const getEfektivnaPravilaZaKorisnika = (user, pravilaMapa = null) => {
+    const defaults = getPodrazumijevanaPravilaZaKorisnika(user);
+    const custom = getPraviloKorisnika(user, pravilaMapa);
+    if (!custom || typeof custom !== 'object') return defaults;
+    const merged = { ...defaults };
+    NOTIF_KATEGORIJE.forEach((cat) => {
+        if (typeof custom[cat.id] === 'boolean') {
+            merged[cat.id] = custom[cat.id];
+        }
+    });
+    return merged;
+};
 
 export const normalizujModulKljuc = (modulIme) => {
     const raw = normText(modulIme);
@@ -89,7 +201,6 @@ export const odrediModuleNotifikacije = (log) => {
     const det = String(cleanDetalji || '').toUpperCase();
     const moduli = new Set();
 
-    // Specifični međumodulni slučajevi
     if (akc.includes('TRAŽI_ODOBRENJE_PONUDE') || akc.includes('ODOBRENA_IZMJENA_PONUDE') || akc.includes('ALARM_PONUDE')) {
         moduli.add('ponude');
         if (det.includes('RN-') || det.includes('RADNI NALOG')) moduli.add('radni_nalog');
@@ -115,32 +226,19 @@ export const odrediModuleNotifikacije = (log) => {
     if (akc.includes('_RN') || akc.endsWith('RN') || akc.includes('RADNI_NALOG') || akc.includes('NALOG')) {
         moduli.add('radni_nalog');
     }
-    if (akc.includes('DORADA')) {
-        moduli.add('dorada');
-    }
-    if (akc.includes('PROREZ')) {
-        moduli.add('prorez');
-    }
-    if (akc.includes('PRIJEM') || akc.includes('TRUPAC') || akc.includes('TRUPCA') || akc.includes('SUMARIJ')) {
-        moduli.add('prijem');
-    }
-    if (akc.includes('PLANIRANJ') || akc.includes('RASPORED') || akc.includes('TEHNOLOGIJ') || akc.includes('DNEVNIK_MASINE')) {
-        moduli.add('planiranje');
-    }
-    if (akc.includes('LAGER') || akc.includes('PAKET_RASTUREN') || akc.includes('OTKLJUČAN_PAKET') || akc.includes('OTKLJUCAN_PAKET') || akc.includes('OBRISAN_PAKET')) {
-        moduli.add('lager');
-    }
+    if (akc.includes('DORADA')) moduli.add('dorada');
+    if (akc.includes('PROREZ')) moduli.add('prorez');
+    if (akc.includes('PRIJEM') || akc.includes('TRUPAC') || akc.includes('TRUPCA') || akc.includes('SUMARIJ')) moduli.add('prijem');
+    if (akc.includes('PLANIRANJ') || akc.includes('RASPORED') || akc.includes('TEHNOLOGIJ') || akc.includes('DNEVNIK_MASINE')) moduli.add('planiranje');
+    if (akc.includes('LAGER') || akc.includes('PAKET_RASTUREN') || akc.includes('OTKLJUČAN_PAKET') || akc.includes('OTKLJUCAN_PAKET') || akc.includes('OBRISAN_PAKET')) moduli.add('lager');
     if (!akc.includes('DORADA') && (akc.includes('PILANA') || akc.includes('ZAKLJUČEN_PAKET') || akc.includes('ZAKLJUCEN_PAKET') || akc.includes('DODANA_STAVKA_U_PAKET') || akc.includes('IZMJENA_U_PAKETU'))) {
         moduli.add('pilana');
     }
     if (akc.includes('KUPCA') || akc.includes('KATALOG') || akc.includes('MASIN') || akc.includes('PREVOZNIK') || akc.includes('PODRUZNIC') || akc.includes('PROIZVOD') || akc.includes('MASOVNA_IZMJENA') || akc.includes('RADNIK') || akc.includes('BRENDING') || akc.includes('POSTAVK')) {
         moduli.add('podesavanja');
     }
-    if (akc.includes('ANALITIK') || akc.includes('IZVJESTAJ')) {
-        moduli.add('analitika');
-    }
+    if (akc.includes('ANALITIK') || akc.includes('IZVJESTAJ')) moduli.add('analitika');
 
-    // Fallback preko ID prefiksa u tekstu detalja ako akcija nije bila dovoljna
     if (moduli.size === 0) {
         if (/\bPON-[A-Z0-9-]+/.test(det)) moduli.add('ponude');
         if (/\bRN-[A-Z0-9-]+/.test(det)) moduli.add('radni_nalog');
@@ -154,9 +252,35 @@ export const odrediModuleNotifikacije = (log) => {
     return Array.from(moduli);
 };
 
+export const odrediKategorijuNotifikacije = (log) => {
+    if (!log) return 'PROIZVODNJA_LAGER';
+    const { meta } = parsirajMetapodatkeNotifikacije(log);
+    if (meta.target_user || meta.target_username) return 'LICNE_PORUKE';
+    if (meta.kategorija) return meta.kategorija;
+
+    const akc = String(log.akcija || '').toUpperCase();
+    if (akc.includes('RABAT')) return 'PONUDE_RABAT';
+    if (akc.includes('TRAŽI_ODOBRENJE_PONUDE') || akc.includes('ALARM_PONUDE') || akc.includes('ODOBRENA_IZMJENA_PONUDE') || meta.approval_type === 'ODOBRENJE_PONUDE') {
+        return 'PONUDE_ODOBRENJE';
+    }
+    if (akc.includes('REKLAMACIJ') || meta.approval_type === 'REKLAMACIJA') return 'REKLAMACIJE';
+    if (akc.includes('ODMOR') || akc.includes('ODSUSTV') || akc.includes('RADNOG_VREMENA') || meta.approval_type === 'ZAHTJEV_ODMOR') {
+        return 'HR_ODMOR';
+    }
+    if (akc.includes('KASA') || akc.includes('BLAGAJN') || akc.includes('UPLAT')) return 'BLAGAJNA_ALARM';
+    if (akc.includes('OTPREM') || akc.includes('UTOVAR') || akc.includes('IZDATNIC')) return 'OTPREMNICE_ALARM';
+
+    const moduli = odrediModuleNotifikacije(log);
+    if (moduli.includes('reklamacije')) return 'REKLAMACIJE';
+    if (moduli.includes('hr_modul')) return 'HR_ODMOR';
+    if (moduli.includes('blagajna')) return 'BLAGAJNA_ALARM';
+    if (moduli.includes('otpremnice')) return 'OTPREMNICE_ALARM';
+    if (moduli.includes('ponude')) return 'PONUDE_RABAT';
+    return 'PROIZVODNJA_LAGER';
+};
+
 export const daLiPripadaModulu = (log, modulIme) => {
     const kljuc = normalizujModulKljuc(modulIme);
-    // Globalni pogledi (početna, Nadzorni Centar, Kontrolni Toranj) prikazuju sva dozvoljena obavještenja korisnika
     if (!kljuc || kljuc === 'home' || kljuc === 'nadzor' || kljuc === 'forenzika') {
         return true;
     }
@@ -199,16 +323,19 @@ export const daLiJeLicnaNotifikacijaZaKorisnika = (log, user) => {
     return false;
 };
 
-export const daLiJeNotifikacijaZaKorisnika = (log, user) => {
+export const daLiJeNotifikacijaZaKorisnika = (log, user, pravilaMapaOverride = null) => {
     if (!log || !user || (!user.ime_prezime && !user.username)) return false;
     const { meta } = parsirajMetapodatkeNotifikacije(log);
+    const praviloKorisnika = getPraviloKorisnika(user, pravilaMapaOverride);
 
-    // 1. Ako je notifikacija LIČNO adresirana na određenog korisnika -> vidi je ISKLJUČIVO taj korisnik!
+    // 1. Lično adresirane notifikacije -> vidi ISKLJUČIVO taj korisnik (osim ako mu admin eksplicitno nije isključio LICNE_PORUKE)
     if (meta.target_user || meta.target_username) {
-        return daLiJeLicnaNotifikacijaZaKorisnika(log, user);
+        if (!daLiJeLicnaNotifikacijaZaKorisnika(log, user)) return false;
+        if (praviloKorisnika && praviloKorisnika.LICNE_PORUKE === false) return false;
+        return true;
     }
 
-    // 2. U suprotnom, samo aktivni alarmi (CRVENO/ŽUTO) ili eksplicitni zahtjevi za odobrenje idu u zvonce
+    // 2. Samo aktivni alarmi (CRVENO/ŽUTO) ili eksplicitni zahtjevi za odobrenje idu u zvonce/push
     const jeAlarmIliZahtjev =
         log.nivo_alarma === 'CRVENO' ||
         log.nivo_alarma === 'ŽUTO' ||
@@ -218,18 +345,25 @@ export const daLiJeNotifikacijaZaKorisnika = (log, user) => {
 
     if (!jeAlarmIliZahtjev) return false;
 
-    // 3. Ako postoji eksplicitno ograničenje uloge (npr. samo superadmin)
+    // 3. Eksplicitno ograničenje uloge (npr. samo superadmin)
     if (meta.target_role) {
         const roles = Array.isArray(meta.target_role) ? meta.target_role : [meta.target_role];
         if (!roles.map(normText).includes(normText(user.uloga))) return false;
     }
 
-    // 4. Admin i Superadmin vide sistemske/modulne alarme i zahtjeve za odobrenje
+    // 4. MATRICA PRAVILA OBAVJEŠTENJA PO KORISNIKU (ima prioritet iznad dozvola modula!)
+    // Ako je admin u matrici stavio kvačicu OFF -> korisnik NE vidi obavijest bez obzira što ima pristup modulu!
+    // Ako je admin u matrici stavio kvačicu ON -> korisnik VIDI ovu kategoriju obavijesti!
+    const kategorija = odrediKategorijuNotifikacije(log);
+    if (praviloKorisnika && typeof praviloKorisnika[kategorija] === 'boolean') {
+        return praviloKorisnika[kategorija];
+    }
+
+    // 5. Podrazumijevano (ako za korisnika nije postavljena posebna matrica):
     if (user.uloga === 'superadmin' || user.uloga === 'admin') {
         return true;
     }
 
-    // 5. Obični korisnici (operater / manager) vide modulne alarme / odobrenja SAMO ako imaju eksplicitnu dozvolu!
     const dozvole = Array.isArray(user.dozvole) ? user.dozvole : [];
     if (meta.target_permission) {
         return dozvole.includes(meta.target_permission);
@@ -240,13 +374,25 @@ export const daLiJeNotifikacijaZaKorisnika = (log, user) => {
     return moduli.some((m) => daLiKorisnikImaDozvoluZaModul(user, m));
 };
 
-export const daLiKorisnikMozeOdobriti = (approvalType, user) => {
+export const daLiKorisnikMozeOdobriti = (approvalType, user, pravilaMapaOverride = null) => {
     if (!user || !approvalType) return false;
-    if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
-    const dozvole = Array.isArray(user.dozvole) ? user.dozvole : [];
-    if (approvalType === 'ZAHTJEV_ODMOR') return dozvole.includes('HR Dashboard');
-    if (approvalType === 'REKLAMACIJA') return dozvole.includes('Reklamacije i Povrati');
-    if (approvalType === 'ODOBRENJE_PONUDE') return dozvole.includes('Ponude');
+    const pravilo = getPraviloKorisnika(user, pravilaMapaOverride);
+
+    if (approvalType === 'ZAHTJEV_ODMOR') {
+        if (pravilo && typeof pravilo.HR_ODMOR === 'boolean') return pravilo.HR_ODMOR;
+        if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
+        return (user.dozvole || []).includes('HR Dashboard');
+    }
+    if (approvalType === 'REKLAMACIJA') {
+        if (pravilo && typeof pravilo.REKLAMACIJE === 'boolean') return pravilo.REKLAMACIJE;
+        if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
+        return (user.dozvole || []).includes('Reklamacije i Povrati');
+    }
+    if (approvalType === 'ODOBRENJE_PONUDE') {
+        if (pravilo && typeof pravilo.PONUDE_ODOBRENJE === 'boolean') return pravilo.PONUDE_ODOBRENJE;
+        if (user.uloga === 'superadmin' || user.uloga === 'admin') return true;
+        return (user.dozvole || []).includes('Ponude');
+    }
     return false;
 };
 
@@ -274,33 +420,19 @@ export const izvuciEntiteteNotifikacije = (log) => {
     const trupci = findAll(/\bTR-[A-Za-z0-9_-]+/g);
     const customTestIds = findAll(/\b(?:QA|E2E)[A-Za-z0-9_-]{3,}/g);
 
-    // Pokušaj izvući naziv paketa iza riječi "paket " (npr. "paket 2026-001" ili "paket PK-123")
     const paketMatch = cleanDetalji.match(/paket[a]?\s+([A-Za-z0-9_-]{3,})/i);
-    if (paketMatch && paketMatch[1] && !paketi.includes(paketMatch[1])) {
-        paketi.push(paketMatch[1]);
-    }
+    if (paketMatch && paketMatch[1] && !paketi.includes(paketMatch[1])) paketi.push(paketMatch[1]);
     const ponudaMatch = cleanDetalji.match(/ponud[aei]\s+([A-Za-z0-9_-]{3,})/i);
-    if (ponudaMatch && ponudaMatch[1] && !ponude.includes(ponudaMatch[1])) {
-        ponude.push(ponudaMatch[1]);
-    }
+    if (ponudaMatch && ponudaMatch[1] && !ponude.includes(ponudaMatch[1])) ponude.push(ponudaMatch[1]);
     const rnMatch = cleanDetalji.match(/(?:radni\s+nalog|nalog)\s+([A-Za-z0-9_-]{3,})/i);
-    if (rnMatch && rnMatch[1] && !nalozi.includes(rnMatch[1])) {
-        nalozi.push(rnMatch[1]);
-    }
+    if (rnMatch && rnMatch[1] && !nalozi.includes(rnMatch[1])) nalozi.push(rnMatch[1]);
 
     const entityId = meta.entity_id || ponude[0] || nalozi[0] || otpremnice[0] || racuni[0] || paketi[0] || trupci[0] || kase[0] || customTestIds[0] || null;
     const allTokens = Array.from(new Set([
         ...(meta.entity_id ? [String(meta.entity_id)] : []),
         ...(meta.rn_id ? [String(meta.rn_id)] : []),
         ...(meta.paket_id ? [String(meta.paket_id)] : []),
-        ...ponude,
-        ...nalozi,
-        ...otpremnice,
-        ...racuni,
-        ...paketi,
-        ...trupci,
-        ...kase,
-        ...customTestIds,
+        ...ponude, ...nalozi, ...otpremnice, ...racuni, ...paketi, ...trupci, ...kase, ...customTestIds,
     ].filter((t) => t && t.length >= 3)));
 
     let approvalType = meta.approval_type || null;
@@ -330,7 +462,6 @@ export const izvuciEntiteteNotifikacije = (log) => {
     };
 };
 
-// Lokalno praćenje pročitanih za ne-admin korisnike (da ne brišu globalni admin alarm u Nadzornom Centru)
 const getReadStorageKey = (user) => {
     const idPart = normText(user?.id || user?.username || user?.ime_prezime || 'anon').replace(/[^a-z0-9_-]/g, '_');
     return `erp_notif_read_${idPart}`;
@@ -408,22 +539,24 @@ export const oznaciNotifikacijeProcitanim = async (notifs, user) => {
 export const ucitajNotifikacijeZaKorisnika = async (user, modulIme = null, { includeRead = false, limit = 60 } = {}) => {
     if (!user || (!user.ime_prezime && !user.username)) return [];
 
-    // Dohvatamo zadnjih 150 relevantnih zapisa (i nepročitane alarme i lične notifikacije sa [[META:...)
-    let query = supabase
-        .from('sistem_audit_log')
-        .select('*')
-        .order('vrijeme', { ascending: false })
-        .limit(180);
+    const [pravilaMapa, logRes] = await Promise.all([
+        ucitajPravilaNotifikacija(false),
+        (() => {
+            let query = supabase
+                .from('sistem_audit_log')
+                .select('*')
+                .order('vrijeme', { ascending: false })
+                .limit(180);
+            if (!includeRead) query = query.eq('pregledano', false);
+            return query;
+        })(),
+    ]);
 
-    if (!includeRead) {
-        query = query.eq('pregledano', false);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = logRes;
     if (error || !Array.isArray(data)) return [];
 
     const filtered = data.filter((log) => {
-        if (!daLiJeNotifikacijaZaKorisnika(log, user)) return false;
+        if (!daLiJeNotifikacijaZaKorisnika(log, user, pravilaMapa)) return false;
         if (modulIme && !daLiPripadaModulu(log, modulIme)) return false;
         if (!includeRead && daLiJeProcitanoZaKorisnika(log, user)) return false;
         return true;

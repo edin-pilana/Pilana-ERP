@@ -7,6 +7,13 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Pilana ERP — Sistem za Upravljanje Proizvodnjom',
   description: 'Napredni ERP sistem za pilanu, proizvodnju, lager, komercijalu i HR.',
+  manifest: '/manifest.json',
+  themeColor: '#2563eb',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Pilana ERP',
+  },
 };
 
 export default function RootLayout({

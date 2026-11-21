@@ -7,7 +7,10 @@ const nextConfig = {
     eslint: {
       // Ignoriše i sitna upozorenja
       ignoreDuringBuilds: true,
-    }
+    },
+    experimental: {
+      serverComponentsExternalPackages: ['web-push'],
+    },
   }
   
   module.exports = nextConfig;
