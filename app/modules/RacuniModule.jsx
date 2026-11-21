@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
@@ -151,7 +151,13 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     }, []);
 
     const load = async () => {
-        const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
+        const {data: k} = await supabase.from('kupci').select('*').order('naziv');
+        const svjeziKupci = k || [];
+        setKupci(svjeziKupci);
+        setOdabraniKupac(prev => {
+            if (!prev) return prev;
+            return svjeziKupci.find(c => c.id === prev.id || c.naziv === prev.naziv) || prev;
+        });
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: r} = await supabase.from('racuni').select('*').order('datum', { ascending: false }); setRacuni(r||[]);
         const {data: bData} = await supabase.from('blagajna').select('id, racun_id, iznos, tip, opis').eq('tip', 'ULAZ'); setBlagajnaUplate(bData || []);
@@ -414,7 +420,16 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const parsedFiksna = (stavkaForm.fiksna_cijena !== '' && stavkaForm.fiksna_cijena !== null && stavkaForm.fiksna_cijena !== undefined)
             ? parseFloat(stavkaForm.fiksna_cijena)
             : NaN;
-        const fiksna_cijena = isNaN(parsedFiksna) ? dinamickaCijena : Math.max(0, parsedFiksna);
+        const parsedRabat = (stavkaForm.konacni_rabat !== '' && stavkaForm.konacni_rabat !== null && stavkaForm.konacni_rabat !== undefined)
+            ? parseFloat(stavkaForm.konacni_rabat)
+            : 0;
+        if (!isNaN(parsedFiksna) && parsedFiksna < 0) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Neispravna Cijena', poruka: "Konačna cijena stavke ne može biti negativna!", onCancel: zatvoriDialog });
+        }
+        if (isNaN(parsedRabat) || parsedRabat < 0 || parsedRabat > 100) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Neispravan Rabat', poruka: "Rabat mora biti između 0% i 100%!", onCancel: zatvoriDialog });
+        }
+        const fiksna_cijena = isNaN(parsedFiksna) ? dinamickaCijena : parsedFiksna;
         const rabat_konacni = dinamickaCijena > 0 ? ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100 : 0;
         if (rabat_konacni > stavkaForm.sistemski_rabat) { await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Na računu ${form.id}, rabat za "${trenutniProizvod.naziv}" ručno povećan na ${rabat_konacni.toFixed(2)}%`); }
         const ukupno_bez_rabata = kolicina * dinamickaCijena; const ukupno_sa_rabatom = kolicina * fiksna_cijena;
@@ -489,11 +504,11 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         
         if (isEditingRacun) {
             const { error } = await supabase.from('racuni').update(payload).eq('id', form.id);
-            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Račun'), onCancel: zatvoriDialog });
             await zapisiU_Log('IZMJENA_RAČUNA', `Ažuriran račun ${form.id}`); 
         } else {
             const { error } = await supabase.from('racuni').insert([payload]);
-            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Račun'), onCancel: zatvoriDialog });
             await zapisiU_Log('KREIRAN_RAČUN', `Račun ${form.id}`); 
         }
         

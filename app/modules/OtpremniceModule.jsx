@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import { preracunajKolicinu } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
@@ -804,7 +804,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         }
 
         if (res.error) {
-            return prikaziDialog({ tip: 'greska', naslov: 'Greška pri snimanju', poruka: res.error.message, onCancel: zatvoriDialog });
+            return prikaziDialog({ tip: 'greska', naslov: 'Greška pri snimanju', poruka: formatDbError(res.error, 'Otpremnica'), onCancel: zatvoriDialog });
         }
 
         await zapisiU_Log(isEditingOtpremnica ? 'IZMJENA_OTPREMNICE' : 'KREIRANA_OTPREMNICA', `Otpremnica ${otpId} (${form.kupac_naziv}) - Status: ${form.status}`);
@@ -865,11 +865,33 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
     const kreirajPDF = () => kreirajPDFPrivremeni({ ...form, stavke_jsonb: stavke });
 
+    const izracunajStavkuM3 = (x) => {
+        const kol = parseFloat(x?.kolicina_obracun ?? x?.kolicina ?? 0) || 0;
+        const jm = String(x?.jm_obracun || x?.jm || 'm3').toLowerCase().trim();
+        if (jm === 'm3' || jm === 'm³') return kol;
+        let v = parseFloat(x?.debljina || 0);
+        let s = parseFloat(x?.sirina || 0);
+        let d = parseFloat(x?.duzina || 0);
+        if ((v <= 0 || s <= 0 || d <= 0) && x?.dimenzije) {
+            const m = String(x.dimenzije).match(/(\d+(?:\.\d+)?)\s*[xX*]\s*(\d+(?:\.\d+)?)\s*[xX*]\s*(\d+(?:\.\d+)?)/);
+            if (m) { v = parseFloat(m[1]); s = parseFloat(m[2]); d = parseFloat(m[3]); }
+        }
+        if ((v <= 0 || s <= 0 || d <= 0) && x?.sifra) {
+            const kat = katalog.find(k => k.sifra === x.sifra);
+            if (kat) { v = parseFloat(kat.visina || 0); s = parseFloat(kat.sirina || 0); d = parseFloat(kat.duzina || 0); }
+        }
+        if (v > 0 && s > 0 && d > 0) {
+            const pr = preracunajKolicinu(kol, jm, 'm3', v, s, d);
+            if (pr.m3 > 0) return pr.m3;
+        }
+        return 0;
+    };
+
     const kreirajPDFPrivremeni = (podaci) => {
         const stariNaslov = document.title;
         document.title = `otpremnica_${podaci.id}_${(podaci.kupac_naziv || 'Kupac').replace(/\s+/g, '_')}`;
         const listaStavki = podaci.stavke_jsonb || [];
-        const ukupnoM3 = listaStavki.reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0);
+        const ukupnoM3 = listaStavki.reduce((s, x) => s + izracunajStavkuM3(x), 0);
 
         const redovi = listaStavki.map((s, i) => {
             const kolUnosPrikaz = s.kolicina_unos ?? s.kolicina_obracun ?? s.kolicina ?? 0;
@@ -954,7 +976,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         );
     }, [slobodniPaketi, pretragaLagera]);
 
-    const ukupnoOtpremnicaM3 = useMemo(() => stavke.reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0), [stavke]);
+    const ukupnoOtpremnicaM3 = useMemo(() => stavke.reduce((s, x) => s + izracunajStavkuM3(x), 0), [stavke, katalog]);
 
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova }}>
@@ -1211,7 +1233,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     {!loadingData && otpremnice.length === 0 && <p className="text-center text-slate-500 text-xs py-10 border-2 border-dashed border-theme-border rounded-xl">Nema evidentiranih otpremnica.</p>}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                         {otpremnice.map(o => {
-                            const ukM3 = (o.stavke_jsonb || []).reduce((s, x) => s + parseFloat(x.kolicina_obracun || 0), 0);
+                            const ukM3 = (o.stavke_jsonb || []).reduce((s, x) => s + izracunajStavkuM3(x), 0);
                             return (
                                 <div key={o.id} onClick={() => pokreniIzmjenuOtpremnice(o)} className="p-4 bg-theme-panel border border-theme-border hover:border-orange-500 rounded-2xl cursor-pointer transition-all shadow-md flex flex-col justify-between">
                                     <div className="flex justify-between items-start border-b border-theme-border pb-2 mb-2">

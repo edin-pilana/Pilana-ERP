@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import PametniDialog from '../components/PametniDialog';
 import { toast } from 'sonner';
 
@@ -50,11 +50,23 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
 function KatalogSearchableDetail({ katalog, value, onChange }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value);
+    const wrapperRef = useRef(null);
     useEffect(() => { setSearch(value); }, [value]);
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        document.addEventListener("touchstart", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("touchstart", handleClickOutside);
+        };
+    }, []);
     const filtered = katalog.filter(k => k.sifra.toUpperCase().includes((search||'').toUpperCase()) || k.naziv.toUpperCase().includes((search||'').toUpperCase()));
 
     return (
-        <div className="relative font-black w-full min-w-0">
+        <div ref={wrapperRef} className="relative font-black w-full min-w-0">
             <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />
             {open && filtered.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
@@ -120,13 +132,14 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
     const pokreniIzmjenuSum = (item) => { setFormSum({ id: item.id, naziv: item.naziv }); setIsEditingSum(true); };
     const ponistiIzmjenuSum = () => { setFormSum({ id: null, naziv: '' }); setIsEditingSum(false); };
     const saveSumarija = async () => {
-        if(!formSum.naziv) return toast.warning("Unesite naziv šumarije!");
+        if(!formSum.naziv.trim()) return toast.warning("Unesite naziv šumarije!");
         if(isEditingSum) {
-            await supabase.from('sumarije').update({ naziv: formSum.naziv.toUpperCase() }).eq('id', formSum.id);
+            const { error } = await supabase.from('sumarije').update({ naziv: formSum.naziv.trim().toUpperCase() }).eq('id', formSum.id);
+            if(error) return toast.error(formatDbError(error, 'Šumarija'));
             toast.success("Šumarija uspješno ažurirana!");
         } else {
-            const {error} = await supabase.from('sumarije').insert([{ naziv: formSum.naziv.toUpperCase() }]);
-            if(error) return toast.error("Greška: " + error.message);
+            const { error } = await supabase.from('sumarije').insert([{ naziv: formSum.naziv.trim().toUpperCase() }]);
+            if(error) return toast.error(formatDbError(error, 'Šumarija'));
             toast.success("Nova šumarija uspješno dodana!");
         }
         ponistiIzmjenuSum(); load();
@@ -139,8 +152,10 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('sumarije').delete().eq('id', id);
+                const { error } = await supabase.from('sumarije').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje šumarije'));
+                if (isEditingSum && formSum.id === id) ponistiIzmjenuSum();
                 toast.info(`Šumarija ${naziv} obrisana.`);
                 load();
             },
@@ -151,13 +166,19 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
     const pokreniIzmjenuPodr = (item) => { setFormPodr({ id: item.id, sumarija_naziv: item.sumarija_naziv, naziv: item.naziv, cijena_prevoza_po_m3: item.cijena_prevoza_po_m3 || '' }); setIsEditingPodr(true); };
     const ponistiIzmjenuPodr = () => { setFormPodr({ id: null, sumarija_naziv: '', naziv: '', cijena_prevoza_po_m3: '' }); setIsEditingPodr(false); };
     const savePodruznica = async () => {
-        if(!formPodr.sumarija_naziv || !formPodr.naziv) return toast.warning("Odaberite šumariju i unesite naziv podružnice!");
-        const payload = { sumarija_naziv: formPodr.sumarija_naziv, naziv: formPodr.naziv.toUpperCase(), cijena_prevoza_po_m3: parseFloat(formPodr.cijena_prevoza_po_m3) || 0 };
+        if(!formPodr.sumarija_naziv || !formPodr.naziv.trim()) return toast.warning("Odaberite šumariju i unesite naziv podružnice!");
+        const cijenaPrevoza = formPodr.cijena_prevoza_po_m3 === '' || formPodr.cijena_prevoza_po_m3 === null ? 0 : parseFloat(formPodr.cijena_prevoza_po_m3);
+        if (!Number.isFinite(cijenaPrevoza) || cijenaPrevoza < 0) {
+            return toast.error("Cijena prevoza po m³ ne može biti negativna!");
+        }
+        const payload = { sumarija_naziv: formPodr.sumarija_naziv, naziv: formPodr.naziv.trim().toUpperCase(), cijena_prevoza_po_m3: cijenaPrevoza };
         if(isEditingPodr) { 
-            await supabase.from('podruznice').update(payload).eq('id', formPodr.id); 
+            const { error } = await supabase.from('podruznice').update(payload).eq('id', formPodr.id); 
+            if (error) return toast.error(formatDbError(error, 'Podružnica'));
             toast.success("Podružnica uspješno ažurirana!");
         } else { 
-            await supabase.from('podruznice').insert([payload]); 
+            const { error } = await supabase.from('podruznice').insert([payload]); 
+            if (error) return toast.error(formatDbError(error, 'Podružnica'));
             toast.success("Nova podružnica uspješno dodana!");
         }
         ponistiIzmjenuPodr(); load();
@@ -170,8 +191,10 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('podruznice').delete().eq('id', id);
+                const { error } = await supabase.from('podruznice').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje podružnice'));
+                if (isEditingPodr && formPodr.id === id) ponistiIzmjenuPodr();
                 toast.info(`Podružnica ${naziv} obrisana.`);
                 load();
             },
@@ -233,9 +256,13 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
 
     const snimiCjenovnik = async () => {
         if(!formCjenovnik.sumarija_id || !formCjenovnik.vrsta_id || !formCjenovnik.klasa_id || !formCjenovnik.cijena_po_m3) return toast.warning("Popunite sva polja za cjenovnik!");
-        const payload = { sumarija_id: formCjenovnik.sumarija_id, vrsta_id: formCjenovnik.vrsta_id, klasa_id: formCjenovnik.klasa_id, cijena_po_m3: parseFloat(formCjenovnik.cijena_po_m3) };
+        const cijenaNum = parseFloat(formCjenovnik.cijena_po_m3);
+        if (!Number.isFinite(cijenaNum) || cijenaNum <= 0) {
+            return toast.error("Cijena u cjenovniku mora biti veća od 0 KM/m³!");
+        }
+        const payload = { sumarija_id: formCjenovnik.sumarija_id, vrsta_id: formCjenovnik.vrsta_id, klasa_id: formCjenovnik.klasa_id, cijena_po_m3: cijenaNum };
         const { error } = await supabase.from('cjenovnik_trupaca').upsert(payload, { onConflict: 'sumarija_id, vrsta_id, klasa_id' });
-        if(error) toast.error("❌ Greška cjenovnika: " + error.message); 
+        if(error) toast.error(formatDbError(error, 'Cjenovnik trupaca')); 
         else { toast.success("✅ Cijena u cjenovniku je uspješno snimljena!"); setFormCjenovnik({...formCjenovnik, cijena_po_m3: ''}); load(); }
     };
     const obrisiCjenovnik = (id) => { 
@@ -246,8 +273,9 @@ function TabSumarije({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('cjenovnik_trupaca').delete().eq('id', id);
+                const { error } = await supabase.from('cjenovnik_trupaca').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje stavke cjenovnika'));
                 toast.info("Stavka cjenovnika obrisana.");
                 load();
             },
@@ -421,7 +449,7 @@ function TabPrevoznici({ prikaziDialog, zatvoriDialog }) {
     const dodajPrevoznika = async () => {
         if(!noviPrevoznik.trim()) return toast.warning("Unesite naziv prevoznika!");
         const { error } = await supabase.from('prevoznici').insert([{ naziv: noviPrevoznik.trim().toUpperCase() }]);
-        if (error) toast.error("Greška: " + error.message);
+        if (error) toast.error(formatDbError(error, 'Prevoznik'));
         else {
             await zapisiU_Log('DODAVANJE_PREVOZNIKA', `Dodan prevoznik: ${noviPrevoznik.trim().toUpperCase()}`);
             toast.success("Prevoznik uspješno dodan u bazu!");
@@ -438,9 +466,10 @@ function TabPrevoznici({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('prevoznici').delete().eq('id', id);
-                await zapisiU_Log('BRISANJE_PREVOZNIKA', `Obrisan prevoznik: ${naziv}`);
+                const { error } = await supabase.from('prevoznici').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje prevoznika'));
+                await zapisiU_Log('BRISANJE_PREVOZNIKA', `Obrisan prevoznik: ${naziv}`);
                 toast.info(`Prevoznik ${naziv} obrisan.`);
                 load();
             },
@@ -512,8 +541,10 @@ function TabMasine({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ TRAJNO OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('master_oznake').delete().eq('naziv', naziv);
+                const { error } = await supabase.from('master_oznake').delete().eq('naziv', naziv);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje operacije'));
+                setForm(prev => ({ ...prev, atributi_paketa: (prev.atributi_paketa || []).filter(o => o !== naziv) }));
                 toast.info(`Operacija '${naziv}' obrisana.`);
                 load();
             },
@@ -590,9 +621,11 @@ function TabMasine({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI MAŠINU',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('masine').delete().eq('id', id); 
-                await zapisiU_Log('BRISANJE_MASINE', `Obrisana mašina: ${naziv}`); 
+                const { error } = await supabase.from('masine').delete().eq('id', id); 
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje mašine'));
+                if (isEditing && form.id === id) ponistiIzmjenu();
+                await zapisiU_Log('BRISANJE_MASINE', `Obrisana mašina: ${naziv}`); 
                 toast.info(`Mašina ${naziv} obrisana.`);
                 load();
             },
@@ -870,9 +903,11 @@ function TabKatalog({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ TRAJNO OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('katalog_proizvoda').delete().eq('sifra', sifra);
-                await zapisiU_Log('BRISANJE_PROIZVODA', `Obrisan proizvod: ${sifra}`); 
+                const { error } = await supabase.from('katalog_proizvoda').delete().eq('sifra', sifra);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje proizvoda'));
+                if (isEditing && form.sifra === sifra) ponistiIzmjenu();
+                await zapisiU_Log('BRISANJE_PROIZVODA', `Obrisan proizvod: ${sifra}`); 
                 toast.info(`Proizvod ${sifra} obrisan iz kataloga.`);
                 load();
             },
@@ -881,15 +916,26 @@ function TabKatalog({ prikaziDialog, zatvoriDialog }) {
     };
 
     const primijeniNaSveIspod = () => {
-        if (!novaGlobalnaCijena || isNaN(novaGlobalnaCijena)) return;
+        const val = parseFloat(novaGlobalnaCijena);
+        if (!Number.isFinite(val) || val <= 0) {
+            return toast.error("Unesite ispravnu pozitivnu cijenu veću od 0 KM!");
+        }
         const novoStanje = { ...cijeneEditMap };
-        Object.keys(novoStanje).forEach(sifra => { novoStanje[sifra] = novaGlobalnaCijena; });
+        Object.keys(novoStanje).forEach(sifra => { novoStanje[sifra] = String(val); });
         setCijeneEditMap(novoStanje);
     };
 
     const snimiNoveCijeneBaza = () => {
         if (!odabranaKategorija) return;
-        const podaciZaUpdate = proizvodiUKategoriji.map(p => ({ ...p, cijena: parseFloat(cijeneEditMap[p.sifra]) || parseFloat(p.cijena) }));
+        const podaciZaUpdate = [];
+        for (const p of proizvodiUKategoriji) {
+            const raw = cijeneEditMap[p.sifra];
+            const parsed = raw === undefined || raw === '' ? parseFloat(p.cijena) : parseFloat(raw);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+                return toast.error(`Cijena za proizvod "${p.sifra}" mora biti veća od 0 KM!`);
+            }
+            podaciZaUpdate.push({ ...p, cijena: parsed });
+        }
         prikaziDialog({
             tip: 'info',
             naslov: 'Masovno Ažuriranje Cijena',
@@ -899,7 +945,7 @@ function TabKatalog({ prikaziDialog, zatvoriDialog }) {
             onConfirm: async () => {
                 const { error } = await supabase.from('katalog_proizvoda').upsert(podaciZaUpdate, { onConflict: 'sifra' });
                 zatvoriDialog();
-                if (error) return toast.error("Greška pri ažuriranju cijena: " + error.message);
+                if (error) return toast.error(formatDbError(error, 'Masovno ažuriranje cijena'));
                 await zapisiU_Log('MASOVNA_IZMJENA_CIJENA', `Izmijenjene cijene za kategoriju: ${odabranaKategorija}`); 
                 toast.success("✅ Cijene su uspješno ažurirane!");
                 setOdabranaKategorija(''); load();
@@ -1135,23 +1181,57 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
         setForm({ id: null, naziv: '', pdv: '', adresa: '', ukupni_rabat: '' }); setRabatiProizvodi([]); setRabatiKategorije([]); setIsEditing(false); setDuplicateWarning(null);
     };
 
-    const addR_Proizvod = () => { if(tempP_sifra && tempP_rabat) { setRabatiProizvodi([...rabatiProizvodi, {sifra: tempP_sifra, rabat: tempP_rabat}]); setTempP_sifra(''); setTempP_rabat(''); }};
+    const addR_Proizvod = () => {
+        if (!tempP_sifra || tempP_rabat === '' || tempP_rabat === null) return toast.warning("Odaberite proizvod i unesite procenat rabata!");
+        const rVal = parseFloat(tempP_rabat);
+        if (isNaN(rVal) || !isFinite(rVal) || rVal < 0 || rVal > 100) {
+            return toast.error("Rabat po proizvodu mora biti između 0% i 100%!");
+        }
+        const bezDuplikata = rabatiProizvodi.filter(r => r.sifra !== tempP_sifra);
+        setRabatiProizvodi([...bezDuplikata, { sifra: tempP_sifra, rabat: rVal }]);
+        setTempP_sifra(''); setTempP_rabat('');
+    };
     const remR_Proizvod = (idx) => setRabatiProizvodi(rabatiProizvodi.filter((_, i) => i !== idx));
 
-    const addR_Kategorija = () => { if(tempK_kat && tempK_rabat) { setRabatiKategorije([...rabatiKategorije, {kategorija: tempK_kat, rabat: tempK_rabat}]); setTempK_kat(''); setTempK_rabat(''); }};
+    const addR_Kategorija = () => {
+        if (!tempK_kat || tempK_rabat === '' || tempK_rabat === null) return toast.warning("Odaberite kategoriju i unesite procenat rabata!");
+        const rVal = parseFloat(tempK_rabat);
+        if (isNaN(rVal) || !isFinite(rVal) || rVal < 0 || rVal > 100) {
+            return toast.error("Rabat po kategoriji mora biti između 0% i 100%!");
+        }
+        const bezDuplikata = rabatiKategorije.filter(r => r.kategorija !== tempK_kat);
+        setRabatiKategorije([...bezDuplikata, { kategorija: tempK_kat, rabat: rVal }]);
+        setTempK_kat(''); setTempK_rabat('');
+    };
     const remR_Kategorija = (idx) => setRabatiKategorije(rabatiKategorije.filter((_, i) => i !== idx));
 
     const snimiKupca = async () => {
         if(!form.naziv) return toast.warning("Naziv kupca/firme je obavezan!");
+        const ukupniR = form.ukupni_rabat === '' || form.ukupni_rabat === null ? 0 : parseFloat(form.ukupni_rabat);
+        if (isNaN(ukupniR) || !isFinite(ukupniR) || ukupniR < 0 || ukupniR > 100) {
+            return toast.error("Ukupni rabat kupca mora biti između 0% i 100%!");
+        }
+        for (const rp of rabatiProizvodi) {
+            const v = parseFloat(rp.rabat);
+            if (isNaN(v) || v < 0 || v > 100) return toast.error(`Neispravan rabat za proizvod ${rp.sifra} (dozvoljeno 0% – 100%)!`);
+        }
+        for (const rk of rabatiKategorije) {
+            const v = parseFloat(rk.rabat);
+            if (isNaN(v) || v < 0 || v > 100) return toast.error(`Neispravan rabat za kategoriju ${rk.kategorija} (dozvoljeno 0% – 100%)!`);
+        }
         const rabati_json = {
-            ukupni: parseFloat(form.ukupni_rabat) || 0,
+            ukupni: ukupniR,
             proizvodi: rabatiProizvodi.reduce((acc, c) => ({...acc, [c.sifra]: parseFloat(c.rabat)}), {}),
             kategorije: rabatiKategorije.reduce((acc, c) => ({...acc, [c.kategorija]: parseFloat(c.rabat)}), {})
         };
         const payload = { naziv: form.naziv, pdv_broj: form.pdv, adresa: form.adresa, rabati_jsonb: rabati_json };
         if (isEditing) {
-            const { error } = await supabase.from('kupci').update(payload).eq('id', form.id);
+            const { data: updatedRows, error } = await supabase.from('kupci').update(payload).eq('id', form.id).select('id');
             if(error) return toast.error("Greška: " + error.message);
+            if (!updatedRows || updatedRows.length === 0) {
+                ponistiIzmjenu(); load();
+                return toast.error("Kupac više ne postoji u bazi (vjerovatno je obrisan).");
+            }
             await zapisiU_Log('IZMJENA_KUPCA', `Ažuriran kupac: ${form.naziv}`); 
             toast.success("✅ Kupac uspješno ažuriran!");
         } else {
@@ -1174,6 +1254,7 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
             onConfirm: async () => {
                 await supabase.from('kupci').delete().eq('id', id); 
                 await zapisiU_Log('BRISANJE_KUPCA', `Obrisan kupac: ${naziv}`); 
+                if (isEditing && form.id === id) ponistiIzmjenu();
                 zatvoriDialog();
                 toast.info(`Kupac ${naziv} obrisan.`);
                 load();
@@ -1352,7 +1433,6 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
         const payload = {
             ime_prezime: form.ime_prezime.trim(),
             username: form.username.trim().toLowerCase(),
-            password: form.password,
             uloga: form.uloga || 'operater',
             bruto_satnica: satnica,
             godisnji_ukupno: godisnjiUkupno,
@@ -1360,14 +1440,19 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             dozvole: Array.isArray(form.dozvole) ? form.dozvole : [],
             qr_kod: siguranQrKod
         };
+        if (form.password && String(form.password).trim() !== '') {
+            payload.password = form.password;
+        } else if (!editId) {
+            return toast.warning("Unesite lozinku za novog radnika!");
+        }
 
         if (editId) {
             const { error } = await supabase.from('radnici').update(payload).eq('id', editId);
-            if (error) return toast.error("Greška: " + error.message);
+            if (error) return toast.error(formatDbError(error, 'Radnik'));
             toast.success("✅ Radnik uspješno ažuriran!");
         } else {
             const { error } = await supabase.from('radnici').insert([payload]);
-            if (error) return toast.error("Greška: " + error.message);
+            if (error) return toast.error(formatDbError(error, 'Radnik'));
             toast.success("✅ Novi radnik uspješno kreiran!");
         }
         ponistiEdit();
@@ -1382,8 +1467,10 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI RADNIKA',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('radnici').delete().eq('id', r.id);
+                const { error } = await supabase.from('radnici').delete().eq('id', r.id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje radnika'));
+                if (editId === r.id) ponistiEdit();
                 toast.info(`Radnik ${r.ime_prezime} obrisan.`);
                 load();
             },
@@ -1400,6 +1487,9 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
         const imeEsc = esc(r.ime_prezime);
 
         const printWindow = window.open('', '', 'width=800,height=800');
+        if (!printWindow) {
+            return toast.error("Preglednik je blokirao iskačući prozor za štampanje ID kartice (Popup Blocker).");
+        }
         printWindow.document.write(`
             <html><head><title>ID Kartica - ${imeEsc}</title>
             <style>
@@ -1543,8 +1633,9 @@ function TabKategorijeBlagajne({ prikaziDialog, zatvoriDialog }) {
     const load = async () => { const {data} = await supabase.from('blagajna_kategorije').select('*').order('tip'); setKategorije(data||[]); };
 
     const dodajKategoriju = async () => {
-        if(!form.naziv) return toast.warning("Unesite naziv kategorije!");
-        await supabase.from('blagajna_kategorije').insert([form]); 
+        if(!form.naziv.trim()) return toast.warning("Unesite naziv kategorije!");
+        const { error } = await supabase.from('blagajna_kategorije').insert([{ ...form, naziv: form.naziv.trim() }]); 
+        if (error) return toast.error(formatDbError(error, 'Kategorija blagajne'));
         toast.success("Kategorija blagajne dodana!");
         setForm({...form, naziv: ''}); load();
     };
@@ -1557,8 +1648,9 @@ function TabKategorijeBlagajne({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('blagajna_kategorije').delete().eq('id', id);
+                const { error } = await supabase.from('blagajna_kategorije').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje kategorije blagajne'));
                 toast.info(`Kategorija "${naziv}" obrisana.`);
                 load();
             },
@@ -1670,9 +1762,14 @@ function TabBrending({ prikaziDialog, zatvoriDialog }) {
             finalUrl = publicUrlData.publicUrl;
         }
 
-        const payload = { naziv: form.naziv, url_slike: finalUrl, lokacije_jsonb: form.lokacije_jsonb, full_width: form.full_width };
-        if(isEditing) await supabase.from('brending').update(payload).eq('id', form.id);
-        else await supabase.from('brending').insert([payload]);
+        const payload = { naziv: form.naziv.trim(), url_slike: finalUrl, lokacije_jsonb: form.lokacije_jsonb, full_width: form.full_width };
+        const { error: saveErr } = isEditing
+            ? await supabase.from('brending').update(payload).eq('id', form.id)
+            : await supabase.from('brending').insert([payload]);
+        if (saveErr) {
+            setUploading(false);
+            return toast.error(formatDbError(saveErr, 'Brending'));
+        }
         
         if (form.lokacije_jsonb.includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)')) {
             localStorage.setItem('saas_app_logo', finalUrl);
@@ -1696,12 +1793,14 @@ function TabBrending({ prikaziDialog, zatvoriDialog }) {
             confirmText: '🗑️ OBRIŠI LOGO',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('brending').delete().eq('id', id); 
+                const { error } = await supabase.from('brending').delete().eq('id', id); 
+                zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje logotipa'));
+                if (isEditing && form.id === id) ponisti();
                 if (localStorage.getItem('saas_app_logo') === slikaUrl) {
                     localStorage.setItem('saas_app_logo', '');
                     window.dispatchEvent(new Event('saas_updated'));
                 }
-                zatvoriDialog();
                 toast.info(`Logo ${naziv} obrisan.`);
                 load(); 
             },
@@ -1909,7 +2008,7 @@ export default function SettingsModule({ onExit, lockedTab }) {
             <PametniDialog {...dialog} />
             <div className="flex flex-col md:flex-row justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-theme-border shadow-xl gap-4">
                 <div className="flex items-center gap-4">
-                    <button onClick={onExit} className={`text-[10px] px-5 py-3 rounded-xl uppercase font-black text-white transition-all shadow-md ${lockedTab ? 'bg-red-600 hover:bg-red-500' : 'bg-theme-panel text-theme-text border border-theme-border hover:bg-slate-700 hover:text-white'}`}>
+                    <button onClick={onExit} className={`text-[10px] px-5 py-3 rounded-xl uppercase font-black transition-all shadow-md ${lockedTab ? 'bg-red-600 text-white hover:bg-red-500' : 'bg-theme-panel text-theme-text border border-theme-border hover:bg-slate-700 hover:text-white'}`}>
                         {lockedTab ? '✕ ZATVORI I NASTAVI RAD' : '← Nazad u Meni'}
                     </button>
                     <h2 className={`${lockedTab ? 'text-amber-500' : 'text-slate-400'} font-black tracking-widest uppercase text-xs md:text-sm hidden md:block`}>

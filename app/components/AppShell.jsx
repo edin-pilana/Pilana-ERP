@@ -30,7 +30,7 @@ export default function AppShell({
     const [appBranding, setAppBranding] = useState({ name: 'SmartERP', logo: '' });
 
     const [isLoaded, setIsLoaded] = useState(false);
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true));
     const [logoutDialog, setLogoutDialog] = useState(false);
 
     // State za uređivanje menija sa backup snapshotom (da Odustani zaista vrati prethodno stanje)
@@ -73,14 +73,19 @@ export default function AppShell({
             try {
                 const { data: bData } = await supabase.from('brending').select('*');
                 if (bData && bData.length > 0) {
-                    let logoObj = bData.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)'))
+                    const logoObj = bData.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)'))
                         || bData.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
-                    if (!logoObj) logoObj = bData[0];
 
                     if (logoObj && logoObj.url_slike) {
                         logoToUse = logoObj.url_slike;
                         localStorage.setItem('saas_app_logo', logoToUse);
+                    } else {
+                        logoToUse = '';
+                        localStorage.removeItem('saas_app_logo');
                     }
+                } else {
+                    logoToUse = '';
+                    localStorage.removeItem('saas_app_logo');
                 }
                 const { data: fData } = await supabase.from('postavke_firme').select('*').eq('id', 1).maybeSingle();
                 if (fData && fData.app_name) {
@@ -706,7 +711,7 @@ export default function AppShell({
                 {/* BENTO BOTTOM DOCK */}
                 {localLayout === 'bento' && (
                     <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="fixed bottom-4 left-0 right-0 mx-auto w-fit max-w-[95vw] overflow-x-auto custom-scrollbar bg-theme-card border border-theme-accent/50 p-2 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.45)] z-50 flex items-center gap-2 backdrop-blur-2xl">
-                        <button type="button" onClick={() => onModuleChange('home')} className={`flex items-center gap-2 px-5 py-3.5 rounded-2xl font-black uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
+                        <button type="button" onClick={() => onModuleChange('home')} className={`shrink-0 flex items-center gap-2 px-5 py-3.5 rounded-2xl font-black uppercase transition-all text-xs tracking-widest ${activeModule === 'home' ? 'bg-theme-accent text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}>
                             <LayoutDashboard size={menuStyle.iconSize} /> <span className="hidden sm:inline">Početna</span>
                         </button>
                         {visibleMenuItems.map((item) => {
@@ -723,7 +728,7 @@ export default function AppShell({
                                     onDragOver={(e) => e.preventDefault()}
                                     onClick={() => !isMenuEditMode && onModuleChange(item.id)}
                                     style={{ backgroundColor: activeModule === item.id ? (item.hex_boja || 'var(--theme-accent)') : '', fontSize: `${menuStyle.fontSize}px` }}
-                                    className={`flex items-center gap-2 px-5 py-3.5 rounded-2xl font-black uppercase transition-all tracking-widest ${isMenuEditMode ? 'border border-dashed border-amber-500 cursor-move' : ''} ${activeModule === item.id ? 'text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}
+                                    className={`shrink-0 flex items-center gap-2 px-5 py-3.5 rounded-2xl font-black uppercase transition-all tracking-widest ${isMenuEditMode ? 'border border-dashed border-amber-500 cursor-move' : ''} ${activeModule === item.id ? 'text-white shadow-glow scale-105' : 'text-theme-muted hover:bg-theme-panel hover:text-theme-text'}`}
                                 >
                                     {item.slika_url ? <img src={item.slika_url} className="w-5 h-5 object-contain" alt={item.naziv} /> : renderIcon(item.ikona, menuStyle.iconSize)} <span className="hidden sm:inline">{item.naziv}</span>
                                 </button>
@@ -731,13 +736,13 @@ export default function AppShell({
                         })}
                         {isMenuEditMode && (
                             <>
-                                <button type="button" onClick={odustaniOdUredjivanjaMenija} className="px-3 py-3 bg-red-600/20 text-red-500 border border-red-500/30 rounded-2xl text-[10px] font-black uppercase">Odustani</button>
-                                <button type="button" onClick={spasiIzmjeneMenija} className="px-4 py-3 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase">💾 Spasi</button>
+                                <button type="button" onClick={odustaniOdUredjivanjaMenija} className="shrink-0 px-3 py-3 bg-red-600/20 text-red-500 border border-red-500/30 rounded-2xl text-[10px] font-black uppercase">Odustani</button>
+                                <button type="button" onClick={spasiIzmjeneMenija} className="shrink-0 px-4 py-3 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase">💾 Spasi</button>
                             </>
                         )}
-                        <div className="w-px h-8 bg-theme-border mx-2"></div>
-                        <button type="button" onClick={() => setIsSettingsOpen(true)} className="p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all" title="Postavke"><Settings size={20} /></button>
-                        <button type="button" onClick={handleLogout} className="p-4 rounded-2xl text-red-500 hover:bg-red-500 hover:text-white transition-all" title="Odjava sa sistema"><LogOut size={20} /></button>
+                        <div className="shrink-0 w-px h-8 bg-theme-border mx-2"></div>
+                        <button type="button" onClick={() => setIsSettingsOpen(true)} className="shrink-0 p-4 rounded-2xl text-theme-muted hover:bg-theme-panel hover:text-theme-text transition-all" title="Postavke"><Settings size={20} /></button>
+                        <button type="button" onClick={handleLogout} className="shrink-0 p-4 rounded-2xl text-red-500 hover:bg-red-500 hover:text-white transition-all" title="Odjava sa sistema"><LogOut size={20} /></button>
                     </motion.div>
                 )}
 

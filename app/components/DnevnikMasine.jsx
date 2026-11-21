@@ -20,11 +20,15 @@ export default function DnevnikMasine({ modul, header, user }) {
 
     const snimiZastojIliRad = async () => {
         if (!header?.masina) return toast.warning("Prvo odaberite mašinu u zaglavlju!");
+        if (!header?.datum) return toast.warning("Datum u zaglavlju je obavezan!");
         if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
         const siroviZastoj = String(form.zastoj_min ?? '').trim();
         const zastojNum = siroviZastoj === '' ? 0 : Number(siroviZastoj);
         if (isNaN(zastojNum) || !isFinite(zastojNum) || zastojNum < 0 || zastojNum > 1440 || /[eE]/.test(siroviZastoj)) {
             return toast.error("Zastoj mora biti ispravan broj minuta između 0 i 1440 (negativne i nerealne vrijednosti nisu dozvoljene)!");
+        }
+        if (form.vrijeme_do && form.vrijeme_do < form.vrijeme_od) {
+            return toast.error("Vrijeme završetka ne može biti prije vremena početka!");
         }
         const payload = {
             datum: header.datum, masina: header.masina, modul: modul,
@@ -32,7 +36,7 @@ export default function DnevnikMasine({ modul, header, user }) {
             zastoj_min: Math.round(zastojNum), napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
         };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
-        if (error) return toast.error("Greška pri snimanju: " + error.message);
+        if (error) return toast.error("Greška pri snimanju zapisa u dnevnik.");
         toast.success("Zapis o radu/zastoju uspješno dodan!");
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
@@ -47,8 +51,9 @@ export default function DnevnikMasine({ modul, header, user }) {
             confirmText: '🗑️ OBRIŠI',
             cancelText: 'ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('dnevnik_masine').delete().eq('id', id);
+                const { error } = await supabase.from('dnevnik_masine').delete().eq('id', id);
                 setDialog({ isOpen: false });
+                if (error) return toast.error("Greška pri brisanju zapisa iz dnevnika.");
                 toast.success("Zapis obrisan iz dnevnika.");
                 loadLogove();
             },

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
@@ -20,6 +20,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
+        if (!header?.datum || !header?.masina) return toast.warning("Odaberite datum i mašinu u zaglavlju!");
         if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
         const siroviZastoj = String(form.zastoj_min ?? '').trim();
         const zastojNum = siroviZastoj === '' ? 0 : Number(siroviZastoj);
@@ -31,7 +32,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         }
         const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: Math.round(zastojNum), napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
-        if (error) return toast.error("Greška pri snimanju zastoja: " + error.message);
+        if (error) return toast.error(formatDbError(error, 'Dnevnik mašine'));
         toast.success("Zapis o radu/zastoju uspješno dodan!");
         setForm({ vrijeme_od: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), vrijeme_do: '', zastoj_min: '', napomena: '' });
         loadLogove();
@@ -45,9 +46,10 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
             confirmText: '🗑️ OBRIŠI',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('dnevnik_masine').delete().eq('id', id);
-                loadLogove();
+                const { error } = await supabase.from('dnevnik_masine').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje zastoja'));
+                loadLogove();
                 toast.info("Zapis obrisan iz dnevnika.");
             },
             onCancel: zatvoriDialog
@@ -139,8 +141,8 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     }, [header?.masina]);
     
     const saas = useSaaS('prorez_modul', {
-        boja_kartice: '#1e293b', 
-        boja_slova: '#ffffff', 
+        boja_kartice: '', 
+        boja_slova: '', 
         velicina_naslova: '16', 
         naslov_skenera: 'SKENIRAJ TRUPAC NA BRENTI (Dužina u m, Prečnik u cm)',
         polja_radnici: [ 
@@ -228,7 +230,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'brentista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
-            setBrentista(novoIme); localStorage.setItem('zajednicki_brentista', novoIme);
+            setBrentista(novoIme); localStorage.setItem('zajednicki_brentista_' + header.masina, novoIme);
             emitRadniciUpdate(novoIme, viljuskarista);
         }
     };
@@ -237,7 +239,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if (header?.masina) {
             await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', header.masina).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
             if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: header.masina, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
-            setViljuskarista(novoIme); localStorage.setItem('zajednicki_viljuskarista', novoIme);
+            setViljuskarista(novoIme); localStorage.setItem('zajednicki_viljuskarista_' + header.masina, novoIme);
             emitRadniciUpdate(brentista, novoIme);
         }
     };
@@ -250,14 +252,14 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             if (!header?.masina) return;
             const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', header.masina).is('vrijeme_odjave', null);
             
-            let locB = localStorage.getItem('zajednicki_brentista') || '';
-            let locV = localStorage.getItem('zajednicki_viljuskarista') || '';
+            let locB = localStorage.getItem('zajednicki_brentista_' + header.masina) || '';
+            let locV = localStorage.getItem('zajednicki_viljuskarista_' + header.masina) || '';
 
             if (data && data.length > 0) {
                 const b = data.find(r => r.uloga === 'brentista');
                 const v = data.find(r => r.uloga === 'viljuskarista');
-                if (b) { locB = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
-                if (v) { locV = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
+                if (b) { locB = b.radnik_ime; localStorage.setItem('zajednicki_brentista_' + header.masina, b.radnik_ime); }
+                if (v) { locV = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista_' + header.masina, v.radnik_ime); }
             }
             
             setBrentista(locB); setViljuskarista(locV);
@@ -300,11 +302,19 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 return logLokalniString === odabraniDatum;
             });
             
-            const sessionTime = localStorage.getItem('prorez_session_start_' + header.masina);
-            if (sessionTime) {
+            const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+            const sessionKey = 'prorez_session_start_' + header.masina;
+            const sessionTime = localStorage.getItem(sessionKey);
+            if (sessionTime && odabraniDatum === danasLocal) {
                 const sessionDate = new Date(sessionTime);
-                const filteredBySession = filtriranoZaDanas.filter(log => new Date(log.created_at) >= sessionDate);
-                setProrezaniLista(filteredBySession);
+                const sessionLocalDay = `${sessionDate.getFullYear()}-${String(sessionDate.getMonth() + 1).padStart(2, '0')}-${String(sessionDate.getDate()).padStart(2, '0')}`;
+                if (sessionLocalDay === danasLocal) {
+                    const filteredBySession = filtriranoZaDanas.filter(log => new Date(log.created_at) >= sessionDate);
+                    setProrezaniLista(filteredBySession);
+                } else {
+                    localStorage.removeItem(sessionKey);
+                    setProrezaniLista(filtriranoZaDanas);
+                }
             } else {
                 setProrezaniLista(filtriranoZaDanas);
             }
@@ -410,6 +420,9 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         const trupacSnapshot = trupac;
         const sviRadniciProrez = [brentistaZaSpasiti, viljuskaristaZaSpasiti].filter(Boolean).join(', ');
         const efektivnaZapremina = parseFloat(trupacSnapshot.kontrolna_zapremina || trupacSnapshot.zapremina || 0);
+        if (!Number.isFinite(efektivnaZapremina) || efektivnaZapremina <= 0) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Neispravna Zapremina', poruka: `Trupac ${trupacSnapshot.id} nema validnu pozitivnu zapreminu! Provjerite prijem trupca prije proreza.`, onCancel: zatvoriDialog });
+        }
         const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
         
         const logPayload = {
@@ -426,7 +439,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         };
 
         const tempId = Date.now();
-        const optimisticLog = { ...logPayload, id: tempId, created_at: new Date().toISOString() };
+        const optimisticLog = { ...logPayload, id: tempId, _pending: true, created_at: new Date().toISOString() };
         setProrezaniLista(prev => [optimisticLog, ...prev]);
         
         setTrupac(null);
@@ -450,7 +463,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         if (errInsert) {
             await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', logPayload.trupac_id);
             setProrezaniLista(prev => prev.filter(p => p.id !== tempId));
-            prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: errInsert.message, onCancel: zatvoriDialog });
+            prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: formatDbError(errInsert, 'Prorez'), onCancel: zatvoriDialog });
         } else if (insertedData) {
             setProrezaniLista(prev => prev.map(p => p.id === tempId ? insertedData : p));
             zapisiU_Log('PROREZ_EVIDENTIRAN', `Izrezan trupac ${logPayload.trupac_id} (${logPayload.zapremina} m³). Brentista: ${brentistaZaSpasiti}`);
@@ -458,6 +471,9 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     };
 
     const vratiNaStanje = async (p) => {
+        if (p._pending) {
+            return toast.warning("Sačekajte trenutak da se zapis potvrdi u bazi prije poništavanja.");
+        }
         prikaziDialog({
             tip: 'upozorenje',
             naslov: 'Vraćanje na zalihe',
@@ -465,9 +481,18 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             confirmText: '✅ DA, VRATI NA STANJE',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
+                const { error: delErr } = await supabase.from('prorez_log').delete().eq('id', p.id);
+                if (delErr) {
+                    zatvoriDialog();
+                    return toast.error(formatDbError(delErr, 'Poništavanje proreza'));
+                }
+                const { error: updErr } = await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', p.trupac_id);
+                if (updErr) {
+                    zatvoriDialog();
+                    loadProrezani();
+                    return toast.error(formatDbError(updErr, 'Vraćanje trupca na lager'));
+                }
                 setProrezaniLista(prev => prev.filter(item => item.id !== p.id));
-                await supabase.from('prorez_log').delete().eq('id', p.id);
-                await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', p.trupac_id);
                 zapisiU_Log('STORNO_PROREZA', `Korisnik je poništio prorez za trupac ${p.trupac_id}. Trupac je vraćen nazad na zalihe.`);
                 zatvoriDialog();
                 setTimeout(() => inputRef.current?.focus(), 100);
@@ -491,8 +516,8 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                 
                 setBrentista('');
                 setViljuskarista('');
-                localStorage.removeItem('zajednicki_brentista');
-                localStorage.removeItem('zajednicki_viljuskarista');
+                localStorage.removeItem('zajednicki_brentista_' + header.masina);
+                localStorage.removeItem('zajednicki_viljuskarista_' + header.masina);
                 emitRadniciUpdate('', '');
                 
                 localStorage.setItem('prorez_session_start_' + header.masina, now);
@@ -526,7 +551,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     }
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24 overflow-visible" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24 overflow-visible" style={{ color: saas.ui.boja_slova || undefined }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-red-500" user={user} modulIme="prorez" saas={saas} />
 
@@ -578,7 +603,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
                         {trupac ? (
                             <div className="bg-theme-panel p-6 rounded-3xl border border-red-500/50 shadow-2xl relative overflow-hidden animate-in zoom-in-95">
                                 <div className="absolute -right-10 -top-10 text-9xl opacity-5">🪵</div>
-                                <div className="flex justify-between items-start mb-6 border-b border-theme-border/50 pb-4 relative z-10">
+                                <div className="flex flex-col sm:flex-row justify-between items-start gap-3 mb-6 border-b border-theme-border/50 pb-4 relative z-10">
                                     <div>
                                         <span className="text-[10px] text-theme-muted uppercase font-black tracking-widest block mb-1">Skenirani Trupac</span>
                                         <div className="flex flex-wrap items-center gap-3">

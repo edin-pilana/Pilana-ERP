@@ -86,7 +86,13 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     // Funkcija za brzo označavanje jednog alarma kao pročitanog
     const oznaciKaoProcitano = async (id, e) => {
         e.stopPropagation();
-        await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
+        const { error } = await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
+        if (error) return toast.error("Greška pri označavanju upozorenja.");
+        setListaAlarma(prev => {
+            const next = prev.filter(a => a.id !== id);
+            setBrojAlarma(next.length);
+            return next;
+        });
     };
 
     // Funkcija za brzo zatvaranje/čitanje svih trenutnih alarma u padajućem meniju
@@ -95,7 +101,10 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
         const ids = listaAlarma.map(a => a.id);
         if (ids.length === 0) return;
 
-        await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', ids);
+        const { error } = await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', ids);
+        if (error) return toast.error("Greška pri označavanju upozorenja.");
+        setListaAlarma([]);
+        setBrojAlarma(0);
         toast.success("Sva upozorenja su označena kao pročitana.");
     };
 
@@ -152,7 +161,8 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     };
 
     const odjaviRadnika = async (ime) => {
-        await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('radnik_ime', ime).eq('masina_naziv', header?.masina).is('vrijeme_odjave', null);
+        const { error } = await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('radnik_ime', ime).eq('masina_naziv', header?.masina).is('vrijeme_odjave', null);
+        if (error) return toast.error("Greška pri odjavi radnika.");
         ucitajAktivne();
         window.dispatchEvent(new Event('radnici_updated'));
     };
@@ -231,9 +241,9 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                 )}
                             </button>
 
-                            {/* PADAJUĆI MENI */}
+                            {/* PADAJUĆI MENI — fiksiran unutar viewporta ispod lg (<1024px) da ne prelijeva na 390px i 768px */}
                             {otvorenoZvonce && (
-                                <div className="absolute top-[120%] right-0 w-[min(92vw,24rem)] bg-theme-card border-2 border-theme-border rounded-[1.5rem] shadow-2xl overflow-hidden z-[9999] animate-in slide-in-from-top-2">
+                                <div className="fixed lg:absolute left-3 right-3 lg:left-auto lg:right-0 top-20 lg:top-[120%] lg:w-96 max-w-[calc(100vw-1.5rem)] bg-theme-card border-2 border-theme-border rounded-[1.5rem] shadow-2xl overflow-hidden z-[9999] animate-in slide-in-from-top-2">
                                     <div className="flex justify-between items-center p-4 border-b border-theme-border bg-theme-panel/70">
                                         <h4 className="text-xs font-black uppercase text-theme-text flex items-center gap-2">
                                             <span>🚨</span> Upozorenja ({brojAlarma})

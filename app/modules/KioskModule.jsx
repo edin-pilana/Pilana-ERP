@@ -188,11 +188,12 @@ export default function KioskModule() {
                     const z = otvoreniZapisi[0];
                     const dolazakMs = z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).getTime() : Date.now();
                     const trajanjeSati = Math.max(0.05, parseFloat(((Date.now() - dolazakMs) / 3600000).toFixed(2)));
-                    await supabase.from('radni_sati').update({
+                    const { error: odjErr } = await supabase.from('radni_sati').update({
                         vrijeme_odlaska: sada,
                         status: 'ZAVRŠIO',
                         obracunato_sati: trajanjeSati
                     }).eq('id', z.id);
+                    if (odjErr) throw odjErr;
                     prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')} (${trajanjeSati.toFixed(2)} h).`);
                 } else {
                     prikaziPrivremenuPoruku('error', `⚠️ ${ime}, niste prijavljeni na posao!`);
@@ -318,6 +319,12 @@ export default function KioskModule() {
 
     return (
         <div className="min-h-screen bg-[#090e17] text-white flex flex-col items-center p-4 md:p-6 relative font-sans overflow-x-hidden overflow-y-auto">
+            {poruka && (
+                <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100050] w-[min(92vw,34rem)] p-4 rounded-2xl flex items-center justify-center gap-3 animate-in zoom-in font-black text-sm md:text-base border shadow-2xl backdrop-blur-xl ${poruka.tip === 'success' ? 'bg-emerald-950/95 text-emerald-300 border-emerald-500/70' : 'bg-red-950/95 text-red-300 border-red-500/70'}`}>
+                    {poruka.tip === 'success' ? <CheckCircle2 className="w-6 h-6 shrink-0" /> : <AlertCircle className="w-6 h-6 shrink-0" />}
+                    <span className="text-center leading-tight">{poruka.tekst}</span>
+                </div>
+            )}
             
             <div className="relative z-[10010]">
                 {isScanning && <ScannerOverlay onScan={(text) => { setIsScanning(false); procesuirajSkenId(text); }} onClose={() => setIsScanning(false)} />}
@@ -401,9 +408,9 @@ export default function KioskModule() {
             )}
 
             {radnikProfil && (
-                <div className="fixed inset-0 z-[10020] bg-black/95 flex items-center justify-center p-4 backdrop-blur-xl animate-in zoom-in-95">
-                    <div className="bg-theme-card border-2 border-blue-500 p-6 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(59,130,246,0.3)] max-w-3xl w-full flex flex-col relative max-h-[95vh] overflow-y-auto">
-                        <button onClick={zatvoriSveModale} className="absolute top-4 right-4 bg-slate-800 w-12 h-12 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50 shadow-lg"><X size={24}/></button>
+                <div className="fixed inset-0 z-[99995] bg-black/95 flex items-start sm:items-center justify-center p-2 sm:p-4 pt-4 backdrop-blur-xl animate-in zoom-in-95 overflow-y-auto">
+                    <div className="bg-theme-card border-2 border-blue-500 p-5 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(59,130,246,0.3)] max-w-3xl w-full flex flex-col relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto my-auto">
+                        <button onClick={zatvoriSveModale} aria-label="Zatvori profil" className="sticky top-0 self-end bg-slate-800 w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-red-500 transition-colors z-50 shadow-lg shrink-0 -mb-6"><X size={22}/></button>
                         
                         <div className="text-center border-b border-theme-border pb-6 mb-6 mt-8 md:mt-0">
                             <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full flex items-center justify-center mb-4 border-4 shadow-lg bg-blue-900/30 text-blue-400 border-blue-500">
@@ -468,13 +475,14 @@ export default function KioskModule() {
             )}
 
             {showOdmorModal && (
-                <div className="fixed inset-0 bg-black/95 z-[9990] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in overflow-y-auto">
-                    <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] w-full max-w-5xl shadow-[0_0_80px_rgba(245,158,11,0.15)] relative flex flex-col mt-10 md:mt-0">
-                        <button onClick={zatvoriSveModale} className="absolute top-4 right-4 md:top-6 md:right-6 w-10 h-10 md:w-12 md:h-12 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors font-black text-lg md:text-xl z-50 shadow-lg"><X/></button>
-                        
-                        <div className="mb-6 md:mb-8 border-b border-slate-800 pb-4 pr-12 md:pr-0">
-                            <h2 className="text-xl md:text-2xl text-amber-500 font-black uppercase tracking-widest flex items-center gap-2 md:gap-3">🏖️ Rezervacija Odsustva</h2>
-                            <p className="text-white text-sm md:text-lg mt-2 font-bold bg-slate-800 inline-block px-3 py-1 rounded-lg border border-slate-600">Radnik: {formaOdmor.radnik_ime}</p>
+                <div className="fixed inset-0 bg-black/95 z-[99996] flex items-start sm:items-center justify-center p-2 md:p-4 pt-4 backdrop-blur-md animate-in fade-in overflow-y-auto">
+                    <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] w-full max-w-5xl shadow-[0_0_80px_rgba(245,158,11,0.15)] relative flex flex-col max-h-[calc(100dvh-1.5rem)] overflow-y-auto my-auto">
+                        <div className="sticky top-0 z-50 flex justify-between items-start gap-3 bg-theme-card/95 backdrop-blur-md pb-3 mb-4 md:mb-6 border-b border-slate-800 -mx-1 px-1 pt-1">
+                            <div>
+                                <h2 className="text-lg md:text-2xl text-amber-500 font-black uppercase tracking-widest flex items-center gap-2 md:gap-3">🏖️ Rezervacija Odsustva</h2>
+                                <p className="text-white text-xs md:text-lg mt-1.5 font-bold bg-slate-800 inline-block px-3 py-1 rounded-lg border border-slate-600">Radnik: {formaOdmor.radnik_ime}</p>
+                            </div>
+                            <button onClick={zatvoriSveModale} aria-label="Zatvori rezervaciju" className="w-10 h-10 md:w-12 md:h-12 shrink-0 bg-slate-800 rounded-full flex items-center justify-center text-slate-200 hover:text-white hover:bg-red-500 transition-colors font-black text-lg md:text-xl shadow-lg"><X/></button>
                         </div>
 
                         <div className="flex flex-col lg:flex-row gap-6 md:gap-8 flex-1 min-h-0">
@@ -553,7 +561,7 @@ export default function KioskModule() {
             )}
 
             {potvrdaModal && (
-                <div className="fixed inset-0 z-[10030] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
+                <div className="fixed inset-0 z-[99998] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
                     <div className="bg-theme-card border-2 border-amber-500 p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.5)] max-w-md w-full text-center flex flex-col items-center">
                         <div className="w-16 h-16 bg-amber-600 text-white rounded-full flex items-center justify-center mb-4"><CalendarDays size={32}/></div>
                         <h2 className="text-xl md:text-2xl font-black uppercase tracking-widest text-white mb-2">Potvrda Odsustva</h2>

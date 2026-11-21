@@ -316,6 +316,92 @@ await test('escapeHtml neutrališe XSS payload u printHelpers / ID karticama', (
 });
 
 // ============================================================================
+// SUITE 6: MOMENTIC MO (24 BUGA) & UNCOVERED MODULES REGRESIJSKA ZAŠTITA
+// ============================================================================
+suite('SUITE 6 — Momentic Mo (24 buga) & Uncovered Modules Regresijska Zaštita');
+
+await test('supabaseClient.js: ne poziva dupli Promise.resolve(result).then() na PostgrestBuilderu i eksportuje formatDbError', () => {
+    const src = readAppFile('utils/supabaseClient.js');
+    assert.equal(src.includes('Promise.resolve(result).then'), false, 'Pronađen dupli POST uzrok na PostgrestBuilderu!');
+    assert.ok(src.includes('export const formatDbError'), 'Nedostaje formatDbError helper');
+    assert.ok(src.includes("code === '23505'"), 'formatDbError mora prevoditi 23505');
+});
+
+await test('LagerPaketaModule.jsx: katalog_proizvoda se sortira po sifra (ne created_at) i responsivni Slobodni Ulaz', () => {
+    const src = readAppFile('modules/LagerPaketaModule.jsx');
+    assert.equal(src.includes("ucitajSveSaPaginacijom('katalog_proizvoda', '*', 'created_at')"), false, 'katalog_proizvoda nema created_at kolonu!');
+    assert.ok(src.includes("ucitajSveSaPaginacijom('katalog_proizvoda', '*', 'sifra')"), 'katalog_proizvoda mora sortirati po sifra');
+});
+
+await test('PrijemModule.jsx: sinhronizovani localStorage ključevi, sekvencijalna zaštita i blokada viška kubika pri krojenju', () => {
+    const src = readAppFile('modules/PrijemModule.jsx');
+    assert.ok(src.includes('prijemLoadSeqRef'), 'Nedostaje monotonic race-condition guard za loadPrijemList');
+    assert.ok(src.includes('trenutnaDjecaVolume > izvornaVol'), 'Nedostaje provjera zapremine djece vs majke u izvrsiKrojenje');
+});
+
+await test('PilanaModule & DoradaModule: ponovo otvoreni paketi zbrajaju sve redove, 6-decimalna preciznost i validacija zastoja', () => {
+    const pil = readAppFile('modules/PilanaModule.jsx');
+    const dor = readAppFile('modules/DoradaModule.jsx');
+    assert.ok(pil.includes('closed_at: null'), 'Pilana mora ponovo otvoriti zatvorene redove paketa');
+    assert.ok(dor.includes('closed_at: null'), 'Dorada mora ponovo otvoriti zatvorene redove paketa');
+    assert.ok(dor.includes('zastojNum < 0 || zastojNum > 1440'), 'Dorada dnevnik mora odbiti negativan zastoj');
+    assert.ok(pil.includes('zastojNum < 0 || zastojNum > 1440'), 'Pilana dnevnik mora odbiti negativan zastoj');
+});
+
+await test('OtpremniceModule.jsx: ukupno m³ konvertuje kom/m2/m1 i koristi formatDbError', () => {
+    const src = readAppFile('modules/OtpremniceModule.jsx');
+    assert.ok(src.includes('izracunajStavkuM3'), 'Nedostaje izracunajStavkuM3 konverzija');
+    assert.ok(src.includes('formatDbError('), 'OtpremniceModule mora koristiti formatDbError');
+});
+
+await test('PonudeModule & RacuniModule: odbijaju negativne cijene/rabate i sinhronizuju odabraniKupac u load()', () => {
+    const pon = readAppFile('modules/PonudeModule.jsx');
+    const rac = readAppFile('modules/RacuniModule.jsx');
+    assert.ok(pon.includes('formatDbError(') && rac.includes('formatDbError('), 'Oba modula moraju koristiti formatDbError');
+    assert.ok(rac.includes('parsedFiksna < 0') || rac.includes('fiksnaNum < 0'), 'RacuniModule mora odbiti negativnu cijenu');
+    assert.ok(pon.includes('setOdabraniKupac(prev =>'), 'PonudeModule mora sinhronizovati odabraniKupac iz svježe baze');
+});
+
+await test('BlagajnaModule.jsx: CBBiH EUR->KM konverzija (1.95583) i blokada iznosa < 0.01 KM', () => {
+    const src = readAppFile('modules/BlagajnaModule.jsx');
+    assert.ok(src.includes('1.95583'), 'Nedostaje CBBiH fiksni kurs 1.95583 za EUR->KM');
+    assert.ok(src.includes('iznosNum < 0.01'), 'Blagajna mora odbiti sub-fening iznose (< 0.01 KM)');
+});
+
+await test('SettingsModule.jsx: 0..100% rabat validacija, brisanje resetuje edit formu, radnik ne briše lozinku', () => {
+    const src = readAppFile('modules/SettingsModule.jsx');
+    assert.ok(src.includes('rVal < 0 || rVal > 100'), 'Rabat po proizvodu/kategoriji mora biti u opsegu 0..100%');
+    assert.ok(src.includes('if (isEditing && form.id === id) ponistiIzmjenu()'), 'Brisanje aktivnog zapisa mora resetovati edit formu');
+    assert.ok(src.includes('if (form.password && String(form.password).trim() !== \'\')'), 'Uređivanje radnika bez nove lozinke ne smije pregaziti postojeću lozinku');
+    assert.ok(src.includes('if (!printWindow)'), 'printAkreditaciju mora rukovati blokiranim popup prozorom');
+});
+
+await test('KioskModule, MasterHeader & globals.css: responsivni modali/zvono i kontrast tamne/svijetle teme', () => {
+    const kiosk = readAppFile('modules/KioskModule.jsx');
+    const hdr = readAppFile('components/MasterHeader.jsx');
+    const css = readAppFile('globals.css');
+    assert.ok(kiosk.includes('max-h-[calc(100dvh-1.5rem)]'), 'Kiosk modali moraju stati u mobilni viewport');
+    assert.ok(hdr.includes('max-w-[calc(100vw-1.5rem)]'), 'MasterHeader zvono dropdown ne smije prelaziti širinu ekrana');
+    assert.equal(css.includes('padding: 0.75rem 1rem !important;'), false, 'globals.css ne smije forsirati !important padding na sve inpute');
+    assert.ok(css.includes('html:not([data-theme="light"]) .bg-white'), 'globals.css mora osigurati kontrast za .bg-white u tamnim temama');
+});
+
+await test('Uncovered moduli (Planiranje, RN, Prorez, Reklamacije, Toranj, HR): validacije, UTC-safe datumi i error handling', () => {
+    const plan = readAppFile('modules/PlaniranjeModule.jsx');
+    const rn = readAppFile('modules/RadniNaloziModule.jsx');
+    const prorez = readAppFile('modules/ProrezModule.jsx');
+    const rek = readAppFile('modules/ReklamacijeModule.jsx');
+    const toranj = readAppFile('modules/KontrolniToranjModule.jsx');
+    const hr = readAppFile('modules/HrDashboardModule.jsx');
+    assert.ok(plan.includes('proizvedeno_m3 || 0) > 0'), 'Planiranje mora štititi već proizvedene stavke od brisanja');
+    assert.ok(rn.includes('form.rok_isporuke < form.datum'), 'RN mora odbiti rok isporuke prije datuma izdavanja');
+    assert.ok(prorez.includes('if (p._pending)'), 'Prorez ne smije stornirati nepotvrđen optimistic red');
+    assert.equal(rek.includes("parseFloat(paket?.debljina || trenutniProizvod?.visina) || 1"), false, 'Reklamacije ne smiju imati tihi || 1 cm fallback');
+    assert.ok(toranj.includes('safeFilterVal'), 'Kontrolni Toranj mora sanitizovati PostgREST .or() filtere');
+    assert.equal(hr.includes("new Date(p.datum).toLocaleDateString('bs-BA')"), false, 'HR kalendar mora koristiti prikazDatumaBHS umjesto UTC new Date()');
+});
+
+// ============================================================================
 // SUITE 5: LIVE SERVER HTTP/SSR SMOKE TEST (OPCIONO SA --url=...)
 // ============================================================================
 const urlArg = process.argv.find(a => a.startsWith('--url='));

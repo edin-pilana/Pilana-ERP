@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import { useSaaS } from '../utils/useSaaS';
@@ -159,7 +159,16 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
     const [forenzika, setForenzika] = useState(null);
     const [sviDokumenti, setSviDokumenti] = useState([]);
     const [showDropdown, setShowDropdown] = useState(false);
+    const searchWrapRef = useRef(null);
     const [otvoreniLogovi, setOtvoreniLogovi] = useState(new Set());
+
+    useEffect(() => {
+        const handleOutside = (e) => {
+            if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) setShowDropdown(false);
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+    }, []);
 
     const [reklamacijskiAlarmi, setReklamacijskiAlarmi] = useState([]);
     const [istorijaKrojenjaMajke, setIstorijaKrojenjaMajke] = useState(null);
@@ -218,17 +227,26 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
     const preporuke = useMemo(() => {
         if (!sken) return [];
         const pojam = sken.toUpperCase();
-        return sviDokumenti.filter(d => d.id.toUpperCase().includes(pojam)).slice(0, 15);
+        return sviDokumenti.filter(d => String(d.id || '').toUpperCase().includes(pojam)).slice(0, 15);
     }, [sken, sviDokumenti]);
 
+    const safeFilterVal = (s) => String(s || '').replace(/[,()\\"]/g, '').trim();
+
     const analizirajSve = async (tačanBroj) => {
-        const val = tačanBroj.toUpperCase().trim();
+        const val = String(tačanBroj || '').toUpperCase().trim();
         if (!val) return;
+        const safeVal = safeFilterVal(val);
+        if (!safeVal) return;
         setLoading(true); setForenzika(null); setShowDropdown(false); setOtvoreniLogovi(new Set());
         setReklamacijskiAlarmi([]); setIstorijaKrojenjaMajke(null);
 
-        const { data: rekPodaci } = await supabase.from('reklamacije').select('*').or(`paket_id.eq.${val},broj_otpremnice.eq.${val}`);
-        if (rekPodaci && rekPodaci.length > 0) setReklamacijskiAlarmi(rekPodaci);
+        try {
+        let sveRek = [];
+        const { data: rekPodaci } = await supabase.from('reklamacije').select('*').or(`paket_id.eq.${safeVal},broj_otpremnice.eq.${safeVal}`);
+        if (rekPodaci && rekPodaci.length > 0) {
+            sveRek = rekPodaci;
+            setReklamacijskiAlarmi(rekPodaci);
+        }
 
         const { data: trupacBaza } = await supabase.from('trupci').select('*').eq('id', val).maybeSingle();
         if (trupacBaza && trupacBaza.parent_id) {
@@ -296,12 +314,13 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         }
 
         if (ponudaIdZaLanac && (!otpremnicaIdZaLanac || !racunIdZaLanac)) {
-            if (!otpremnicaIdZaLanac) {
-                const { data: otpDir } = await supabase.from('otpremnice').select('id').or(`broj_veze.eq.${ponudaIdZaLanac},napomena.ilike.%${ponudaIdZaLanac}%`).limit(1).maybeSingle();
+            const safePon = safeFilterVal(ponudaIdZaLanac);
+            if (!otpremnicaIdZaLanac && safePon) {
+                const { data: otpDir } = await supabase.from('otpremnice').select('id').or(`broj_veze.eq.${safePon},napomena.ilike.%${safePon}%`).limit(1).maybeSingle();
                 if (otpDir) otpremnicaIdZaLanac = otpDir.id;
             }
-            if (!racunIdZaLanac) {
-                const { data: racDir } = await supabase.from('racuni').select('id, broj_veze').or(`broj_veze.eq.${ponudaIdZaLanac},napomena.ilike.%${ponudaIdZaLanac}%`).limit(1).maybeSingle();
+            if (!racunIdZaLanac && safePon) {
+                const { data: racDir } = await supabase.from('racuni').select('id, broj_veze').or(`broj_veze.eq.${safePon},napomena.ilike.%${safePon}%`).limit(1).maybeSingle();
                 if (racDir) {
                     racunIdZaLanac = racDir.id;
                     if (!otpremnicaIdZaLanac && racDir.broj_veze?.includes('OTP-')) otpremnicaIdZaLanac = racDir.broj_veze;
@@ -311,7 +330,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         let cistiIdovi = [val, nalogIdZaLanac, otpremnicaIdZaLanac, racunIdZaLanac, ponudaIdZaLanac].filter(Boolean);
 
-        const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
+        const orConditions = cistiIdovi.map(safeFilterVal).filter(Boolean).map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
         const { data: sLogs } = await (orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] });
 
         let sysLogsRaw = [];
@@ -355,14 +374,17 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         // Dopuni reklamacije preko SVIH pronađenih ID-ova u lancu
         if (cistiIdovi.length > 1) {
-            const rekOr = cistiIdovi.map(cid => `paket_id.eq.${cid},broj_otpremnice.eq.${cid}`).join(',');
-            const { data: rekLanac } = await supabase.from('reklamacije').select('*').or(rekOr);
-            if (rekLanac && rekLanac.length > 0) setReklamacijskiAlarmi(rekLanac);
+            const rekOr = cistiIdovi.map(safeFilterVal).filter(Boolean).map(cid => `paket_id.eq.${cid},broj_otpremnice.eq.${cid}`).join(',');
+            const { data: rekLanac } = await (rekOr ? supabase.from('reklamacije').select('*').or(rekOr) : { data: [] });
+            if (rekLanac && rekLanac.length > 0) {
+                sveRek = rekLanac;
+                setReklamacijskiAlarmi(rekLanac);
+            }
         }
 
-        const paketiFilterParts = [`paket_id.eq.${val}`];
-        if (nalogIdZaLanac) paketiFilterParts.push(`broj_veze.eq.${nalogIdZaLanac}`);
-        if (otpremnicaIdZaLanac) paketiFilterParts.push(`otpremnica_id.eq.${otpremnicaIdZaLanac}`);
+        const paketiFilterParts = [`paket_id.eq.${safeVal}`];
+        if (nalogIdZaLanac && safeFilterVal(nalogIdZaLanac)) paketiFilterParts.push(`broj_veze.eq.${safeFilterVal(nalogIdZaLanac)}`);
+        if (otpremnicaIdZaLanac && safeFilterVal(otpremnicaIdZaLanac)) paketiFilterParts.push(`otpremnica_id.eq.${safeFilterVal(otpremnicaIdZaLanac)}`);
         const paketiFilterQuery = paketiFilterParts.join(',');
 
         const [naloziDB, ponudeDB, otpremniceDB, racuniDB, paketiDB] = await Promise.all([
@@ -423,13 +445,23 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         if (dataChain.ponuda && dataChain.kupac) {
             const sistemskiRabati = dataChain.kupac.rabati_jsonb || {};
-            const stavkePonude = dataChain.ponuda.stavke_jsonb || [];
+            let stavkePonude = dataChain.ponuda.stavke_jsonb || [];
+            if (typeof stavkePonude === 'string') {
+                try { stavkePonude = JSON.parse(stavkePonude); } catch (e) { stavkePonude = []; }
+            }
+            if (!Array.isArray(stavkePonude)) stavkePonude = [];
             dataChain.finansijska_analiza = stavkePonude.map(st => {
+                const katStavke = katalog.find(k => k.sifra === st.sifra);
                 let defaultRabat = 0;
-                if (sistemskiRabati.proizvodi && sistemskiRabati.proizvodi[st.sifra]) defaultRabat = parseFloat(sistemskiRabati.proizvodi[st.sifra]);
-                else if (sistemskiRabati.ukupni) defaultRabat = parseFloat(sistemskiRabati.ukupni);
+                if (sistemskiRabati.proizvodi && sistemskiRabati.proizvodi[st.sifra] !== undefined) {
+                    defaultRabat = parseFloat(sistemskiRabati.proizvodi[st.sifra]) || 0;
+                } else if (katStavke?.kategorija && sistemskiRabati.kategorije && sistemskiRabati.kategorije[katStavke.kategorija] !== undefined) {
+                    defaultRabat = parseFloat(sistemskiRabati.kategorije[katStavke.kategorija]) || 0;
+                } else if (sistemskiRabati.ukupni !== undefined && sistemskiRabati.ukupni !== '') {
+                    defaultRabat = parseFloat(sistemskiRabati.ukupni) || 0;
+                }
                 const primijenjeniRabat = parseFloat(st.rabat_procenat || 0);
-                const odstupanje = primijenjeniRabat - defaultRabat;
+                const odstupanje = parseFloat((primijenjeniRabat - defaultRabat).toFixed(2));
                 return {
                     sifra: st.sifra, naziv: st.naziv, kolicina: st.kolicina_obracun, cijena_baza: st.cijena_baza,
                     sistemski_rabat: defaultRabat, primijenjeni_rabat: primijenjeniRabat, odstupanje: odstupanje,
@@ -438,7 +470,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             });
         }
 
-        const reklamacijskiLogovi = (rekPodaci || []).map(r => ({
+        const reklamacijskiLogovi = (sveRek || []).map(r => ({
             id: 'rek_log_' + r.id, created_at: new Date(r.created_at).getTime(), datum_prikaz: formatirajTacanDatum(r.created_at),
             korisnik: r.snimio_korisnik, akcija: `⚠️ STATUS REKLAMACIJE: [${r.status}]`,
             detalji: `Zahtjev za povrat/otpis. Količina: ${r.kolicina} m³. Razlog: ${r.razlog}. ${r.napomena || '-'}`
@@ -450,7 +482,12 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         ];
 
         dataChain.logovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values()).filter(l => l.created_at > 0).sort((a, b) => a.created_at - b.created_at);
-        setForenzika(dataChain); setLoading(false); setSken(val);
+        setForenzika(dataChain); setSken(val);
+        } catch (err) {
+            console.error('Forenzika greška:', err);
+        } finally {
+            setLoading(false);
+        }
     };
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.ui.boja_pozadine || undefined }}>
@@ -468,7 +505,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
             <div className="p-6 rounded-[2rem] border border-theme-border shadow-2xl text-center bg-theme-card relative z-50" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                 <h3 className={`${saas.ui.boja_naslova || 'text-indigo-400'} font-black uppercase text-xs mb-4 tracking-widest flex items-center justify-center gap-2`}><span>🕵️‍♂️ FORENZIČKI SKENER / X-RAY DOKUMENTA (Dimenzije u cm)</span></h3>
-                <div className="flex gap-2 max-w-2xl mx-auto relative w-full">
+                <div ref={searchWrapRef} className="flex gap-2 max-w-2xl mx-auto relative w-full">
                     <div className="flex-1 min-w-0 relative">
                         <input type="text" value={sken} onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} onKeyDown={e => e.key === 'Enter' && analizirajSve(sken)} onFocus={() => setShowDropdown(true)} placeholder="UPIŠI ID ILI SKENIRAJ..." className="w-full min-w-0 p-5 bg-theme-panel rounded-2xl text-center font-black text-xl md:text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" />
                         {showDropdown && sken && preporuke.length > 0 && (
@@ -493,7 +530,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                         {reklamacijskiAlarmi.map(rek => {
                             const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
                             const dimStr = kat ? `${kat.visina}x${kat.sirina}x${kat.duzina} cm` : 'N/A';
-                            const originalniUnosUtaknut = rek.napomena?.match(/\[Unos:\s*\d+\s*\w+\]/i)?.[0] || 'N/A';
+                            const originalniUnosUtaknut = rek.napomena?.match(/\[Unos:\s*[0-9.,]+\s*\w+\]/i)?.[0] || 'N/A';
 
                             return (
                                 <div key={rek.id} className="p-4 bg-theme-panel rounded-xl border border-red-500/20 text-xs text-theme-text space-y-2">
@@ -509,7 +546,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                                         <span className="text-blue-400">Izvorni Unos: <b className="text-theme-text">{originalniUnosUtaknut.replace(/[\[\]]/g, '')}</b></span>
                                     </div>
                                     <p className="text-amber-400 font-black">Razlog: {rek.razlog}</p>
-                                    {rek.napomena && <p className="text-[10px] text-slate-500 italic">Opis: "{rek.napomena.replace(/\[Unos:\s*\d+\s*\w+\]/i, '').trim()}"</p>}
+                                    {rek.napomena && <p className="text-[10px] text-slate-500 italic">Opis: "{rek.napomena.replace(/\[Unos:\s*[0-9.,]+\s*\w+\]/i, '').trim()}"</p>}
                                 </div>
                             );
                         })}

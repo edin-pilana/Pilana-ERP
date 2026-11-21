@@ -19,13 +19,13 @@
   }
 
   [data-theme="aurora"] {
-    /* 2. AURORA GLASS (Stakleni efekt sa ambijentalnim sjajem) */
+    /* 2. AURORA GLASS (Stakleni efekt sa ambijentalnim sjajem i čitljivom podlogom) */
     --bg-main: #0B0E14;
-    --bg-card: rgba(255, 255, 255, 0.045);
-    --bg-panel: rgba(0, 0, 0, 0.52);
+    --bg-card: rgba(17, 22, 34, 0.90);
+    --bg-panel: rgba(11, 14, 22, 0.78);
     --text-primary: #ffffff;
     --text-muted: #cbd5e1;
-    --border-color: rgba(167, 139, 250, 0.22);
+    --border-color: rgba(167, 139, 250, 0.25);
     --border-glow: 0 10px 35px -10px rgba(139, 92, 246, 0.16);
     --radius-box: 1.25rem;
     --glass-blur: blur(18px);
@@ -68,9 +68,16 @@
 /* TAMNE TEME: POLJA SA DINAMIČKIM AKCENTNIM BOJAMA     */
 /* (Pravi selektor na html:not([data-theme="light"]))   */
 /* ==================================================== */
+html:not([data-theme="light"]) {
+  color-scheme: dark;
+}
+
+html:not([data-theme="light"]) input:not([type]),
 html:not([data-theme="light"]) input[type="text"],
 html:not([data-theme="light"]) input[type="number"],
 html:not([data-theme="light"]) input[type="date"],
+html:not([data-theme="light"]) input[type="time"],
+html:not([data-theme="light"]) input[type="month"],
 html:not([data-theme="light"]) input[type="password"],
 html:not([data-theme="light"]) input[type="email"],
 html:not([data-theme="light"]) input[type="search"],
@@ -81,7 +88,6 @@ html:not([data-theme="light"]) textarea {
   border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 32%, transparent) !important;
   border-radius: 0.75rem !important;
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45) !important;
-  padding: 0.75rem 1rem !important;
   backdrop-filter: blur(8px);
   transition: all 0.25s ease !important;
 }
@@ -103,6 +109,40 @@ html:not([data-theme="light"]) .bg-white {
   background-color: var(--bg-card) !important;
   border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 18%, transparent) !important;
   color: var(--text-primary) !important;
+}
+
+/* Očuvaj čitljivost teksta unutar .bg-white panela (npr. RN sažetak na Lageru) u tamnim temama */
+html:not([data-theme="light"]) .bg-white .text-slate-900,
+html:not([data-theme="light"]) .bg-white .text-slate-800,
+html:not([data-theme="light"]) .bg-white .text-black {
+  color: var(--text-primary) !important;
+}
+html:not([data-theme="light"]) .bg-white .text-slate-700,
+html:not([data-theme="light"]) .bg-white .text-slate-600 {
+  color: var(--text-muted) !important;
+}
+html:not([data-theme="light"]) .bg-white .bg-slate-50,
+html:not([data-theme="light"]) .bg-white .bg-slate-100 {
+  background-color: var(--bg-panel) !important;
+  border-color: var(--border-color) !important;
+}
+html:not([data-theme="light"]) .bg-white .border-slate-200,
+html:not([data-theme="light"]) .bg-white .border-slate-100 {
+  border-color: var(--border-color) !important;
+}
+/* Statusni bedževi i svijetle akcent kartice unutar .bg-white zadržavaju svoj kontrast */
+html:not([data-theme="light"]) .bg-white .bg-emerald-50 .text-emerald-800,
+html:not([data-theme="light"]) .bg-white .bg-emerald-100.text-emerald-800 {
+  color: #065f46 !important;
+}
+html:not([data-theme="light"]) .bg-white .bg-amber-50 .text-amber-800,
+html:not([data-theme="light"]) .bg-white .bg-amber-50 .text-amber-900,
+html:not([data-theme="light"]) .bg-white .bg-amber-100.text-amber-900 {
+  color: #78350f !important;
+}
+html:not([data-theme="light"]) .bg-white .bg-red-50 .text-red-800,
+html:not([data-theme="light"]) .bg-white .bg-red-100.text-red-800 {
+  color: #991b1b !important;
 }
 
 /* ==================================================== */
@@ -318,8 +358,8 @@ html[data-theme="light"] .text-slate-500 {
 }
 
 html[data-theme="light"] [style*="background-color"] .text-white,
-html[data-theme="light"] button.text-white,
-html[data-theme="light"] button .text-white,
+html[data-theme="light"] button.text-white:not(.bg-theme-panel):not(.bg-theme-card):not([class*="bg-slate-800"]):not([class*="bg-slate-900"]):not([class*="bg-black"]),
+html[data-theme="light"] button:not(.bg-theme-panel):not(.bg-theme-card):not([class*="bg-slate-800"]):not([class*="bg-slate-900"]) .text-white,
 html[data-theme="light"] .bg-theme-accent,
 html[data-theme="light"] .bg-theme-accent *,
 html[data-theme="light"] [class*="bg-blue-600"],

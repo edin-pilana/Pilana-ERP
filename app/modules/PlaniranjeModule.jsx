@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
@@ -32,7 +32,7 @@ const toLocalIsoString = (dateObj) => {
 
 export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const saas = useSaaS('planiranje_modul', {
-        boja_kartice: '#1e293b', boja_slova: '#ffffff', boja_akcenta: '#f59e0b'
+        boja_kartice: '', boja_slova: '', boja_akcenta: '#f59e0b'
     });
 
     const danasnjiDatum = toLocalIsoString(new Date());
@@ -99,12 +99,14 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const loadInitialData = async () => {
         const { data: mData } = await supabase.from('masine').select('naziv, dnevni_kapacitet_m3, dozvoljeni_moduli').order('naziv');
-        if (mData) {
+        if (mData && mData.length > 0) {
             setMasine(mData);
-            if (mData.length > 0) {
-                setOdabranaMasina(mData[0].naziv);
-                setKapacitetMasine(parseFloat(mData[0].dnevni_kapacitet_m3) || 30);
-            }
+            setOdabranaMasina(mData[0].naziv);
+            const cap = parseFloat(mData[0].dnevni_kapacitet_m3);
+            setKapacitetMasine(Number.isFinite(cap) && cap > 0 ? cap : 30);
+        } else {
+            setMasine([]);
+            setLoading(false);
         }
         const { data: kData } = await supabase.from('katalog_proizvoda').select('*');
         if (kData) setKatalog(kData);
@@ -133,7 +135,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
             (rn.stavke_jsonb || []).forEach(st => {
                 let ukupnoZaUraditiM3 = 0;
-                let jm_unos = st.jm_unos || 'kom';
+                let jm_unos = String(st.jm_unos || 'kom').toLowerCase();
                 let originalKol = parseFloat(st.kolicina_unos || 0);
 
                 const katItem = katalog.find(k => k.sifra === st.sifra) || {};
@@ -173,8 +175,11 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                     ukupnoZaUraditiM3 = komada * vol1kom;
                     if (jm_unos === 'm3') ukupnoZaUraditiM3 = originalKol;
                 } else {
-                    ukupnoZaUraditiM3 = parseFloat(st.kolicina_obracun || 0);
-                    if (vol1kom > 0) {
+                    const jmObr = String(st.jm_obracun || 'm3').toLowerCase();
+                    ukupnoZaUraditiM3 = jmObr === 'm3' ? parseFloat(st.kolicina_obracun || 0) : 0;
+                    if (jm_unos === 'm3') {
+                        ukupnoZaUraditiM3 = originalKol;
+                    } else if (vol1kom > 0) {
                         if (jm_unos === 'kom') ukupnoZaUraditiM3 = originalKol * vol1kom;
                         else if (jm_unos === 'm2' && area1kom > 0) ukupnoZaUraditiM3 = (originalKol / area1kom) * vol1kom;
                         else if (jm_unos === 'm1' && len1kom > 0) ukupnoZaUraditiM3 = (originalKol / len1kom) * vol1kom;
@@ -256,7 +261,10 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const promjeniKolicinuPlaniranja = (id, novaKolOriginal) => {
         setStavkeZaPlaniranje(prev => prev.map(s => {
             if (s.id === id) {
-                const unos = parseFloat(novaKolOriginal) || 0;
+                const unos = parseFloat(novaKolOriginal);
+                if (!Number.isFinite(unos) || unos <= 0) {
+                    return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: 0 };
+                }
                 let komada = unos;
                 if (s.jm_unos === 'm3' && s.vol1kom > 0) komada = unos / s.vol1kom;
                 else if (s.jm_unos === 'm2' && s.area1kom > 0) komada = unos / s.area1kom;
@@ -265,13 +273,14 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 let novim3 = (komada * s.vol1kom).toFixed(4);
                 if (s.jm_unos === 'm3') novim3 = unos.toFixed(4);
 
-                if (s.vol1kom === 0 && s.jm_unos === 'kom') {
+                if (s.vol1kom === 0 && s.jm_unos !== 'm3') {
                     const origPreostalo = parseFloat(s.preostaloOriginal) || 0;
                     const ratio = origPreostalo > 0 ? (unos / origPreostalo) : 0;
                     novim3 = (parseFloat(s.maxKolicina || 0) * ratio).toFixed(4);
                 }
 
-                return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: (!isFinite(parseFloat(novim3)) || isNaN(parseFloat(novim3))) ? 0 : novim3 };
+                const parsedM3 = parseFloat(novim3);
+                return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: (!Number.isFinite(parsedM3) || parsedM3 < 0) ? 0 : novim3 };
             }
             return s;
         }));
@@ -299,7 +308,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
             const { error } = await supabase.from('raspored_proizvodnje').insert(payload);
             if (error) {
-                toast.error("Greška pri zakazivanju: " + error.message);
+                toast.error(formatDbError(error, 'Zakazivanje plana'));
             } else {
                 toast.success(`Radni nalog ${aktivniModal.nalog.id} uspješno zakazan za ${formatirajDatumBezPomaka(aktivniModal.datum)}!`);
             }
@@ -323,9 +332,12 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         stavkeZaBazu.forEach(s => {
             const kol = parseFloat(s.kolicinaZaUnos);
             const m3ZaDodati = parseFloat(s.kolicinaM3);
-            if (isNaN(kol) || kol <= 0) { toast.warning(`Količina za ${s.naziv} nije ispravna!`); neispravanUnos = true; }
-            if (kol > parseFloat(s.preostaloOriginal) + 0.01) { prekoracenaStavka = s; }
-            ukupnoNovihKubika += m3ZaDodati;
+            if (!Number.isFinite(kol) || kol <= 0 || !Number.isFinite(m3ZaDodati) || m3ZaDodati <= 0) {
+                toast.warning(`Količina za ${s.naziv} mora biti pozitivan broj veći od 0!`);
+                neispravanUnos = true;
+            }
+            if (Number.isFinite(kol) && kol > parseFloat(s.preostaloOriginal) + 0.01) { prekoracenaStavka = s; }
+            if (Number.isFinite(m3ZaDodati)) ukupnoNovihKubika += m3ZaDodati;
         });
         if (neispravanUnos) return;
 
@@ -364,6 +376,10 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const obrisiIzPlana = (id, e) => {
         e.stopPropagation();
         if (isReadOnly) return;
+        const stavkaPlana = raspored.find(r => r.id === id);
+        if (stavkaPlana && parseFloat(stavkaPlana.proizvedeno_m3 || 0) > 0) {
+            return toast.error("Nije moguće ukloniti stavku plana na kojoj već postoji evidentirana proizvodnja!");
+        }
         prikaziDialog({
             tip: 'upozorenje',
             naslov: 'Uklanjanje iz rasporeda',
@@ -371,8 +387,9 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             confirmText: '🗑️ UKLONI IZ PLANA',
             cancelText: '✕ ZADRŽI',
             onConfirm: async () => {
-                await supabase.from('raspored_proizvodnje').delete().eq('id', id);
+                const { error } = await supabase.from('raspored_proizvodnje').delete().eq('id', id);
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje iz plana'));
                 toast.info("Stavka uklonjena iz rasporeda.");
                 loadRaspored();
             },
@@ -396,7 +413,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const imenaDanaBHS = ['Nedjelja', 'Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak', 'Subota'];
 
     return (
-        <div className="p-2 md:p-4 max-w-[1800px] mx-auto space-y-4 md:space-y-6 font-bold animate-in fade-in min-h-screen flex flex-col" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-2 md:p-4 max-w-[1800px] mx-auto space-y-4 md:space-y-6 font-bold animate-in fade-in min-h-screen flex flex-col" style={{ color: saas.ui.boja_slova || undefined }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-amber-500" user={user} modulIme="planiranje" saas={saas} hideMasina={true} />
             <PametniDialog {...dialog} />
 
@@ -419,8 +436,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             )}
 
             {pregledNaloga && (
-                <div className="fixed inset-0 z-[10000] bg-[#090e17]/95 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
-                    <div className="bg-theme-card border-2 border-blue-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col relative mt-10 md:mt-0">
+                <div className="fixed inset-0 z-[10000] bg-[#090e17]/95 flex items-start sm:items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95 overflow-y-auto">
+                    <div className="bg-theme-card border-2 border-blue-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-2xl w-full max-h-[calc(100dvh-1.5rem)] md:max-h-[90vh] flex flex-col relative my-auto">
                         <button onClick={() => setPregledNaloga(null)} className="absolute top-2 right-2 md:top-4 md:right-4 bg-slate-800 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50"><X size={18} /></button>
 
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start border-b border-theme-border pb-4 mb-4 gap-2">
@@ -469,9 +486,9 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             )}
 
             {planiranjeModal && !isReadOnly && (
-                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
-                    <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col mt-10 md:mt-0 relative">
-                        <button onClick={() => setPlaniranjeModal(null)} className="absolute top-2 right-2 md:hidden bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 z-50"><X size={16} /></button>
+                <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-start sm:items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95 overflow-y-auto">
+                    <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-2xl w-full max-h-[calc(100dvh-1.5rem)] md:max-h-[90vh] flex flex-col my-auto relative">
+                        <button onClick={() => setPlaniranjeModal(null)} className="absolute top-2 right-2 md:top-4 md:right-4 bg-slate-800 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50"><X size={16} /></button>
 
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start border-b border-theme-border pb-4 mb-4 gap-4">
                             <div>
@@ -503,7 +520,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                     </div>
                                     <div className="w-full sm:w-36 shrink-0 bg-black/30 p-2 rounded-lg sm:bg-transparent sm:p-0">
                                         <label className="text-[7px] md:text-[8px] text-slate-400 uppercase block mb-1 text-center font-bold">Količina ({st.jm_unos})</label>
-                                        <input type="number" disabled={!st.checked} value={st.kolicinaZaUnos} onChange={(e) => promjeniKolicinuPlaniranja(st.id, e.target.value)} className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-center font-black text-amber-400 outline-none focus:border-amber-500 disabled:opacity-50 text-base md:text-xl shadow-inner" />
+                                        <input type="number" min="0" step="any" disabled={!st.checked} value={st.kolicinaZaUnos} onChange={(e) => promjeniKolicinuPlaniranja(st.id, e.target.value)} className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-center font-black text-amber-400 outline-none focus:border-amber-500 disabled:opacity-50 text-base md:text-xl shadow-inner" />
                                         <div className="text-center text-[9px] text-slate-500 mt-1 font-mono">Preračunato: <b className="text-amber-300">~ {st.kolicinaM3} m³</b></div>
                                     </div>
                                 </div>
@@ -530,7 +547,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         <button onClick={() => shiftWeek(1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronRight size={16} /></button>
                     </div>
 
-                    <select value={odabranaMasina} onChange={e => { setOdabranaMasina(e.target.value); setKapacitetMasine(parseFloat(masine.find(m => m.naziv === e.target.value)?.dnevni_kapacitet_m3) || 30); }} className="flex-1 sm:flex-initial max-w-full sm:max-w-[260px] min-w-0 bg-theme-panel text-theme-text px-3 py-2 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
+                    <select value={odabranaMasina} onChange={e => { setOdabranaMasina(e.target.value); const cap = parseFloat(masine.find(m => m.naziv === e.target.value)?.dnevni_kapacitet_m3); setKapacitetMasine(Number.isFinite(cap) && cap > 0 ? cap : 30); }} className="flex-1 sm:flex-initial max-w-full sm:max-w-[260px] min-w-0 bg-theme-panel text-theme-text px-3 py-2 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
                         {masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv} (Kapacitet: {m.dnevni_kapacitet_m3}m³)</option>)}
                     </select>
                 </div>

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
@@ -34,7 +34,7 @@ const prikazDatumaBHS = (isoStr) => {
 };
 
 export default function HrDashboardModule({ user, header, setHeader, onExit }) {
-    const saas = useSaaS('hr_modul', { boja_kartice: '#1e293b', boja_slova: '#ffffff', boja_akcenta: '#3b82f6' });
+    const saas = useSaaS('hr_modul', { boja_kartice: '', boja_slova: '', boja_akcenta: '#3b82f6' });
 
     const [tab, setTab] = useState('prisutnost');
     const [radnici, setRadnici] = useState([]);
@@ -93,10 +93,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
         const sviRadnici = rRes.data || [];
         setRadnici(sviRadnici);
-        if (odabraniRadnik) {
-            const svjezi = sviRadnici.find(r => r.id === odabraniRadnik.id || r.ime_prezime === odabraniRadnik.ime_prezime);
-            if (svjezi) setOdabraniRadnik(svjezi);
-        }
+        setOdabraniRadnik(prev => {
+            if (!prev) return null;
+            return sviRadnici.find(r => r.id === prev.id || r.ime_prezime === prev.ime_prezime) || null;
+        });
         setRadniSati(sRes.data || []);
         setZahtjevi(zRes.data || []);
         setPraznici(pRes.data || []);
@@ -107,6 +107,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     };
 
     const spasiPostavkeSmjene = () => {
+        const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+        if (!timeRe.test(pocetakSmjene) || !timeRe.test(krajSmjene)) {
+            return toast.error("Unesite ispravno vrijeme početka i kraja smjene (format HH:MM)!");
+        }
         localStorage.setItem('erp_pocetak_smjene', pocetakSmjene);
         localStorage.setItem('erp_kraj_smjene', krajSmjene);
         prikaziDialog({ tip: 'uspjeh', naslov: 'Uspješno', poruka: 'Radno vrijeme firme uspješno sačuvano!', onCancel: zatvoriDialog });
@@ -172,9 +176,23 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
     const sacuvajIzmjeneSati = async () => {
         if (!modalUredi) return;
-        const obracunato = parseFloat(editSati) || 0; const prekovr = parseFloat(editPrekovremeno) || 0; const kasni = parseInt(editKasnjenje) || 0; const ranije = parseInt(editRanije) || 0;
+        const obracunato = editSati === '' ? 0 : parseFloat(editSati);
+        const prekovr = editPrekovremeno === '' ? 0 : parseFloat(editPrekovremeno);
+        const kasni = editKasnjenje === '' ? 0 : parseInt(editKasnjenje, 10);
+        const ranije = editRanije === '' ? 0 : parseInt(editRanije, 10);
 
-        await supabase.from('radni_sati').update({ obracunato_sati: obracunato.toFixed(2), prekovremeno_min: prekovr * 60, kasnjenje_min: kasni, raniji_izlazak_min: ranije }).eq('id', modalUredi.id);
+        if (!Number.isFinite(obracunato) || obracunato < 0 || obracunato > 24) {
+            return toast.error("Obračunati sati moraju biti između 0 i 24 h!");
+        }
+        if (!Number.isFinite(prekovr) || prekovr < 0 || prekovr > 24) {
+            return toast.error("Prekovremeni sati moraju biti između 0 i 24 h!");
+        }
+        if (!Number.isFinite(kasni) || kasni < 0 || kasni > 1440 || !Number.isFinite(ranije) || ranije < 0 || ranije > 1440) {
+            return toast.error("Kašnjenje i raniji izlazak moraju biti između 0 i 1440 minuta!");
+        }
+
+        const { error } = await supabase.from('radni_sati').update({ obracunato_sati: obracunato.toFixed(2), prekovremeno_min: Math.round(prekovr * 60), kasnjenje_min: kasni, raniji_izlazak_min: ranije }).eq('id', modalUredi.id);
+        if (error) return toast.error(formatDbError(error, 'Korekcija sati'));
         await zapisiU_Log('KOREKCIJA_RADNOG_VREMENA', `Izmijenjeni sati za: ${modalUredi.radnik_ime} (Datum: ${modalUredi.datum})`);
         
         toast.success(`Sati za radnika ${modalUredi.radnik_ime} su uspješno ažurirani!`);
@@ -189,9 +207,11 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             tip: 'upozorenje', naslov: 'Brisanje Radnog Vremena', poruka: `Da li ste sigurni da želite trajno obrisati zapis za radnika ${zapis.radnik_ime}?`,
             confirmText: '🗑️ TRAJNO OBRIŠI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('radni_sati').delete().eq('id', zapis.id);
+                const { error } = await supabase.from('radni_sati').delete().eq('id', zapis.id);
+                zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje radnog vremena'));
                 await zapisiU_Log('BRISANJE_RADNOG_VREMENA', `Obrisan zapis za: ${zapis.radnik_ime} (Datum: ${zapis.datum})`);
-                loadAll(); zatvoriDialog();
+                loadAll();
                 toast.info("Zapis o radnom vremenu je obrisan.");
             },
             onCancel: zatvoriDialog
@@ -318,7 +338,12 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const obrisiPraznik = async (datum) => {
         prikaziDialog({
             tip: 'upozorenje', naslov: 'Brisanje', poruka: "Da li ste sigurni da želite obrisati ovaj izuzetak u kalendaru?", confirmText: '🗑️ OBRIŠI', cancelText: '✕ ODUSTANI',
-            onConfirm: async () => { await supabase.from('kalendar_izuzeci').delete().eq('datum', datum); loadAll(); zatvoriDialog(); }, onCancel: zatvoriDialog
+            onConfirm: async () => {
+                const { error } = await supabase.from('kalendar_izuzeci').delete().eq('datum', datum);
+                zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje izuzetka'));
+                loadAll();
+            }, onCancel: zatvoriDialog
         });
     };
 
@@ -328,8 +353,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             poruka: "Da li ste potpuno sigurni da želite obrisati APSOLUTNO SVE praznike i radne subote iz baze? Ovo će očistiti cijeli kalendar izuzetaka.", 
             confirmText: '🗑️ OBRIŠI SVE', cancelText: '✕ ODUSTANI',
             onConfirm: async () => { 
-                await supabase.from('kalendar_izuzeci').delete().not('datum', 'is', null); 
-                loadAll(); zatvoriDialog(); 
+                const { error } = await supabase.from('kalendar_izuzeci').delete().not('datum', 'is', null); 
+                zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Brisanje izuzetaka'));
+                loadAll();
             }, 
             onCancel: zatvoriDialog
         });
@@ -369,14 +396,21 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             }
         }
 
+        if (zaUbaciti.length === 0) {
+            return toast.warning("Nema preostalih subota od odabranog datuma do kraja godine.");
+        }
+
         prikaziDialog({
             tip: 'info', naslov: 'Automatski Kalendar',
             poruka: `Pronađeno je ${zaUbaciti.length} subota od ${prikazDatumaBHS(datumGenOd)} do kraja godine.\n\nPAŽNJA: Ovo će izbrisati sve stare automatske radne subote iz ovog perioda kako se ne bi duplale. Nastaviti?`,
             confirmText: '✅ PRIMIJENI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('kalendar_izuzeci').delete().gte('datum', datumGenOd).ilike('naziv', 'Radna Subota%');
-                if (zaUbaciti.length > 0) await supabase.from('kalendar_izuzeci').upsert(zaUbaciti);
-                loadAll(); zatvoriDialog();
+                const { error: delErr } = await supabase.from('kalendar_izuzeci').delete().gte('datum', datumGenOd).ilike('naziv', 'Radna Subota%');
+                if (delErr) { zatvoriDialog(); return toast.error(formatDbError(delErr, 'Generisanje subota')); }
+                const { error: upsErr } = await supabase.from('kalendar_izuzeci').upsert(zaUbaciti, { onConflict: 'datum' });
+                zatvoriDialog();
+                if (upsErr) return toast.error(formatDbError(upsErr, 'Generisanje subota'));
+                loadAll();
                 toast.success("Kalendar radnih subota je uspješno generisan!");
             },
             onCancel: zatvoriDialog
@@ -535,7 +569,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="lg:col-span-7 bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl h-[500px] lg:h-[700px] flex flex-col" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
+                    <div className="lg:col-span-7 bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl min-h-[460px] lg:h-[700px] flex flex-col overflow-y-auto" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4 md:mb-6 bg-theme-panel p-2 rounded-xl md:rounded-2xl border border-theme-border gap-2 sm:gap-4">
                             <div className="flex w-full sm:w-auto bg-black/40 rounded-lg p-1 border border-slate-700">
                                 <button onClick={() => setPrikazKalendara('MJESEC')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 md:py-2 rounded-md text-[9px] md:text-[10px] font-black uppercase transition-all ${prikazKalendara === 'MJESEC' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>Mjesec</button>
@@ -544,15 +578,15 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
                             {prikazKalendara === 'MJESEC' ? (
                                 <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear(), trenutniMjesecKalendara.getMonth() - 1, 1))} className="p-2 md:p-3 bg-slate-800 hover:bg-amber-600 text-white rounded-lg md:rounded-xl transition-colors"><ChevronLeft size={16}/></button>
+                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear(), trenutniMjesecKalendara.getMonth() - 1, 1))} className="p-2 md:p-3 bg-theme-card border border-theme-border hover:bg-amber-600 text-theme-text hover:text-white rounded-lg md:rounded-xl transition-colors"><ChevronLeft size={16}/></button>
                                     <h3 className="text-sm md:text-lg font-black uppercase tracking-widest text-amber-500 w-32 md:w-48 text-center truncate">{mjeseciBHS[trenutniMjesecKalendara.getMonth()]} {trenutniMjesecKalendara.getFullYear()}.</h3>
-                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear(), trenutniMjesecKalendara.getMonth() + 1, 1))} className="p-2 md:p-3 bg-slate-800 hover:bg-amber-600 text-white rounded-lg md:rounded-xl transition-colors"><ChevronRight size={16}/></button>
+                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear(), trenutniMjesecKalendara.getMonth() + 1, 1))} className="p-2 md:p-3 bg-theme-card border border-theme-border hover:bg-amber-600 text-theme-text hover:text-white rounded-lg md:rounded-xl transition-colors"><ChevronRight size={16}/></button>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear() - 1, trenutniMjesecKalendara.getMonth(), 1))} className="p-2 md:p-3 bg-slate-800 hover:bg-amber-600 text-white rounded-lg md:rounded-xl transition-colors"><ChevronLeft size={16}/></button>
+                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear() - 1, trenutniMjesecKalendara.getMonth(), 1))} className="p-2 md:p-3 bg-theme-card border border-theme-border hover:bg-amber-600 text-theme-text hover:text-white rounded-lg md:rounded-xl transition-colors"><ChevronLeft size={16}/></button>
                                     <h3 className="text-sm md:text-lg font-black uppercase tracking-widest text-amber-500 w-32 md:w-48 text-center">{trenutniMjesecKalendara.getFullYear()}.</h3>
-                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear() + 1, trenutniMjesecKalendara.getMonth(), 1))} className="p-2 md:p-3 bg-slate-800 hover:bg-amber-600 text-white rounded-lg md:rounded-xl transition-colors"><ChevronRight size={16}/></button>
+                                    <button onClick={() => setTrenutniMjesecKalendara(new Date(trenutniMjesecKalendara.getFullYear() + 1, trenutniMjesecKalendara.getMonth(), 1))} className="p-2 md:p-3 bg-theme-card border border-theme-border hover:bg-amber-600 text-theme-text hover:text-white rounded-lg md:rounded-xl transition-colors"><ChevronRight size={16}/></button>
                                 </div>
                             )}
                         </div>
@@ -687,7 +721,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                         </div>
                                         <div className="flex gap-2 md:gap-3 items-center w-full sm:w-auto">
                                             <button onClick={() => setShowRucniUpis(true)} className="flex-1 sm:flex-none bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] uppercase font-black border border-red-500/30 transition-colors">+ Upis Izostanka</button>
-                                            <input type="month" value={mjesecPrikaza} onChange={e=>setMjesecPrikaza(e.target.value)} className="w-32 sm:w-auto p-2 md:p-3 bg-theme-panel border border-blue-500/50 rounded-lg md:rounded-xl text-blue-400 outline-none font-black cursor-pointer shadow-inner uppercase text-[10px] md:text-xs" />
+                                            <input type="month" value={mjesecPrikaza} onChange={e=>setMjesecPrikaza(e.target.value)} className="min-w-[140px] sm:w-auto p-2 md:p-3 bg-theme-panel border border-blue-500/50 rounded-lg md:rounded-xl text-blue-400 outline-none font-black cursor-pointer shadow-inner uppercase text-[10px] md:text-xs" />
                                         </div>
                                     </div>
 
@@ -809,7 +843,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                             {praznici.map(p => (
                                 <div key={p.datum} className="bg-theme-panel p-3 md:p-4 rounded-xl border border-theme-border flex justify-between items-center group shadow-sm">
                                     <div>
-                                        <p className="text-theme-text text-xs md:text-sm font-black uppercase">{new Date(p.datum).toLocaleDateString('bs-BA')} - {p.naziv}</p>
+                                        <p className="text-theme-text text-xs md:text-sm font-black uppercase">{prikazDatumaBHS(p.datum)} - {p.naziv}</p>
                                         <p className={`text-[8px] md:text-[9px] font-black uppercase mt-1 inline-block px-2 py-0.5 rounded ${p.je_radni_dan ? 'bg-amber-900/30 text-amber-400 border border-amber-500/30' : 'bg-emerald-900/30 text-emerald-400 border border-emerald-500/30'}`}>{p.je_radni_dan ? 'RADNI DAN' : 'NERADNI PRAZNIK'}</p>
                                     </div>
                                     <button onClick={() => obrisiPraznik(p.datum)} className="text-red-500 bg-red-900/20 w-7 h-7 md:w-8 md:h-8 flex items-center justify-center rounded-lg hover:bg-red-500 hover:text-white transition-all font-black text-xs shrink-0">✕</button>

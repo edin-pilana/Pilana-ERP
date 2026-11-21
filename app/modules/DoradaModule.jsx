@@ -11,9 +11,9 @@ import { toast } from 'sonner';
 
 function DimBox({ label, val, set, disabled, inputRef, onKeyDown }) {
     return (
-        <div className={`bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-emerald-500 transition-colors ${disabled ? 'opacity-50' : ''}`}>
+        <div className={`bg-theme-panel p-2.5 sm:p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-emerald-500 transition-colors min-w-0 ${disabled ? 'opacity-50' : ''}`}>
             <span className="text-[9px] text-slate-400 uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input ref={inputRef} onKeyDown={onKeyDown} type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+            <input ref={inputRef} onKeyDown={onKeyDown} type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full min-w-0 px-2 py-1.5 bg-transparent text-theme-text font-black outline-none text-base sm:text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
         </div>
     );
 }
@@ -30,11 +30,20 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
+        if (!header?.masina) return toast.warning("Prvo odaberite mašinu u zaglavlju!");
         if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
+        const siroviZastoj = String(form.zastoj_min ?? '').trim();
+        const zastojNum = siroviZastoj === '' ? 0 : Number(siroviZastoj);
+        if (isNaN(zastojNum) || !isFinite(zastojNum) || zastojNum < 0 || zastojNum > 1440 || /[eE]/.test(siroviZastoj)) {
+            return toast.error("Zastoj mora biti ispravan broj minuta između 0 i 1440 (negativne i nerealne vrijednosti nisu dozvoljene)!");
+        }
+        if (form.vrijeme_do && form.vrijeme_do < form.vrijeme_od) {
+            return toast.error("Vrijeme završetka ne može biti prije vremena početka!");
+        }
         const payload = {
             datum: header.datum, masina: header.masina, modul: modul,
             vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null,
-            zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
+            zastoj_min: Math.round(zastojNum), napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat'
         };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
         if (error) return toast.error("Greška: " + error.message);
@@ -290,8 +299,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) { setActiveIzlazIds([]); setAktivniPaketiInfo([]); return; }
         
-        const { data, error } = await supabase.from('paketi')
-            .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+        const { data: openRows, error } = await supabase.from('paketi')
+            .select('paket_id')
             .is('closed_at', null)
             .eq('masina', header.masina);
 
@@ -300,11 +309,14 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             return;
         }
 
-        if (data && data.length > 0) {
-            const jedinstveniIds = [...new Set(data.map(p => p.paket_id))];
+        const jedinstveniIds = [...new Set((openRows || []).map(p => p.paket_id).filter(Boolean))];
+        if (jedinstveniIds.length > 0) {
             setActiveIzlazIds(jedinstveniIds);
-            
-            const grouped = data.reduce((acc, curr) => {
+            const { data: allRows } = await supabase.from('paketi')
+                .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+                .in('paket_id', jedinstveniIds);
+
+            const grouped = (allRows || []).reduce((acc, curr) => {
                 if (!acc[curr.paket_id]) {
                     acc[curr.paket_id] = { 
                         id: curr.paket_id, 
@@ -715,12 +727,15 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             const unosKol = parseFloat(form.kolicina_ulaz);
             const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
 
+            const vol1Kom = (v/100) * (s/100) * (d/100);
             let komada = unosKol;
-            if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
+            if (form.jm === 'm3') komada = vol1Kom > 0 ? unosKol / vol1Kom : 0;
             else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
             else if (form.jm === 'm1') komada = unosKol / (d/100);
 
-            const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
+            const qtyZaPaket = form.jm === 'm3'
+                ? parseFloat(unosKol.toFixed(6))
+                : parseFloat((komada * vol1Kom).toFixed(6));
             let isNusProizvod = false; let currentRnStavka = null;
 
             if (form.rn_stavka_id) {
@@ -786,6 +801,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             }).eq('id', activeEditItem.id);
             if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
         } else {
+            // Ako dodajemo novi red u prethodno zatvoren paket, ponovo otvori postojeće redove da se ukupna kubikaža zbraja!
+            await supabase.from('paketi').update({ closed_at: null }).eq('paket_id', selectedIzlazId).not('closed_at', 'is', null);
             const { error } = await supabase.from('paketi').insert([{ 
                 paket_id: selectedIzlazId, naziv_proizvoda: nazivZaSnimanje, debljina: parseFloat(form.debljina), sirina: parseFloat(form.sirina), duzina: parseFloat(form.duzina), 
                 kolicina_ulaz: parseFloat(form.kolicina_ulaz), jm: form.jm, kolicina_final: qtyZaPaket, mjesto: header.mjesto, masina: header.masina, 
@@ -1226,7 +1243,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                 )}
                                             />
                                         </div>
-                                        <div className="grid grid-cols-3 gap-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
                                             <DimBox label="Deb (cm)" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} inputRef={dimRefs.debljina} onKeyDown={e => handleDimEnter(e, dimRefs.sirina)} />
                                             <DimBox label="Šir (cm)" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} inputRef={dimRefs.sirina} onKeyDown={e => handleDimEnter(e, dimRefs.duzina)} />
                                             <DimBox label="Duž (cm)" val={form.duzina} set={v => setForm({...form, duzina: v})} disabled={!!activeEditItem} inputRef={dimRefs.duzina} onKeyDown={e => handleDimEnter(e, dimRefs.kolicina)} />

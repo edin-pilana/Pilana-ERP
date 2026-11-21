@@ -379,7 +379,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
         try {
             const [nalozi, katal, paketiSvi, trupciSvi] = await Promise.all([
                 ucitajSveSaPaginacijom('radni_nalozi', 'id, kupac_naziv, status, stavke_jsonb, broj_ponude, datum, rok_isporuke, napomena, tip_naloga', 'datum'),
-                ucitajSveSaPaginacijom('katalog_proizvoda', '*', 'created_at'),
+                ucitajSveSaPaginacijom('katalog_proizvoda', '*', 'sifra'),
                 ucitajSveSaPaginacijom('paketi', '*', 'created_at'),
                 ucitajSveSaPaginacijom('trupci', '*', 'created_at', (q) => q.eq('zakljucen_prijem', true).eq('status', 'na_lageru')),
             ]);
@@ -1134,7 +1134,7 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
             </div>
 
             {glavniTab === 'rucni_ulaz' && (
-                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-8 rounded-[2rem] border-2 border-amber-500/50 shadow-2xl space-y-6 animate-in slide-in-from-top-4 max-w-4xl mx-auto" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 sm:p-8 rounded-[2rem] border-2 border-amber-500/50 shadow-2xl space-y-6 animate-in slide-in-from-top-4 max-w-4xl mx-auto" style={{ backgroundColor: saas.ui.boja_kartice }}>
                     <div className="flex items-center gap-3 border-b border-theme-border pb-4 mb-4">
                         <span className="text-3xl">📥</span>
                         <div>
@@ -1160,38 +1160,38 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                         />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3 relative z-10">
-                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 relative z-10">
+                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center min-w-0">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Debljina (cm)</label>
-                            <input type="number" value={rucniUlazForm.debljina} onChange={e=>setRucniUlazForm({...rucniUlazForm, debljina:e.target.value})} className="w-full bg-transparent text-theme-text text-xl font-black text-center outline-none" placeholder="0" />
+                            <input type="number" value={rucniUlazForm.debljina} onChange={e=>setRucniUlazForm({...rucniUlazForm, debljina:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-theme-text text-lg sm:text-xl font-black text-center outline-none" placeholder="0" />
                         </div>
-                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center">
+                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center min-w-0">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Širina (cm)</label>
-                            <input type="number" value={rucniUlazForm.sirina} onChange={e=>setRucniUlazForm({...rucniUlazForm, sirina:e.target.value})} className="w-full bg-transparent text-theme-text text-xl font-black text-center outline-none" placeholder="0" />
+                            <input type="number" value={rucniUlazForm.sirina} onChange={e=>setRucniUlazForm({...rucniUlazForm, sirina:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-theme-text text-lg sm:text-xl font-black text-center outline-none" placeholder="0" />
                         </div>
-                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center">
+                        <div className="bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner text-center min-w-0">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Dužina (cm)</label>
-                            <input type="number" value={rucniUlazForm.duzina} onChange={e=>setRucniUlazForm({...rucniUlazForm, duzina:e.target.value})} className="w-full bg-transparent text-theme-text text-xl font-black text-center outline-none" placeholder="0" />
+                            <input type="number" value={rucniUlazForm.duzina} onChange={e=>setRucniUlazForm({...rucniUlazForm, duzina:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-theme-text text-lg sm:text-xl font-black text-center outline-none" placeholder="0" />
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
-                        <div className="md:col-span-2 bg-amber-900/10 p-4 rounded-xl border border-amber-500/30 text-center flex flex-col justify-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+                        <div className="sm:col-span-2 lg:col-span-2 bg-amber-900/10 p-4 rounded-xl border border-amber-500/30 text-center flex flex-col justify-center min-w-0">
                             <label className="text-[9px] text-amber-500 uppercase font-black block mb-2">Količina</label>
-                            <input type="number" value={rucniUlazForm.kolicina} onChange={e=>setRucniUlazForm({...rucniUlazForm, kolicina:e.target.value})} className="w-full bg-transparent text-amber-400 text-3xl font-black text-center outline-none" placeholder="0" />
+                            <input type="number" value={rucniUlazForm.kolicina} onChange={e=>setRucniUlazForm({...rucniUlazForm, kolicina:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-amber-400 text-2xl sm:text-3xl font-black text-center outline-none" placeholder="0" />
                         </div>
-                        <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
+                        <div className="bg-theme-panel p-3 sm:p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner min-w-0">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Jedinica</label>
-                            <select value={rucniUlazForm.jm} onChange={e=>setRucniUlazForm({...rucniUlazForm, jm:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
+                            <select value={rucniUlazForm.jm} onChange={e=>setRucniUlazForm({...rucniUlazForm, jm:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-sm sm:text-base lg:text-lg">
                                 <option value="kom">kom</option>
                                 <option value="m3">m³</option>
                                 <option value="m2">m²</option>
                                 <option value="m1">m1</option>
                             </select>
                         </div>
-                        <div className="md:col-span-1 bg-theme-panel p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner">
+                        <div className="bg-theme-panel p-3 sm:p-4 rounded-xl border border-theme-border text-center flex flex-col justify-center shadow-inner min-w-0">
                             <label className="text-[9px] text-slate-400 uppercase font-black block mb-2">Klasa</label>
-                            <select value={rucniUlazForm.klasa} onChange={e=>setRucniUlazForm({...rucniUlazForm, klasa:e.target.value})} className="w-full py-1 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-xl">
+                            <select value={rucniUlazForm.klasa} onChange={e=>setRucniUlazForm({...rucniUlazForm, klasa:e.target.value})} className="w-full min-w-0 px-2 py-2 bg-transparent text-theme-text font-black outline-none text-center uppercase cursor-pointer text-sm sm:text-base lg:text-lg">
                                 <option value="I Klasa">I Klasa</option>
                                 <option value="II Klasa">II Klasa</option>
                                 <option value="III Klasa">III Klasa</option>
@@ -1214,10 +1214,10 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
 
             {(glavniTab === 'paketi' || glavniTab === 'trupci') && (
                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl space-y-5 relative z-40" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 relative">
-                            <input value={pretraga} onChange={e => setPretraga(e.target.value.toUpperCase())} placeholder={glavniTab === 'paketi' ? pod.labelBrza : "Pretraga po ID-u, Šumariji, Otpremnici, Vrsti..."} className="w-full p-4 bg-theme-panel border border-theme-border rounded-2xl text-theme-text outline-none focus:border-blue-500 font-black uppercase shadow-inner" />
-                            <button onClick={() => setIsScanning(true)} className="absolute right-2 top-2 bottom-2 px-4 bg-theme-accent rounded-xl text-white font-bold hover:opacity-80 transition-all shadow-lg text-xl">📷</button>
+                    <div className="flex flex-col xl:flex-row gap-4">
+                        <div className="flex-1 relative min-w-0">
+                            <input value={pretraga} onChange={e => setPretraga(e.target.value.toUpperCase())} placeholder={glavniTab === 'paketi' ? pod.labelBrza : "Pretraga po ID-u, Šumariji, Otpremnici, Vrsti..."} className="w-full min-w-0 py-4 pl-4 pr-16 bg-theme-panel border border-theme-border rounded-2xl text-theme-text outline-none focus:border-blue-500 font-black uppercase shadow-inner" />
+                            <button onClick={() => setIsScanning(true)} className="absolute right-2 top-2 bottom-2 px-3.5 bg-theme-accent rounded-xl text-white font-bold hover:opacity-80 transition-all shadow-lg text-xl">📷</button>
                         </div>
                         {glavniTab === 'paketi' && (
                             <div className="flex bg-theme-card p-1 rounded-2xl border border-theme-border shrink-0 overflow-x-auto custom-scrollbar">

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     
-    const saas = useSaaS('reklamacije_modul', { boja_kartice: '#1e293b', boja_slova: '#ffffff' });
+    const saas = useSaaS('reklamacije_modul', { boja_kartice: '', boja_slova: '' });
     const imaPravoNadzora = user && (user.uloga === 'superadmin' || user.uloga === 'admin' || (user.dozvole || []).includes('Reklamacije i Povrati'));
 
     const [tab, setTab] = useState('unos'); // 'unos' ili 'nadzor'
@@ -139,7 +139,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             return;
         }
         const kol = parseFloat(form.kolicina_unos);
-        if (isNaN(kol) || kol <= 0) {
+        if (!Number.isFinite(kol) || kol <= 0) {
             setKolicinaGreska(true);
             setPorukaGreske("Količina za reklamaciju mora biti pozitivan broj veći od 0!");
             setForm(f => ({ ...f, kolicina_obracun: 0 }));
@@ -147,16 +147,34 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         }
 
         let obracun = kol;
-        const v = parseFloat(paket?.debljina || trenutniProizvod?.visina) || 1;
-        const s = parseFloat(paket?.sirina || trenutniProizvod?.sirina) || 1;
-        const d = parseFloat(paket?.duzina || trenutniProizvod?.duzina) || 1;
+        const v = parseFloat(paket?.debljina || trenutniProizvod?.visina) || 0;
+        const s = parseFloat(paket?.sirina || trenutniProizvod?.sirina) || 0;
+        const d = parseFloat(paket?.duzina || trenutniProizvod?.duzina) || 0;
         
         const jmNorm = String(form.jm_unos || 'kom').toLowerCase();
         if (jmNorm === 'kom') {
+            if (v <= 0 || s <= 0 || d <= 0) {
+                setKolicinaGreska(true);
+                setPorukaGreske("Paket nema upisane sve dimenzije (Debljina/Širina/Dužina u cm) — odaberite jedinicu m³!");
+                setForm(f => ({ ...f, kolicina_obracun: 0 }));
+                return;
+            }
             obracun = kol * (v / 100) * (s / 100) * (d / 100);
         } else if (jmNorm === 'm2') {
+            if (v <= 0) {
+                setKolicinaGreska(true);
+                setPorukaGreske("Paket nema upisanu debljinu (cm) za preračun m² u m³ — odaberite jedinicu m³!");
+                setForm(f => ({ ...f, kolicina_obracun: 0 }));
+                return;
+            }
             obracun = kol * (v / 100);
         } else if (jmNorm === 'm1') {
+            if (v <= 0 || s <= 0) {
+                setKolicinaGreska(true);
+                setPorukaGreske("Paket nema upisanu debljinu i širinu (cm) za preračun m1 u m³ — odaberite jedinicu m³!");
+                setForm(f => ({ ...f, kolicina_obracun: 0 }));
+                return;
+            }
             obracun = kol * (v / 100) * (s / 100);
         }
         
@@ -177,7 +195,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         if (!paket) return;
         const kolUnosNum = parseFloat(form.kolicina_unos);
         const kolObrNum = parseFloat(form.kolicina_obracun);
-        if (isNaN(kolUnosNum) || kolUnosNum <= 0 || isNaN(kolObrNum) || kolObrNum <= 0 || kolObrNum > stvarnoPreostaloM3 + 0.0001) {
+        if (!Number.isFinite(kolUnosNum) || kolUnosNum <= 0 || !Number.isFinite(kolObrNum) || kolObrNum <= 0 || kolObrNum > stvarnoPreostaloM3 + 0.0001) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Količina', poruka: `Unesite ispravnu pozitivnu količinu (Maksimalno: ${stvarnoPreostaloM3.toFixed(3)} m³)`, onCancel: zatvoriDialog });
         }
 
@@ -201,7 +219,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         };
 
         const { error } = await supabase.from('reklamacije').insert([payload]);
-        if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
+        if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Reklamacija'), onCancel: zatvoriDialog });
 
         await supabase.from('sistem_audit_log').insert([{
             korisnik: user?.ime_prezime || 'Nepoznat',
@@ -258,15 +276,16 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                             const redM3 = parseFloat(red.kolicina_final || 0);
                             if (redM3 <= 0) continue;
                             if (preostaloZaSkinuti >= redM3 - 0.0004) {
-                                await supabase.from('paketi').update({
+                                const { error: e1 } = await supabase.from('paketi').update({
                                     status: 'POVRAT_REKLAMACIJA',
                                     otpremnica_id: red.otpremnica_id || `REKLAMACIJA-${rek.paket_id}`
                                 }).eq('id', red.id);
+                                if (e1) throw e1;
                                 preostaloZaSkinuti = Math.max(0, preostaloZaSkinuti - redM3);
                             } else {
                                 const preostaloOrigM3 = parseFloat((redM3 - preostaloZaSkinuti).toFixed(4));
                                 const noviKomOrig = vol1Kom > 0 ? parseFloat((preostaloOrigM3 / vol1Kom).toFixed(2)) : red.kolicina_ulaz;
-                                await supabase.from('paketi').update({
+                                const { error: e2 } = await supabase.from('paketi').update({
                                     kolicina_final: preostaloOrigM3,
                                     kubikaza: preostaloOrigM3,
                                     kolicina_m3: preostaloOrigM3,
@@ -274,14 +293,16 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                     komada: noviKomOrig,
                                     jm: 'kom'
                                 }).eq('id', red.id);
+                                if (e2) throw e2;
                                 preostaloZaSkinuti = 0;
                             }
                         }
 
                         const { id: _oldId, created_at: _oldCreated, ...cleanOrig } = orig;
+                        const povratSuffix = String(rek.id || Date.now()).slice(-4);
                         const noviPaket = {
                             ...cleanOrig,
-                            paket_id: `${rek.paket_id}-R`,
+                            paket_id: `${rek.paket_id}-R${povratSuffix}`,
                             kolicina_ulaz: rekM3,
                             kolicina_final: rekM3,
                             kubikaza: rekM3,
@@ -294,12 +315,18 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                             otpremnica_id: null,
                             broj_veze: 'POVRAT'
                         };
-                        await supabase.from('paketi').insert([noviPaket]);
+                        const { error: eIns } = await supabase.from('paketi').insert([noviPaket]);
+                        if (eIns) throw eIns;
                     }
 
                     if (rek.nova_isporuka && rek.broj_otpremnice && rek.broj_otpremnice !== 'NEPOZNATO') {
-                        const { data: rn } = await supabase.from('radni_nalozi').select('stavke_jsonb').eq('id', rek.broj_otpremnice).maybeSingle();
-                        if (rn && rn.stavke_jsonb) {
+                        let targetRnId = rek.broj_otpremnice;
+                        if (String(targetRnId).toUpperCase().startsWith('OTP-')) {
+                            const { data: otpVeza } = await supabase.from('otpremnice').select('broj_veze').eq('id', targetRnId).maybeSingle();
+                            if (otpVeza?.broj_veze) targetRnId = otpVeza.broj_veze;
+                        }
+                        const { data: rn } = await supabase.from('radni_nalozi').select('stavke_jsonb').eq('id', targetRnId).maybeSingle();
+                        if (rn && Array.isArray(rn.stavke_jsonb)) {
                             const dimStr = (v > 0 && s > 0 && d > 0) ? `${v}x${s}x${d}` : (rn.stavke_jsonb[0]?.dimenzije || '');
                             const unosMatch = (rek.napomena || '').match(/\[Unos:\s*([0-9.,]+)\s*(\w+)\]/i);
                             const izracunatoKom = vol1Kom > 0 ? parseFloat((rekM3 / vol1Kom).toFixed(2)) : rekM3;
@@ -322,7 +349,8 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 napravljeno: 0
                             };
                             const noveStavke = [...rn.stavke_jsonb, novaStavka];
-                            await supabase.from('radni_nalozi').update({ stavke_jsonb: noveStavke, status: 'U PROIZVODNJI' }).eq('id', rek.broj_otpremnice);
+                            const { error: eRn } = await supabase.from('radni_nalozi').update({ stavke_jsonb: noveStavke, status: 'U PROIZVODNJI' }).eq('id', targetRnId);
+                            if (eRn) throw eRn;
                         }
                     }
 
@@ -338,7 +366,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     await loadReklamacije();
                     prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: "Reklamacija je uspješno obrađena! Zalihe i nalozi su ažurirani.", onCancel: zatvoriDialog });
                 } catch (error) {
-                    prikaziDialog({ tip: 'greska', naslov: 'Sistemska Greška', poruka: error.message, onCancel: zatvoriDialog });
+                    prikaziDialog({ tip: 'greska', naslov: 'Sistemska Greška', poruka: formatDbError(error, 'Odobravanje reklamacije'), onCancel: zatvoriDialog });
                 }
             },
             onCancel: zatvoriDialog
@@ -353,11 +381,16 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             confirmText: '❌ DA, ODBIJ',
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('reklamacije').update({ 
+                const { data: updated, error } = await supabase.from('reklamacije').update({ 
                     status: 'ODBIJENO', 
                     odobrio_korisnik: user?.ime_prezime || 'Admin' 
-                }).eq('id', rek.id);
+                }).eq('id', rek.id).eq('status', 'CEKA_ODOBRENJE').select('id');
                 zatvoriDialog();
+                if (error) return toast.error(formatDbError(error, 'Odbijanje reklamacije'));
+                if (!updated || updated.length === 0) {
+                    toast.warning('Ova reklamacija je već obrađena.');
+                    return loadReklamacije();
+                }
                 toast.info(`Reklamacija za paket ${rek.paket_id} je odbijena.`);
                 loadReklamacije();
             },
@@ -366,7 +399,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     };
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={{ color: saas.ui.boja_slova || undefined }}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="reklamacije" saas={saas} hideMasina={true} />
 
@@ -402,7 +435,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
                         {paket && (
                             <div className="bg-black/40 p-6 rounded-2xl border border-red-500/30 shadow-inner mt-6 animate-in zoom-in-95">
-                                <div className="flex justify-between items-start border-b border-theme-border pb-4 mb-6">
+                                <div className="flex flex-col sm:flex-row justify-between items-start gap-3 border-b border-theme-border pb-4 mb-6">
                                     <div><span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">Fokusirani Paket</span><h3 className="text-2xl text-theme-text font-black drop-shadow-md">{paket.paket_id}</h3>
                                     <div className="mt-2"><span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">KUPAC: {imeKupca}</span></div></div>
                                     <div className="text-right bg-red-950/40 border border-red-500/40 p-3 rounded-xl">
@@ -481,7 +514,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-4">
-                                    <button onClick={() => {setPaket(null); setScan('');}} className="flex-1 py-4 bg-theme-panel text-slate-400 font-black rounded-xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
+                                    <button onClick={() => { setPaket(null); setTrenutniProizvod(null); setScan(''); setKolicinaGreska(false); setPorukaGreske(''); setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true }); }} className="flex-1 py-4 bg-theme-panel text-slate-400 font-black rounded-xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
                                     <button onClick={podnesiReklamaciju} disabled={kolicinaGreska} className={`flex-[2] py-4 text-white font-black rounded-xl uppercase tracking-widest transition-all text-xs border ${kolicinaGreska ? 'bg-slate-700 border-slate-600 opacity-40 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.3)] hover:scale-[1.02]'}`}>📤 PODNESI ZAHTJEV ZA ODOBRENJE</button>
                                 </div>
                             </div>

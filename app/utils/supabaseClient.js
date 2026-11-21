@@ -80,7 +80,26 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
     }
 };
 
-// Idempotentni presretač (sprječava višestruko patchovanje pri HMR-u i slanje duplih alarma)
+// Prevod čestih PostgreSQL / Supabase grešaka na razumljiv BHS jezik
+export const formatDbError = (error, kontekst = 'Zapis') => {
+    const raw = String(error?.message || error || '');
+    const code = String(error?.code || '');
+    if (code === '23505' || /duplicate key value violates unique constraint/i.test(raw)) {
+        return `${kontekst} sa ovim brojem/šifrom već postoji u bazi! Unesite drugi jedinstveni broj.`;
+    }
+    if (code === '23503' || /violates foreign key constraint/i.test(raw)) {
+        return `${kontekst} je povezan sa drugim dokumentima u sistemu i ne može se izmijeniti/obrisati dok postoje te veze.`;
+    }
+    if (code === '22P02' || /invalid input syntax/i.test(raw)) {
+        return `Neispravan format unesenih podataka za ${kontekst.toLowerCase()}. Provjerite brojeve i datume.`;
+    }
+    if (code === '23502' || /violates not-null constraint/i.test(raw)) {
+        return `Nedostaju obavezna polja za ${kontekst.toLowerCase()}.`;
+    }
+    return raw || `Greška pri obradi (${kontekst}).`;
+};
+
+// Idempotentni presretač (sprječava višestruko patchovanje pri HMR-u i duplo izvršavanje lazy PostgrestBuilder thenable-a)
 if (!rawSupabase.__pilana_audit_patched) {
     rawSupabase.__pilana_audit_patched = true;
     const origFrom = rawSupabase.from.bind(rawSupabase);
@@ -90,13 +109,17 @@ if (!rawSupabase.__pilana_audit_patched) {
             const origInsert = builder.insert.bind(builder);
             builder.insert = (values, options) => {
                 const niz = Array.isArray(values) ? values : [values];
-                const result = origInsert(values, options);
-                Promise.resolve(result).then((res) => {
-                    if (!res?.error) {
+                const query = origInsert(values, options);
+                const origThen = query.then.bind(query);
+                let alarmSent = false;
+                query.then = (onfulfilled, onrejected) => origThen((res) => {
+                    if (!alarmSent && !res?.error) {
+                        alarmSent = true;
                         niz.forEach(item => posaljiEksterniPushAlarm(item));
                     }
-                }).catch(() => {});
-                return result;
+                    return onfulfilled ? onfulfilled(res) : res;
+                }, onrejected);
+                return query;
             };
         }
         return builder;

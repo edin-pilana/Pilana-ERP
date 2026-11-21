@@ -113,53 +113,74 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         setSkenDetalji(null);
     };
 
+    const EUR_TO_KM = 1.95583;
+    const konvertujUKM = (iznos, valuta) => {
+        const num = parseFloat(iznos || 0) || 0;
+        const val = String(valuta || 'KM').toUpperCase().trim();
+        if (val === 'EUR' || val === '€') return parseFloat((num * EUR_TO_KM).toFixed(2));
+        return parseFloat(num.toFixed(2));
+    };
+
     const izvrsiSkeniranje = async (trazeniBroj) => {
         const val = trazeniBroj.trim();
         if (!val) return;
         setSkenDetalji(null); 
 
-        let glavnaVeza = null; let ukupnoZaPlatiti = 0; let kupac = ''; let tipSkenera = '';
+        let glavnaVeza = null; let ukupnoOrig = 0; let valutaDok = 'KM'; let kupac = ''; let tipSkenera = '';
 
-        let { data: rac } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', val).maybeSingle();
-        if (rac) { glavnaVeza = rac.id; ukupnoZaPlatiti = rac.ukupno_sa_pdv; kupac = rac.kupac_naziv; tipSkenera = 'RAČUN'; }
+        let { data: rac } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv, valuta').eq('id', val).maybeSingle();
+        if (rac) { glavnaVeza = rac.id; ukupnoOrig = parseFloat(rac.ukupno_sa_pdv || 0); valutaDok = (rac.valuta || 'KM').toUpperCase(); kupac = rac.kupac_naziv; tipSkenera = 'RAČUN'; }
 
         if (!glavnaVeza) {
-            let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', val).maybeSingle();
-            if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'PONUDA'; }
+            let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv, valuta').eq('id', val).maybeSingle();
+            if (pon) { glavnaVeza = pon.id; ukupnoOrig = parseFloat(pon.ukupno_sa_pdv || 0); valutaDok = (pon.valuta || 'KM').toUpperCase(); kupac = pon.kupac_naziv; tipSkenera = 'PONUDA'; }
         }
 
         if (!glavnaVeza) {
             let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', val).maybeSingle();
             if (rn && rn.broj_ponude) {
-                let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', rn.broj_ponude).maybeSingle();
-                if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'RADNI NALOG'; }
+                let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv, valuta').eq('id', rn.broj_ponude).maybeSingle();
+                if (pon) { glavnaVeza = pon.id; ukupnoOrig = parseFloat(pon.ukupno_sa_pdv || 0); valutaDok = (pon.valuta || 'KM').toUpperCase(); kupac = pon.kupac_naziv; tipSkenera = 'RADNI NALOG'; }
             }
         }
 
         if (!glavnaVeza) {
             // Prvo provjeri da li je Otpremnica već fakturisana na Računu!
-            let { data: racPoOtp } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv').eq('broj_veze', val).maybeSingle();
+            let { data: racPoOtp } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv, valuta').eq('broj_veze', val).maybeSingle();
             if (racPoOtp) {
-                glavnaVeza = racPoOtp.id; ukupnoZaPlatiti = racPoOtp.ukupno_sa_pdv; kupac = racPoOtp.kupac_naziv; tipSkenera = 'RAČUN (PO OTPREMNICI)';
+                glavnaVeza = racPoOtp.id; ukupnoOrig = parseFloat(racPoOtp.ukupno_sa_pdv || 0); valutaDok = (racPoOtp.valuta || 'KM').toUpperCase(); kupac = racPoOtp.kupac_naziv; tipSkenera = 'RAČUN (PO OTPREMNICI)';
             } else {
                 let { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', val).maybeSingle();
                 if (otp && otp.broj_veze) {
                     let veza = otp.broj_veze;
                     let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', veza).maybeSingle();
                     if (rn && rn.broj_ponude) veza = rn.broj_ponude;
-                    let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', veza).maybeSingle();
-                    if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'OTPREMNICA'; }
+                    let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv, valuta').eq('id', veza).maybeSingle();
+                    if (pon) { glavnaVeza = pon.id; ukupnoOrig = parseFloat(pon.ukupno_sa_pdv || 0); valutaDok = (pon.valuta || 'KM').toUpperCase(); kupac = pon.kupac_naziv; tipSkenera = 'OTPREMNICA'; }
                 }
             }
         }
 
-        if (ukupnoZaPlatiti > 0) {
-            const vecUplaceno = sveTransakcije.filter(t => t.racun_id === glavnaVeza && t.tip === 'ULAZ').reduce((a, b) => a + (parseFloat(b.iznos) || 0), 0);
-            let preostalo = (ukupnoZaPlatiti - vecUplaceno).toFixed(2);
-            
-            setSkenDetalji({ tip: tipSkenera, skenirano: val, glavna_veza: glavnaVeza, kupac, ukupno: ukupnoZaPlatiti, placeno: vecUplaceno, preostalo });
+        const ukupnoZaPlatitiKM = konvertujUKM(ukupnoOrig, valutaDok);
 
-            if (preostalo <= 0) {
+        if (ukupnoZaPlatitiKM > 0) {
+            const vecUplaceno = sveTransakcije.filter(t => t.racun_id === glavnaVeza && t.tip === 'ULAZ').reduce((a, b) => a + (parseFloat(b.iznos) || 0), 0);
+            const preostaloNum = Math.max(0, parseFloat((ukupnoZaPlatitiKM - vecUplaceno).toFixed(2)));
+            const preostalo = preostaloNum.toFixed(2);
+            const jeEur = valutaDok === 'EUR' || valutaDok === '€';
+            const preostaloOrig = jeEur ? parseFloat((preostaloNum / EUR_TO_KM).toFixed(2)) : preostaloNum;
+            
+            setSkenDetalji({
+                tip: tipSkenera, skenirano: val, glavna_veza: glavnaVeza, kupac,
+                valuta: valutaDok,
+                ukupnoOrig: ukupnoOrig.toFixed(2),
+                ukupno: ukupnoZaPlatitiKM.toFixed(2),
+                placeno: vecUplaceno.toFixed(2),
+                preostalo,
+                preostaloOrig: preostaloOrig.toFixed(2)
+            });
+
+            if (preostaloNum <= 0) {
                 setSkener(''); 
                 return prikaziDialog({ tip: 'uspjeh', naslov: 'Plaćeno', poruka: `✅ Dugovanje nula! Ovaj dokument je već u potpunosti isplaćen.`, onCancel: zatvoriDialog });
             }
@@ -168,7 +189,9 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                 ...form, tip: 'ULAZ', 
                 kategorija: kategorije.find(k=>k.naziv.includes('Račun') || k.naziv.includes('Avans'))?.naziv || kategorije[0]?.naziv,
                 iznos: preostalo, racun_id: glavnaVeza, 
-                opis: `Naplata po skeniranom: ${tipSkenera} (${val})`
+                opis: jeEur
+                    ? `Naplata po skeniranom: ${tipSkenera} (${val} — ${ukupnoOrig.toFixed(2)} EUR po kursu 1.95583)`
+                    : `Naplata po skeniranom: ${tipSkenera} (${val})`
             });
             setSkener(''); 
         } else {
@@ -177,14 +200,18 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     };
 
     const snimiTransakciju = async () => {
-        if (!form.iznos || parseFloat(form.iznos) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali iznos', poruka: "Unesite ispravan iznos!", onCancel: zatvoriDialog });
+        const iznosNum = parseFloat(form.iznos);
+        if (!form.iznos || isNaN(iznosNum) || !isFinite(iznosNum) || iznosNum < 0.01) {
+            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravan iznos', poruka: "Unesite ispravan iznos — minimalni iznos transakcije u blagajni je 0.01 KM!", onCancel: zatvoriDialog });
+        }
+        const zaokruzenIznos = parseFloat(iznosNum.toFixed(2));
         if (!form.kategorija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali kategorija', poruka: "Odaberite kategoriju!", onCancel: zatvoriDialog });
 
         const cistRacunId = form.racun_id ? form.racun_id.trim().toUpperCase() : null;
 
         const payload = {
             id: form.id, tip: form.tip, kategorija: form.kategorija,
-            iznos: parseFloat(form.iznos), opis: form.opis || null,
+            iznos: zaokruzenIznos, opis: form.opis || null,
             racun_id: cistRacunId, masina_naziv: form.masina_naziv || null,
             radnik_ime: form.radnik_ime || null, datum: form.datum,
             vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
@@ -194,13 +221,13 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         const { error } = await supabase.from('blagajna').insert([payload]);
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog });
 
-        // 🟢 Ažuriraj status povezanog računa bez obzira na prefiks ID-a (radi i za RAC-... i za QA5-FIN-...)
+        // 🟢 Ažuriraj status povezanog računa (uzima u obzir valutu računa EUR -> KM)
         if (payload.tip === 'ULAZ' && cistRacunId) {
-            const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status').ilike('id', cistRacunId).maybeSingle();
+            const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status, valuta').ilike('id', cistRacunId).maybeSingle();
             if (r) {
                 const { data: sveUplateBaza } = await supabase.from('blagajna').select('iznos').eq('tip', 'ULAZ').ilike('racun_id', r.id);
                 const ukupnoUplaceno = (sveUplateBaza || []).reduce((s, x) => s + parseFloat(x.iznos || 0), 0);
-                const ukupnoZaPlatiti = parseFloat(r.ukupno_sa_pdv || 0);
+                const ukupnoZaPlatiti = konvertujUKM(r.ukupno_sa_pdv || 0, r.valuta);
 
                 if (ukupnoUplaceno >= ukupnoZaPlatiti - 0.009) {
                     await supabase.from('racuni').update({ status: 'NAPLAĆENO' }).eq('id', r.id);
@@ -240,11 +267,11 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                 // 🟢 Ako je obrisana ULAZ uplata vezana za račun, odmah preračunaj preostale uplate i vrati račun iz NAPLAĆENO u NENAPLAĆENO ili DJELIMIČNO PLAĆENO!
                 const vezaniId = (t.racun_id || '').trim().toUpperCase();
                 if (t.tip === 'ULAZ' && vezaniId) {
-                    const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status').ilike('id', vezaniId).maybeSingle();
+                    const { data: r } = await supabase.from('racuni').select('id, ukupno_sa_pdv, status, valuta').ilike('id', vezaniId).maybeSingle();
                     if (r) {
                         const { data: preostaleUplate } = await supabase.from('blagajna').select('iznos').eq('tip', 'ULAZ').ilike('racun_id', r.id);
                         const sumaPreostalih = (preostaleUplate || []).reduce((s, x) => s + parseFloat(x.iznos || 0), 0);
-                        const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+                        const ukupnoRacun = konvertujUKM(r.ukupno_sa_pdv || 0, r.valuta);
 
                         let noviStatusRacuna = 'NENAPLAĆENO';
                         if (sumaPreostalih >= ukupnoRacun - 0.009 && ukupnoRacun > 0) {
@@ -435,9 +462,23 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                                <div className="bg-theme-panel p-4 rounded-2xl shadow-inner border border-theme-border"><p className="text-[10px] text-slate-400 uppercase font-black">Ukupno za naplatu</p><p className="text-theme-text font-black text-xl mt-1">{skenDetalji.ukupno} KM</p></div>
+                                <div className="bg-theme-panel p-4 rounded-2xl shadow-inner border border-theme-border">
+                                    <p className="text-[10px] text-slate-400 uppercase font-black">Ukupno za naplatu</p>
+                                    <p className="text-theme-text font-black text-xl mt-1">
+                                        {skenDetalji.valuta && skenDetalji.valuta !== 'KM' ? `${skenDetalji.ukupnoOrig} ${skenDetalji.valuta}` : `${skenDetalji.ukupno} KM`}
+                                    </p>
+                                    {skenDetalji.valuta && skenDetalji.valuta !== 'KM' && (
+                                        <p className="text-[10px] text-amber-400 font-bold mt-1">≈ {skenDetalji.ukupno} KM (kurs 1.95583)</p>
+                                    )}
+                                </div>
                                 <div className="bg-emerald-900/30 border border-emerald-500/30 p-4 rounded-2xl shadow-inner"><p className="text-[10px] text-emerald-400 uppercase font-black">Već Uplaćeno</p><p className="text-emerald-400 font-black text-xl mt-1">{skenDetalji.placeno} KM</p></div>
-                                <div className="bg-red-900/30 border border-red-500/30 p-4 rounded-2xl shadow-inner"><p className="text-[10px] text-red-400 uppercase font-black">Preostali Dug</p><p className="text-red-400 font-black text-2xl mt-1">{skenDetalji.preostalo} KM</p></div>
+                                <div className="bg-red-900/30 border border-red-500/30 p-4 rounded-2xl shadow-inner">
+                                    <p className="text-[10px] text-red-400 uppercase font-black">Preostali Dug</p>
+                                    <p className="text-red-400 font-black text-2xl mt-1">{skenDetalji.preostalo} KM</p>
+                                    {skenDetalji.valuta && skenDetalji.valuta !== 'KM' && (
+                                        <p className="text-[10px] text-red-300 font-bold mt-1">({skenDetalji.preostaloOrig} {skenDetalji.valuta})</p>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -526,12 +567,12 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                     <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-theme-border shadow-2xl" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-theme-border pb-4">
                             <h3 className="text-slate-400 font-black uppercase text-xs w-full md:w-auto">Knjiga Blagajne za: <span className="text-theme-text text-sm bg-theme-panel px-3 py-1.5 rounded-lg ml-2 border border-theme-border">{formatirajDatum(aktivniDatum)}</span></h3>
-                            <div className="flex gap-3 w-full md:w-auto">
-                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none font-bold uppercase flex-1 shadow-inner focus:border-blue-500 cursor-pointer">
+                            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                                <select onChange={(e) => setHeader({...header, blagajnaFilterKat: e.target.value})} className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none font-bold uppercase w-full sm:w-auto sm:flex-1 min-w-0 shadow-inner focus:border-blue-500 cursor-pointer">
                                     <option value="SVE">-- Sve Kategorije --</option>
                                     {kategorije.map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
-                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none w-full md:w-64 font-bold shadow-inner focus:border-blue-500 uppercase" />
+                                <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none w-full sm:w-64 min-w-0 font-bold shadow-inner focus:border-blue-500 uppercase" />
                             </div>
                         </div>
 

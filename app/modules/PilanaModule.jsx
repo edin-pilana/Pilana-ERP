@@ -11,9 +11,9 @@ import { toast } from 'sonner';
 
 function DimBox({ label, val, set, disabled }) {
     return (
-        <div className={`bg-theme-panel p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors ${disabled ? 'opacity-50' : ''}`}>
+        <div className={`bg-theme-panel p-2.5 sm:p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors min-w-0 ${disabled ? 'opacity-50' : ''}`}>
             <span className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full bg-transparent text-theme-text font-black outline-none text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full min-w-0 px-2 py-1.5 bg-transparent text-theme-text font-black outline-none text-base sm:text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
         </div>
     );
 }
@@ -30,8 +30,17 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         if (data) setLogovi(data);
     };
     const snimiZastojIliRad = async () => {
+        if (!header?.masina) return toast.warning("Prvo odaberite mašinu u zaglavlju!");
         if (!form.vrijeme_od) return toast.warning("Vrijeme početka je obavezno!");
-        const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: parseInt(form.zastoj_min) || 0, napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
+        const siroviZastoj = String(form.zastoj_min ?? '').trim();
+        const zastojNum = siroviZastoj === '' ? 0 : Number(siroviZastoj);
+        if (isNaN(zastojNum) || !isFinite(zastojNum) || zastojNum < 0 || zastojNum > 1440 || /[eE]/.test(siroviZastoj)) {
+            return toast.error("Zastoj mora biti ispravan broj minuta između 0 i 1440 (negativne i nerealne vrijednosti nisu dozvoljene)!");
+        }
+        if (form.vrijeme_do && form.vrijeme_do < form.vrijeme_od) {
+            return toast.error("Vrijeme završetka ne može biti prije vremena početka!");
+        }
+        const payload = { datum: header.datum, masina: header.masina, modul: modul, vrijeme_od: form.vrijeme_od, vrijeme_do: form.vrijeme_do || null, zastoj_min: Math.round(zastojNum), napomena: form.napomena, snimio: user?.ime_prezime || 'Nepoznat' };
         const { error } = await supabase.from('dnevnik_masine').insert([payload]);
         if (error) return toast.error("Greška pri snimanju: " + error.message);
         toast.success("Zapis o radu/zastoju uspješno dodan!");
@@ -293,8 +302,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) return;
 
-        const { data, error } = await supabase.from('paketi')
-            .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+        const { data: openRows, error } = await supabase.from('paketi')
+            .select('paket_id')
             .is('closed_at', null)
             .eq('masina', header.masina);
 
@@ -303,8 +312,14 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             return;
         }
 
-        if (data && data.length > 0) {
-            const grouped = data.reduce((acc, curr) => {
+        const openIds = [...new Set((openRows || []).map(r => r.paket_id).filter(Boolean))];
+        if (openIds.length > 0) {
+            // Povuci SVE redove aktivnih paketa (uključujući i ranije stavke kod ponovo otvorenog paketa)
+            const { data: allRows } = await supabase.from('paketi')
+                .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+                .in('paket_id', openIds);
+
+            const grouped = (allRows || []).reduce((acc, curr) => {
                 if (!acc[curr.paket_id]) {
                     acc[curr.paket_id] = {
                         id: curr.paket_id,
@@ -522,11 +537,15 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);
+        const vol1Kom = (v / 100) * (s / 100) * (d / 100);
         let komada = unosKol;
-        if (form.jm === 'm3') komada = unosKol / ((v / 100) * (s / 100) * (d / 100));
+        if (form.jm === 'm3') komada = vol1Kom > 0 ? unosKol / vol1Kom : 0;
         else if (form.jm === 'm2') komada = unosKol / ((s / 100) * (d / 100));
         else if (form.jm === 'm1') komada = unosKol / (d / 100);
-        const qtyZaPaket = parseFloat((komada * (v / 100) * (s / 100) * (d / 100)).toFixed(3));
+        // Čuvaj punu preciznost do 6 decimala (ne zaokružuj pojedinačne stavke na 3 decimale prije sabiranja paketa!)
+        const qtyZaPaket = form.jm === 'm3'
+            ? parseFloat(unosKol.toFixed(6))
+            : parseFloat((komada * vol1Kom).toFixed(6));
 
         let isNusProizvod = false; let currentRnStavka = null;
         const usedStavkaId = form.rn_stavka_id || (activeEditItem ? activeEditItem.stavka_id : null);
@@ -599,7 +618,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids,
                 planirano_m3: parseFloat(form.naruceno) || 0,
                 kolicina_ulaz: noviBrojKomada,
-                kolicina_final: parseFloat(novaKolicinaFinal.toFixed(3))
+                kolicina_final: parseFloat(novaKolicinaFinal.toFixed(6))
             }).eq('id', activeEditItem.id);
             error = res.error;
             if (!error) await zapisiU_Log('IZMJENA_U_PAKETU', `Paket: ${selectedIzlazId}, Proizvod: ${activeEditItem.naziv_proizvoda}, Korekcija: ${qtyZaPaket} m³ (${updateMode})`);
@@ -617,7 +636,11 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             };
             const res = await supabase.from('paketi').insert([payload]);
             error = res.error;
-            if (!error) await zapisiU_Log('DODANA_STAVKA_U_PAKET', `Paket: ${selectedIzlazId}, Proizvod: ${form.naziv}, Količina: ${qtyZaPaket.toFixed(3)} m³`);
+            if (!error) {
+                // Ako se dodaje nova stavka u ranije zaključen paket, ponovo otvori sve njegove redove radi konzistentnog statusa
+                await supabase.from('paketi').update({ closed_at: null }).eq('paket_id', selectedIzlazId).not('closed_at', 'is', null);
+                await zapisiU_Log('DODANA_STAVKA_U_PAKET', `Paket: ${selectedIzlazId}, Proizvod: ${form.naziv}, Količina: ${qtyZaPaket.toFixed(3)} m³`);
+            }
         }
 
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });

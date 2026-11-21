@@ -153,8 +153,8 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         podruznica: typeof window !== 'undefined' ? localStorage.getItem('pr_podruznica') || '' : '',
         prevoznik: typeof window !== 'undefined' ? localStorage.getItem('pr_prevoznik') || '' : '',
         odjel: typeof window !== 'undefined' ? localStorage.getItem('pr_odjel') || '' : '',
-        otpremnica_broj: typeof window !== 'undefined' ? localStorage.getItem('pr_otpr_broj') || '' : '',
-        otpremnica_datum: typeof window !== 'undefined' ? localStorage.getItem('pr_otpr_datum') || new Date().toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        otpremnica_broj: typeof window !== 'undefined' ? (localStorage.getItem('pr_otpremnica_broj') || localStorage.getItem('pr_otpr_broj') || '') : '',
+        otpremnica_datum: typeof window !== 'undefined' ? (localStorage.getItem('pr_otpremnica_datum') || localStorage.getItem('pr_otpr_datum') || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
     });
 
     const [scan, setScan] = useState(() => {
@@ -179,6 +179,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     const [scanTarget, setScanTarget] = useState('unos');
     const [listaPrijema, setListaPrijema] = useState([]);
     const scanTimerRef = useRef(null);
+    const prijemLoadSeqRef = useRef(0);
 
     const [krojenjeScan, setKrojenjeScan] = useState('');
     const [majkaTrupac, setMajkaTrupac] = useState(null);
@@ -269,7 +270,16 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         fetchMostUsed();
     }, []);
 
-    useEffect(() => { loadPrijemList(); }, [pHeader.otpremnica_broj]);
+    useEffect(() => {
+        const cleanBroj = (pHeader.otpremnica_broj || '').trim();
+        if (!cleanBroj) {
+            prijemLoadSeqRef.current += 1;
+            setListaPrijema([]);
+            return;
+        }
+        const timer = setTimeout(() => { loadPrijemList(cleanBroj); }, 150);
+        return () => clearTimeout(timer);
+    }, [pHeader.otpremnica_broj]);
 
     useEffect(() => {
         if (pHeader.sumarija) {
@@ -279,11 +289,21 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
     }, [pHeader.sumarija]);
 
-    const loadPrijemList = async () => {
-        if (!pHeader.otpremnica_broj) return;
-        const cleanBroj = pHeader.otpremnica_broj.trim();
-        const { data } = await supabase.from('trupci').select('*').eq('otpremnica_broj', cleanBroj).eq('zakljucen_prijem', false).order('created_at', { ascending: false });
-        setListaPrijema(data || []);
+    const loadPrijemList = async (overrideBroj = null) => {
+        const cleanBroj = String(overrideBroj !== null ? overrideBroj : (pHeader.otpremnica_broj || '')).trim().toUpperCase();
+        const mySeq = ++prijemLoadSeqRef.current;
+        if (!cleanBroj) {
+            setListaPrijema([]);
+            return;
+        }
+        const { data, error } = await supabase
+            .from('trupci')
+            .select('*')
+            .ilike('otpremnica_broj', cleanBroj)
+            .eq('zakljucen_prijem', false)
+            .order('created_at', { ascending: false });
+        if (mySeq !== prijemLoadSeqRef.current) return;
+        if (!error) setListaPrijema(data || []);
     };
 
     const updateHeader = (key, val) => {
@@ -293,8 +313,11 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
     };
 
     const provjeriOtpremnicu = async (broj) => {
-        if (!broj || !pHeader.sumarija) return;
-        let query = supabase.from('trupci').select('zakljucen_prijem').eq('otpremnica_broj', broj).eq('sumarija', pHeader.sumarija);
+        const cleanBroj = String(broj || '').trim().toUpperCase();
+        if (!cleanBroj) return;
+        loadPrijemList(cleanBroj);
+        if (!pHeader.sumarija) return;
+        let query = supabase.from('trupci').select('zakljucen_prijem').ilike('otpremnica_broj', cleanBroj).eq('sumarija', pHeader.sumarija);
         if (pHeader.podruznica) query = query.eq('podruznica', pHeader.podruznica);
         else query = query.is('podruznica', null);
         const { data } = await query.limit(1);
@@ -504,6 +527,27 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
         if (dodajKaloKaoTrupac && (!kaloPlocica || kaloPlocica.trim() === '')) { return prikaziDialog({ tip: 'upozorenje', naslov: 'Nepotpuni podaci', poruka: `Odabrali ste da zadužite kalo kao trupac. Skenirajte QR pločicu za kalo!`, onCancel: zatvoriDialog }); }
 
+        // Zaštita da zbir dužina i zapremine novih komada ne prelazi originalni trupac (majku)
+        const izvornaVol = parseFloat(majkaTrupac.kontrolna_zapremina || majkaTrupac.zapremina || 0);
+        const izvornaDuzina = parseFloat(majkaTrupac.kontrolna_duzina || majkaTrupac.duzina || 0);
+        const ukupnaDuzinaDjece = djecaTrupci.reduce((sum, dj) => sum + (parseFloat(dj.duzina) || 0), 0);
+        if (izvornaVol > 0 && trenutnaDjecaVolume > izvornaVol + 0.002) {
+            return prikaziDialog({
+                tip: 'greska',
+                naslov: 'Nemoguće Krojenje (Prekoračena Zapremina)',
+                poruka: `Ukupna zapremina izrezanih komada (${trenutnaDjecaVolume.toFixed(3)} m³) prelazi zapreminu izvornog trupca (${izvornaVol.toFixed(3)} m³)!\nProvjerite dimenzije komada prije krojenja.`,
+                onCancel: zatvoriDialog
+            });
+        }
+        if (izvornaDuzina > 0 && ukupnaDuzinaDjece > izvornaDuzina + 0.05) {
+            return prikaziDialog({
+                tip: 'greska',
+                naslov: 'Nemoguće Krojenje (Prekoračena Dužina)',
+                poruka: `Ukupna dužina izrezanih komada (${ukupnaDuzinaDjece.toFixed(2)} m) prelazi dužinu izvornog trupca (${izvornaDuzina.toFixed(2)} m)!\nSmanjite dužine komada da odgovaraju originalnom trupcu.`,
+                onCancel: zatvoriDialog
+            });
+        }
+
         const sviIdjevi = djecaTrupci.map(d => d.id.toUpperCase().trim());
         if (dodajKaloKaoTrupac) sviIdjevi.push(kaloPlocica.toUpperCase().trim());
         if (sviIdjevi.includes(String(majkaTrupac.id || '').toUpperCase().trim())) {
@@ -587,7 +631,7 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
             cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
                 for (let trupac of listaPrijema) await supabase.from('trupci').update({ zakljucen_prijem: true }).eq('id', trupac.id);
-                ['pr_sumarija', 'pr_podruznica', 'pr_prevoznik', 'pr_odjel', 'pr_otpr_broj', 'pr_scan', 'pr_form'].forEach(k => localStorage.removeItem(k));
+                ['pr_sumarija', 'pr_podruznica', 'pr_prevoznik', 'pr_odjel', 'pr_otpr_broj', 'pr_otpremnica_broj', 'pr_otpr_datum', 'pr_otpremnica_datum', 'pr_scan', 'pr_form'].forEach(k => localStorage.removeItem(k));
                 setPHeader({ ...pHeader, sumarija: '', podruznica: '', prevoznik: '', odjel: '', otpremnica_broj: '' });
                 setScan(''); setForm(prev => ({ ...prev, broj_plocice: '', redni_broj: '', duzina: '', promjer: '', isKontrola: false, kontrolna_duzina: '', kontrolni_promjer: '' }));
                 setListaPrijema([]); zatvoriDialog();

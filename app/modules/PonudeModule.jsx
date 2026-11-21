@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import { preracunajKolicinu, preracunajCijenuPoJedinici } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
@@ -159,7 +159,13 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
     }, [ponude, katalog]);
 
     const load = async () => {
-        const {data: k} = await supabase.from('kupci').select('*').order('naziv'); setKupci(k||[]);
+        const {data: k} = await supabase.from('kupci').select('*').order('naziv');
+        const svjeziKupci = k || [];
+        setKupci(svjeziKupci);
+        setOdabraniKupac(prev => {
+            if (!prev) return prev;
+            return svjeziKupci.find(c => c.id === prev.id || c.naziv === prev.naziv) || prev;
+        });
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: p} = await supabase.from('ponude').select('*').neq('status', 'OBRISANO').order('datum', { ascending: false }); setPonude(p||[]);
         if (currentUser.uloga === 'superadmin' || currentUser.uloga === 'admin') { 
@@ -325,7 +331,14 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         
         const kolicina = parseFloat(stavkaForm.kolicina_obracun) || 0;
         const uneseniRabat = stavkaForm.konacni_rabat !== '' && stavkaForm.konacni_rabat !== null ? parseFloat(stavkaForm.konacni_rabat) : 0;
-        const fiksna_cijena = Math.abs(uneseniRabat - 100) < 0.001 ? 0 : (parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena || 0);
+        const parsedFiksna = stavkaForm.fiksna_cijena !== '' && stavkaForm.fiksna_cijena !== null ? parseFloat(stavkaForm.fiksna_cijena) : NaN;
+        if (!isNaN(parsedFiksna) && parsedFiksna < 0) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Neispravna Cijena', poruka: "Konačna cijena ne može biti negativna!", onCancel: zatvoriDialog });
+        }
+        if (isNaN(uneseniRabat) || uneseniRabat < 0 || uneseniRabat > 100) {
+            return prikaziDialog({ tip: 'greska', naslov: 'Neispravan Rabat', poruka: "Rabat mora biti između 0% i 100%!", onCancel: zatvoriDialog });
+        }
+        const fiksna_cijena = Math.abs(uneseniRabat - 100) < 0.001 ? 0 : (!isNaN(parsedFiksna) ? parsedFiksna : (dinamickaCijena || 0));
         const rabat_konacni = dinamickaCijena > 0 ? ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100 : 0;
         
         if (rabat_konacni > stavkaForm.sistemski_rabat) { 
@@ -457,6 +470,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Kupac je obavezan!", onCancel: zatvoriDialog }); 
         if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Ponuda mora imati stavke!", onCancel: zatvoriDialog });
         
+        if (parseFloat(form.depozit || 0) < 0) return prikaziDialog({ tip: 'greska', naslov: 'Neispravan Depozit', poruka: "Depozit ne može biti negativan!", onCancel: zatvoriDialog });
         const cisteStavke = stavke.map(s => normalizujStavkuPonude(s));
         const cistPonId = form.id.toUpperCase().trim();
 
@@ -467,11 +481,11 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         
         if (isEditingPonuda) {
             const { error } = await supabase.from('ponude').update(payload).eq('id', cistPonId);
-            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Ponuda'), onCancel: zatvoriDialog }); 
             await zapisiU_Log('IZMJENA_PONUDE', `Ažurirana ponuda ${cistPonId}`); 
         } else {
             const { error } = await supabase.from('ponude').insert([payload]);
-            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+            if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Ponuda'), onCancel: zatvoriDialog }); 
             await zapisiU_Log('KREIRANA_PONUDA', `Ponuda ${cistPonId}`); 
         }
 

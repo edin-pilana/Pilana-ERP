@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
@@ -310,29 +310,56 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
     
     useEffect(() => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_unos) return;
-        const kol = parseFloat(stavkaForm.kolicina_unos); 
-        
-        const v = parseFloat(trenutniProizvod.visina) || 0; 
-        const s = parseFloat(trenutniProizvod.sirina) || 0; 
+        if (!trenutniProizvod) return;
+        if (stavkaForm.kolicina_unos === '' || stavkaForm.kolicina_unos === null) {
+            setStavkaForm(prev => prev.kolicina_obracun === '' ? prev : ({ ...prev, kolicina_obracun: '' }));
+            return;
+        }
+        const kol = parseFloat(stavkaForm.kolicina_unos);
+        if (!Number.isFinite(kol) || kol <= 0) {
+            setStavkaForm(prev => ({ ...prev, kolicina_obracun: '' }));
+            return;
+        }
+
+        const jmUnos = String(stavkaForm.jm_unos || 'kom').toLowerCase();
+        const jmObr = String(stavkaForm.jm_obracun || 'm3').toLowerCase();
+
+        if (jmUnos === jmObr) {
+            setStavkaForm(prev => ({ ...prev, kolicina_obracun: kol.toFixed(4) }));
+            return;
+        }
+
+        const v = parseFloat(trenutniProizvod.visina) || 0;
+        const s = parseFloat(trenutniProizvod.sirina) || 0;
         const d = parseFloat(trenutniProizvod.duzina) || 0;
-        
-        const vol1kom = (v > 0 && s > 0 && d > 0) ? (v/100) * (s/100) * (d/100) : 0;
-        const area1kom = (s > 0 && d > 0) ? (s/100) * (d/100) : 0;
-        const len1kom = (d > 0) ? (d/100) : 0;
 
-        let komada = kol;
-        if (stavkaForm.jm_unos === 'm3' && vol1kom > 0) komada = kol / vol1kom;
-        else if (stavkaForm.jm_unos === 'm2' && area1kom > 0) komada = kol / area1kom;
-        else if (stavkaForm.jm_unos === 'm1' && len1kom > 0) komada = kol / len1kom;
+        const vol1kom = (v > 0 && s > 0 && d > 0) ? (v / 100) * (s / 100) * (d / 100) : 0;
+        const area1kom = (s > 0 && d > 0) ? (s / 100) * (d / 100) : 0;
+        const len1kom = (d > 0) ? (d / 100) : 0;
 
-        let obracun = kol;
-        if (stavkaForm.jm_obracun === 'm3') obracun = komada * vol1kom;
-        else if (stavkaForm.jm_obracun === 'm2') obracun = komada * area1kom;
-        else if (stavkaForm.jm_obracun === 'm1') obracun = komada * len1kom;
-        else if (stavkaForm.jm_obracun === 'kom') obracun = komada;
-        
-        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(4) : "0.0000"}));
+        let obracun = 0;
+        if (jmUnos === 'm2' && jmObr === 'm3' && v > 0) {
+            obracun = kol * (v / 100);
+        } else if (jmUnos === 'm1' && jmObr === 'm3' && v > 0 && s > 0) {
+            obracun = kol * (v / 100) * (s / 100);
+        } else if (jmUnos === 'm3' && jmObr === 'm2' && v > 0) {
+            obracun = kol / (v / 100);
+        } else if (jmUnos === 'm3' && jmObr === 'm1' && v > 0 && s > 0) {
+            obracun = kol / ((v / 100) * (s / 100));
+        } else {
+            let komada = kol;
+            if (jmUnos === 'm3' && vol1kom > 0) komada = kol / vol1kom;
+            else if (jmUnos === 'm2' && area1kom > 0) komada = kol / area1kom;
+            else if (jmUnos === 'm1' && len1kom > 0) komada = kol / len1kom;
+            else if (jmUnos !== 'kom') komada = 0;
+
+            if (jmObr === 'm3') obracun = komada * vol1kom;
+            else if (jmObr === 'm2') obracun = komada * area1kom;
+            else if (jmObr === 'm1') obracun = komada * len1kom;
+            else if (jmObr === 'kom') obracun = komada;
+        }
+
+        setStavkaForm(prev => ({ ...prev, kolicina_obracun: Number.isFinite(obracun) && obracun > 0 ? obracun.toFixed(4) : "0.0000" }));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const zavrsiDodavanjeStavke = (novaStavka) => {
@@ -358,7 +385,9 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     };
 
     const dodajStavku = () => {
-        if(!trenutniProizvod || !stavkaForm.kolicina_obracun || parseFloat(stavkaForm.kolicina_obracun) <= 0 || parseFloat(stavkaForm.kolicina_unos) <= 0) {
+        const kUnos = parseFloat(stavkaForm.kolicina_unos);
+        const kObr = parseFloat(stavkaForm.kolicina_obracun);
+        if (!trenutniProizvod || !Number.isFinite(kObr) || kObr <= 0 || !Number.isFinite(kUnos) || kUnos <= 0) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Odaberite proizvod i unesite pozitivnu količinu veću od 0!", onCancel: zatvoriDialog });
         }
         const dim = trenutniProizvod ? `${parseFloat(trenutniProizvod.visina)||0}x${parseFloat(trenutniProizvod.sirina)||0}x${parseFloat(trenutniProizvod.duzina)||0}` : '';
@@ -431,18 +460,18 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const snimiPraviloKaoSablon = async (sifra, faze) => {
         if(faze.length === 0 || !faze[0].masina || !faze[0].dimenzija) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Podataka', poruka: "Unesite bar jednu ispravnu fazu prije snimanja šablona!", onCancel: zatvoriDialog });
         const { error } = await supabase.from('tehnologija_katalog').upsert({ finalna_sifra: sifra, faze_jsonb: faze }, { onConflict: 'finalna_sifra' });
-        if (error) prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
+        if (error) prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(error, 'Šablon tehnologije'), onCancel: zatvoriDialog }); 
         else { await zapisiU_Log('KREIRAN_ŠABLON_TEHNOLOGIJE', `Kreiran šablon za proizvod ${sifra}`); prikaziDialog({ tip: 'uspjeh', naslov: 'Šablon Snimljen', poruka: "Trajno pravilo uspješno snimljeno u bazu!", onCancel: zatvoriDialog }); }
     };
 
-    // 🟢 POPRAVLJENO: Obavezna provjera za Rok Isporuke prije slanja u bazu!
+    // 🟢 POPRAVLJENO: Obavezna provjera za Rok Isporuke i potpunu BOM validaciju prije slanja u bazu!
     const snimiNalog = async () => {
-        if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Ime kupca je obavezno!", onCancel: zatvoriDialog });
+        if(!form.kupac_naziv || !form.kupac_naziv.trim()) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Ime kupca je obavezno!", onCancel: zatvoriDialog });
         if(!form.rok_isporuke || !form.rok_isporuke.trim()) return prikaziDialog({ tip: 'upozorenje', naslov: 'Rok Isporuke Obavezan', poruka: "Morate unijeti Rok Isporuke u zaglavlju Radnog Naloga prije snimanja!", onCancel: zatvoriDialog });
+        if(form.datum && form.rok_isporuke < form.datum) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravan Rok', poruka: "Rok isporuke ne može biti prije datuma izdavanja naloga!", onCancel: zatvoriDialog });
         if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Radni nalog mora imati stavke!", onCancel: zatvoriDialog });
 
         if (form.tip_naloga === 'FAZNI') {
-            let imaFaze = false;
             let upozorenjeM3 = 0;
             let prekrsenaStavka = '';
             
@@ -451,8 +480,20 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
 
             for (let s of stavke) {
                 const faze = tehnologija[s.id] || [];
-                if (faze.length > 0 && faze[0].masina) {
-                    imaFaze = true;
+                if (faze.length === 0) {
+                    return prikaziDialog({ tip: 'upozorenje', naslov: 'Nepotpuna BOM razrada', poruka: `Za stavku "${s.naziv}" nije definisana nijedna faza u BOM razradi!\n\nOtvorite tab '🧪 Razrada Tehnologije' i dodajte korake obrade.`, onCancel: zatvoriDialog });
+                }
+                for (let idx = 0; idx < faze.length; idx++) {
+                    const f = faze[idx];
+                    const fKol = parseFloat(f.kolicina);
+                    if (!f.masina || !String(f.masina).trim()) {
+                        return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali mašina u BOM', poruka: `Za stavku "${s.naziv}" (korak ${idx + 1}) nije odabrana mašina!`, onCancel: zatvoriDialog });
+                    }
+                    if (!Number.isFinite(fKol) || fKol <= 0) {
+                        return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna količina u BOM', poruka: `Za stavku "${s.naziv}" (korak ${idx + 1} - ${f.masina}) količina mora biti pozitivan broj veći od 0!`, onCancel: zatvoriDialog });
+                    }
+                }
+                {
                     const orgStavka = orgList.find(o => o.sifra === s.sifra);
                     if (orgStavka && form.broj_ponude) {
                         const zadnjaFaza = faze[faze.length - 1];
@@ -478,9 +519,6 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                         }
                     }
                 }
-            }
-            if (!imaFaze) {
-                return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema faza u BOM', poruka: "Odabrali ste FAZNI nalog, ali niste definisali faze (BOM) ni za jednu stavku!\n\nIdite na tab '🧪 Razrada Tehnologije' i definišite korake i mašine za proizvodnju.", onCancel: zatvoriDialog });
             }
 
             if (upozorenjeM3 > 0) {
@@ -546,7 +584,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         } else { 
             res = await supabase.from('radni_nalozi').insert([payload]); 
         }
-        if(res.error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: res.error.message, onCancel: zatvoriDialog });
+        if(res.error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: formatDbError(res.error, 'Radni nalog'), onCancel: zatvoriDialog });
         
         if (jeModifikovan && form.broj_ponude) {
             await supabase.from('ponude').update({ rn_modifikovan: true }).eq('id', form.broj_ponude);
@@ -591,7 +629,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             onConfirm: async () => {
                 const { error } = await supabase.from('radni_nalozi').update({ status: 'ZAVRŠENO' }).eq('id', n.id);
                 if (error) {
-                    prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: error.message, onCancel: zatvoriDialog });
+                    prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: formatDbError(error, 'Radni nalog'), onCancel: zatvoriDialog });
                 } else {
                     await zapisiU_Log('ZAVRŠEN_RN_DIREKTNO', `Radni Nalog ${n.id} označen kao završen direktno sa pločice.`);
                     load();
@@ -606,17 +644,21 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         if (!razlogBrisanja.trim()) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Razlog obavezan', poruka: "Morate unijeti razlog brisanja radnog naloga!", onCancel: zatvoriDialog });
         }
-        const { error } = await supabase.from('radni_nalozi').update({ status: 'OBRISANO' }).eq('id', brisanjeNaloga.id);
+        const obrisaniId = brisanjeNaloga.id;
+        const { error } = await supabase.from('radni_nalozi').update({ status: 'OBRISANO' }).eq('id', obrisaniId);
         if (error) {
-            return prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: error.message, onCancel: zatvoriDialog });
+            return prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: formatDbError(error, 'Brisanje radnog naloga'), onCancel: zatvoriDialog });
         }
         
-        await zapisiU_Log('OBRISAN_RADNI_NALOG', `Korisnik je obrisao Radni Nalog ${brisanjeNaloga.id}. Razlog: ${razlogBrisanja}`);
+        await zapisiU_Log('OBRISAN_RADNI_NALOG', `Korisnik je obrisao Radni Nalog ${obrisaniId}. Razlog: ${razlogBrisanja}`);
         
+        if (isEditingNalog && form.id === obrisaniId) {
+            resetFormu();
+        }
         setBrisanjeNaloga(null);
         setRazlogBrisanja('');
         load();
-        prikaziDialog({ tip: 'uspjeh', naslov: 'Nalog Obrisan', poruka: `Radni nalog ${brisanjeNaloga.id} je uspješno uklonjen iz prikaza.`, onCancel: zatvoriDialog });
+        prikaziDialog({ tip: 'uspjeh', naslov: 'Nalog Obrisan', poruka: `Radni nalog ${obrisaniId} je uspješno uklonjen iz prikaza.`, onCancel: zatvoriDialog });
     };
 
     const pokreniIzmjenuNaloga = async (n) => { 
@@ -949,7 +991,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                                 <p className="text-theme-accent text-2xl font-black tracking-widest">{s.kolicina_obracun} <span className="text-xs">{s.jm_obracun}</span></p>
                                                 <p className="text-[10px] text-slate-400 uppercase mt-1 font-bold">Unos: {s.kolicina_unos} {s.jm_unos}</p>
                                             </div>
-                                            <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button>
+                                            <button onClick={(e)=>{e.stopPropagation(); ukloniStavku(s.id);}} className="text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/20 p-2 rounded-lg transition-all font-black">✕</button>
                                         </div>
                                     </div>
                                 ))}
@@ -1035,12 +1077,12 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             {tab === 'lista' && (
                 <div className="bg-theme-card p-6 rounded-box border border-theme-border space-y-6" style={{ backgroundColor: saas.ui.boja_kartice }}>
                     
-                    <div className="flex bg-black/30 p-1.5 rounded-xl border border-slate-700 max-w-lg shadow-inner">
+                    <div className="flex flex-wrap sm:flex-nowrap bg-black/30 p-1.5 rounded-xl border border-slate-700 max-w-lg shadow-inner gap-1">
                         {['U PROIZVODNJI', 'NA ČEKANJU', 'ZAVRŠENO'].map(st => (
                             <button 
                                 key={st} 
                                 onClick={() => setSubTab(st)} 
-                                className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all tracking-wider ${subTab === st ? 'bg-purple-600 text-white shadow-md scale-105' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                className={`flex-1 min-w-0 py-3 px-2 rounded-lg text-[10px] font-black uppercase transition-all tracking-wider ${subTab === st ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                             >
                                 {st} ({
                                     st === 'U PROIZVODNJI' ? nalozi.filter(n => n.status === 'U PROIZVODNJI').length :
@@ -1069,9 +1111,14 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
                                         {n.tip_naloga === 'FAZNI' ? (
                                             <>
                                                 <button onClick={(e) => { e.stopPropagation(); printRadniNalogSveFaze(n); }} className="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg text-[9px] font-black uppercase shadow-md transition-colors mt-1">🖨️ SVE FAZE (BOM KARTA)</button>
-                                                {[...new Set(Object.values(n.tehnologija_jsonb || {}).flat().map(f => f.masina))].filter(Boolean).map(m => (
-                                                    <button key={m} onClick={(e) => { e.stopPropagation(); printRadniNalogZaMasinu(n, m); }} className="flex-1 min-w-[70px] bg-theme-card hover:bg-white hover:text-black text-slate-300 py-1.5 rounded text-[8px] font-black uppercase border border-slate-700 transition-colors mt-1">🖨️ {m}</button>
-                                                ))}
+                                                {(() => {
+                                                    let tehObj = n.tehnologija_jsonb || {};
+                                                    if (typeof tehObj === 'string') { try { tehObj = JSON.parse(tehObj); } catch (e) { tehObj = {}; } }
+                                                    const listaFaza = Array.isArray(tehObj) ? tehObj : Object.values(tehObj || {}).flat();
+                                                    return [...new Set(listaFaza.map(f => f?.masina))].filter(Boolean).map(m => (
+                                                        <button key={m} onClick={(e) => { e.stopPropagation(); printRadniNalogZaMasinu(n, m); }} className="flex-1 min-w-[70px] bg-theme-card hover:bg-white hover:text-black text-slate-300 py-1.5 rounded text-[8px] font-black uppercase border border-slate-700 transition-colors mt-1">🖨️ {m}</button>
+                                                    ));
+                                                })()}
                                             </>
                                         ) : (
                                             <button onClick={(e) => printDirektnoIzListe(n, e)} className="flex-1 min-w-[70px] bg-theme-card hover:bg-white hover:text-black text-theme-text py-1.5 rounded text-[8px] font-black uppercase border border-slate-700 transition-colors">🖨️ PRINTAJ</button>
