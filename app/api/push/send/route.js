@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../../../utils/supabaseClient';
 import {
     daLiJeNotifikacijaZaKorisnika,
     ocistiTekstDetalja,
@@ -10,9 +10,6 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://awaxwejrhmjeqohrgidm.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
 
 const VAPID_PUBLIC_KEY =
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
@@ -38,7 +35,7 @@ const norm = (v) => String(v || '').trim().toLowerCase();
 export async function POST(request) {
     try {
         const body = await request.json();
-        const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const sb = supabase;
 
         const [pretplateRes, pravilaRes, radniciRes] = await Promise.all([
             sb.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'push_pretplate').maybeSingle(),

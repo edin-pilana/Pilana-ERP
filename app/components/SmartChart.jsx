@@ -832,8 +832,17 @@ export default function SmartChart({
     return (
         <div className="flex flex-col h-full w-full min-w-0" data-smartchart-id={chartId || undefined}>
             {renderToolbar(false)}
-            <div className="w-full min-w-0" style={{ height: `${height}px` }}>
+            <div className="relative w-full min-w-0" style={{ height: `${height}px` }}>
                 {renderChartBody(width, height)}
+                {(cfg.type || defaultType) === 'donut' && processedData.length > 0 && (
+                    <div
+                        data-testid="donut-center-total"
+                        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-5"
+                    >
+                        <span className="text-[9px] font-black uppercase tracking-widest text-theme-muted">UKUPNO</span>
+                        <span className="text-sm font-black text-theme-accent leading-tight">{formatBroj(totalSum, primarySeries?.unit)}</span>
+                    </div>
+                )}
             </div>
             {expandedModal}
         </div>
