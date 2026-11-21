@@ -647,6 +647,18 @@ export default function Page() {
         }
     };
 
+    // 🟢 MENI SADA PRATI TAČAN REDOSLIJED I ŠIRINE KOJE ADMIN SPASI (iznad early return-a zbog React Rules of Hooks)
+    const finalniModuliZaMeni = useMemo(() => (
+        (uiPostavke.moduli && uiPostavke.moduli.length > 0)
+            ? uiPostavke.moduli.map(m => {
+                const def = defaultModuli.find(d => d.id === m.id) || {};
+                return { ...def, ...m };
+            })
+            : defaultModuli
+    ), [uiPostavke.moduli]);
+
+    const stableMenuConfig = useMemo(() => uiPostavke.menu_style || {}, [uiPostavke.menu_style]);
+
     if (authLoading) return <div className="min-h-screen bg-theme-main" />;
     if (!loggedUser) {
         return (
@@ -676,18 +688,6 @@ export default function Page() {
 
     const aktivniModulKonfig = (uiPostavke.moduli || []).find(m => m.id === activeModule);
     const modulBoja = aktivniModulKonfig?.hex_boja || '';
-
-    // 🟢 MENI SADA PRATI TAČAN REDOSLIJED I ŠIRINE KOJE ADMIN SPASI (memoizovano da ne resetuje drag & drop)
-    const finalniModuliZaMeni = useMemo(() => (
-        (uiPostavke.moduli && uiPostavke.moduli.length > 0)
-            ? uiPostavke.moduli.map(m => {
-                const def = defaultModuli.find(d => d.id === m.id) || {};
-                return { ...def, ...m };
-            })
-            : defaultModuli
-    ), [uiPostavke.moduli]);
-
-    const stableMenuConfig = useMemo(() => uiPostavke.menu_style || {}, [uiPostavke.menu_style]);
 
     const handleSaveMenuFromShell = async (noviModuli, noviMenuStyle) => {
         const novePostavke = { ...uiPostavke, moduli: noviModuli, menu_style: noviMenuStyle };
