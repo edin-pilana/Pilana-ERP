@@ -27,6 +27,8 @@ import {
     posaljiTestnuPushNotifikaciju,
 } from '../utils/pushConfig';
 import { ucitajGlobalniDizajn } from '../utils/designTokens';
+import { pokreniPametnaPodsjetnica } from '../utils/smartReminders';
+import PwaInstallBanner from './PwaInstallBanner';
 
 const DEFAULT_MENU_STYLE = {
     sidebarWidth: 260,
@@ -141,6 +143,9 @@ export default function AppShell({
     useEffect(() => {
         initSettings(user?.ime_prezime || 'Korisnik');
         ucitajGlobalniDizajn();
+        if (user?.uloga === 'superadmin' || user?.uloga === 'admin') {
+            pokreniPametnaPodsjetnica(user).catch(() => {});
+        }
     }, [user, initSettings]);
 
     const prikaziInAppNotifikaciju = useCallback((novi) => {
@@ -904,6 +909,8 @@ export default function AppShell({
                                 </div>
                             </div>
 
+                            <PwaInstallBanner mode="card" />
+
                             {isAdmin && (
                                 <div className="pt-2 space-y-2">
                                     <button
@@ -1228,6 +1235,7 @@ export default function AppShell({
 
             {renderSettingsPanel()}
             {renderNotifDrawer()}
+            <PwaInstallBanner mode="banner" />
 
             {selectedNotif && (
                 <NotificationDetailModal

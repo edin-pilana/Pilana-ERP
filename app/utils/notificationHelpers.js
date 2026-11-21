@@ -230,7 +230,7 @@ export const odrediModuleNotifikacije = (log) => {
     if (akc.includes('PROREZ')) moduli.add('prorez');
     if (akc.includes('PRIJEM') || akc.includes('TRUPAC') || akc.includes('TRUPCA') || akc.includes('SUMARIJ')) moduli.add('prijem');
     if (akc.includes('PLANIRANJ') || akc.includes('RASPORED') || akc.includes('TEHNOLOGIJ') || akc.includes('DNEVNIK_MASINE')) moduli.add('planiranje');
-    if (akc.includes('LAGER') || akc.includes('PAKET_RASTUREN') || akc.includes('OTKLJUČAN_PAKET') || akc.includes('OTKLJUCAN_PAKET') || akc.includes('OBRISAN_PAKET')) moduli.add('lager');
+    if (akc.includes('LAGER') || akc.includes('NISKE_ZALIHE') || akc.includes('PAKET_RASTUREN') || akc.includes('OTKLJUČAN_PAKET') || akc.includes('OTKLJUCAN_PAKET') || akc.includes('OBRISAN_PAKET')) moduli.add('lager');
     if (!akc.includes('DORADA') && (akc.includes('PILANA') || akc.includes('ZAKLJUČEN_PAKET') || akc.includes('ZAKLJUCEN_PAKET') || akc.includes('DODANA_STAVKA_U_PAKET') || akc.includes('IZMJENA_U_PAKETU'))) {
         moduli.add('pilana');
     }
@@ -267,8 +267,9 @@ export const odrediKategorijuNotifikacije = (log) => {
     if (akc.includes('ODMOR') || akc.includes('ODSUSTV') || akc.includes('RADNOG_VREMENA') || meta.approval_type === 'ZAHTJEV_ODMOR') {
         return 'HR_ODMOR';
     }
-    if (akc.includes('KASA') || akc.includes('BLAGAJN') || akc.includes('UPLAT')) return 'BLAGAJNA_ALARM';
+    if (akc.includes('KASA') || akc.includes('BLAGAJN') || akc.includes('UPLAT') || akc.includes('DOSPJELI_RACUN')) return 'BLAGAJNA_ALARM';
     if (akc.includes('OTPREM') || akc.includes('UTOVAR') || akc.includes('IZDATNIC')) return 'OTPREMNICE_ALARM';
+    if (akc.includes('NISKE_ZALIHE')) return 'PROIZVODNJA_LAGER';
 
     const moduli = odrediModuleNotifikacije(log);
     if (moduli.includes('reklamacije')) return 'REKLAMACIJE';

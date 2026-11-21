@@ -355,7 +355,21 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             }
         };
         document.addEventListener('mousedown', onOut);
-        return () => document.removeEventListener('mousedown', onOut);
+
+        let rtTimer = null;
+        const trupciCh = supabase
+            .channel(`prorez_trupci_live_${Math.random().toString(36).slice(2)}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'trupci' }, () => {
+                if (rtTimer) clearTimeout(rtTimer);
+                rtTimer = setTimeout(() => { ucitajDostupneTrupce(); }, 300);
+            })
+            .subscribe();
+
+        return () => {
+            document.removeEventListener('mousedown', onOut);
+            if (rtTimer) clearTimeout(rtTimer);
+            supabase.removeChannel(trupciCh);
+        };
     }, []);
 
     const filtriraniTrupci = useMemo(() => {

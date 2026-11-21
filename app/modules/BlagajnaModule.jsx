@@ -5,6 +5,7 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import { printDokument } from '../utils/printHelpers';
+import { exportToExcel } from '../utils/exportHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
 export default function BlagajnaModule({ user, header, setHeader, onExit }) {
@@ -575,6 +576,37 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                     {kategorije.map(k => <option key={k.id} value={k.naziv}>{k.naziv}</option>)}
                                 </select>
                                 <input type="text" onChange={(e) => setHeader({...header, blagajnaPretraga: e.target.value})} placeholder="Pretraži opis ili broj..." className="bg-theme-card text-xs text-theme-text p-3.5 rounded-xl border border-theme-border outline-none w-full sm:w-64 min-w-0 font-bold shadow-inner focus:border-blue-500 uppercase" />
+                                <button
+                                    type="button"
+                                    data-testid="blagajna-excel-btn"
+                                    onClick={() => {
+                                        const filtr = prikazaneTransakcije
+                                            .filter(t => (header?.blagajnaFilterKat && header.blagajnaFilterKat !== 'SVE') ? t.kategorija === header.blagajnaFilterKat : true)
+                                            .filter(t => (header?.blagajnaPretraga) ? (t.opis || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) || (t.racun_id || '').toLowerCase().includes(header.blagajnaPretraga.toLowerCase()) : true);
+                                        const neto = filtr.reduce((s, t) => s + (t.tip === 'ULAZ' ? 1 : -1) * (parseFloat(t.iznos || 0) || 0), 0);
+                                        exportToExcel({
+                                            filename: `Blagajna_${aktivniDatum}`,
+                                            sheetName: 'Blagajna',
+                                            title: `Knjiga Blagajne (${formatirajDatum(aktivniDatum)})`,
+                                            columns: [
+                                                { key: 'id', label: 'Broj', width: 125 },
+                                                { key: 'datum', label: 'Datum', width: 95 },
+                                                { key: 'vrijeme_tekst', label: 'Vrijeme', width: 80 },
+                                                { key: 'tip', label: 'Tip', width: 75 },
+                                                { key: 'kategorija', label: 'Kategorija', width: 165 },
+                                                { key: 'iznos', label: 'Iznos (KM)', type: 'number', width: 110, format: (v, r) => (r.tip === 'ULAZ' ? 1 : -1) * (parseFloat(v || 0) || 0) },
+                                                { key: 'racun_id', label: 'Račun', width: 120 },
+                                                { key: 'opis', label: 'Opis', width: 250 },
+                                                { key: 'snimio_korisnik', label: 'Operater', width: 130 },
+                                            ],
+                                            rows: filtr,
+                                            summaryRow: { id: 'NETO PROMET', iznos: parseFloat(neto.toFixed(2)) },
+                                        });
+                                    }}
+                                    className="px-4 py-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[10px] font-black uppercase transition-all shrink-0"
+                                >
+                                    📊 Excel
+                                </button>
                             </div>
                         </div>
 

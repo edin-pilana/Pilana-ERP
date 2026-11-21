@@ -7,6 +7,7 @@ import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
+import { exportToExcel } from '../utils/exportHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -840,7 +841,39 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                     </div>
 
                     <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl opacity-80 hover:opacity-100 transition-all" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <h3 className="text-emerald-500 font-black uppercase text-xs mb-4 flex justify-between"><span>🔐 ARHIVA (NAPLAĆENO)</span> <span className="bg-emerald-900/40 px-2 rounded">{naplaceniRacuniLista.length}</span></h3>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                            <h3 className="text-emerald-500 font-black uppercase text-xs flex items-center gap-2"><span>🔐 ARHIVA (NAPLAĆENO)</span> <span className="bg-emerald-900/40 px-2 rounded">{naplaceniRacuniLista.length}</span></h3>
+                            <button
+                                type="button"
+                                data-testid="racuni-excel-btn"
+                                onClick={() => {
+                                    const svi = [...(nenaplaceniRacuniLista || []), ...(naplaceniRacuniLista || [])];
+                                    const zbirBez = svi.reduce((s, r) => s + (parseFloat(r.ukupno_bez_pdv || 0) || 0), 0);
+                                    const zbirSa = svi.reduce((s, r) => s + (parseFloat(r.ukupno_sa_pdv || 0) || 0), 0);
+                                    exportToExcel({
+                                        filename: `Racuni_${new Date().toISOString().slice(0, 10)}`,
+                                        sheetName: 'Računi',
+                                        title: `Arhiva Računa (${svi.length})`,
+                                        columns: [
+                                            { key: 'id', label: 'Broj Računa', width: 130 },
+                                            { key: 'datum', label: 'Datum', width: 95 },
+                                            { key: 'rok_placanja', label: 'Rok plaćanja', width: 95 },
+                                            { key: 'kupac_naziv', label: 'Kupac', width: 190 },
+                                            { key: 'valuta', label: 'Valuta', width: 65 },
+                                            { key: 'ukupno_bez_pdv', label: 'Osnovica (bez PDV)', type: 'number', width: 125 },
+                                            { key: 'ukupno_sa_pdv', label: 'Ukupno (sa PDV)', type: 'number', width: 125 },
+                                            { key: 'status', label: 'Status', width: 110 },
+                                            { key: 'nacin_placanja', label: 'Način plaćanja', width: 115 },
+                                        ],
+                                        rows: svi,
+                                        summaryRow: { id: 'UKUPNO', ukupno_bez_pdv: zbirBez, ukupno_sa_pdv: zbirSa },
+                                    });
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[9px] font-black uppercase transition-all"
+                            >
+                                📊 Izvezi sve u Excel
+                            </button>
+                        </div>
                         <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                             {naplaceniRacuniLista.map(r => (
                                 <div key={r.id} className="p-4 bg-theme-panel border border-emerald-500/20 rounded-2xl shadow-sm">

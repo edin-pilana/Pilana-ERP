@@ -5,6 +5,8 @@ import MasterHeader from '../components/MasterHeader';
 import TabAiAnalitika from '../components/TabAiAnalitika';
 import SmartChart, { uhvatiSmartChartSvgHtml } from '../components/SmartChart';
 import { printDokument } from '../utils/printHelpers';
+import { exportToExcel } from '../utils/exportHelpers';
+import { jeQaTestniZapis } from '../utils/smartReminders';
 import { escapeHtml } from '../utils/dateHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import {
@@ -96,16 +98,27 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     const [masinaFilter, setMasinaFilter] = useState('SVE');
 
     const [loading, setLoading] = useState(true);
+    const [ignorisiQaTest, setIgnorisiQaTest] = useState(true);
     const [masineBaza, setMasineBaza] = useState([]);
-    const [trupciBaza, setTrupciBaza] = useState([]);
-    const [prorezLogBaza, setProrezLogBaza] = useState([]);
-    const [paketiBaza, setPaketiBaza] = useState([]);
+    const [rawTrupciBaza, setTrupciBaza] = useState([]);
+    const [rawProrezLogBaza, setProrezLogBaza] = useState([]);
+    const [rawPaketiBaza, setPaketiBaza] = useState([]);
     const [dnevnikMasineBaza, setDnevnikMasineBaza] = useState([]);
     const [katalogBaza, setKatalogBaza] = useState([]);
-    const [reklamacijeBaza, setReklamacijeBaza] = useState([]);
-    const [blagajnaBaza, setBlagajnaBaza] = useState([]);
+    const [rawReklamacijeBaza, setReklamacijeBaza] = useState([]);
+    const [rawBlagajnaBaza, setBlagajnaBaza] = useState([]);
     const [radniSatiBaza, setRadniSatiBaza] = useState([]);
     const [radniciBaza, setRadniciBaza] = useState([]);
+
+    const trupciBaza = useMemo(() => (ignorisiQaTest ? rawTrupciBaza.filter((x) => !jeQaTestniZapis(x)) : rawTrupciBaza), [rawTrupciBaza, ignorisiQaTest]);
+    const prorezLogBaza = useMemo(() => (ignorisiQaTest ? rawProrezLogBaza.filter((x) => !jeQaTestniZapis(x)) : rawProrezLogBaza), [rawProrezLogBaza, ignorisiQaTest]);
+    const paketiBaza = useMemo(() => (ignorisiQaTest ? rawPaketiBaza.filter((x) => !jeQaTestniZapis(x)) : rawPaketiBaza), [rawPaketiBaza, ignorisiQaTest]);
+    const reklamacijeBaza = useMemo(() => (ignorisiQaTest ? rawReklamacijeBaza.filter((x) => !jeQaTestniZapis(x)) : rawReklamacijeBaza), [rawReklamacijeBaza, ignorisiQaTest]);
+    const blagajnaBaza = useMemo(() => (ignorisiQaTest ? rawBlagajnaBaza.filter((x) => !jeQaTestniZapis(x)) : rawBlagajnaBaza), [rawBlagajnaBaza, ignorisiQaTest]);
+    const brojSkrivenihQa = useMemo(() => {
+        if (!ignorisiQaTest) return 0;
+        return (rawPaketiBaza.length - paketiBaza.length) + (rawTrupciBaza.length - trupciBaza.length) + (rawReklamacijeBaza.length - reklamacijeBaza.length);
+    }, [ignorisiQaTest, rawPaketiBaza, paketiBaza, rawTrupciBaza, trupciBaza, rawReklamacijeBaza, reklamacijeBaza]);
 
     useEffect(() => {
         ucitajPodatke();
@@ -658,6 +671,77 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         }
     };
 
+    const izveziExcel = () => {
+        const periodTekst = `${formatDatumBHS(efektivniOd)} - ${formatDatumBHS(efektivniDo)}`;
+        if (tab === 'PROREZ') {
+            exportToExcel({
+                filename: `Analitika_Prorez_${efektivniOd}_${efektivniDo}`,
+                sheetName: 'Prorez',
+                title: `Izvještaj Proreza i Pilane (${periodTekst} | Mašina: ${masinaFilter})`,
+                columns: [
+                    { key: 'paket_id', label: 'Paket ID', width: 130 },
+                    { key: 'naziv_proizvoda', label: 'Proizvod', width: 200 },
+                    { key: 'dimenzije', label: 'Dimenzije (cm)', width: 120 },
+                    { key: 'prikazKolicine', label: 'Količina (unesena JM)', width: 145, format: (v, r) => v || `${r.komada || 0} kom` },
+                    { key: 'm3', label: 'Volumen (m³)', type: 'number', width: 110, format: (v) => parseFloat(Number(v || 0).toFixed(3)) },
+                ],
+                rows: analitikaProrez.gotovaRobaLista,
+                summaryRow: { paket_id: 'UKUPNO', m3: parseFloat(analitikaProrez.proizvedenoM3.toFixed(3)) },
+            });
+        } else if (tab === 'DORADA') {
+            exportToExcel({
+                filename: `Analitika_Dorada_${efektivniOd}_${efektivniDo}`,
+                sheetName: 'Dorada',
+                title: `Izvještaj Dorade (${periodTekst} | Mašina: ${masinaFilter})`,
+                columns: [
+                    { key: 'paket_id', label: 'Izlazni Paket', width: 130 },
+                    { key: 'naziv', label: 'Proizvod', width: 190 },
+                    { key: 'dimenzije', label: 'Dimenzije (cm)', width: 115 },
+                    { key: 'ulazniPaketi', label: 'Ulazna Sirovina', width: 155 },
+                    { key: 'masina', label: 'Mašina', width: 120 },
+                    { key: 'izlazM3', label: 'Izlaz (m³)', type: 'number', width: 110, format: (v) => parseFloat(Number(v || 0).toFixed(3)) },
+                ],
+                rows: analitikaDorada.sljedivostLista,
+                summaryRow: { paket_id: 'UKUPNO', izlazM3: parseFloat(analitikaDorada.izlazGotovoM3.toFixed(3)) },
+            });
+        } else if (tab === 'UKUPNO') {
+            exportToExcel({
+                filename: `Analitika_MaterijalniBilans_${efektivniOd}_${efektivniDo}`,
+                sheetName: 'Materijalni Bilans',
+                title: `Ukupni Materijalni Bilans Fabrike (${periodTekst})`,
+                columns: [
+                    { key: 'stavka', label: 'Stavka Materijalnog Bilansa', width: 290 },
+                    { key: 'vrijednost', label: 'Vrijednost', type: 'number', width: 120 },
+                    { key: 'jm', label: 'Jedinica', width: 70 },
+                ],
+                rows: [
+                    { stavka: 'Ukupan Ulaz Sirovine (Prorezani Trupci)', vrijednost: parseFloat(analitikaUkupno.ulazTrupacaM3.toFixed(3)), jm: 'm³' },
+                    { stavka: 'Ukupno Proizvedeno (Pilana + Dorada)', vrijednost: parseFloat(analitikaUkupno.proizvedenoUkupnoM3.toFixed(3)), jm: 'm³' },
+                    { stavka: 'Efikasnost Fabrike (Yield)', vrijednost: parseFloat(analitikaUkupno.efikasnostFabrike.toFixed(1)), jm: '%' },
+                    { stavka: 'Stvarni Otpad (Piljevina / Okorak / Kalo Dorade)', vrijednost: parseFloat(analitikaUkupno.stvarniOtpadM3.toFixed(3)), jm: 'm³' },
+                    { stavka: 'Kalo od Krojenja Trupaca na Placu', vrijednost: parseFloat(analitikaUkupno.kaloKrojenjaM3.toFixed(3)), jm: 'm³' },
+                ],
+            });
+        } else {
+            exportToExcel({
+                filename: `Analitika_Finansije_${efektivniOd}_${efektivniDo}`,
+                sheetName: 'Finansijski Bilans',
+                title: `Finansijski Bilans Proizvodnje (${periodTekst})`,
+                columns: [
+                    { key: 'stavka', label: 'Stavka Bilansa', width: 280 },
+                    { key: 'iznos', label: 'Iznos (KM)', type: 'number', width: 130 },
+                ],
+                rows: [
+                    { stavka: 'Tržišna Vrijednost Proizvedene Robe', iznos: analitikaFinansije.trzisnaVrijednostKM },
+                    { stavka: 'Trošak Sirovine (Prorezani Trupci)', iznos: -analitikaFinansije.trosakSirovineKM },
+                    { stavka: 'Trošak Blagajne / Prerade', iznos: -analitikaFinansije.izlazBlagajnaKM },
+                    { stavka: 'Udar od Reklamacija (Gubitak)', iznos: -analitikaFinansije.gubitakReklamacijeKM },
+                ],
+                summaryRow: { stavka: 'ČISTI PROFIT', iznos: analitikaFinansije.cistiProfitKM },
+            });
+        }
+    };
+
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova || undefined }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="analitika" saas={saas} hideMasina={true} />
@@ -696,13 +780,29 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                    <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
+                        <button
+                            type="button"
+                            data-testid="analitika-qa-toggle"
+                            onClick={() => setIgnorisiQaTest((v) => !v)}
+                            title="Automatski isključuje QA/testne zapise (QA*, E2E*, TEST-*) radi realne statistike i Yield-a"
+                            className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all flex items-center gap-1.5 ${
+                                ignorisiQaTest
+                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
+                                    : 'bg-theme-panel text-theme-muted border-theme-border hover:text-theme-text'
+                            }`}
+                        >
+                            🧹 {ignorisiQaTest ? `Bez QA testa${brojSkrivenihQa > 0 ? ` (-${brojSkrivenihQa})` : ''}` : 'Uključeni i QA testovi'}
+                        </button>
                         {(tab === 'PROREZ' || tab === 'DORADA') && (
                             <select value={masinaFilter} onChange={e => setMasinaFilter(e.target.value)} className="p-2.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black uppercase outline-none cursor-pointer">
                                 <option value="SVE">Sve Mašine ({tab})</option>
                                 {masineZaDropdown.map(m => <option key={m.id} value={m.naziv}>{m.naziv}</option>)}
                             </select>
                         )}
+                        <button type="button" data-testid="analitika-excel-btn" onClick={izveziExcel} className="px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1.5 shadow-md">
+                            📊 Excel
+                        </button>
                         <button onClick={stampajIzvjestaj} className="px-4 py-2.5 bg-theme-panel hover:bg-white hover:text-black text-theme-text border border-slate-600 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 shadow-md">
                             <Printer size={14} /> 🖨️ Isprintaj PDF
                         </button>

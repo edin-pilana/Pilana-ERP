@@ -7,6 +7,7 @@ import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa } from '../utils/printHelpers';
+import { exportToExcel } from '../utils/exportHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
 export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
@@ -1221,13 +1222,65 @@ export default function LagerPaketaModule({ onExit, user, header, setHeader }) {
                             <input value={pretraga} onChange={e => setPretraga(e.target.value.toUpperCase())} placeholder={glavniTab === 'paketi' ? pod.labelBrza : "Pretraga po ID-u, Šumariji, Otpremnici, Vrsti..."} className="w-full min-w-0 py-4 pl-4 pr-16 bg-theme-panel border border-theme-border rounded-2xl text-theme-text outline-none focus:border-blue-500 font-black uppercase shadow-inner" />
                             <button onClick={() => setIsScanning(true)} className="absolute right-2 top-2 bottom-2 px-3.5 bg-theme-accent rounded-xl text-white font-bold hover:opacity-80 transition-all shadow-lg text-xl">📷</button>
                         </div>
-                        {glavniTab === 'paketi' && (
-                            <div className="flex bg-theme-card p-1 rounded-2xl border border-theme-border shrink-0 overflow-x-auto custom-scrollbar">
-                                {['U PROIZVODNJI', 'NA STANJU', 'OTPREMLJENO'].map(t => (
-                                    <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-white shadow-md' : 'text-slate-500 hover:text-theme-text'}`}>{t}</button>
-                                ))}
-                            </div>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                            {glavniTab === 'paketi' && (
+                                <div className="flex bg-theme-card p-1 rounded-2xl border border-theme-border shrink-0 overflow-x-auto custom-scrollbar">
+                                    {['U PROIZVODNJI', 'NA STANJU', 'OTPREMLJENO'].map(t => (
+                                        <button key={t} onClick={() => setSubTabPaketi(t)} className={`px-4 py-2 shrink-0 rounded-xl text-[9px] font-black uppercase transition-all ${subTabPaketi === t ? 'bg-theme-accent text-white shadow-md' : 'text-slate-500 hover:text-theme-text'}`}>{t}</button>
+                                    ))}
+                                </div>
+                            )}
+                            <button
+                                type="button"
+                                data-testid="lager-excel-btn"
+                                onClick={() => {
+                                    if (glavniTab === 'paketi') {
+                                        const ukupM3 = filtriraniPaketi.reduce((s, p) => s + (parseFloat(p.kolicina_final || 0) || 0), 0);
+                                        exportToExcel({
+                                            filename: `Lager_Paketi_${subTabPaketi}_${new Date().toISOString().slice(0, 10)}`,
+                                            sheetName: `Paketi ${subTabPaketi}`.slice(0, 31),
+                                            title: `Lager Paketa — ${subTabPaketi} (${filtriraniPaketi.length} paketa)`,
+                                            columns: [
+                                                { key: 'paket_id', label: 'Paket ID', width: 130 },
+                                                { key: 'naziv_proizvoda', label: 'Proizvod', width: 200 },
+                                                { key: 'dim', label: 'Dimenzije (cm)', width: 115, format: (_, r) => `${r.debljina || 0}x${r.sirina || 0}x${r.duzina || 0}` },
+                                                { key: 'kolicina_ulaz', label: 'Količina (JM)', width: 110, format: (v, r) => `${v ?? 0} ${r.jm || 'kom'}` },
+                                                { key: 'kolicina_final', label: 'Zapremina (m³)', type: 'number', width: 115, format: (v) => parseFloat(Number(v || 0).toFixed(3)) },
+                                                { key: 'masina', label: 'Mašina', width: 115 },
+                                                { key: 'broj_veze', label: 'Radni Nalog', width: 120 },
+                                                { key: 'otpremnica_id', label: 'Otpremnica', width: 120 },
+                                                { key: 'status', label: 'Status', width: 110 },
+                                            ],
+                                            rows: filtriraniPaketi,
+                                            summaryRow: { paket_id: 'UKUPNO', kolicina_final: parseFloat(ukupM3.toFixed(3)) },
+                                        });
+                                    } else {
+                                        const ukupM3 = filtriraniTrupci.reduce((s, t) => s + (parseFloat(t.kontrolna_zapremina || t.zapremina || 0) || 0), 0);
+                                        exportToExcel({
+                                            filename: `Lager_Trupci_${new Date().toISOString().slice(0, 10)}`,
+                                            sheetName: 'Trupci',
+                                            title: `Lager Trupaca (${filtriraniTrupci.length} kom)`,
+                                            columns: [
+                                                { key: 'id', label: 'ID Trupca', width: 125 },
+                                                { key: 'broj_plocice', label: 'Pločica', width: 95 },
+                                                { key: 'vrsta', label: 'Vrsta', width: 120 },
+                                                { key: 'klasa', label: 'Klasa', width: 95 },
+                                                { key: 'duzina', label: 'Dužina (m)', type: 'number', width: 90 },
+                                                { key: 'promjer', label: 'Promjer (cm)', type: 'number', width: 95 },
+                                                { key: 'zapremina', label: 'Zapremina (m³)', type: 'number', width: 115, format: (v, r) => parseFloat(Number(r.kontrolna_zapremina || v || 0).toFixed(3)) },
+                                                { key: 'otpremnica_broj', label: 'Otpremnica', width: 120 },
+                                                { key: 'status', label: 'Status', width: 100 },
+                                            ],
+                                            rows: filtriraniTrupci,
+                                            summaryRow: { id: 'UKUPNO', zapremina: parseFloat(ukupM3.toFixed(3)) },
+                                        });
+                                    }
+                                }}
+                                className="px-4 py-3 rounded-2xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[10px] font-black uppercase transition-all shrink-0 shadow-md"
+                            >
+                                📊 Excel
+                            </button>
+                        </div>
                     </div>
 
                     {saas.isEditMode && !pod.prikaziFiltere && glavniTab === 'paketi' && (

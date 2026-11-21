@@ -470,6 +470,23 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
 
     useEffect(() => {
         ucitajSveNeisporucenePakete();
+
+        let rtTimer = null;
+        const paketiCh = supabase
+            .channel(`dorada_paketi_live_${Math.random().toString(36).slice(2)}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'paketi' }, () => {
+                if (rtTimer) clearTimeout(rtTimer);
+                rtTimer = setTimeout(() => {
+                    ucitajSveNeisporucenePakete();
+                    ucitajSveZapoocetePakete();
+                }, 350);
+            })
+            .subscribe();
+
+        return () => {
+            if (rtTimer) clearTimeout(rtTimer);
+            supabase.removeChannel(paketiCh);
+        };
     }, [header?.masina]);
 
     useEffect(() => {
