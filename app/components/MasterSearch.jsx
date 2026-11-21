@@ -50,16 +50,19 @@ export default function MasterSearch({
 
     const safeSearch = normalizujZaPretragu(search);
 
-    // Pametno filtriranje: ako je proslijeđen filterFn, on je jedini autoritet.
-    // Inače staro ponašanje (poljaZaPretragu), ali sa normalizacijom dijakritika.
+    // Pametno više-token filtriranje: ako je proslijeđen filterFn, on je jedini autoritet.
+    // Inače svaka riječ (token) iz upita mora postojati u barem jednom polju iz poljaZaPretragu (bez osjetljivosti na č/ć/š/ž/đ).
+    const tokeni = safeSearch ? safeSearch.split(/\s+/).filter(Boolean) : [];
     const filtriranoSve = data.filter(item => {
         if (!safeSearch) return true;
         if (typeof filterFn === 'function') return filterFn(item, safeSearch, search);
-        return poljaZaPretragu.some(polje => {
-            const val = item?.[polje];
-            if (val == null || val === '') return false;
-            return normalizujZaPretragu(val).includes(safeSearch);
-        });
+        const spojeno = poljaZaPretragu
+            .map(polje => item?.[polje])
+            .filter(v => v != null && v !== '')
+            .map(v => normalizujZaPretragu(v))
+            .join(' ');
+        if (!spojeno) return false;
+        return tokeni.every(t => spojeno.includes(t));
     });
 
     const ukupnoPronadjeno = filtriranoSve.length;
@@ -103,9 +106,10 @@ export default function MasterSearch({
     };
 
     return (
-        <div ref={wrapperRef} className="relative font-black w-full flex bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-all shadow-inner min-h-[45px]">
+        <div ref={wrapperRef} data-ds="dropdown-field" className="relative font-black w-full flex bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-all shadow-inner min-h-[45px]">
             <input
                 ref={inputRef}
+                data-ds="dropdown-input"
                 value={search}
                 onFocus={() => setOpen(true)}
                 onClick={() => setOpen(true)}
@@ -126,11 +130,13 @@ export default function MasterSearch({
                 <button type="button" onClick={onScanClick} className="px-5 bg-theme-accent/20 text-theme-accent text-lg hover:bg-theme-accent hover:text-white transition-all border-l border-theme-accent/30 relative z-10 shrink-0">📷</button>
             )}
             {open && (
-                <div className="absolute top-full left-0 z-[9999] w-full mt-2 bg-theme-panel border border-theme-border shadow-2xl rounded-xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+                <div data-ds="dropdown-menu" className="absolute top-full left-0 z-[9999] w-full mt-2 bg-theme-panel border border-theme-border shadow-2xl rounded-xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.length === 0 && <div className="p-4 text-xs text-theme-muted text-center italic">Nema rezultata... Pritisni Enter ili klikni vani, kucani tekst će i dalje filtrirati.</div>}
                     {filtered.map((item, index) => (
                         <div
                             key={item?.id ?? item?.[poljaZaPretragu[0]] ?? index}
+                            data-ds="dropdown-item"
+                            data-ds-selected={index === selectedIndex ? 'true' : 'false'}
                             onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
                             onMouseEnter={() => setSelectedIndex(index)}
                             className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${index === selectedIndex ? 'bg-theme-accent text-white' : 'hover:bg-theme-card text-theme-text'}`}

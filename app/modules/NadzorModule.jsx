@@ -6,9 +6,11 @@ import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import NotificationDetailModal from '../components/NotificationDetailModal';
 import { ocistiTekstDetalja } from '../utils/notificationHelpers';
+import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
 export default function NadzorModule({ user, header, setHeader, onExit }) {
+    const saas = useSaaS('nadzor_modul', {});
     const [logovi, setLogovi] = useState([]);
     const [filter, setFilter] = useState('AKTIVNI'); // 'AKTIVNI' | 'ARHIVA' | 'AUTOTEST'
     const [odabraniLog, setOdabraniLog] = useState(null);
@@ -407,7 +409,7 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in pb-24">
             <PametniDialog {...dialog} />
-            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-slate-500" user={user} hideMasina={true} modulIme="Nadzorni Centar" />
+            <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-slate-500" user={user} hideMasina={true} modulIme="Nadzorni Centar" saas={saas} />
 
             <div className="text-center mb-6">
                 <h2 className="text-slate-500 font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md">

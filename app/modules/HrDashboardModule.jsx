@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
-import { posaljiNotifikaciju } from '../utils/notificationHelpers';
+import { posaljiNotifikaciju, oznacPovezaneNotifikacijeRijesenim } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import { useSaaS } from '../utils/useSaaS';
@@ -258,6 +258,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                         await supabase.from('radnici').update({ [poljeUpdate]: novaKvota, godisnji_ukupno: ukupno, preostalo_godisnjeg: preostalo }).eq('id', radnik.id);
                     }
                 }
+                await oznacPovezaneNotifikacijeRijesenim({
+                    akcije: ['ZAHTJEV_ODMOR'],
+                    tokeni: [String(z.id), z.radnik_ime],
+                });
                 await posaljiNotifikaciju({
                     korisnik: user?.ime_prezime || 'HR Admin',
                     akcija: status === 'ODOBRENO' ? 'ODOBREN_ZAHTJEV_ODMOR' : 'ODBIJEN_ZAHTJEV_ODMOR',

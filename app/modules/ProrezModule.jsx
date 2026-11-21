@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch';
+import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
@@ -200,6 +200,10 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
     const [trupac, setTrupac] = useState(null);
     const [isScanning, setIsScanning] = useState(false);
     const [prorezaniLista, setProrezaniLista] = useState([]);
+    const [dostupniTrupci, setDostupniTrupci] = useState([]);
+    const [trupacDropdownOpen, setTrupacDropdownOpen] = useState(false);
+    const [trupacHighlightIdx, setTrupacHighlightIdx] = useState(0);
+    const trupacSearchRef = useRef(null);
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -331,15 +335,96 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         return () => { supabase.removeChannel(channel); };
     }, [header?.masina, header?.datum]);
 
+    const ucitajDostupneTrupce = async () => {
+        const { data } = await supabase
+            .from('trupci')
+            .select('id, broj_plocice, vrsta, klasa, duzina, promjer, zapremina, kontrolna_zapremina, otpremnica_broj, status, zakljucen_prijem, created_at')
+            .eq('status', 'na_lageru')
+            .order('created_at', { ascending: false })
+            .limit(800);
+
+        const samoDostupni = (data || []).filter((t) => t.zakljucen_prijem !== false);
+        setDostupniTrupci(samoDostupni);
+    };
+
+    useEffect(() => {
+        ucitajDostupneTrupce();
+        const onOut = (e) => {
+            if (trupacSearchRef.current && !trupacSearchRef.current.contains(e.target)) {
+                setTrupacDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onOut);
+        return () => document.removeEventListener('mousedown', onOut);
+    }, []);
+
+    const filtriraniTrupci = useMemo(() => {
+        const q = normalizujZaPretragu(scan);
+        const tokeni = q ? q.split(/\s+/).filter(Boolean) : [];
+        if (tokeni.length === 0) return dostupniTrupci;
+
+        return dostupniTrupci
+            .filter((t) => {
+                const hay = normalizujZaPretragu([
+                    t.id,
+                    t.broj_plocice,
+                    t.vrsta,
+                    t.klasa,
+                    t.otpremnica_broj,
+                    t.duzina ? `${t.duzina}m` : '',
+                    t.promjer ? `${t.promjer}cm` : '',
+                    t.kontrolna_zapremina || t.zapremina,
+                ].filter(Boolean).join(' '));
+                return tokeni.every((tok) => hay.includes(tok));
+            })
+            .sort((a, b) => {
+                const aId = normalizujZaPretragu(a.id);
+                const bId = normalizujZaPretragu(b.id);
+                const aRank = aId === q ? 0 : aId.startsWith(q) ? 1 : 2;
+                const bRank = bId === q ? 0 : bId.startsWith(q) ? 1 : 2;
+                return aRank - bRank;
+            });
+    }, [dostupniTrupci, scan]);
+
+    const prikazaniTrupci = useMemo(() => filtriraniTrupci.slice(0, 60), [filtriraniTrupci]);
+
     const handleScanInput = (val, isEnter = false) => {
         setScan(val);
+        setTrupacDropdownOpen(true);
+        setTrupacHighlightIdx(0);
         if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         if (!val.trim()) return;
-        
         if (isEnter) {
+            setTrupacDropdownOpen(false);
             processTrupacScan(val);
-        } else {
-            scanTimerRef.current = setTimeout(() => processTrupacScan(val), 1000);
+        }
+    };
+
+    const handleScanKeyDown = (e) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setTrupacDropdownOpen(true);
+            setTrupacHighlightIdx((prev) => (prikazaniTrupci.length > 0 ? Math.min(prev + 1, prikazaniTrupci.length - 1) : 0));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setTrupacHighlightIdx((prev) => Math.max(prev - 1, 0));
+        } else if (e.key === 'Escape') {
+            setTrupacDropdownOpen(false);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const clean = String(scan || '').trim();
+            if (!clean) return;
+            const exact = filtriraniTrupci.find((t) => normalizujZaPretragu(t.id) === normalizujZaPretragu(clean) || normalizujZaPretragu(t.broj_plocice) === normalizujZaPretragu(clean));
+            if (exact) {
+                setTrupacDropdownOpen(false);
+                processTrupacScan(exact.id);
+            } else if (trupacDropdownOpen && prikazaniTrupci[trupacHighlightIdx]) {
+                setTrupacDropdownOpen(false);
+                processTrupacScan(prikazaniTrupci[trupacHighlightIdx].id);
+            } else {
+                setTrupacDropdownOpen(false);
+                processTrupacScan(clean);
+            }
         }
     };
 
@@ -468,6 +553,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
             prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: formatDbError(errInsert, 'Prorez'), onCancel: zatvoriDialog });
         } else if (insertedData) {
             setProrezaniLista(prev => prev.map(p => p.id === tempId ? insertedData : p));
+            setDostupniTrupci(prev => prev.filter(t => t.id !== logPayload.trupac_id));
             zapisiU_Log('PROREZ_EVIDENTIRAN', `Izrezan trupac ${logPayload.trupac_id} (${logPayload.zapremina} m³). Brentista: ${brentistaZaSpasiti}`);
         }
     };
@@ -571,7 +657,7 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
             <h2 className="text-red-500 text-center font-black tracking-widest uppercase text-xl md:text-2xl mt-2 mb-6 drop-shadow-md">🪚 PROREZ TRUPACA</h2>
             
-            <div className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-red-500/20 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+            <div data-ds="team-section" className="flex flex-col md:flex-row gap-4 bg-theme-card/60 backdrop-blur-[var(--glass-blur)] p-4 rounded-[2rem] border border-red-500/20 items-center justify-between shadow-lg relative z-[50]" style={{ backgroundColor: saas.ui.boja_kartice }}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full overflow-visible">
                     {(saas.ui.polja_radnici || []).map((polje, index) => (
                         <div key={polje.id} style={{ zIndex: 60 - index }} className={`relative w-full flex flex-col sm:flex-row sm:items-center bg-black/40 rounded-xl border border-slate-800/50 p-3 overflow-visible transition-all ${saas.isEditMode ? 'border-dashed border-amber-500 bg-amber-900/20' : ''}`} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_radnici')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_radnici')} onDragOver={(e) => e.preventDefault()}>
@@ -587,19 +673,69 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
                 <div className="lg:col-span-7 space-y-6">
-                    <div className="bg-theme-card/80 backdrop-blur-md p-8 rounded-[2.5rem] border border-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.1)] relative group overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50"></div>
+                    <div className="bg-theme-card/80 backdrop-blur-md p-8 rounded-[2.5rem] border border-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.1)] relative group overflow-visible z-30" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50 rounded-t-[2.5rem]"></div>
                         <label className="text-[9px] text-theme-muted uppercase block mb-4 font-black tracking-widest text-center" style={{ color: saas.ui.boja_teksta, fontSize: `${saas.ui.velicina_naslova}px` }}>{saas.ui.naslov_skenera}</label>
-                        <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-red-500/50 focus-within:border-red-500'}`}>
-                            <input 
-                                ref={inputRef}
-                                value={scan} 
-                                onChange={e => handleScanInput(e.target.value)} 
-                                onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleScanInput(scan, true); } }} 
-                                className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-xl md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" 
-                                placeholder="ČEKAM SKEN..." 
-                            />
-                            <button onClick={() => setIsScanning(true)} className="shrink-0 px-6 md:px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
+                        <div ref={trupacSearchRef} className="relative mb-8 z-40">
+                            <div data-ds="dropdown-field" className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner transition-all h-20 ${saas.isEditMode ? 'border-amber-500/50' : 'border-red-500/50 focus-within:border-red-500'}`}>
+                                <input 
+                                    ref={inputRef}
+                                    data-ds="dropdown-input"
+                                    value={scan} 
+                                    onFocus={() => setTrupacDropdownOpen(true)}
+                                    onClick={() => setTrupacDropdownOpen(true)}
+                                    onChange={e => handleScanInput(e.target.value)} 
+                                    onKeyDown={handleScanKeyDown} 
+                                    autoComplete="off"
+                                    className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-base md:text-xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-wider" 
+                                    placeholder="SKENIRAJ ILI PRETRAŽI TRUPAC NA LAGERU (ID, PLOČICA, VRSTA)..." 
+                                />
+                                <button type="button" onClick={() => setTrupacDropdownOpen((v) => !v)} title="Prikaži dostupne trupce" className="shrink-0 px-4 bg-theme-card/60 text-theme-muted hover:text-theme-text font-black text-sm border-l border-red-500/25">{trupacDropdownOpen ? '▲' : '▼'}</button>
+                                <button type="button" onClick={() => { setTrupacDropdownOpen(false); setIsScanning(true); }} className="shrink-0 px-6 md:px-8 bg-red-600/30 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all text-3xl border-l border-red-500/50">📷</button>
+                            </div>
+
+                            {trupacDropdownOpen && (
+                                <div data-ds="dropdown-menu" data-testid="prorez-trupci-dropdown" className="absolute left-0 right-0 top-[calc(100%+8px)] z-[300] bg-theme-card border-2 border-red-500/50 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1">
+                                    <div className="px-4 py-2 bg-theme-panel/90 border-b border-theme-border flex items-center justify-between text-[10px] font-black uppercase">
+                                        <span className="text-red-400">🪵 Neprorezani trupci na lageru ({filtriraniTrupci.length})</span>
+                                        <span className="text-theme-muted hidden sm:inline">↑↓ navigacija • Enter / klik</span>
+                                    </div>
+                                    <div className="max-h-72 overflow-y-auto custom-scrollbar divide-y divide-theme-border/60">
+                                        {prikazaniTrupci.length === 0 ? (
+                                            <div className="p-5 text-center text-xs text-theme-muted italic">Nema dostupnih trupaca na lageru za upit „{scan}“.</div>
+                                        ) : (
+                                            prikazaniTrupci.map((t, idx) => {
+                                                const isHl = idx === trupacHighlightIdx;
+                                                const m3 = parseFloat(t.kontrolna_zapremina || t.zapremina || 0);
+                                                return (
+                                                    <div
+                                                        key={t.id}
+                                                        data-ds="dropdown-item"
+                                                        data-ds-selected={isHl ? 'true' : 'false'}
+                                                        onMouseDown={(e) => { e.preventDefault(); setTrupacDropdownOpen(false); processTrupacScan(t.id); }}
+                                                        onMouseEnter={() => setTrupacHighlightIdx(idx)}
+                                                        className={`px-4 py-3 cursor-pointer flex items-center justify-between gap-3 text-left transition-colors ${isHl ? 'bg-red-600/20 border-l-4 border-l-red-500' : 'hover:bg-theme-panel border-l-4 border-l-transparent'}`}
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-sm font-black text-theme-text font-mono">{t.id}</span>
+                                                                {t.broj_plocice && <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30 font-black">Pločica: {t.broj_plocice}</span>}
+                                                                {t.klasa && <span className="text-[9px] px-2 py-0.5 rounded bg-theme-panel text-amber-400 border border-theme-border font-black">{t.klasa}</span>}
+                                                            </div>
+                                                            <div className="text-[11px] text-theme-muted font-bold mt-0.5 truncate">
+                                                                {t.vrsta || 'Trupac'} • {t.duzina || '-'}m × Ø{t.promjer || '-'}cm {t.otpremnica_broj ? `• Otp: ${t.otpremnica_broj}` : ''}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <span className="text-sm font-black text-emerald-400">{m3.toFixed(3)} m³</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {trupac ? (

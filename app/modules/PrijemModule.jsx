@@ -194,8 +194,14 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         redni: useRef(null), duzina: useRef(null), promjer: useRef(null), btn_dodaj: useRef(null)
     };
 
-    const zapisiU_Log = async (akcija, detalji, stari = null, novi = null) => {
-        await supabase.from('sistem_audit_log').insert([{ korisnik: user?.ime_prezime || 'Nepoznat', akcija, detalji, stari_podaci: stari, novi_podaci: novi }]);
+    const zapisiU_Log = async (akcija, detalji) => {
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: user?.ime_prezime || 'Nepoznat',
+            akcija,
+            detalji,
+            nivo_alarma: 'INFO',
+            pregledano: true,
+        }]);
     };
 
     const handleEnter = (e, nextRef) => {

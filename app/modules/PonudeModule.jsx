@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
-import { ocistiTekstDetalja } from '../utils/notificationHelpers';
+import { ocistiTekstDetalja, oznacPovezaneNotifikacijeRijesenim } from '../utils/notificationHelpers';
 import { preracunajKolicinu, preracunajCijenuPoJedinici } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
@@ -704,6 +704,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             ukupno_sa_pdv: parseFloat(novoZaNaplatu.toFixed(2))
         }).eq('id', form.id); 
         await supabase.from('radni_nalozi').update({ modifikovan: false }).eq('id', povezaniRN.id); 
+        await oznacPovezaneNotifikacijeRijesenim({ akcije: ['TRAŽI_ODOBRENJE_PONUDE', 'ALARM_PONUDE'], tokeni: [form.id, povezaniRN.id] });
         setPovezaniRN(null); 
         load();
         prikaziDialog({ 
@@ -727,6 +728,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                 setForm({...form, rn_modifikovan: false}); 
                 await supabase.from('ponude').update({ rn_modifikovan: false }).eq('id', form.id); 
                 await supabase.from('radni_nalozi').update({ stavke_jsonb: stavke, modifikovan: false }).eq('id', povezaniRN.id); 
+                await oznacPovezaneNotifikacijeRijesenim({ akcije: ['TRAŽI_ODOBRENJE_PONUDE', 'ALARM_PONUDE'], tokeni: [form.id, povezaniRN.id] });
                 setPovezaniRN(null); 
                 zatvoriDialog();
                 toast.info("❌ Izmjene su ODBIJENE i Radni Nalog je vraćen na staro!");

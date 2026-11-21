@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from './utils/supabaseClient';
 import { toLocalIso } from './utils/dateHelpers';
 import { ocistiTekstDetalja } from './utils/notificationHelpers';
-import { toast } from 'sonner';
+import { toast, Toaster } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck, Hammer } from 'lucide-react';
 
@@ -84,6 +84,8 @@ export default function Page() {
     const { layout } = useAppStore(); 
     const [loggedUser, setLoggedUser] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
+    const [loginBusy, setLoginBusy] = useState(false);
+    const [loginError, setLoginError] = useState('');
     const [activeModule, setActiveModule] = useState('home');
     
     const [dialog, setDialog] = useState({ isOpen: false });
@@ -407,12 +409,44 @@ export default function Page() {
     
     const handleLogin = async (e) => {
         e.preventDefault();
+        if (loginBusy) return;
         const username = e.target.user.value.trim();
         const password = e.target.pass.value.trim();
-        const { data, error } = await supabase.rpc('provjeri_login', { uneseni_user: username, unesena_sifra: password });
-        if (error) { toast.error("Greška pri komunikaciji sa serverom!"); } 
-        else if (data) { localStorage.setItem('smart_timber_user', JSON.stringify(data)); setLoggedUser(data); toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`); } 
-        else { toast.error("Pogrešan Username ili Password!"); }
+        if (!username || !password) {
+            setLoginError('Unesite korisničko ime i lozinku.');
+            return;
+        }
+        setLoginBusy(true);
+        setLoginError('');
+        try {
+            const lowerUser = username.toLowerCase();
+            let { data, error } = await supabase.rpc('provjeri_login', { uneseni_user: lowerUser, unesena_sifra: password });
+            if (!error && !data && username !== lowerUser) {
+                const retry = await supabase.rpc('provjeri_login', { uneseni_user: username, unesena_sifra: password });
+                data = retry.data;
+                error = retry.error;
+            }
+            if (error) {
+                const msg = "Greška pri komunikaciji sa serverom: " + error.message;
+                setLoginError(msg);
+                toast.error(msg);
+            } else if (data) {
+                localStorage.setItem('smart_timber_user', JSON.stringify(data));
+                setLoggedUser(data);
+                setLoginError('');
+                toast.success(`Dobrodošli nazad, ${data.ime_prezime}!`);
+            } else {
+                const msg = "Pogrešan Username ili Password! Provjerite podatke i pokušajte ponovo.";
+                setLoginError(msg);
+                toast.error(msg);
+            }
+        } catch (err) {
+            const msg = "Greška pri prijavi: " + (err?.message || 'Pokušajte ponovo.');
+            setLoginError(msg);
+            toast.error(msg);
+        } finally {
+            setLoginBusy(false);
+        }
     };
 
     const hasPermission = (modulId) => {
@@ -734,6 +768,7 @@ export default function Page() {
     if (!loggedUser) {
         return (
             <div className="min-h-screen bg-theme-main flex items-center justify-center p-6 font-bold relative z-50">
+                <Toaster richColors closeButton position="top-right" />
                 <form onSubmit={handleLogin} className="w-full max-w-sm bg-theme-card p-10 rounded-[2rem] border border-slate-700 shadow-2xl space-y-6">
                     <div className="text-center mb-8 flex flex-col items-center justify-center gap-3">
                         {loginLogoUrl && (
@@ -745,11 +780,16 @@ export default function Page() {
                             </h1>
                         )}
                     </div>
+                    {loginError && (
+                        <div role="alert" className="p-3.5 rounded-2xl bg-red-950/60 border border-red-500/60 text-red-200 text-xs font-bold text-center">
+                            ⚠️ {loginError}
+                        </div>
+                    )}
                     <div className="space-y-4">
-                        <input name="user" placeholder={uiPostavke.login_user_label || "Username"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
-                        <input name="pass" type="password" placeholder={uiPostavke.login_pass_label || "Password"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
-                        <button type="submit" style={{ backgroundColor: uiPostavke.login_boja_akcenta || '#2563eb' }} className="w-full py-5 text-white font-black rounded-2xl uppercase shadow-lg hover:opacity-90 transition-all">
-                            {uiPostavke.login_btn_tekst || "Pristupi sistemu"}
+                        <input name="user" autoComplete="username" onChange={() => loginError && setLoginError('')} placeholder={uiPostavke.login_user_label || "Username"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
+                        <input name="pass" type="password" autoComplete="current-password" onChange={() => loginError && setLoginError('')} placeholder={uiPostavke.login_pass_label || "Password"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
+                        <button type="submit" disabled={loginBusy} style={{ backgroundColor: uiPostavke.login_boja_akcenta || '#2563eb' }} className="w-full py-5 text-white font-black rounded-2xl uppercase shadow-lg hover:opacity-90 transition-all disabled:opacity-60">
+                            {loginBusy ? '⏳ Provjeravam...' : (uiPostavke.login_btn_tekst || "Pristupi sistemu")}
                         </button>
                     </div>
                 </form>

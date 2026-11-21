@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import NotificationDetailModal from './NotificationDetailModal';
+import DesignStudioDrawer from './DesignStudioDrawer';
 import {
     getNazivModula,
     ocistiTekstDetalja,
@@ -387,8 +388,9 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                     <button onClick={saas.spasiDizajn} className="px-3 py-3 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase hover:bg-emerald-500 transition-all">💾 Spasi</button>
                                 </>
                             ) : (
-                                <button onClick={saas.pokreniEdit} className="px-3 py-3 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-white transition-all">✏️ Uredi Dizajn</button>
+                                <button onClick={saas.pokreniEdit} data-testid="edit-design-btn" className="px-3 py-3 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-white transition-all">🎨 Uredi Dizajn</button>
                             )}
+                            <DesignStudioDrawer saas={saas} user={currentUser} modulNaziv={nazivModula} />
                         </div>
                     )}
 

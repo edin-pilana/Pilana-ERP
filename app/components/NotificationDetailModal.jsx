@@ -15,6 +15,7 @@ import {
     daLiKorisnikMozeOdobriti,
     daLiJeProcitanoZaKorisnika,
     oznaciNotifikacijuProcitanom,
+    oznacPovezaneNotifikacijeRijesenim,
     posaljiNotifikaciju,
 } from '../utils/notificationHelpers';
 
@@ -288,6 +289,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
             }
 
             await oznaciNotifikacijuProcitanom(notification, user);
+            await oznacPovezaneNotifikacijeRijesenim({ akcije: ['ZAHTJEV_ODMOR'], tokeni: [String(z.id), z.radnik_ime] });
 
             // Pošalji ličnu notifikaciju direktno radniku koji je podnio zahtjev!
             await posaljiNotifikaciju({
@@ -326,6 +328,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
             if (error) throw error;
 
             await oznaciNotifikacijuProcitanom(notification, user);
+            await oznacPovezaneNotifikacijeRijesenim({ akcije: ['TRAŽI_ODOBRENJE_PONUDE', 'ALARM_PONUDE'], tokeni: [ponuda.id, rn?.id || parsed.rnId] });
 
             const targetWorker = notification.korisnik && notification.korisnik !== user?.ime_prezime ? notification.korisnik : null;
             await posaljiNotifikaciju({
@@ -333,6 +336,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
                 akcija: 'ODOBRENA_IZMJENA_PONUDE',
                 detalji: `Odobrena izmjena na Radnom Nalogu ${rn?.id || parsed.rnId || ''} za Ponudu ${ponuda.id} (${ponuda.kupac_naziv || ''}).`,
                 nivo_alarma: 'INFO',
+                pregledano: !targetWorker,
                 meta: {
                     modul: 'ponude',
                     moduli: ['ponude', 'radni_nalog'],
@@ -361,7 +365,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
         try {
             const { data: updated, error } = await supabase
                 .from('reklamacije')
-                .update({ status: 'ODBIJENO', odobrio_korisnik: user?.ime_prezime || 'Admin' })
+                .update({ status: 'ODBIJENO', odobrio_korisnik: user?.ime_prezime || 'Admin', procitano: true })
                 .eq('id', rek.id)
                 .eq('status', 'CEKA_ODOBRENJE')
                 .select('id');
@@ -374,18 +378,21 @@ export default function NotificationDetailModal({ notification, user, onClose, o
             }
 
             await oznaciNotifikacijuProcitanom(notification, user);
+            await oznacPovezaneNotifikacijeRijesenim({ akcije: ['NOVA_REKLAMACIJA'], tokeni: [rek.id, rek.paket_id] });
 
+            const imaPrimaoca = rek.snimio_korisnik && rek.snimio_korisnik !== user?.ime_prezime;
             await posaljiNotifikaciju({
                 korisnik: user?.ime_prezime || 'Admin',
                 akcija: 'ODBIJENA_REKLAMACIJA',
                 detalji: `Reklamacija za paket ${rek.paket_id} (${rek.kolicina} m³) je ODBIJENA od strane ${user?.ime_prezime || 'Admina'}.`,
-                nivo_alarma: 'ŽUTO',
+                nivo_alarma: imaPrimaoca ? 'ŽUTO' : 'INFO',
+                pregledano: !imaPrimaoca,
                 meta: {
                     modul: 'reklamacije',
                     entity_type: 'reklamacija',
                     entity_id: rek.paket_id,
                     approval_id: rek.id,
-                    target_user: rek.snimio_korisnik && rek.snimio_korisnik !== user?.ime_prezime ? rek.snimio_korisnik : undefined,
+                    target_user: imaPrimaoca ? rek.snimio_korisnik : undefined,
                 },
             });
 

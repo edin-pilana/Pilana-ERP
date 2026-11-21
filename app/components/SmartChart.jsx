@@ -103,7 +103,17 @@ export const uhvatiSmartChartSvgHtml = (chartId, naslov = '', podnaslov = '') =>
     if (typeof document === 'undefined' || !chartId) return '';
     const host = document.querySelector(`[data-smartchart-id="${chartId}"]`);
     if (!host) return '';
-    const svgEl = host.querySelector('svg.recharts-surface') || host.querySelector('svg');
+    // Odaberi NAJVEĆI stvarni dijagramski SVG (nikad 14x14 ikonicu iz Recharts legende!)
+    const allSvgs = Array.from(host.querySelectorAll('svg.recharts-surface, svg')).filter((el) => {
+        if (el.closest('.recharts-legend-wrapper')) return false;
+        const r = el.getBoundingClientRect();
+        return r.width >= 100 && r.height >= 80;
+    });
+    const svgEl = allSvgs.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return (rb.width * rb.height) - (ra.width * ra.height);
+    })[0];
     if (!svgEl) return '';
 
     const clone = svgEl.cloneNode(true);
@@ -124,6 +134,17 @@ export const uhvatiSmartChartSvgHtml = (chartId, naslov = '', podnaslov = '') =>
         }
     });
 
+    // Izvuci stavke legende ako postoje, da PDF ima čitljivu legendu boja ispod grafikona
+    const legendItems = Array.from(host.querySelectorAll('.recharts-legend-item')).map((li) => {
+        const txt = (li.textContent || '').trim();
+        const iconPath = li.querySelector('path, rect, circle');
+        const col = iconPath?.getAttribute('stroke') || iconPath?.getAttribute('fill') || '#3b82f6';
+        return txt ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;color:#334155;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${escapeHtml(col)};"></span>${escapeHtml(txt)}</span>` : '';
+    }).filter(Boolean);
+    const legendHtml = legendItems.length > 0
+        ? `<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;">${legendItems.join('')}</div>`
+        : '';
+
     const serializer = new XMLSerializer();
     const svgMarkup = serializer.serializeToString(clone);
 
@@ -132,6 +153,7 @@ export const uhvatiSmartChartSvgHtml = (chartId, naslov = '', podnaslov = '') =>
             ${naslov ? `<div style="font-size:11px; font-weight:900; text-transform:uppercase; color:#0f172a; margin-bottom:2px;">${escapeHtml(naslov)}</div>` : ''}
             ${podnaslov ? `<div style="font-size:9px; color:#64748b; font-weight:700; margin-bottom:8px;">${escapeHtml(podnaslov)}</div>` : ''}
             <div style="width:100%; overflow:hidden;">${svgMarkup}</div>
+            ${legendHtml}
         </div>
     `;
 };

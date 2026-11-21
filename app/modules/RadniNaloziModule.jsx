@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import { posaljiNotifikaciju } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch';
+import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDokument } from '../utils/printHelpers';
@@ -24,8 +24,13 @@ function RN_SearchablePonuda({ ponude, value, onChange, onScanClick }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const safeSearch = (search || '').toString().toUpperCase();
-    const filtered = ponude.filter(p => (p.id || '').toUpperCase().includes(safeSearch) || (p.kupac_naziv || '').toUpperCase().includes(safeSearch));
+    const safeSearch = normalizujZaPretragu(search);
+    const tokeni = safeSearch ? safeSearch.split(/\s+/).filter(Boolean) : [];
+    const filtered = ponude.filter(p => {
+        if (tokeni.length === 0) return true;
+        const hay = normalizujZaPretragu(`${p.id || ''} ${p.kupac_naziv || ''} ${p.status || ''}`);
+        return tokeni.every(t => hay.includes(t));
+    });
 
     const handleKeyDown = (e) => {
         if (!open) {
@@ -47,14 +52,14 @@ function RN_SearchablePonuda({ ponude, value, onChange, onScanClick }) {
     };
 
     return (
-        <div ref={wrapperRef} className="relative font-black w-full flex bg-theme-panel border-2 border-blue-500 rounded-xl overflow-visible focus-within:border-blue-400 transition-all shadow-inner min-h-[45px]">
-            <input value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }} onKeyDown={handleKeyDown} placeholder="Upiši broj ponude, ime kupca ili skeniraj..." className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10 min-w-0" />
-            <button onClick={onScanClick} className="px-6 bg-theme-accent text-white text-xl hover:opacity-80 transition-all border-l border-blue-500/50 relative z-10 shrink-0">📷</button>
-            {open && search && (
-                <div className="absolute top-full left-0 z-[100] w-full mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+        <div ref={wrapperRef} data-ds="dropdown-field" className="relative font-black w-full flex bg-theme-panel border-2 border-blue-500 rounded-xl overflow-visible focus-within:border-blue-400 transition-all shadow-inner min-h-[45px]">
+            <input data-ds="dropdown-input" value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }} onKeyDown={handleKeyDown} placeholder="Upiši broj ponude, ime kupca ili skeniraj..." className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10 min-w-0" />
+            <button type="button" onClick={onScanClick} className="px-6 bg-theme-accent text-white text-xl hover:opacity-80 transition-all border-l border-blue-500/50 relative z-10 shrink-0">📷</button>
+            {open && (
+                <div data-ds="dropdown-menu" className="absolute top-full left-0 z-[100] w-full mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.length === 0 && <div className="p-3 text-xs text-theme-muted text-center italic">Pritisnite Enter za direktnu pretragu u bazi...</div>}
-                    {filtered.map((p, idx) => (
-                        <div key={p.id} onMouseDown={(e) => { e.preventDefault(); onChange(p.id, true); setSearch(p.id); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-theme-accent text-white' : 'hover:bg-theme-card text-theme-text'}`}>
+                    {filtered.slice(0, 60).map((p, idx) => (
+                        <div key={p.id} data-ds="dropdown-item" data-ds-selected={idx === selectedIndex ? 'true' : 'false'} onMouseDown={(e) => { e.preventDefault(); onChange(p.id, true); setSearch(p.id); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-theme-accent text-white' : 'hover:bg-theme-card text-theme-text'}`}>
                             <div className="text-sm font-black">{p.id}</div>
                             <div className="text-[10px] text-slate-400 mt-1">{p.kupac_naziv} | Status: <span className={p.status === 'POTVRĐENA' ? 'text-emerald-400' : 'text-amber-400'}>{p.status}</span></div>
                         </div>
@@ -81,7 +86,13 @@ function RN_SearchableProizvod({ katalog, value, onChange }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const filtered = katalog.filter(k => k.sifra.toUpperCase().includes((search || '').toUpperCase()) || k.naziv.toUpperCase().includes((search || '').toUpperCase()));
+    const qProd = normalizujZaPretragu(search);
+    const tokProd = qProd ? qProd.split(/\s+/).filter(Boolean) : [];
+    const filtered = katalog.filter(k => {
+        if (tokProd.length === 0) return true;
+        const hay = normalizujZaPretragu(`${k.sifra || ''} ${k.naziv || ''} ${k.kategorija || ''} ${k.visina || ''}x${k.sirina || ''}x${k.duzina || ''}`);
+        return tokProd.every(t => hay.includes(t));
+    });
 
     const handleKeyDown = (e) => {
         if (!open) { if (e.key === 'ArrowDown') setOpen(true); return; }
@@ -98,12 +109,12 @@ function RN_SearchableProizvod({ katalog, value, onChange }) {
     };
 
     return (
-        <div ref={wrapperRef} className="relative font-black w-full min-h-[45px]">
-            <input value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} onKeyDown={handleKeyDown} placeholder="Pronađi šifru ili naziv..." className="w-full p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-purple-500 shadow-inner" />
+        <div ref={wrapperRef} data-ds="product-section" className="relative font-black w-full min-h-[45px]">
+            <input data-ds="dropdown-field" value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} onKeyDown={handleKeyDown} placeholder="Pronađi šifru, naziv ili dimenziju..." className="w-full p-4 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-purple-500 shadow-inner" />
             {open && filtered.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar">
-                    {filtered.map((k, idx) => (
-                        <div key={k.sifra} onMouseDown={(e) => { e.preventDefault(); const tekstZaPolje = `${k.sifra} | ${k.naziv}`; onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-all ${idx === selectedIndex ? 'bg-purple-600 text-white' : 'hover:bg-theme-card text-theme-text'}`}>
+                <div data-ds="dropdown-menu" className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto custom-scrollbar">
+                    {filtered.slice(0, 80).map((k, idx) => (
+                        <div key={k.sifra} data-ds="dropdown-item" data-ds-selected={idx === selectedIndex ? 'true' : 'false'} onMouseDown={(e) => { e.preventDefault(); const tekstZaPolje = `${k.sifra} | ${k.naziv}`; onChange(k.sifra, tekstZaPolje); setSearch(tekstZaPolje); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-all ${idx === selectedIndex ? 'bg-purple-600 text-white' : 'hover:bg-theme-card text-theme-text'}`}>
                             <div className="text-sm font-black">{k.sifra} <span className="text-purple-300 ml-1">{k.naziv}</span></div>
                             <div className="text-[9px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Dim: {k.visina}x{k.sirina}x{k.duzina} cm</div>
                         </div>

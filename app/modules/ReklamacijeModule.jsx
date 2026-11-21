@@ -1,13 +1,112 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
-import { posaljiNotifikaciju } from '../utils/notificationHelpers';
+import { posaljiNotifikaciju, oznacPovezaneNotifikacijeRijesenim } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
-import { AlertTriangle, CheckCircle2, XCircle, Search, ArrowRight, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, XCircle, Search, ArrowRight, ShieldAlert, ScanLine, Package, ChevronDown, Check, Banknote, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
+
+const TIP_REKLAMACIJE_OPCIJE = [
+    { value: 'POVRAT', label: 'Fizički Povrat Robe', desc: 'Roba se vraća nazad u magacin firme', ikona: '📦' },
+    { value: 'OTPIS_BEZ_POVRATA', label: 'Rasknjižavanje bez povrata', desc: 'Kupac zadržava ili baca robu (otpis)', ikona: '🗑️' },
+];
+
+const RAZLOG_OPCIJE = [
+    { value: 'LOŠA KLASA', label: 'Loša Klasa / Kvalitet', desc: 'Odstupanje kvaliteta drveta od naručene klase', ikona: '🪵' },
+    { value: 'POGREŠNA DIMENZIJA', label: 'Pogrešna Dimenzija', desc: 'Greška pri rezanju ili mjerenju (cm)', ikona: '📏' },
+    { value: 'OSTECENJE TRANSPORT', label: 'Oštećenje u transportu', desc: 'Fizičko oštećenje tokom utovara ili prevoza', ikona: '🚚' },
+    { value: 'OSTALO', label: 'Ostalo', desc: 'Detaljno opisati razlog u napomeni ispod', ikona: '📝' },
+];
+
+const JM_OPCIJE = [
+    { value: 'kom', label: 'kom', desc: 'Komada' },
+    { value: 'm3', label: 'm³', desc: 'Kubni metar' },
+    { value: 'm2', label: 'm²', desc: 'Kvadratni metar' },
+    { value: 'm1', label: 'm1', desc: 'Dužni metar' },
+];
+
+const FIN_NACIN_OPCIJE = [
+    { value: 'AUTO', label: 'Automatski (Po statusu računa)', desc: 'Ako račun nije plaćen umanjuje dug; ako je plaćen vraća iz Blagajne', ikona: '⚡' },
+    { value: 'KOREKCIJA_RACUNA', label: 'Samo knjižno odobrenje (Račun)', desc: 'Umanjuje zaduženje kupca na računu bez isplate iz kase', ikona: '🧾' },
+    { value: 'POVRAT_BLAGAJNA', label: 'Povrat gotovine (Blagajna + Račun)', desc: 'Umanjuje račun i evidentira IZLAZ gotovine u Blagajni', ikona: '💵' },
+];
+
+function ModernDropdown({ value, onChange, options, placeholder = 'Odaberi...', compact = false, buttonClassName = '' }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onOut = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+        document.addEventListener('mousedown', onOut);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onOut);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [open]);
+
+    const selected = options.find((o) => String(o.value).toLowerCase() === String(value || '').toLowerCase()) || options[0];
+
+    return (
+        <div ref={ref} className={`relative ${compact ? 'shrink-0' : 'w-full'}`}>
+            <button
+                type="button"
+                data-ds="dropdown-field"
+                onClick={() => setOpen((v) => !v)}
+                className={`w-full flex items-center justify-between gap-2 bg-theme-panel border-2 rounded-xl text-theme-text font-black transition-all text-left ${
+                    open ? 'border-theme-accent shadow-md' : 'border-theme-border hover:border-slate-500'
+                } ${compact ? 'px-4 py-3 md:py-4 min-w-[116px] text-xs md:text-sm' : 'px-4 py-3.5 min-h-[60px] text-xs'} ${buttonClassName}`}
+            >
+                <div className="min-w-0 flex items-center gap-2">
+                    {selected?.ikona && <span className="text-base shrink-0">{selected.ikona}</span>}
+                    <div className="min-w-0">
+                        <span className="block truncate whitespace-nowrap">{selected?.label || placeholder}</span>
+                        {!compact && selected?.desc && (
+                            <span className="block text-[10px] font-semibold text-theme-muted truncate">{selected.desc}</span>
+                        )}
+                    </div>
+                </div>
+                <ChevronDown size={16} className={`shrink-0 text-theme-muted transition-transform ${open ? 'rotate-180 text-theme-accent' : ''}`} />
+            </button>
+
+            {open && (
+                <div data-ds="dropdown-menu" className={`absolute ${compact ? 'right-0 min-w-[175px]' : 'left-0 right-0'} top-[calc(100%+6px)] bg-theme-card border-2 border-theme-border rounded-2xl shadow-2xl z-[300] overflow-hidden p-1.5 space-y-1 animate-in fade-in slide-in-from-top-1`}>
+                    {options.map((opt) => {
+                        const isSel = String(opt.value).toLowerCase() === String(value || '').toLowerCase();
+                        return (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                data-ds="dropdown-item"
+                                data-ds-selected={isSel ? 'true' : 'false'}
+                                onClick={() => { onChange(opt.value); setOpen(false); }}
+                                className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-2 transition-all ${
+                                    isSel
+                                        ? 'bg-theme-accent/15 border border-theme-accent/50 text-theme-text'
+                                        : 'hover:bg-theme-panel text-theme-text border border-transparent'
+                                }`}
+                            >
+                                <div className="min-w-0 flex items-center gap-2.5">
+                                    {opt.ikona && <span className="text-base shrink-0">{opt.ikona}</span>}
+                                    <div className="min-w-0">
+                                        <span className="block text-xs font-black whitespace-nowrap">{opt.label}</span>
+                                        {opt.desc && <span className="block text-[10px] text-theme-muted font-medium leading-tight">{opt.desc}</span>}
+                                    </div>
+                                </div>
+                                {isSel && <Check size={14} className="text-theme-accent shrink-0" />}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     
@@ -21,25 +120,43 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
     const [scan, setScan] = useState('');
     const [isScanning, setIsScanning] = useState(false);
-    const scanTimerRef = useRef(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const [activeIdx, setActiveIdx] = useState(0);
+    const [isporuceniPaketi, setIsporuceniPaketi] = useState([]);
+    const searchBoxRef = useRef(null);
 
     const [paket, setPaket] = useState(null);
     const [katalog, setKatalog] = useState([]);
     const [trenutniProizvod, setTrenutniProizvod] = useState(null);
     const [imeKupca, setImeKupca] = useState('Nepoznat Kupac');
+    const [povezaniRacun, setPovezaniRacun] = useState(null);
+    const [jedinicnaCijenaM3, setJedinicnaCijenaM3] = useState(0);
 
     const [kolicinaGreska, setKolicinaGreska] = useState(false);
     const [porukaGreske, setPorukaGreske] = useState('');
 
     const [prethodnoReklamiranoM3, setPrethodnoReklamiranoM3] = useState(0);
     const [stvarnoPreostaloM3, setStvarnoPreostaloM3] = useState(0);
+    const [stvarnoPreostaloOrig, setStvarnoPreostaloOrig] = useState(0);
+    const [prethodnoReklamiranoOrig, setPrethodnoReklamiranoOrig] = useState(0);
 
     const [form, setForm] = useState({ 
         kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '',
-        razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true 
+        razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true,
+        fin_nacin: 'AUTO', fin_iznos: ''
     });
 
     const [reklamacijeLista, setReklamacijeLista] = useState([]);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (searchBoxRef.current && !searchBoxRef.current.contains(e.target)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     useEffect(() => {
         loadReklamacije();
@@ -51,21 +168,105 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
     }, []);
 
     const loadReklamacije = async () => {
-        const { data } = await supabase.from('reklamacije').select('*').order('created_at', { ascending: false });
-        if (data) setReklamacijeLista(data);
-        const { data: kat } = await supabase.from('katalog_proizvoda').select('*');
-        if (kat) setKatalog(kat);
+        const [rekRes, katRes, pakRes, otpRes, rnRes] = await Promise.all([
+            supabase.from('reklamacije').select('*').order('created_at', { ascending: false }),
+            supabase.from('katalog_proizvoda').select('*'),
+            supabase.from('paketi')
+                .select('paket_id, naziv_proizvoda, debljina, sirina, duzina, kolicina_final, kolicina_ulaz, jm, otpremnica_id, broj_veze, status, created_at')
+                .not('otpremnica_id', 'is', null)
+                .order('created_at', { ascending: false })
+                .limit(1000),
+            supabase.from('otpremnice').select('id, kupac_naziv, datum'),
+            supabase.from('radni_nalozi').select('id, kupac_naziv'),
+        ]);
+
+        if (rekRes.data) setReklamacijeLista(rekRes.data);
+        if (katRes.data) setKatalog(katRes.data);
+
+        const otpMap = {};
+        (otpRes.data || []).forEach((o) => { otpMap[o.id] = o; });
+        const rnMap = {};
+        (rnRes.data || []).forEach((n) => { rnMap[n.id] = n; });
+
+        const grouped = new Map();
+        (pakRes.data || []).forEach((p) => {
+            if (!p.paket_id) return;
+            if (p.status === 'POVRAT_REKLAMACIJA' || p.status === 'POTROŠENO_U_DORADI') return;
+            const otpIdStr = String(p.otpremnica_id || '').toUpperCase();
+            if (otpIdStr.startsWith('REKLAMACIJA-') || otpIdStr.startsWith('POTROSENO-')) return;
+
+            const existing = grouped.get(p.paket_id);
+            const m3 = parseFloat(p.kolicina_final || 0);
+            const kom = parseFloat(p.kolicina_ulaz || 0);
+            if (existing) {
+                existing.kolicina_final = parseFloat((existing.kolicina_final + m3).toFixed(4));
+                existing.kolicina_ulaz = parseFloat((existing.kolicina_ulaz + kom).toFixed(2));
+            } else {
+                const otpInfo = otpMap[p.otpremnica_id];
+                const rnInfo = rnMap[p.broj_veze];
+                const dim = (p.debljina && p.sirina && p.duzina) ? `${p.debljina}x${p.sirina}x${p.duzina}` : '';
+                grouped.set(p.paket_id, {
+                    paket_id: p.paket_id,
+                    naziv_proizvoda: p.naziv_proizvoda || '',
+                    dimenzije: dim,
+                    kolicina_final: parseFloat(m3.toFixed(4)),
+                    kolicina_ulaz: kom,
+                    jm: p.jm || 'kom',
+                    otpremnica_id: p.otpremnica_id || '',
+                    broj_veze: p.broj_veze || '',
+                    kupac_naziv: otpInfo?.kupac_naziv || rnInfo?.kupac_naziv || 'Nepoznat Kupac',
+                    datum_otpreme: otpInfo?.datum || (p.created_at ? p.created_at.slice(0, 10) : ''),
+                });
+            }
+        });
+        setIsporuceniPaketi(Array.from(grouped.values()));
     };
+
+    const filtriraniIsporuceni = useMemo(() => {
+        const q = scan.trim().toLowerCase();
+        if (!q) return isporuceniPaketi.slice(0, 30);
+        const tokeni = q.split(/\s+/).filter(Boolean);
+        return isporuceniPaketi
+            .filter((p) => {
+                const haystack = `${p.paket_id} ${p.naziv_proizvoda} ${p.kupac_naziv} ${p.otpremnica_id} ${p.broj_veze} ${p.dimenzije} ${p.datum_otpreme}`.toLowerCase();
+                return tokeni.every((t) => haystack.includes(t));
+            })
+            .slice(0, 40);
+    }, [isporuceniPaketi, scan]);
 
     const handleScanInput = (val, isEnter = false) => {
         setScan(val);
-        if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-        if (!val) return;
-        
+        setActiveIdx(0);
         if (isEnter) {
-            processScan(val);
+            setDropdownOpen(false);
+            const cist = val.trim().toUpperCase();
+            if (!cist) return;
+            const exact = isporuceniPaketi.find((p) => p.paket_id.toUpperCase() === cist);
+            if (exact) {
+                processScan(exact.paket_id);
+            } else if (dropdownOpen && filtriraniIsporuceni[activeIdx]) {
+                processScan(filtriraniIsporuceni[activeIdx].paket_id);
+            } else {
+                processScan(val);
+            }
         } else {
-            scanTimerRef.current = setTimeout(() => processScan(val), 2000);
+            setDropdownOpen(true);
+        }
+    };
+
+    const handleSearchKeyDown = (e) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setDropdownOpen(true);
+            setActiveIdx((prev) => (filtriraniIsporuceni.length > 0 ? Math.min(prev + 1, filtriraniIsporuceni.length - 1) : 0));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveIdx((prev) => Math.max(prev - 1, 0));
+        } else if (e.key === 'Escape') {
+            setDropdownOpen(false);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            handleScanInput(scan, true);
         }
     };
 
@@ -105,25 +306,70 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
 
             setPrethodnoReklamiranoM3(ukupnoPotrosenoM3);
             setStvarnoPreostaloM3(preostaliKapacitetM3);
+
+            // Izračunaj preostalo stanje i u ORIGINALNOJ jedinici mjere (kom / m2 / m1 / m3)
+            const origJm = String(paketZaReklamaciju.jm || 'kom').toLowerCase();
+            const vP = parseFloat(paketZaReklamaciju.debljina || kat?.visina || 0);
+            const sP = parseFloat(paketZaReklamaciju.sirina || kat?.sirina || 0);
+            const dP = parseFloat(paketZaReklamaciju.duzina || kat?.duzina || 0);
+            const m3ToOrig = (m3Val) => {
+                if (origJm === 'kom' && vP > 0 && sP > 0 && dP > 0) return m3Val / ((vP / 100) * (sP / 100) * (dP / 100));
+                if (origJm === 'm2' && vP > 0) return m3Val / (vP / 100);
+                if (origJm === 'm1' && vP > 0 && sP > 0) return m3Val / ((vP / 100) * (sP / 100));
+                if (ukupniKapacitetM3 > 0 && ukupnoKom > 0) return (m3Val / ukupniKapacitetM3) * ukupnoKom;
+                return m3Val;
+            };
+            setStvarnoPreostaloOrig(parseFloat(m3ToOrig(preostaliKapacitetM3).toFixed(2)));
+            setPrethodnoReklamiranoOrig(parseFloat(m3ToOrig(ukupnoPotrosenoM3).toFixed(2)));
+
             setPaket(paketZaReklamaciju);
             setKolicinaGreska(false);
 
             let nadjeniKupac = 'Nepoznat Kupac';
+            let pronadjeniRacun = null;
             if (paketZaReklamaciju.otpremnica_id) {
-                const {data: otp} = await supabase.from('otpremnice').select('kupac_naziv').eq('id', paketZaReklamaciju.otpremnica_id).maybeSingle();
-                if (otp) nadjeniKupac = otp.kupac_naziv;
+                const { data: otp } = await supabase.from('otpremnice').select('id, kupac_naziv, broj_veze').eq('id', paketZaReklamaciju.otpremnica_id).maybeSingle();
+                if (otp?.kupac_naziv) nadjeniKupac = otp.kupac_naziv;
+                const { data: racPoOtp } = await supabase.from('racuni').select('*').eq('broj_veze', paketZaReklamaciju.otpremnica_id).neq('status', 'OBRISANO').limit(1);
+                if (racPoOtp && racPoOtp[0]) pronadjeniRacun = racPoOtp[0];
             } 
             if (nadjeniKupac === 'Nepoznat Kupac' && paketZaReklamaciju.broj_veze) {
-                const {data: rn} = await supabase.from('radni_nalozi').select('kupac_naziv').eq('id', paketZaReklamaciju.broj_veze).maybeSingle();
-                if (rn) nadjeniKupac = rn.kupac_naziv;
+                const { data: rn } = await supabase.from('radni_nalozi').select('kupac_naziv').eq('id', paketZaReklamaciju.broj_veze).maybeSingle();
+                if (rn?.kupac_naziv) nadjeniKupac = rn.kupac_naziv;
+            }
+            if (!pronadjeniRacun && paketZaReklamaciju.broj_veze) {
+                const { data: racPoRn } = await supabase.from('racuni').select('*').eq('broj_veze', paketZaReklamaciju.broj_veze).neq('status', 'OBRISANO').limit(1);
+                if (racPoRn && racPoRn[0]) pronadjeniRacun = racPoRn[0];
             }
             setImeKupca(nadjeniKupac);
+            setPovezaniRacun(pronadjeniRacun);
+
+            // Odredi tačnu jediničnu cijenu po m³ (prvo iz povezanog računa, fallback katalog)
+            let cijenaM3 = parseFloat(kat?.cijena || 0);
+            if (pronadjeniRacun && Array.isArray(pronadjeniRacun.stavke_jsonb)) {
+                const st = pronadjeniRacun.stavke_jsonb.find((x) =>
+                    String(x.naziv || '').toLowerCase() === String(paketZaReklamaciju.naziv_proizvoda || '').toLowerCase() ||
+                    (kat?.sifra && x.sifra === kat.sifra)
+                );
+                if (st) {
+                    const kolObr = parseFloat(st.kolicina_obracun || 0);
+                    const ukSt = parseFloat(st.ukupno || 0);
+                    if (kolObr > 0 && ukSt > 0) {
+                        cijenaM3 = ukSt / kolObr;
+                    } else if (parseFloat(st.fiksna_cijena || st.cijena_baza || 0) > 0) {
+                        cijenaM3 = parseFloat(st.fiksna_cijena || st.cijena_baza);
+                    }
+                }
+            }
+            setJedinicnaCijenaM3(parseFloat((cijenaM3 || 0).toFixed(4)));
 
             setForm(f => ({ 
                 ...f, 
                 kolicina_unos: '',
                 jm_unos: paketZaReklamaciju.jm || 'kom',
-                kolicina_obracun: ''
+                kolicina_obracun: '',
+                fin_nacin: 'AUTO',
+                fin_iznos: ''
             }));
             setScan('');
         } else {
@@ -189,8 +435,15 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             setPorukaGreske('');
         }
         
-        setForm(f => ({ ...f, kolicina_obracun: konacniM3 }));
-    }, [form.kolicina_unos, form.jm_unos, trenutniProizvod, paket, stvarnoPreostaloM3]);
+        const imaPdvNaRacunu = povezaniRacun
+            ? parseFloat(povezaniRacun.ukupno_sa_pdv || 0) > parseFloat(povezaniRacun.ukupno_bez_pdv || 0) + 0.01
+            : true;
+        const predlozeniIznos = jedinicnaCijenaM3 > 0
+            ? parseFloat((konacniM3 * jedinicnaCijenaM3 * (imaPdvNaRacunu ? 1.17 : 1)).toFixed(2))
+            : '';
+
+        setForm(f => ({ ...f, kolicina_obracun: konacniM3, fin_iznos: predlozeniIznos !== '' ? String(predlozeniIznos) : f.fin_iznos }));
+    }, [form.kolicina_unos, form.jm_unos, trenutniProizvod, paket, stvarnoPreostaloM3, jedinicnaCijenaM3, povezaniRacun]);
 
     const podnesiReklamaciju = async () => {
         if (!paket) return;
@@ -205,15 +458,21 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         const d = parseFloat(paket.duzina || trenutniProizvod?.duzina || 0);
         const dimTag = (v > 0 && s > 0 && d > 0) ? `[Dim: ${v}x${s}x${d} cm]` : '';
 
+        const valutaRacuna = povezaniRacun?.valuta || 'KM';
+        const finIznosNum = parseFloat(form.fin_iznos || 0);
+        const finTag = !form.nova_isporuka && finIznosNum > 0
+            ? `[FinIznos: ${finIznosNum.toFixed(2)} ${valutaRacuna}] [FinNacin: ${form.fin_nacin || 'AUTO'}]`
+            : '';
+
         const payload = {
-            broj_otpremnice: paket.broj_veze || paket.otpremnica_id || 'NEPOZNATO',
+            broj_otpremnice: paket.otpremnica_id || paket.broj_veze || 'NEPOZNATO',
             kupac_naziv: imeKupca, 
             paket_id: paket.paket_id,
             naziv_proizvoda: paket.naziv_proizvoda,
             kolicina: kolObrNum,
             jm: 'm3',
             razlog: form.razlog,
-            napomena: `[Unos: ${form.kolicina_unos} ${form.jm_unos}] ${dimTag} ${form.napomena}`.trim(),
+            napomena: `[Unos: ${form.kolicina_unos} ${form.jm_unos}] ${dimTag} ${finTag} ${form.napomena}`.trim(),
             tip_reklamacije: form.tip_reklamacije,
             nova_isporuka: form.nova_isporuka,
             snimio_korisnik: user?.ime_prezime || 'Nepoznat'
@@ -238,8 +497,8 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             },
         });
 
-        setPaket(null); setTrenutniProizvod(null);
-        setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true });
+        setPaket(null); setTrenutniProizvod(null); setPovezaniRacun(null); setJedinicnaCijenaM3(0);
+        setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true, fin_nacin: 'AUTO', fin_iznos: '' });
         await loadReklamacije();
         prikaziDialog({ tip: 'uspjeh', naslov: 'Poslano na odobrenje', poruka: "Reklamacija je uspješno kreirana i čeka odobrenje Superadmina.", onCancel: zatvoriDialog });
     };
@@ -256,7 +515,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     // Atomična provjera statusa sprječava duplo odobravanje na dupli klik
                     const { data: claimRek, error: claimErr } = await supabase
                         .from('reklamacije')
-                        .update({ status: 'ODOBRENO', odobrio_korisnik: user?.ime_prezime || 'Admin' })
+                        .update({ status: 'ODOBRENO', procitano: true, odobrio_korisnik: user?.ime_prezime || 'Admin' })
                         .eq('id', rek.id)
                         .eq('status', 'CEKA_ODOBRENJE')
                         .select('id');
@@ -362,10 +621,134 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                         }
                     }
 
+                    // 💰 AUTOMATSKO FINANSIJSKO PORAVNANJE KADA NE REŽEMO ZAMJENSKU ROBU (nova_isporuka === false)
+                    let finPorukaRezime = '';
+                    if (!rek.nova_isporuka) {
+                        const finIznosMatch = (rek.napomena || '').match(/\[FinIznos:\s*([0-9.,]+)\s*(\w+)\]/i);
+                        const finNacinMatch = (rek.napomena || '').match(/\[FinNacin:\s*([A-Z_]+)\]/i);
+                        const finNacin = finNacinMatch ? finNacinMatch[1] : 'AUTO';
+
+                        // Pronađi povezani račun (po otpremnici iz paketa ili iz reklamacije)
+                        let racunRow = null;
+                        const kandidatVeze = Array.from(new Set([orig?.otpremnica_id, rek.broj_otpremnice, orig?.broj_veze].filter((x) => x && x !== 'NEPOZNATO')));
+                        for (const veza of kandidatVeze) {
+                            const { data: rList } = await supabase.from('racuni').select('*').eq('broj_veze', veza).neq('status', 'OBRISANO').limit(1);
+                            if (rList && rList[0]) { racunRow = rList[0]; break; }
+                        }
+
+                        const valutaRac = String(racunRow?.valuta || (finIznosMatch?.[2]) || 'KM').toUpperCase();
+                        const kursKM = (valutaRac === 'EUR' || valutaRac === '€') ? 1.95583 : 1;
+                        const imaPdv = racunRow
+                            ? parseFloat(racunRow.ukupno_sa_pdv || 0) > parseFloat(racunRow.ukupno_bez_pdv || 0) + 0.01
+                            : true;
+
+                        let iznosSaPdvValuta = finIznosMatch ? parseFloat(finIznosMatch[1].replace(',', '.')) : 0;
+                        if (!(iznosSaPdvValuta > 0)) {
+                            let cijenaM3 = parseFloat(kat?.cijena || 0);
+                            if (racunRow && Array.isArray(racunRow.stavke_jsonb)) {
+                                const st = racunRow.stavke_jsonb.find((x) => String(x.naziv || '').toLowerCase() === String(rek.naziv_proizvoda || '').toLowerCase());
+                                if (st && parseFloat(st.kolicina_obracun || 0) > 0 && parseFloat(st.ukupno || 0) > 0) {
+                                    cijenaM3 = parseFloat(st.ukupno) / parseFloat(st.kolicina_obracun);
+                                }
+                            }
+                            if (cijenaM3 > 0) {
+                                iznosSaPdvValuta = parseFloat((rekM3 * cijenaM3 * (imaPdv ? 1.17 : 1)).toFixed(2));
+                            }
+                        }
+
+                        if (iznosSaPdvValuta > 0) {
+                            const iznosBezPdvValuta = parseFloat((imaPdv ? iznosSaPdvValuta / 1.17 : iznosSaPdvValuta).toFixed(2));
+                            let iznosZaBlagajnuKM = 0;
+
+                            // 1. Umanji povezani račun (Knjižno odobrenje)
+                            if (racunRow) {
+                                const stariBezPdv = parseFloat(racunRow.ukupno_bez_pdv || 0);
+                                const stariSaPdv = parseFloat(racunRow.ukupno_sa_pdv || 0);
+                                const noviBezPdv = Math.max(0, parseFloat((stariBezPdv - iznosBezPdvValuta).toFixed(2)));
+                                const noviSaPdv = Math.max(0, parseFloat((stariSaPdv - iznosSaPdvValuta).toFixed(2)));
+                                const knjiznaStavka = {
+                                    id: `knj-rek-${Date.now()}`,
+                                    sifra: 'KNJ-ODOB',
+                                    naziv: `KNJIŽNO ODOBRENJE — REKLAMACIJA (${rek.paket_id})`,
+                                    dimenzije: '',
+                                    kolicina_unos: -rekM3,
+                                    jm_unos: 'm3',
+                                    kolicina_obracun: -rekM3,
+                                    jm_obracun: 'm3',
+                                    cijena_baza: parseFloat((iznosBezPdvValuta / Math.max(0.0001, rekM3)).toFixed(2)),
+                                    rabat_procenat: 0,
+                                    fiksna_cijena: parseFloat((iznosBezPdvValuta / Math.max(0.0001, rekM3)).toFixed(2)).toFixed(2),
+                                    iznos_rabata: 0,
+                                    ukupno: -iznosBezPdvValuta,
+                                };
+
+                                // Provjeri koliko je kupac već uplatio za ovaj račun u blagajni
+                                const { data: uplateRac } = await supabase.from('blagajna').select('iznos, tip, racun_id, opis').eq('tip', 'ULAZ');
+                                const ridUp = String(racunRow.id || '').toUpperCase().trim();
+                                const uplacenoKM = (uplateRac || [])
+                                    .filter((u) => (u.racun_id && String(u.racun_id).toUpperCase().trim() === ridUp) || (u.opis && String(u.opis).toUpperCase().includes(ridUp)))
+                                    .reduce((s, u) => s + parseFloat(u.iznos || 0), 0);
+
+                                const noviSaPdvKM = parseFloat((noviSaPdv * kursKM).toFixed(2));
+                                const racunVecNaplacen = String(racunRow.status || '').toUpperCase() === 'NAPLAĆENO' || uplacenoKM >= noviSaPdvKM - 0.01;
+                                const noviStatusRac = racunVecNaplacen ? 'NAPLAĆENO' : (uplacenoKM > 0.009 ? 'DJELIMIČNO' : racunRow.status);
+
+                                await supabase.from('racuni').update({
+                                    stavke_jsonb: [...(racunRow.stavke_jsonb || []), knjiznaStavka],
+                                    ukupno_bez_pdv: noviBezPdv,
+                                    ukupno_sa_pdv: noviSaPdv,
+                                    status: noviStatusRac,
+                                }).eq('id', racunRow.id);
+
+                                finPorukaRezime += `\n🧾 Račun ${racunRow.id} umanjen (knjižno odobrenje) za ${iznosSaPdvValuta.toFixed(2)} ${valutaRac} (novo stanje: ${noviSaPdv.toFixed(2)} ${valutaRac}).`;
+
+                                // Ako je kupac već platio više od novog iznosa računa (ili je izabran direktan povrat gotovine) -> vrati razliku iz Blagajne!
+                                if (finNacin === 'POVRAT_BLAGAJNA') {
+                                    iznosZaBlagajnuKM = parseFloat((iznosSaPdvValuta * kursKM).toFixed(2));
+                                } else if (finNacin === 'AUTO') {
+                                    if (uplacenoKM > noviSaPdvKM + 0.009) {
+                                        iznosZaBlagajnuKM = parseFloat(Math.min(iznosSaPdvValuta * kursKM, uplacenoKM - noviSaPdvKM).toFixed(2));
+                                    } else if (String(racunRow.status || '').toUpperCase() === 'NAPLAĆENO') {
+                                        iznosZaBlagajnuKM = parseFloat((iznosSaPdvValuta * kursKM).toFixed(2));
+                                    }
+                                }
+                            } else if (finNacin !== 'KOREKCIJA_RACUNA') {
+                                // Nema povezanog računa -> evidentiraj direktan povrat iz Blagajne
+                                iznosZaBlagajnuKM = parseFloat((iznosSaPdvValuta * kursKM).toFixed(2));
+                            }
+
+                            // 2. Evidentiraj povrat gotovine (IZLAZ) u Blagajni ako treba vratiti novac kupcu
+                            if (iznosZaBlagajnuKM >= 0.01) {
+                                const kasaId = `KASA-REK-${Date.now().toString().slice(-6)}`;
+                                const danasIso = new Date().toISOString().split('T')[0];
+                                const { error: kasaErr } = await supabase.from('blagajna').insert([{
+                                    id: kasaId,
+                                    tip: 'IZLAZ',
+                                    kategorija: 'Povrat novca — Reklamacija',
+                                    iznos: iznosZaBlagajnuKM,
+                                    opis: `Povrat novca (${rek.kupac_naziv}) za reklamaciju paketa ${rek.paket_id} (${rekM3.toFixed(3)} m³)${racunRow ? ` • Račun ${racunRow.id}` : ''}`,
+                                    racun_id: racunRow?.id || null,
+                                    datum: danasIso,
+                                    vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
+                                    snimio_korisnik: user?.ime_prezime || 'Admin',
+                                }]);
+                                if (!kasaErr) {
+                                    finPorukaRezime += `\n💵 Blagajna (${kasaId}): evidentiran povrat kupcu -${iznosZaBlagajnuKM.toFixed(2)} KM.`;
+                                }
+                            }
+                        }
+                    }
+
+                    // Automatski označi povezano obavještenje NOVA_REKLAMACIJA kao pročitano!
+                    await oznacPovezaneNotifikacijeRijesenim({
+                        akcije: ['NOVA_REKLAMACIJA'],
+                        tokeni: [rek.id, rek.paket_id],
+                    });
+
                     await posaljiNotifikaciju({
                         korisnik: user?.ime_prezime || 'Admin',
                         akcija: 'ODOBRENA_REKLAMACIJA',
-                        detalji: `Odobrena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rekM3.toFixed(3)} m³).`,
+                        detalji: `Odobrena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rekM3.toFixed(3)} m³).${finPorukaRezime.replace(/\n/g, ' ')}`,
                         nivo_alarma: 'INFO',
                         meta: {
                             modul: 'reklamacije',
@@ -378,7 +761,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     });
 
                     await loadReklamacije();
-                    prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: "Reklamacija je uspješno obrađena! Zalihe i nalozi su ažurirani.", onCancel: zatvoriDialog });
+                    prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: `Reklamacija je uspješno obrađena! Zalihe, nalozi i finansije su ažurirani.${finPorukaRezime}`, onCancel: zatvoriDialog });
                 } catch (error) {
                     prikaziDialog({ tip: 'greska', naslov: 'Sistemska Greška', poruka: formatDbError(error, 'Odobravanje reklamacije'), onCancel: zatvoriDialog });
                 }
@@ -397,6 +780,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             onConfirm: async () => {
                 const { data: updated, error } = await supabase.from('reklamacije').update({ 
                     status: 'ODBIJENO', 
+                    procitano: true,
                     odobrio_korisnik: user?.ime_prezime || 'Admin' 
                 }).eq('id', rek.id).eq('status', 'CEKA_ODOBRENJE').select('id');
                 zatvoriDialog();
@@ -405,18 +789,24 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     toast.warning('Ova reklamacija je već obrađena.');
                     return loadReklamacije();
                 }
+                await oznacPovezaneNotifikacijeRijesenim({
+                    akcije: ['NOVA_REKLAMACIJA'],
+                    tokeni: [rek.id, rek.paket_id],
+                });
+                const imaPrimaocaOdbijene = rek.snimio_korisnik && rek.snimio_korisnik !== (user?.ime_prezime || 'Admin');
                 await posaljiNotifikaciju({
                     korisnik: user?.ime_prezime || 'Admin',
                     akcija: 'ODBIJENA_REKLAMACIJA',
                     detalji: `Odbijena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rek.kolicina} m³).`,
-                    nivo_alarma: 'ŽUTO',
+                    nivo_alarma: imaPrimaocaOdbijene ? 'ŽUTO' : 'INFO',
+                    pregledano: !imaPrimaocaOdbijene,
                     meta: {
                         modul: 'reklamacije',
                         entity_type: 'reklamacija',
                         entity_id: rek.paket_id,
                         paket_id: rek.paket_id,
                         approval_id: rek.id,
-                        target_user: rek.snimio_korisnik && rek.snimio_korisnik !== (user?.ime_prezime || 'Admin') ? rek.snimio_korisnik : undefined,
+                        target_user: imaPrimaocaOdbijene ? rek.snimio_korisnik : undefined,
                     },
                 });
                 toast.info(`Reklamacija za paket ${rek.paket_id} je odbijena.`);
@@ -456,20 +846,151 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-left">
                     <div className="bg-theme-card p-6 md:p-8 rounded-[var(--radius-box)] border-2 border-red-500/50 shadow-[0_0_40px_rgba(239,68,68,0.15)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         
-                        <div className="flex bg-theme-panel border-2 border-red-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 transition-all h-20 mb-6 w-full">
-                            <input value={scan} onChange={e => handleScanInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleScanInput(scan, true) }} className="flex-1 min-w-0 px-6 bg-transparent text-xl md:text-2xl text-center text-red-400 outline-none uppercase placeholder:text-slate-600 font-black tracking-widest" placeholder="SKENIRAJ ID PAKETA..." />
-                            <button onClick={() => { setIsScanning(true); }} className="shrink-0 px-8 bg-red-600/20 text-red-500 font-black hover:bg-red-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-red-500/30"><Search /></button>
+                        <div ref={searchBoxRef} className="relative mb-6 w-full">
+                            <div data-ds="dropdown-field" className="flex bg-theme-panel border-2 border-red-500/40 rounded-2xl overflow-hidden shadow-inner focus-within:border-red-500 transition-all h-20 w-full">
+                                <input
+                                    data-ds="dropdown-input"
+                                    value={scan}
+                                    onFocus={() => setDropdownOpen(true)}
+                                    onChange={(e) => handleScanInput(e.target.value)}
+                                    onKeyDown={handleSearchKeyDown}
+                                    className="flex-1 min-w-0 px-5 sm:px-6 bg-transparent text-base sm:text-xl md:text-2xl text-center text-red-400 outline-none uppercase placeholder:text-slate-600 font-black tracking-wider"
+                                    placeholder="SKENIRAJ ILI PRETRAŽI ISPORUČENI PAKET (ID, KUPAC, PROIZVOD, OTP)..."
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setDropdownOpen((v) => !v)}
+                                    title="Prikaži / sakrij listu isporučenih paketa"
+                                    className="shrink-0 px-4 bg-theme-card/60 text-theme-muted hover:text-theme-text transition-colors flex items-center justify-center border-l border-red-500/20"
+                                >
+                                    <ChevronDown className={`transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} size={20} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setDropdownOpen(false); setIsScanning(true); }}
+                                    title="Skeniraj kamerom (QR / Barkod)"
+                                    className="shrink-0 px-6 sm:px-8 bg-red-600/20 text-red-500 font-black hover:bg-red-500 hover:text-white transition-colors text-2xl flex items-center justify-center shadow-lg border-l border-red-500/30"
+                                >
+                                    <ScanLine />
+                                </button>
+                            </div>
+
+                            {dropdownOpen && (
+                                <div
+                                    data-ds="dropdown-menu"
+                                    data-testid="reklamacije-paketi-dropdown"
+                                    className="absolute left-0 right-0 top-[calc(100%+8px)] bg-theme-card border-2 border-red-500/50 rounded-2xl shadow-2xl z-[200] overflow-hidden animate-in fade-in slide-in-from-top-1"
+                                >
+                                    <div className="px-4 py-2.5 bg-theme-panel/80 border-b border-theme-border flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider">
+                                        <span className="text-red-400 flex items-center gap-1.5">
+                                            <Search size={12} /> Isporučeni paketi ({filtriraniIsporuceni.length} / {isporuceniPaketi.length})
+                                        </span>
+                                        <span className="text-theme-muted hidden sm:inline">↑↓ navigacija • Enter ili klik za odabir</span>
+                                    </div>
+
+                                    <div className="max-h-80 overflow-y-auto custom-scrollbar divide-y divide-theme-border/60">
+                                        {filtriraniIsporuceni.length === 0 ? (
+                                            <div className="p-6 text-center text-xs text-theme-muted font-bold">
+                                                Nema isporučenih paketa koji odgovaraju pretrazi "{scan}".
+                                                {scan.trim() && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setDropdownOpen(false); processScan(scan); }}
+                                                        className="block mx-auto mt-3 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-[10px] font-black uppercase"
+                                                    >
+                                                        Traži direktno ID "{scan.toUpperCase()}" u bazi
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            filtriraniIsporuceni.map((item, idx) => (
+                                                <button
+                                                    key={item.paket_id}
+                                                    type="button"
+                                                    data-ds="dropdown-item"
+                                                    data-ds-selected={idx === activeIdx ? 'true' : 'false'}
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        setDropdownOpen(false);
+                                                        processScan(item.paket_id);
+                                                    }}
+                                                    onMouseEnter={() => setActiveIdx(idx)}
+                                                    className={`w-full text-left px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-colors ${
+                                                        idx === activeIdx ? 'bg-red-600/15 border-l-4 border-l-red-500' : 'hover:bg-theme-panel'
+                                                    }`}
+                                                >
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="font-black text-sm text-red-400 tracking-wide flex items-center gap-1.5">
+                                                                <Package size={14} className="shrink-0" /> {item.paket_id}
+                                                            </span>
+                                                            <span className="text-[10px] font-black uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-lg truncate max-w-[200px]">
+                                                                {item.kupac_naziv}
+                                                            </span>
+                                                            {item.otpremnica_id && (
+                                                                <span className="text-[9px] font-mono font-bold bg-theme-panel text-theme-muted border border-theme-border px-2 py-0.5 rounded-lg">
+                                                                    {item.otpremnica_id}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-theme-text font-bold mt-1 truncate">
+                                                            {item.naziv_proizvoda}
+                                                            {item.dimenzije && <span className="text-emerald-400 font-mono ml-2">({item.dimenzije} cm)</span>}
+                                                            {item.broj_veze && <span className="text-theme-muted ml-2">• RN: {item.broj_veze}</span>}
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-left sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between gap-1">
+                                                        <span className="text-sm font-black text-emerald-400">{item.kolicina_final.toFixed(3)} m³</span>
+                                                        <span className="text-[10px] text-theme-muted font-bold">
+                                                            {item.kolicina_ulaz} {item.jm}{item.datum_otpreme ? ` • ${item.datum_otpreme}` : ''}
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {paket && (
                             <div className="bg-black/40 p-6 rounded-2xl border border-red-500/30 shadow-inner mt-6 animate-in zoom-in-95">
                                 <div className="flex flex-col sm:flex-row justify-between items-start gap-3 border-b border-theme-border pb-4 mb-6">
-                                    <div><span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">Fokusirani Paket</span><h3 className="text-2xl text-theme-text font-black drop-shadow-md">{paket.paket_id}</h3>
-                                    <div className="mt-2"><span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">KUPAC: {imeKupca}</span></div></div>
-                                    <div className="text-right bg-red-950/40 border border-red-500/40 p-3 rounded-xl">
+                                    <div>
+                                        <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">Fokusirani Paket</span>
+                                        <h3 className="text-2xl text-theme-text font-black drop-shadow-md">{paket.paket_id}</h3>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">KUPAC: {imeKupca}</span>
+                                            <span className="text-[10px] font-black text-blue-400 bg-blue-500/10 border border-blue-500/30 px-3 py-1 rounded-lg">
+                                                STANJE PAKETA: {Number(paket.kolicina_ulaz || 0).toLocaleString('bs-BA', { maximumFractionDigits: 2 })} {paket.jm || 'kom'} • {Number(paket.kolicina_final || 0).toFixed(3)} m³
+                                            </span>
+                                            {povezaniRacun && (
+                                                <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-lg">
+                                                    🧾 RAČUN: {povezaniRacun.id} ({povezaniRacun.status})
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="text-right bg-red-950/40 border border-red-500/40 p-3.5 rounded-xl shrink-0">
                                         <span className="text-[9px] text-red-400 uppercase font-black tracking-widest block mb-1">Maksimalno preostalo</span>
-                                        <h3 className="text-2xl text-red-400 font-black drop-shadow-md">{stvarnoPreostaloM3.toFixed(3)} <span className="text-xs">m³</span></h3>
-                                        {prethodnoReklamiranoM3 > 0 && <span className="text-[8px] font-black uppercase text-pink-400 block mt-1">Već reklamirano: {prethodnoReklamiranoM3.toFixed(3)} m³</span>}
+                                        <div className="flex items-baseline justify-end gap-2 flex-wrap">
+                                            {String(paket.jm || 'kom').toLowerCase() !== 'm3' && (
+                                                <>
+                                                    <h3 className="text-2xl text-amber-400 font-black drop-shadow-md">
+                                                        {stvarnoPreostaloOrig.toLocaleString('bs-BA', { maximumFractionDigits: 2 })} <span className="text-xs uppercase">{paket.jm || 'kom'}</span>
+                                                    </h3>
+                                                    <span className="text-slate-500 font-black">/</span>
+                                                </>
+                                            )}
+                                            <h3 className="text-2xl text-red-400 font-black drop-shadow-md">
+                                                {stvarnoPreostaloM3.toFixed(3)} <span className="text-xs">m³</span>
+                                            </h3>
+                                        </div>
+                                        {prethodnoReklamiranoM3 > 0 && (
+                                            <span className="text-[9px] font-black uppercase text-pink-400 block mt-1">
+                                                Već reklamirano: {String(paket.jm || 'kom').toLowerCase() !== 'm3' ? `${prethodnoReklamiranoOrig} ${paket.jm || 'kom'} (` : ''}{prethodnoReklamiranoM3.toFixed(3)} m³{String(paket.jm || 'kom').toLowerCase() !== 'm3' ? ')' : ''}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-6">
@@ -485,15 +1006,19 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                                     <div className="bg-theme-panel p-4 rounded-xl border border-theme-border shadow-inner flex flex-col justify-between min-w-0">
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">1. Količina za reklamaciju (UNOS)</label>
-                                        <div className="flex gap-2 w-full min-w-0">
+                                        <div className="flex gap-2 w-full min-w-0 items-stretch">
                                             <input type="number" value={form.kolicina_unos} onChange={e => setForm({...form, kolicina_unos: e.target.value})} className={`flex-1 min-w-0 p-3 md:p-4 bg-theme-card rounded-xl text-lg md:text-xl font-black text-center outline-none border-2 ${kolicinaGreska ? 'border-red-600 text-red-500 bg-red-950/20' : 'border-theme-border text-theme-text focus:border-red-400'}`} placeholder="0" />
-                                            <select value={form.jm_unos} onChange={e => setForm({...form, jm_unos: e.target.value})} className="w-24 shrink-0 p-3 md:p-4 bg-theme-card border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer uppercase text-xs md:text-sm">
-                                                <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
-                                            </select>
+                                            <ModernDropdown
+                                                compact={true}
+                                                value={form.jm_unos}
+                                                onChange={(val) => setForm({ ...form, jm_unos: val })}
+                                                options={JM_OPCIJE}
+                                                buttonClassName="bg-theme-card h-full uppercase"
+                                            />
                                         </div>
                                     </div>
                                     <div className="bg-theme-panel p-4 rounded-xl border border-emerald-500/30 shadow-inner relative overflow-hidden min-w-0">
-                                        <label className="text-[9px] md:text-[10px] text-emerald-500 uppercase tracking-widest block mb-2 font-black">2. Preračunato u Kubike (m³)</label>
+                                        <label className="text-[9px] md:text-[10px] text-emerald-500 uppercase tracking-widest block mb-2 font-black">2. Preračunato u Kubike (Default m³)</label>
                                         <div className="relative w-full min-w-0">
                                             <input type="number" value={form.kolicina_obracun} readOnly className={`w-full min-w-0 p-3 md:p-4 bg-emerald-900/10 border-2 rounded-xl text-center text-lg md:text-xl font-black outline-none cursor-not-allowed shadow-inner ${kolicinaGreska ? 'border-red-600 text-red-500' : 'border-emerald-500/30 text-emerald-400'}`} />
                                             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-600 font-black text-xs">m³</span>
@@ -510,30 +1035,34 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                     <div>
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Tip Reklamacije</label>
-                                        <select value={form.tip_reklamacije} onChange={e => setForm({...form, tip_reklamacije: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer">
-                                            <option value="POVRAT">Fizički Povrat Robe (Vraća se u firmu)</option>
-                                            <option value="OTPIS_BEZ_POVRATA">Rasknjižavanje bez povrata (Kupac zadržava/baca)</option>
-                                        </select>
+                                        <ModernDropdown
+                                            value={form.tip_reklamacije}
+                                            onChange={(val) => setForm({ ...form, tip_reklamacije: val })}
+                                            options={TIP_REKLAMACIJE_OPCIJE}
+                                        />
                                     </div>
                                     <div>
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Razlog (Kategorija)</label>
-                                        <select value={form.razlog} onChange={e => setForm({...form, razlog: e.target.value})} className="w-full p-4 h-[60px] bg-theme-panel border border-theme-border rounded-xl text-theme-text font-black outline-none cursor-pointer">
-                                            <option value="LOŠA KLASA">Loša Klasa / Kvalitet</option>
-                                            <option value="POGREŠNA DIMENZIJA">Pogrešna Dimenzija</option>
-                                            <option value="OSTECENJE TRANSPORT">Oštećenje u transportu</option>
-                                            <option value="OSTALO">Ostalo (Upiši u napomenu)</option>
-                                        </select>
+                                        <ModernDropdown
+                                            value={form.razlog}
+                                            onChange={(val) => setForm({ ...form, razlog: val })}
+                                            options={RAZLOG_OPCIJE}
+                                        />
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="text-[10px] text-slate-400 uppercase tracking-widest block mb-2 font-black">Detaljna napomena</label>
-                                        <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} className="w-full p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text font-bold outline-none focus:border-red-400" placeholder="Opiši problem..." />
+                                        <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} className="w-full p-4 bg-theme-panel border-2 border-theme-border rounded-xl text-theme-text font-bold outline-none focus:border-red-400" placeholder="Opiši problem..." />
                                     </div>
                                 </div>
 
                                 <div className="bg-blue-900/20 border border-blue-500/30 p-4 rounded-xl mb-6 flex items-center justify-between gap-4">
                                     <div>
                                         <p className="text-[10px] text-blue-400 uppercase font-black tracking-widest">PONOVNA IZRADA (ZAMJENA)</p>
-                                        <p className="text-xs text-slate-400 mt-1">Sistem će ovu količinu automatski dodati nazad na Radni nalog kako bi se proizvela nova roba za kupca.</p>
+                                        <p className="text-xs text-slate-400 mt-1">
+                                            {form.nova_isporuka
+                                                ? 'Sistem će ovu količinu automatski dodati nazad na Radni nalog kako bi se proizvela nova roba za kupca.'
+                                                : 'Zamjenska roba SE NE REŽE — pri odobrenju sistem automatski vrši finansijsko poravnanje (umanjuje račun / vraća razliku iz Blagajne)!'}
+                                        </p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
                                         <input type="checkbox" checked={form.nova_isporuka} onChange={e => setForm({...form, nova_isporuka: e.target.checked})} className="sr-only peer" />
@@ -541,8 +1070,62 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                     </label>
                                 </div>
 
+                                {/* 💰 FINANSIJSKO PORAVNANJE KADA NE REŽEMO ZAMJENSKU ROBU */}
+                                {!form.nova_isporuka && (
+                                    <div className="bg-emerald-950/25 border-2 border-emerald-500/40 p-5 rounded-2xl mb-6 space-y-4 animate-in fade-in">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/20 pb-3">
+                                            <span className="text-xs font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+                                                <Banknote size={16} /> Finansijsko Poravnanje (Knjižno Odobrenje / Povrat Novca)
+                                            </span>
+                                            {povezaniRacun ? (
+                                                <span className="text-[10px] font-black uppercase bg-theme-card border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded-lg flex items-center gap-1.5">
+                                                    <Receipt size={12} /> {povezaniRacun.id} • {povezaniRacun.status} ({povezaniRacun.ukupno_sa_pdv} {povezaniRacun.valuta || 'KM'})
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-black uppercase bg-amber-500/15 border border-amber-500/30 text-amber-300 px-3 py-1 rounded-lg">
+                                                    Nema povezanog računa — ide direktno kroz Blagajnu
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[10px] text-emerald-400 uppercase tracking-widest block mb-2 font-black">
+                                                    Iznos za poravnanje / povrat ({povezaniRacun?.valuta || 'KM'} sa PDV)
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        value={form.fin_iznos}
+                                                        onChange={(e) => setForm({ ...form, fin_iznos: e.target.value })}
+                                                        placeholder="0.00"
+                                                        className="w-full p-4 pr-14 bg-theme-panel border-2 border-emerald-500/40 rounded-xl text-emerald-400 font-black text-lg outline-none focus:border-emerald-400"
+                                                    />
+                                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-500">
+                                                        {povezaniRacun?.valuta || 'KM'}
+                                                    </span>
+                                                </div>
+                                                {jedinicnaCijenaM3 > 0 && (
+                                                    <p className="text-[10px] text-theme-muted font-bold mt-1">
+                                                        Baza cijene: {jedinicnaCijenaM3.toFixed(2)} {povezaniRacun?.valuta || 'KM'}/m³ (možete ručno korigovati dogovoreni iznos)
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-emerald-400 uppercase tracking-widest block mb-2 font-black">Način knjiženja pri odobrenju</label>
+                                                <ModernDropdown
+                                                    value={form.fin_nacin}
+                                                    onChange={(val) => setForm({ ...form, fin_nacin: val })}
+                                                    options={FIN_NACIN_OPCIJE}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex flex-col sm:flex-row gap-4">
-                                    <button onClick={() => { setPaket(null); setTrenutniProizvod(null); setScan(''); setKolicinaGreska(false); setPorukaGreske(''); setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true }); }} className="flex-1 py-4 bg-theme-panel text-slate-400 font-black rounded-xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
+                                    <button onClick={() => { setPaket(null); setTrenutniProizvod(null); setPovezaniRacun(null); setJedinicnaCijenaM3(0); setScan(''); setKolicinaGreska(false); setPorukaGreske(''); setForm({ kolicina_unos: '', jm_unos: 'kom', kolicina_obracun: '', razlog: 'LOŠA KLASA', napomena: '', tip_reklamacije: 'POVRAT', nova_isporuka: true, fin_nacin: 'AUTO', fin_iznos: '' }); }} className="flex-1 py-4 bg-theme-panel text-slate-400 font-black rounded-xl uppercase hover:bg-slate-800 transition-all border border-theme-border text-xs tracking-widest">✕ ODUSTANI</button>
                                     <button onClick={podnesiReklamaciju} disabled={kolicinaGreska} className={`flex-[2] py-4 text-white font-black rounded-xl uppercase tracking-widest transition-all text-xs border ${kolicinaGreska ? 'bg-slate-700 border-slate-600 opacity-40 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.3)] hover:scale-[1.02]'}`}>📤 PODNESI ZAHTJEV ZA ODOBRENJE</button>
                                 </div>
                             </div>

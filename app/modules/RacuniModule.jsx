@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch';
+import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
@@ -26,8 +26,13 @@ function Racuni_SearchableOtpremnica({ otpremnice, value, onChange, onScanClick 
         return () => { document.removeEventListener("mousedown", handleClickOutside); document.removeEventListener("touchstart", handleClickOutside); };
     }, []);
 
-    const safeSearch = (search || '').toString().toUpperCase();
-    const filtered = otpremnice.filter(o => (o.id || '').toUpperCase().includes(safeSearch) || (o.kupac_naziv || '').toUpperCase().includes(safeSearch));
+    const safeSearch = normalizujZaPretragu(search);
+    const tokeni = safeSearch ? safeSearch.split(/\s+/).filter(Boolean) : [];
+    const filtered = otpremnice.filter(o => {
+        if (tokeni.length === 0) return true;
+        const hay = normalizujZaPretragu(`${o.id || ''} ${o.kupac_naziv || ''} ${o.datum || ''} ${o.broj_veze || ''}`);
+        return tokeni.every(t => hay.includes(t));
+    });
 
     const handleKeyDown = (e) => {
         if (!open) { 
@@ -45,14 +50,14 @@ function Racuni_SearchableOtpremnica({ otpremnice, value, onChange, onScanClick 
     };
 
     return (
-        <div ref={wrapperRef} className="relative font-black w-full flex bg-theme-panel border-2 border-emerald-500 rounded-xl overflow-visible focus-within:border-emerald-400 transition-all shadow-inner min-h-[45px]">
-            <input value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }} onKeyDown={handleKeyDown} placeholder="Skeniraj otpremnicu ili upiši broj/kupca..." className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10 min-w-0" />
-            <button onClick={onScanClick} className="px-6 bg-emerald-600 text-white text-xl hover:bg-emerald-500 transition-all border-l border-emerald-500/50 relative z-10 shrink-0">📷</button>
-            {open && search && (
-                <div className="absolute top-full left-0 z-[5000] w-full mt-2 bg-theme-card border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+        <div ref={wrapperRef} data-ds="dropdown-field" className="relative font-black w-full flex bg-theme-panel border-2 border-emerald-500 rounded-xl overflow-visible focus-within:border-emerald-400 transition-all shadow-inner min-h-[45px]">
+            <input data-ds="dropdown-input" value={search} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }} onKeyDown={handleKeyDown} placeholder="Skeniraj otpremnicu ili upiši broj/kupca..." className="flex-1 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10 min-w-0" />
+            <button type="button" onClick={onScanClick} className="px-6 bg-emerald-600 text-white text-xl hover:bg-emerald-500 transition-all border-l border-emerald-500/50 relative z-10 shrink-0">📷</button>
+            {open && (
+                <div data-ds="dropdown-menu" className="absolute top-full left-0 z-[5000] w-full mt-2 bg-theme-card border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.length === 0 && <div className="p-3 text-xs text-slate-500 text-center italic">Nema rezultata...</div>}
-                    {filtered.map((o, idx) => (
-                        <div key={o.id} onMouseDown={(e) => { e.preventDefault(); onChange(o.id, true); setSearch(o.id); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-emerald-600 text-white' : 'hover:bg-theme-panel text-theme-text'}`}>
+                    {filtered.slice(0, 60).map((o, idx) => (
+                        <div key={o.id} data-ds="dropdown-item" data-ds-selected={idx === selectedIndex ? 'true' : 'false'} onMouseDown={(e) => { e.preventDefault(); onChange(o.id, true); setSearch(o.id); setOpen(false); }} onMouseEnter={() => setSelectedIndex(idx)} className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-emerald-600 text-white' : 'hover:bg-theme-panel text-theme-text'}`}>
                             <div className="text-sm font-black">{o.id}</div>
                             <div className="text-[10px] text-slate-400 mt-1">{o.kupac_naziv} | Datum: {o.datum}</div>
                         </div>

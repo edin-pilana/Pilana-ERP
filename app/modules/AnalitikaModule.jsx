@@ -524,20 +524,27 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             }
         });
 
-        // Trošak blagajne (IZLAZ u periodu)
+        // Trošak blagajne (IZLAZ u periodu — izuzima povrat po reklamaciji da se ne bi duplo oduzeo jer je u stavci 3)
         const izlazBlagajnaKM = blagajnaBaza
-            .filter(b => b.tip === 'IZLAZ' && uOpseguDatuma(b.datum, b.created_at))
+            .filter(b => b.tip === 'IZLAZ' && b.kategorija !== 'Povrat novca — Reklamacija' && uOpseguDatuma(b.datum, b.created_at))
             .reduce((s, b) => s + parseFloat(b.iznos || 0), 0);
 
         const ukupniTrosakKM = parseFloat((trosakSirovineKM + izlazBlagajnaKM).toFixed(2));
 
-        // Udar od odobrenih reklamacija
+        // Udar od odobrenih reklamacija (koristi tačan dogovoreni FinIznos ako postoji, inače katalošku cijenu)
         const reklamacijeUPeriodu = reklamacijeBaza.filter(r => r.status === 'ODOBRENO' && uOpseguDatuma(null, r.created_at));
         let gubitakReklamacijeKM = 0;
         reklamacijeUPeriodu.forEach(r => {
-            const kat = katalogBaza.find(k => k.naziv === r.naziv_proizvoda || k.sifra === r.naziv_proizvoda);
-            const cijena = parseFloat(kat?.cijena || 600);
-            gubitakReklamacijeKM += (parseFloat(r.kolicina || 0) * cijena);
+            const finMatch = (r.napomena || '').match(/\[FinIznos:\s*([0-9.,]+)\s*(\w+)\]/i);
+            if (finMatch) {
+                const val = parseFloat(finMatch[1].replace(',', '.')) || 0;
+                const valuta = String(finMatch[2] || 'KM').toUpperCase();
+                gubitakReklamacijeKM += (valuta === 'EUR' || valuta === '€') ? val * 1.95583 : val;
+            } else {
+                const kat = katalogBaza.find(k => k.naziv === r.naziv_proizvoda || k.sifra === r.naziv_proizvoda);
+                const cijena = parseFloat(kat?.cijena || 600);
+                gubitakReklamacijeKM += (parseFloat(r.kolicina || 0) * cijena);
+            }
         });
 
         const tvZaokruzeno = parseFloat(trzisnaVrijednostKM.toFixed(2));

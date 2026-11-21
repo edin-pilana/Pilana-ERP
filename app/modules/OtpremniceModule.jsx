@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import { preracunajKolicinu } from '../utils/mjereHelpers';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch';
+import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
@@ -34,11 +34,13 @@ function OTP_SearchableNalog({ nalozi, ponude, value, onChange, onScanClick }) {
         return [...rnList, ...ponList];
     }, [nalozi, ponude]);
 
-    const q = (search || '').toString().toUpperCase();
-    const filtered = kombinovanaLista.filter(item =>
-        (item.id || '').toUpperCase().includes(q) ||
-        (item.kupac_naziv || '').toUpperCase().includes(q)
-    );
+    const q = normalizujZaPretragu(search);
+    const tokeni = q ? q.split(/\s+/).filter(Boolean) : [];
+    const filtered = kombinovanaLista.filter(item => {
+        if (tokeni.length === 0) return true;
+        const hay = normalizujZaPretragu(`${item.id || ''} ${item.kupac_naziv || ''} ${item.status || ''} ${item.tip || ''}`);
+        return tokeni.every(t => hay.includes(t));
+    });
 
     const handleKeyDown = (e) => {
         if (!open) {
@@ -69,23 +71,26 @@ function OTP_SearchableNalog({ nalozi, ponude, value, onChange, onScanClick }) {
     };
 
     return (
-        <div ref={wrapperRef} className="relative font-black w-full flex bg-theme-panel border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner min-h-[45px]">
+        <div ref={wrapperRef} data-ds="dropdown-field" className="relative font-black w-full flex bg-theme-panel border-2 border-orange-500 rounded-xl overflow-visible focus-within:border-orange-400 transition-all shadow-inner min-h-[45px]">
             <input
+                data-ds="dropdown-input"
                 value={search}
                 onFocus={() => setOpen(true)}
                 onClick={() => setOpen(true)}
                 onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value, false); }}
                 onKeyDown={handleKeyDown}
-                placeholder="Skeniraj ili upiši broj Radnog Naloga / Ponude..."
+                placeholder="Skeniraj ili upiši broj Radnog Naloga / Ponude / Kupca..."
                 className="flex-1 min-w-0 p-4 bg-transparent text-sm text-theme-text outline-none uppercase font-black tracking-widest relative z-10"
             />
-            <button onClick={onScanClick} className="shrink-0 px-6 bg-orange-600 text-white text-xl hover:bg-orange-500 transition-all border-l border-orange-500/50 relative z-10">📷</button>
-            {open && search && (
-                <div className="absolute top-full left-0 z-[100] w-full mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+            <button type="button" onClick={onScanClick} className="shrink-0 px-6 bg-orange-600 text-white text-xl hover:bg-orange-500 transition-all border-l border-orange-500/50 relative z-10">📷</button>
+            {open && (
+                <div data-ds="dropdown-menu" className="absolute top-full left-0 z-[100] w-full mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.length === 0 && <div className="p-3 text-xs text-slate-500 text-center italic">Nema rezultata...</div>}
-                    {filtered.map((item, idx) => (
+                    {filtered.slice(0, 60).map((item, idx) => (
                         <div
                             key={item.id}
+                            data-ds="dropdown-item"
+                            data-ds-selected={idx === selectedIndex ? 'true' : 'false'}
                             onMouseDown={(e) => { e.preventDefault(); onChange(item.id, true); setSearch(item.id); setOpen(false); }}
                             onMouseEnter={() => setSelectedIndex(idx)}
                             className={`p-3 border-b border-theme-border cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-orange-600 text-white' : 'hover:bg-theme-card text-theme-text'}`}
@@ -576,8 +581,8 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     korisnik: currentUser.ime_prezime || 'Otprema',
                     akcija: 'OTPREMA_CIJELOG_PAKETA',
                     detalji: `Paket ${pid}: Cijeli paket (${ukupnoUBaziM3.toFixed(3)} m³) isporučen na otpremnici ${otpId} (${form.kupac_naziv}).`,
-                    stari_podaci: { paket_id: pid, status: 'NA STANJU', kolicina_final: ukupnoUBaziM3 },
-                    novi_podaci: { paket_id: pid, status: 'ISPORUČENO', otpremnica_id: otpId }
+                    nivo_alarma: 'INFO',
+                    pregledano: true,
                 }]);
                 azuriraneStavke.push({
                     ...st,
@@ -645,8 +650,8 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                     korisnik: currentUser.ime_prezime || 'Otprema',
                     akcija: 'DJELIMIČNA_OTPREMA_PAKETA',
                     detalji: `Paket ${pid}: Djelimična otprema na otpremnici ${otpId} (${form.kupac_naziv}). Isporučeno: ${st.kolicina_unos} ${st.jm_unos || 'kom'} (${uzetoM3.toFixed(3)} m³). Preostalo na paketu: ${novoUkupnoM3.toFixed(3)} m³.`,
-                    stari_podaci: { paket_id: pid, kolicina_final: ukupnoUBaziM3 },
-                    novi_podaci: { paket_id: pid, kolicina_final: parseFloat(novoUkupnoM3.toFixed(4)), otpremnica_id: otpId }
+                    nivo_alarma: 'INFO',
+                    pregledano: true,
                 }]);
 
                 azuriraneStavke.push({ ...st, paket_id: pid, tip_utovara: 'DJELIMICNO', lager_umanjen: true, lager_skidanja: skidanja });
@@ -1140,16 +1145,37 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                             </button>
                         </div>
 
-                        <div className="flex gap-2">
-                            <input
-                                value={paketScanInput}
-                                onChange={e => setPaketScanInput(e.target.value.toUpperCase())}
-                                onKeyDown={e => { if (e.key === 'Enter') skenirajPaketDirektno(paketScanInput); }}
-                                placeholder="Ili direktno skeniraj / upiši ID paketa sa lagera (npr. RUČNO-2026-...) i pritisni Enter"
-                                className="flex-1 min-w-0 p-3.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black uppercase outline-none focus:border-orange-500"
-                            />
-                            <button onClick={() => skenirajPaketDirektno(paketScanInput)} className="px-5 bg-theme-panel border border-orange-500/40 text-orange-400 hover:bg-orange-600 hover:text-white rounded-xl text-xs font-black uppercase">Pronađi</button>
-                            <button onClick={() => { setScanTarget('paket'); setIsScanning(true); }} className="px-4 bg-orange-600/20 text-orange-400 rounded-xl text-lg">📷</button>
+                        <div className="flex gap-2 items-stretch">
+                            <div className="flex-1 min-w-0">
+                                <MasterSearch
+                                    data={slobodniPaketi}
+                                    poljaZaPretragu={['paket_id', 'naziv_proizvoda', 'broj_veze', 'masina']}
+                                    value={paketScanInput}
+                                    onChange={(v) => setPaketScanInput(v)}
+                                    onSelect={(p) => { setPaketScanInput(''); klikniNaPaketSaLagera(p); setShowLagerModal(true); }}
+                                    onEnterNoMatch={(val) => skenirajPaketDirektno(val)}
+                                    onScanClick={() => { setScanTarget('paket'); setIsScanning(true); }}
+                                    placeholder="Skeniraj ili pretraži slobodan paket na lageru (ID, proizvod, dimenzija, RN)..."
+                                    filterFn={(p, normQ) => {
+                                        const tokeni = normQ.split(/\s+/).filter(Boolean);
+                                        const hay = normalizujZaPretragu(`${p.paket_id || ''} ${p.naziv_proizvoda || ''} ${p.debljina || ''}x${p.sirina || ''}x${p.duzina || ''} ${p.broj_veze || ''} ${p.masina || ''}`);
+                                        return tokeni.every((t) => hay.includes(t));
+                                    }}
+                                    renderItem={(p) => (
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-black text-orange-400">{p.paket_id} <span className="text-theme-text ml-1">{p.naziv_proizvoda}</span></div>
+                                                <div className="text-[10px] text-theme-muted mt-0.5">📐 {p.debljina}x{p.sirina}x{p.duzina} cm {p.broj_veze ? `• ${p.broj_veze}` : ''}</div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className="text-xs font-black text-emerald-400">{Number(p.ukupno_m3 || 0).toFixed(3)} m³</div>
+                                                <div className="text-[10px] font-bold text-amber-400">{p.ukupno_kom} kom</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                />
+                            </div>
+                            <button type="button" onClick={() => skenirajPaketDirektno(paketScanInput)} className="px-5 bg-theme-panel border border-orange-500/40 text-orange-400 hover:bg-orange-600 hover:text-white rounded-xl text-xs font-black uppercase shrink-0">Pronađi</button>
                         </div>
 
                         <div className="pt-2 border-t border-theme-border/50">

@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import PilanaIzvjestaj from '../components/PilanaIzvjestaj';
 import PilanaPeriodIzvjestaj from '../components/PilanaPeriodIzvjestaj';
 import { useSaaS } from '../utils/useSaaS';
+import DesignStudioDrawer from '../components/DesignStudioDrawer';
 
 const imaSirovinu = (val) => {
     if (!val) return false;
@@ -314,17 +315,20 @@ export default function DashboardModule({ user, onExit }) {
               )}
             </Flex>
 
-            {user?.uloga === 'superadmin' && (
-                saas.isEditMode ? (
-                    <div className="flex gap-2">
-                        <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-theme-text transition-all shadow-md">✕ Odustani</button>
-                        <button onClick={customSpasiDizajn} className="px-3 py-2 bg-emerald-600 text-theme-text rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
-                    </div>
-                ) : (
-                    <button onClick={saas.pokreniEdit} className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-theme-text transition-all shadow-md">
-                        <Settings size={14} /> Uredi Izgled
-                    </button>
-                )
+            {(user?.uloga === 'superadmin' || user?.uloga === 'admin') && (
+                <>
+                    {saas.isEditMode ? (
+                        <div className="flex gap-2">
+                            <button onClick={saas.odustani} className="px-3 py-2 bg-red-900/40 text-red-400 border border-red-500/50 rounded-xl text-[9px] font-black uppercase hover:bg-red-500 hover:text-theme-text transition-all shadow-md">✕ Odustani</button>
+                            <button onClick={customSpasiDizajn} className="px-3 py-2 bg-emerald-600 text-theme-text rounded-xl text-[9px] font-black uppercase shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all">💾 Spasi Dizajn</button>
+                        </div>
+                    ) : (
+                        <button onClick={saas.pokreniEdit} className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-xl text-[9px] font-black uppercase hover:bg-amber-500 hover:text-theme-text transition-all shadow-md">
+                            <Settings size={14} /> 🎨 Uredi Dizajn
+                        </button>
+                    )}
+                    <DesignStudioDrawer saas={saas} user={user} modulNaziv="Dashboard Analitika" />
+                </>
             )}
             <button onClick={onExit} className="bg-theme-panel text-slate-400 hover:bg-red-500 hover:text-theme-text px-5 h-10 rounded-xl text-[10px] font-black uppercase border border-theme-border transition-all shadow-md">Izlaz</button>
           </div>

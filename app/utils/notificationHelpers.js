@@ -565,13 +565,15 @@ export const ucitajNotifikacijeZaKorisnika = async (user, modulIme = null, { inc
     return filtered.slice(0, limit);
 };
 
-export const posaljiNotifikaciju = async ({ korisnik, akcija, detalji, nivo_alarma = 'INFO', meta = null }) => {
+export const posaljiNotifikaciju = async ({ korisnik, akcija, detalji, nivo_alarma = 'INFO', meta = null, pregledano = null }) => {
+    const imaTarget = Boolean(meta?.target_user || meta?.target_username);
+    const defaultPregledano = pregledano !== null ? Boolean(pregledano) : (nivo_alarma === 'INFO' && !imaTarget);
     const payload = {
         korisnik: korisnik || 'Sistem',
         akcija,
         detalji: formatirajMetapodatkeNotifikacije(detalji, meta),
         nivo_alarma,
-        pregledano: false,
+        pregledano: defaultPregledano,
         vrijeme: new Date().toISOString(),
     };
     const res = await supabase.from('sistem_audit_log').insert([payload]).select('*');
@@ -579,4 +581,45 @@ export const posaljiNotifikaciju = async ({ korisnik, akcija, detalji, nivo_alar
         window.dispatchEvent(new CustomEvent('notifikacije_updated'));
     }
     return res;
+};
+
+/**
+ * Automatski označava sva povezana nepročitana obavještenja / zahtjeve kao pročitana (pregledano: true)
+ * čim korisnik odobri, odbije ili riješi problem (bilo iz modula ili iz modala obavještenja).
+ */
+export const oznacPovezaneNotifikacijeRijesenim = async ({ akcije = [], tokeni = [] } = {}) => {
+    try {
+        const cleanTokens = Array.from(new Set((tokeni || []).map((t) => String(t || '').trim().toLowerCase()).filter((t) => t.length >= 2)));
+        if (!akcije.length && !cleanTokens.length) return { count: 0 };
+
+        let query = supabase
+            .from('sistem_audit_log')
+            .select('id, akcija, detalji')
+            .eq('pregledano', false)
+            .order('vrijeme', { ascending: false })
+            .limit(120);
+
+        if (akcije.length > 0) {
+            query = query.in('akcija', akcije);
+        }
+
+        const { data } = await query;
+        const matchedIds = (data || [])
+            .filter((row) => {
+                if (cleanTokens.length === 0) return true;
+                const haystack = `${row.akcija || ''} ${row.detalji || ''}`.toLowerCase();
+                return cleanTokens.some((tok) => haystack.includes(tok));
+            })
+            .map((r) => r.id);
+
+        if (matchedIds.length > 0) {
+            await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', matchedIds);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('notifikacije_updated'));
+            }
+        }
+        return { count: matchedIds.length };
+    } catch (e) {
+        return { count: 0 };
+    }
 };

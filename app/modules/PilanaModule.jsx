@@ -2,18 +2,73 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
-import MasterSearch from '../components/MasterSearch';
+import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import { printDeklaracijaPaketa, printFaznaDeklaracijaPaketa } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
+function formatirajJmLabel(jm) {
+    const clean = String(jm || 'kom').toLowerCase().trim();
+    if (clean === 'm3') return 'm³';
+    if (clean === 'm2') return 'm²';
+    if (clean === 'm1') return 'm1';
+    return clean;
+}
+
+function formatirajBrojZaJm(val, jm) {
+    const num = parseFloat(val || 0);
+    if (isNaN(num)) return '0';
+    const clean = String(jm || 'kom').toLowerCase().trim();
+    if (clean === 'kom') return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '');
+    if (clean === 'm3') return num.toFixed(3);
+    return num.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function sumirajStavkePaketa(stavke = []) {
+    const jmMapa = {};
+    let ukupnoM3 = 0;
+
+    (stavke || []).forEach((s) => {
+        const m3 = parseFloat(s.kolicina_final ?? s.kolicina_m3 ?? 0) || 0;
+        ukupnoM3 += m3;
+
+        const jmKey = String(s.jm || 'kom').toLowerCase().trim();
+        const ulaz = parseFloat(s.kolicina_ulaz ?? 0);
+        if (!isNaN(ulaz) && ulaz > 0) {
+            jmMapa[jmKey] = (jmMapa[jmKey] || 0) + ulaz;
+        } else if (m3 > 0) {
+            jmMapa['m3'] = (jmMapa['m3'] || 0) + m3;
+        }
+    });
+
+    const redoslijed = ['kom', 'm2', 'm1', 'm3'];
+    const jmGrupe = Object.keys(jmMapa)
+        .sort((a, b) => {
+            const ia = redoslijed.indexOf(a);
+            const ib = redoslijed.indexOf(b);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        })
+        .map((jm) => ({
+            jm,
+            kolicina: jmMapa[jm],
+            label: `${formatirajBrojZaJm(jmMapa[jm], jm)} ${formatirajJmLabel(jm)}`,
+        }));
+
+    return {
+        brojStavki: (stavke || []).length,
+        ukupnoM3,
+        jmGrupe,
+        unesenoTekst: jmGrupe.length > 0 ? jmGrupe.map((g) => g.label).join(' + ') : '',
+    };
+}
+
 function DimBox({ label, val, set, disabled }) {
     return (
-        <div className={`bg-theme-panel p-2.5 sm:p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors min-w-0 ${disabled ? 'opacity-50' : ''}`}>
-            <span className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full min-w-0 px-2 py-1.5 bg-transparent text-theme-text font-black outline-none text-base sm:text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+        <div data-ds="dim-box" className={`bg-theme-panel p-2.5 sm:p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors min-w-0 ${disabled ? 'opacity-50' : ''}`}>
+            <span data-ds="dim-label" className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest">{label}</span>
+            <input data-ds="dim-input" type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full min-w-0 px-2 py-1.5 bg-transparent text-theme-text font-black outline-none text-base sm:text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
         </div>
     );
 }
@@ -73,8 +128,10 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         return null;
     };
 
+    const legacyCardBg = saas.ui.boja_kartice && saas.ui.boja_kartice !== '#1e293b' ? saas.ui.boja_kartice : undefined;
+
     return (
-        <div className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[var(--radius-box)] border shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+        <div data-ds="card" className={`bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-[var(--radius-box)] border shadow-2xl space-y-4 transition-all ${saas.isEditMode ? 'ring-2 ring-amber-500 border-amber-500/50' : 'border-theme-border'}`} style={legacyCardBg ? { backgroundColor: legacyCardBg } : undefined}>
             <h3 className="text-theme-accent font-black uppercase text-xs tracking-widest">⚙️ Evidencija rada i zastoja mašine</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-theme-panel p-4 rounded-2xl border border-theme-accent/40 items-start shadow-inner">
                 {(saas.ui.polja_dnevnik || []).map((polje, index) => {
@@ -129,7 +186,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     }, [header?.masina]);
 
     const saas = useSaaS('pilana_izlaz', {
-        boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16',
+        boja_kartice: '', boja_slova: '', velicina_naslova: '16',
         naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)',
         polja_radnici: [{ id: 'brentista', label: '👨‍🔧 BRENTISTA (IZ PROREZA)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }],
         polja_dnevnik: [{ id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-4' }]
@@ -175,6 +232,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const [izlazScan, setIzlazScan] = useState('');
+    const [izlazDropdownOpen, setIzlazDropdownOpen] = useState(false);
+    const izlazSearchRef = useRef(null);
     const [radniNalog, setRadniNalog] = useState('');
     const [rnStavke, setRnStavke] = useState([]);
     const [katalog, setKatalog] = useState([]);
@@ -316,25 +375,30 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (openIds.length > 0) {
             // Povuci SVE redove aktivnih paketa (uključujući i ranije stavke kod ponovo otvorenog paketa)
             const { data: allRows } = await supabase.from('paketi')
-                .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
+                .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_ulaz, jm, kolicina_final, kolicina_m3')
                 .in('paket_id', openIds);
 
-            const grouped = (allRows || []).reduce((acc, curr) => {
-                if (!acc[curr.paket_id]) {
-                    acc[curr.paket_id] = {
-                        id: curr.paket_id,
-                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`,
-                        proizvod: curr.naziv_proizvoda,
-                        m3: 0,
-                        stavke: 0
-                    };
-                }
-                acc[curr.paket_id].m3 += parseFloat(curr.kolicina_final || curr.kolicina_m3 || 0);
-                acc[curr.paket_id].stavke += 1;
-                return acc;
-            }, {});
+            const byId = {};
+            (allRows || []).forEach((curr) => {
+                if (!byId[curr.paket_id]) byId[curr.paket_id] = [];
+                byId[curr.paket_id].push(curr);
+            });
 
-            setAktivniPaketiInfo(Object.values(grouped).sort((a, b) => b.id.localeCompare(a.id)));
+            const list = Object.entries(byId).map(([pid, rows]) => {
+                const first = rows[0] || {};
+                const zbir = sumirajStavkePaketa(rows);
+                return {
+                    id: pid,
+                    dimenzija: `${first.debljina}x${first.sirina}x${first.duzina} cm`,
+                    proizvod: first.naziv_proizvoda,
+                    m3: zbir.ukupnoM3,
+                    stavke: zbir.brojStavki,
+                    unesenoTekst: zbir.unesenoTekst,
+                    jmGrupe: zbir.jmGrupe,
+                };
+            });
+
+            setAktivniPaketiInfo(list.sort((a, b) => b.id.localeCompare(a.id)));
         } else {
             setAktivniPaketiInfo([]);
         }
@@ -494,17 +558,39 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (data && data.length > 0 && data[0].broj_veze && !radniNalogRef.current) { handleNalogSelect(data[0].broj_veze); }
     };
 
+    useEffect(() => {
+        const onOut = (e) => {
+            if (izlazSearchRef.current && !izlazSearchRef.current.contains(e.target)) {
+                setIzlazDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onOut);
+        return () => document.removeEventListener('mousedown', onOut);
+    }, []);
+
+    const filtriraniZapocetiPilana = useMemo(() => {
+        const q = normalizujZaPretragu(izlazScan);
+        const tokeni = q ? q.split(/\s+/).filter(Boolean) : [];
+        if (tokeni.length === 0) return aktivniPaketiInfo;
+        return aktivniPaketiInfo.filter((p) => {
+            const hay = normalizujZaPretragu(`${p.id || ''} ${p.proizvod || ''} ${p.dimenzija || ''} ${p.unesenoTekst || ''}`);
+            return tokeni.every((t) => hay.includes(t));
+        });
+    }, [aktivniPaketiInfo, izlazScan]);
+
     const processIzlaz = async (val) => {
         const id = val.toUpperCase().trim();
+        if (!id) return;
+        setIzlazDropdownOpen(false);
         setSelectedIzlazId(id); fetchIzlaz(id); setIzlazScan('');
     };
 
     const handleIzlazInput = (val, isEnter = false) => {
         setIzlazScan(val);
+        setIzlazDropdownOpen(true);
         if (timerRef.current) clearTimeout(timerRef.current);
         if (!val) return;
         if (isEnter) processIzlaz(val);
-        else timerRef.current = setTimeout(() => processIzlaz(val), 2000);
     };
 
     const toggleOznaka = (o) => { setOdabraneOznake(prev => prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o]); };
@@ -523,6 +609,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
         return (komada * (v / 100) * (s / 100) * (d / 100)).toFixed(3);
     }, [form.kolicina_ulaz, form.jm, form.debljina, form.sirina, form.duzina]);
+
+    const trenutniPaketZbir = useMemo(() => sumirajStavkePaketa(izlazPackageItems), [izlazPackageItems]);
 
     const save = async () => {
         if (!brentista) return prikaziDialog({ tip: 'greska', naslov: 'Blokada', poruka: "ZABRANJENO: Molimo odaberite Brentistu prije snimanja paketa!", onCancel: zatvoriDialog });
@@ -741,20 +829,23 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         );
     }
 
+    const legacyCardBg = saas.ui.boja_kartice && saas.ui.boja_kartice !== '#1e293b' ? saas.ui.boja_kartice : undefined;
+    const legacyTextColor = saas.ui.boja_slova && saas.ui.boja_slova !== '#ffffff' ? saas.ui.boja_slova : undefined;
+
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 animate-in fade-in font-sans pb-24" style={legacyTextColor ? { color: legacyTextColor } : undefined}>
             <PametniDialog {...dialog} />
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} user={user} modulIme="pilana" saas={saas} />
 
             {saas.isEditMode && (
-                <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
-                    <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({ ...saas.ui, boja_kartice: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({ ...saas.ui, boja_slova: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Veličina naslova (px): <input type="number" value={saas.ui.velicina_naslova} onChange={e => saas.setUi({ ...saas.ui, velicina_naslova: e.target.value })} className="w-full p-2 mt-1 bg-black text-amber-400 font-mono rounded" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black md:col-span-3">Naslov Skenera: <input type="text" value={saas.ui.naslov_skenera} onChange={e => saas.setUi({ ...saas.ui, naslov_skenera: e.target.value })} className="w-full p-2 mt-1 bg-black text-amber-400 rounded" /></label>
+                <div className="bg-amber-950/30 p-4 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-xl flex flex-col md:flex-row items-stretch md:items-end gap-4">
+                    <div className="flex-1">
+                        <label className="text-[10px] text-amber-400 uppercase font-black block mb-1">✏️ Naslov Skenera (Pilana):</label>
+                        <input type="text" value={saas.ui.naslov_skenera || ''} onChange={e => saas.setUi({ ...saas.ui, naslov_skenera: e.target.value })} className="w-full p-2.5 bg-slate-950 text-amber-300 border border-amber-500/40 rounded-xl font-bold text-xs" />
                     </div>
+                    <p className="text-[10px] text-amber-200/80 font-bold md:max-w-xs leading-snug">
+                        🎨 Sve boje, okvire, fontove, dropdown menije, dimenzije i započete pakete uređujete uživo u desnom <strong>Design Studio</strong> panelu!
+                    </p>
                 </div>
             )}
 
@@ -764,26 +855,22 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 space-y-6 flex flex-col">
-                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl transition-all border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-30 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div data-ds="card" className="bg-theme-card p-6 rounded-[var(--radius-box)] shadow-2xl transition-all border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-30 overflow-visible" style={legacyCardBg ? { backgroundColor: legacyCardBg } : undefined}>
                         <h3 className="text-[10px] text-theme-muted uppercase font-black tracking-widest mb-4 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-theme-accent"></span> Ekipa na mašini</h3>
-                        <div className="space-y-4 overflow-visible">
+                        <div data-ds="team-section" className="space-y-4 overflow-visible">
                             {/* 🟢 STEPENASTI Z-INDEX: Gornje polje z-30, donje z-20 */}
                             <div className="w-full relative z-30">
                                 <label className="text-[8px] text-theme-muted uppercase ml-2 block mb-1">👨‍🔧 BRENTISTA (IZ PROREZA)</label>
-                                <div className={`w-full h-12 bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-colors shadow-inner flex items-center ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
-                                    <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={brentista} onSelect={r => handleBrentistaChange(r.naziv)} placeholder="Odaberi brentistu..." />
-                                </div>
+                                <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={brentista} onSelect={r => handleBrentistaChange(r.naziv)} placeholder="Odaberi brentistu..." />
                             </div>
                             <div className="w-full relative z-20">
                                 <label className="text-[8px] text-theme-muted uppercase ml-2 block mb-1">🚜 VILJUŠKARISTA</label>
-                                <div className={`w-full h-12 bg-theme-panel border border-theme-border rounded-xl overflow-visible focus-within:border-theme-accent transition-colors shadow-inner flex items-center ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>
-                                    <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={viljuskarista} onSelect={r => handleViljuskaristaChange(r.naziv)} placeholder="Odaberi viljuškaristu..." />
-                                </div>
+                                <MasterSearch data={radniciList} poljaZaPretragu={['naziv']} value={viljuskarista} onSelect={r => handleViljuskaristaChange(r.naziv)} placeholder="Odaberi viljuškaristu..." />
                             </div>
                         </div>
                     </div>
 
-                    <div className="p-6 rounded-[var(--radius-box)] shadow-2xl border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-20 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div data-ds="card" className="bg-theme-card p-6 rounded-[var(--radius-box)] shadow-2xl border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-20 overflow-visible" style={legacyCardBg ? { backgroundColor: legacyCardBg } : undefined}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-[10px] text-theme-accent uppercase font-black tracking-widest flex items-center gap-2">📋 Radni Nalog / Ponuda</h3>
                             {radniNalog && <button onClick={() => { setRadniNalog(''); setRnStavke([]); }} className="text-[9px] text-red-400 hover:text-red-300 uppercase bg-red-900/20 px-2 py-1 rounded border border-red-500/30 transition-all font-black">✕ Ukloni</button>}
@@ -870,14 +957,53 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
                 <div className="lg:col-span-7 space-y-6">
                     {/* 🟢 POPRAVLJENO: overflow-visible umjesto overflow-hidden */}
-                    <div className={`p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.3)] border backdrop-blur-[var(--glass-blur)] relative overflow-visible group border-theme-accent/40`} style={{ backgroundColor: saas.ui.boja_kartice }}>
+                    <div data-ds="card" className={`bg-theme-card p-8 rounded-[var(--radius-box)] shadow-[0_0_40px_rgba(0,0,0,0.3)] border backdrop-blur-[var(--glass-blur)] relative overflow-visible group border-theme-accent/40`} style={legacyCardBg ? { backgroundColor: legacyCardBg } : undefined}>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-theme-accent to-transparent opacity-50"></div>
                         <label className={`uppercase text-theme-accent block mb-4 font-black tracking-widest text-center`} style={{ fontSize: `${saas.ui.velicina_naslova}px` }}>
                             {saas.ui.naslov_skenera || "SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)"}
                         </label>
-                        <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
-                            <input value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleIzlazInput(izlazScan, true) }} className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ GOTOV PAKET..." />
-                            <button onClick={() => { setScanTarget('izlaz'); setIsScanning(true); }} className="shrink-0 px-6 md:px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
+                        <div ref={izlazSearchRef} className="relative mb-8 z-40">
+                            <div data-ds="dropdown-field" className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 ${saas.isEditMode ? 'border-amber-500/50' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
+                                <input data-ds="dropdown-input" value={izlazScan} onFocus={() => setIzlazDropdownOpen(true)} onClick={() => setIzlazDropdownOpen(true)} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleIzlazInput(izlazScan, true); else if (e.key === 'Escape') setIzlazDropdownOpen(false); }} autoComplete="off" className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ ILI UPIŠI PAKET..." />
+                                <button type="button" onClick={() => setIzlazDropdownOpen((v) => !v)} title="Prikaži započete pakete" className="shrink-0 px-4 bg-theme-card/60 text-theme-muted hover:text-theme-text font-black text-sm border-l border-theme-border">{izlazDropdownOpen ? '▲' : '▼'}</button>
+                                <button type="button" onClick={() => { setIzlazDropdownOpen(false); setScanTarget('izlaz'); setIsScanning(true); }} data-ds="primary-btn" className="shrink-0 px-6 md:px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
+                            </div>
+                            {izlazDropdownOpen && (filtriraniZapocetiPilana.length > 0 || izlazScan.trim()) && (
+                                <div data-ds="dropdown-menu" className="absolute left-0 right-0 top-[calc(100%+8px)] z-[300] bg-theme-card border-2 border-theme-accent/50 rounded-2xl shadow-2xl overflow-hidden">
+                                    {izlazScan.trim() && !aktivniPaketiInfo.some((p) => normalizujZaPretragu(p.id) === normalizujZaPretragu(izlazScan)) && (
+                                        <div
+                                            data-ds="dropdown-item"
+                                            onMouseDown={(e) => { e.preventDefault(); processIzlaz(izlazScan); }}
+                                            className="px-4 py-3 bg-theme-accent/15 hover:bg-theme-accent hover:text-white cursor-pointer flex items-center justify-between border-b border-theme-border transition-colors"
+                                        >
+                                            <span className="text-xs font-black uppercase">✨ Kreiraj / otvori novi paket: <span className="font-mono ml-1">{izlazScan.toUpperCase().trim()}</span></span>
+                                            <span className="text-[10px] font-black uppercase opacity-80">Enter ↵</span>
+                                        </div>
+                                    )}
+                                    {filtriraniZapocetiPilana.length > 0 && (
+                                        <div className="max-h-60 overflow-y-auto custom-scrollbar divide-y divide-theme-border/60">
+                                            {filtriraniZapocetiPilana.map((p) => (
+                                                <div
+                                                    key={p.id}
+                                                    data-ds="dropdown-item"
+                                                    data-ds-selected={selectedIzlazId === p.id ? 'true' : 'false'}
+                                                    onMouseDown={(e) => { e.preventDefault(); processIzlaz(p.id); }}
+                                                    className="px-4 py-3 hover:bg-theme-panel cursor-pointer flex items-center justify-between gap-2 transition-colors"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-black text-theme-text font-mono">{p.id} <span className="text-[10px] text-theme-accent font-sans ml-1">{p.dimenzija}</span></div>
+                                                        <div className="text-[10px] text-theme-muted font-bold truncate">{p.proizvod} • {p.stavke} {p.stavke === 1 ? 'stavka' : 'stavki'}</div>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        {p.unesenoTekst && <div className="text-xs font-black text-amber-400">{p.unesenoTekst}</div>}
+                                                        <div className="text-xs font-black text-emerald-400">{p.m3.toFixed(3)} m³</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="mt-8 pt-6 border-t border-theme-border">
@@ -885,28 +1011,85 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
                             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
                                 {aktivniPaketiInfo.length === 0 && <div className="col-span-full text-xs text-theme-muted italic border border-dashed border-theme-border p-6 rounded-xl text-center">Trenutno nema započetih paketa na ovoj mašini...</div>}
-                                {aktivniPaketiInfo.map(p => (
-                                    <div key={p.id} onClick={() => { setSelectedIzlazId(p.id); fetchIzlaz(p.id); }} className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group ${selectedIzlazId === p.id ? 'bg-theme-accent border-theme-accent shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/60'}`}>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className={`text-xl font-black ${selectedIzlazId === p.id ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
-                                            <span className="text-[10px] bg-black/30 px-2 py-1 rounded border border-white/10 text-theme-muted font-bold">{p.stavke} {p.stavke === 1 ? 'stavka' : 'stavki'}</span>
+                                {aktivniPaketiInfo.map(p => {
+                                    const isSel = selectedIzlazId === p.id;
+                                    return (
+                                        <div
+                                            key={p.id}
+                                            data-ds="pkg-card"
+                                            data-ds-selected={isSel ? 'true' : 'false'}
+                                            onClick={() => { setSelectedIzlazId(p.id); fetchIzlaz(p.id); }}
+                                            className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group ${isSel ? 'bg-theme-accent border-theme-accent shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/60'}`}
+                                        >
+                                            <div className="flex justify-between items-start gap-1 mb-2">
+                                                <span data-ds="pkg-title" className={`text-xl font-black truncate ${isSel ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
+                                                <span className="text-[10px] bg-black/30 px-2 py-1 rounded border border-white/10 text-theme-muted font-bold shrink-0">{p.stavke} {p.stavke === 1 ? 'stavka' : 'stavki'}</span>
+                                            </div>
+                                            <div data-ds="pkg-sub" className={`text-xs font-black mb-1 line-clamp-1 ${isSel ? 'text-white/90' : 'text-theme-accent'}`}>{p.dimenzija}</div>
+                                            <div data-ds="pkg-sub" className={`text-[10px] font-bold line-clamp-1 ${isSel ? 'text-white/75' : 'text-slate-400'}`}>{p.proizvod}</div>
+                                            <div className={`mt-auto pt-2.5 border-t ${isSel ? 'border-white/20' : 'border-theme-border/60'} flex flex-col items-end gap-0.5`}>
+                                                {p.unesenoTekst && (
+                                                    <div data-ds="pkg-title" className={`text-xs font-black ${isSel ? 'text-white' : 'text-amber-400'}`}>
+                                                        {p.unesenoTekst}
+                                                    </div>
+                                                )}
+                                                <div data-ds="pkg-total" className={`text-[10px] font-black uppercase tracking-widest ${isSel ? 'text-white/90' : 'text-slate-400'}`}>
+                                                    Ukupno: <span className={isSel ? 'text-white text-sm' : 'text-emerald-400 text-sm'}>{p.m3.toFixed(3)} m³</span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className={`text-xs font-black mb-1 line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/90' : 'text-theme-accent'}`}>{p.dimenzija}</div>
-                                        <div className={`text-[10px] font-bold line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/70' : 'text-slate-400'}`}>{p.proizvod}</div>
-                                        <div className={`text-right mt-auto pt-2 text-[10px] font-black uppercase tracking-widest ${selectedIzlazId === p.id ? 'text-white/80' : 'text-slate-400'}`}>
-                                            Ukupno: <span className={selectedIzlazId === p.id ? 'text-white text-sm' : 'text-emerald-400 text-sm'}>{p.m3.toFixed(3)} m³</span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
 
                     {selectedIzlazId && (
-                        <div id="package-form-area" className="animate-in zoom-in-95 space-y-6 p-6 rounded-[var(--radius-box)] border border-theme-accent/50 shadow-2xl backdrop-blur-[var(--glass-blur)]" style={{ backgroundColor: saas.ui.boja_kartice }}>
+                        <div id="package-form-area" data-ds="card" className="bg-theme-card animate-in zoom-in-95 space-y-6 p-6 rounded-[var(--radius-box)] border border-theme-accent/50 shadow-2xl backdrop-blur-[var(--glass-blur)]" style={legacyCardBg ? { backgroundColor: legacyCardBg } : undefined}>
                             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-theme-border pb-4">
-                                <h3 className="text-theme-accent font-black uppercase text-sm drop-shadow-md flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-theme-accent animate-pulse"></span>Paket u radu: <span className="text-theme-text text-xl">{selectedIzlazId}</span></h3>
-                                <button onClick={() => zakljuciPaket(selectedIzlazId)} className="bg-red-600 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all w-full sm:w-auto">🏁 Zaključi Paket</button>
+                                <div className="min-w-0">
+                                    <h3 className="text-theme-accent font-black uppercase text-sm drop-shadow-md flex items-center gap-2 flex-wrap">
+                                        <span className="w-3 h-3 rounded-full bg-theme-accent animate-pulse"></span>
+                                        Paket u radu: <span className="text-theme-text text-xl">{selectedIzlazId}</span>
+                                        <span className={`text-[9px] px-2.5 py-0.5 rounded-full border font-black uppercase tracking-wider ${trenutniPaketZbir.brojStavki === 0 ? 'bg-sky-500/15 text-sky-400 border-sky-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'}`}>
+                                            {trenutniPaketZbir.brojStavki === 0 ? '✨ Novokreirani paket' : `📦 ${trenutniPaketZbir.brojStavki} ${trenutniPaketZbir.brojStavki === 1 ? 'stavka' : 'stavki'}`}
+                                        </span>
+                                    </h3>
+                                </div>
+                                <button onClick={() => zakljuciPaket(selectedIzlazId)} className="bg-red-600 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-red-500 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all w-full sm:w-auto shrink-0">🏁 Zaključi Paket</button>
+                            </div>
+
+                            {/* 📊 UKUPNO STANJE U PAKETU (UNESENA JM + DEFAULTNA JM m³) — RADI I ZA ZAPOČETE I ZA NOVOKREIRANE PAKETE */}
+                            <div data-testid="pilana-package-totals" className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-theme-panel p-4 rounded-2xl border border-theme-accent/40 shadow-inner">
+                                <div className="bg-theme-card/80 p-3.5 rounded-xl border border-theme-border flex flex-col justify-between">
+                                    <span className="text-[9px] text-theme-muted uppercase font-black tracking-widest">📏 Ukupno u unesenoj jedinici mjere</span>
+                                    <div className="mt-1.5 flex items-baseline justify-between gap-2 flex-wrap">
+                                        <span className="text-xl sm:text-2xl font-black text-amber-400">
+                                            {trenutniPaketZbir.unesenoTekst || `0 ${formatirajJmLabel(form.jm)}`}
+                                        </span>
+                                        {form.kolicina_ulaz && parseFloat(form.kolicina_ulaz) > 0 && (
+                                            <span className="text-[10px] font-black text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/30">
+                                                {activeEditItem && updateMode === 'oduzmi' ? '−' : '+'} {formatirajBrojZaJm(form.kolicina_ulaz, form.jm)} {formatirajJmLabel(form.jm)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="bg-theme-card/80 p-3.5 rounded-xl border border-theme-border flex flex-col justify-between">
+                                    <span className="text-[9px] text-theme-muted uppercase font-black tracking-widest">📦 Ukupno u defaultnoj jedinici (m³)</span>
+                                    <div className="mt-1.5 flex items-baseline justify-between gap-2 flex-wrap">
+                                        <span className="text-xl sm:text-2xl font-black text-emerald-400">
+                                            {trenutniPaketZbir.ukupnoM3.toFixed(3)} <span className="text-sm text-theme-accent">m³</span>
+                                        </span>
+                                        {form.kolicina_ulaz && parseFloat(livePreracunM3) > 0 && (
+                                            <span className="text-[10px] font-black text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30">
+                                                → {(activeEditItem && updateMode === 'oduzmi'
+                                                    ? Math.max(0, trenutniPaketZbir.ukupnoM3 - parseFloat(livePreracunM3))
+                                                    : trenutniPaketZbir.ukupnoM3 + parseFloat(livePreracunM3)
+                                                ).toFixed(3)} m³
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
                             {activeEditItem && (
@@ -917,7 +1100,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             )}
 
                             <div className="space-y-4">
-                                <div className="relative z-40">
+                                <div data-ds="product-section" className="relative z-40">
                                     <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Proizvod koji se slaže (Dimenzije u cm)</label>
                                     <MasterSearch
                                         data={katalog}
@@ -974,13 +1157,23 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                     </div>
                                 )}
 
-                                <button onClick={save} className={`w-full py-6 mt-2 text-white font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(var(--theme-accent-rgb),0.4)] hover:scale-[1.02] transition-all text-sm tracking-widest ${activeEditItem ? 'bg-blue-600 hover:bg-blue-500' : 'bg-theme-accent hover:opacity-90'}`}>
+                                <button onClick={save} data-ds="primary-btn" className={`w-full py-6 mt-2 text-white font-black rounded-2xl uppercase shadow-[0_0_20px_rgba(var(--theme-accent-rgb),0.4)] hover:scale-[1.02] transition-all text-sm tracking-widest ${activeEditItem ? 'bg-blue-600 hover:bg-blue-500' : 'bg-theme-accent hover:opacity-90'}`}>
                                     {activeEditItem ? `✅ SAČUVAJ IZMJENE STAVKE` : `➕ DODAJ U PAKET`}
                                 </button>
                             </div>
 
                             <div className="pt-6 mt-6 border-t border-theme-border">
-                                <label className="text-[10px] text-theme-muted uppercase font-black block mb-4 tracking-widest">Sadržaj trenutnog paketa:</label>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                                    <label className="text-[10px] text-theme-muted uppercase font-black block tracking-widest">Sadržaj trenutnog paketa ({trenutniPaketZbir.brojStavki}):</label>
+                                    <div className="flex flex-wrap items-center gap-2 text-[11px] font-black">
+                                        <span className="px-3 py-1 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400">
+                                            Uneseno: {trenutniPaketZbir.unesenoTekst || `0 ${formatirajJmLabel(form.jm)}`}
+                                        </span>
+                                        <span className="px-3 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400">
+                                            Ukupno: {trenutniPaketZbir.ukupnoM3.toFixed(3)} m³
+                                        </span>
+                                    </div>
+                                </div>
                                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                     {izlazPackageItems.length === 0 && <div className="text-center p-8 border-2 border-dashed border-theme-border rounded-2xl text-theme-muted text-xs font-bold bg-theme-panel/50">Paket je prazan. Unesite prvu stavku.</div>}
                                     {izlazPackageItems.map(item => {

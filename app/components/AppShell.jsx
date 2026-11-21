@@ -26,6 +26,7 @@ import {
     provjeriPushStatusKorisnika,
     posaljiTestnuPushNotifikaciju,
 } from '../utils/pushConfig';
+import { ucitajGlobalniDizajn } from '../utils/designTokens';
 
 const DEFAULT_MENU_STYLE = {
     sidebarWidth: 260,
@@ -139,6 +140,7 @@ export default function AppShell({
 
     useEffect(() => {
         initSettings(user?.ime_prezime || 'Korisnik');
+        ucitajGlobalniDizajn();
     }, [user, initSettings]);
 
     const prikaziInAppNotifikaciju = useCallback((novi) => {

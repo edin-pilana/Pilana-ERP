@@ -49,8 +49,9 @@ export default function SearchableInput({ value, onChange, list = [], placeholde
     };
 
     return (
-        <div ref={wrapperRef} className="relative w-full h-full">
+        <div ref={wrapperRef} data-ds="dropdown-field" className="relative w-full h-full rounded-xl">
             <input
+                data-ds="dropdown-input"
                 value={search}
                 onChange={e => { setSearch(e.target.value); setOpen(true); onChange(e.target.value); }}
                 onFocus={() => setOpen(true)}
@@ -59,10 +60,12 @@ export default function SearchableInput({ value, onChange, list = [], placeholde
                 className="w-full h-full min-h-[45px] p-3 bg-transparent text-xs text-theme-text outline-none font-black uppercase"
             />
             {open && filtered.length > 0 && (
-                <div className="absolute z-[100] w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
+                <div data-ds="dropdown-menu" className="absolute z-[100] w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto text-left custom-scrollbar">
                     {filtered.map((item, index) => (
                         <div
                             key={index}
+                            data-ds="dropdown-item"
+                            data-ds-selected={index === selectedIndex ? 'true' : 'false'}
                             onMouseDown={(e) => { e.preventDefault(); selectItem(item); }}
                             onMouseEnter={() => setSelectedIndex(index)}
                             className={`p-3 border-b border-theme-border cursor-pointer text-xs font-black uppercase transition-colors ${index === selectedIndex ? 'bg-blue-600 text-white' : 'text-theme-text hover:bg-theme-card'}`}

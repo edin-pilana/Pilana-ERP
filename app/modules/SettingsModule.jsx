@@ -31,6 +31,7 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
             {label && <label className="text-[8px] text-slate-500 uppercase ml-3 block mb-1">{label}</label>}
             <input 
                 type="text" 
+                data-ds="dropdown-field"
                 value={value} 
                 onFocus={() => setOpen(true)} 
                 onChange={e => { onChange(e.target.value.toUpperCase()); setOpen(true); }} 
@@ -38,9 +39,9 @@ function SettingsSearchable({ label, value, onChange, list = [], placeholder="..
                 placeholder={placeholder} 
             />
             {open && list.length > 0 && (
-                <div className="absolute z-[5000] w-full mt-1 bg-theme-card border border-theme-border rounded-xl shadow-2xl max-h-40 overflow-y-auto custom-scrollbar">
+                <div data-ds="dropdown-menu" className="absolute z-[5000] w-full mt-1 bg-theme-card border border-theme-border rounded-xl shadow-2xl max-h-40 overflow-y-auto custom-scrollbar">
                     {list.filter(i => i.toUpperCase().includes((value||'').toUpperCase())).map((item, idx) => (
-                        <div key={idx} onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-theme-border hover:bg-theme-accent uppercase cursor-pointer text-theme-text hover:text-white transition-colors">
+                        <div key={idx} data-ds="dropdown-item" onClick={() => { onChange(item); setOpen(false); }} className="p-3 text-[10px] border-b border-theme-border hover:bg-theme-accent uppercase cursor-pointer text-theme-text hover:text-white transition-colors">
                             {item}
                         </div>
                     ))}
@@ -73,11 +74,11 @@ function KatalogSearchableDetail({ katalog, value, onChange }) {
 
     return (
         <div ref={wrapperRef} className="relative font-black w-full min-w-0">
-            <input value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />
+            <input data-ds="dropdown-field" value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value.toUpperCase()); setOpen(true); }} placeholder="Pronađi šifru ili naziv..." className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />
             {open && filtered.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                <div data-ds="dropdown-menu" className="absolute z-50 w-full mt-1 bg-theme-panel border border-theme-border rounded-xl shadow-2xl max-h-60 overflow-y-auto">
                     {filtered.map(k => (
-                        <div key={k.sifra} onClick={() => { onChange(k.sifra); setSearch(k.sifra); setOpen(false); }} className="p-3 border-b border-theme-border hover:bg-amber-600 cursor-pointer transition-all">
+                        <div key={k.sifra} data-ds="dropdown-item" onClick={() => { onChange(k.sifra); setSearch(k.sifra); setOpen(false); }} className="p-3 border-b border-theme-border hover:bg-amber-600 cursor-pointer transition-all">
                             <div className="text-theme-text text-xs font-black">{k.sifra} <span className="text-amber-300 ml-1">{k.naziv}</span></div>
                             <div className="text-[9px] text-slate-400 mt-1 uppercase">Kat: {k.kategorija} | Dim: {k.visina}x{k.sirina}x{k.duzina} cm | Cijena: <b className="text-theme-text">{k.cijena} KM</b></div>
                         </div>
