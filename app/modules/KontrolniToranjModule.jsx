@@ -242,13 +242,15 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         try {
         let sveRek = [];
-        const { data: rekPodaci } = await supabase.from('reklamacije').select('*').or(`paket_id.eq.${safeVal},broj_otpremnice.eq.${safeVal}`);
+        const [{ data: rekPodaci }, { data: trupacBaza }] = await Promise.all([
+            supabase.from('reklamacije').select('*').or(`paket_id.eq.${safeVal},broj_otpremnice.eq.${safeVal}`),
+            supabase.from('trupci').select('*').eq('id', val).maybeSingle()
+        ]);
         if (rekPodaci && rekPodaci.length > 0) {
             sveRek = rekPodaci;
             setReklamacijskiAlarmi(rekPodaci);
         }
 
-        const { data: trupacBaza } = await supabase.from('trupci').select('*').eq('id', val).maybeSingle();
         if (trupacBaza && trupacBaza.parent_id) {
             const { data: majkaBaza } = await supabase.from('trupci').select('*').eq('id', trupacBaza.parent_id).maybeSingle();
             if (majkaBaza) setIstorijaKrojenjaMajke({ dijete: trupacBaza, majka: majkaBaza });

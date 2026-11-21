@@ -435,7 +435,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         setTab('razrada'); const noveTeh = { ...tehnologija };
         for (let s of stavke) {
             if (!noveTeh[s.id] || noveTeh[s.id].length === 0) {
-                const { data } = await supabase.from('tehnologija_katalog').select('faze_jsonb, faze').eq('finalna_sifra', s.sifra).maybeSingle();
+                const { data } = await supabase.from('tehnologija_katalog').select('faze_jsonb').eq('finalna_sifra', s.sifra).maybeSingle();
                 
                 let dbFaze = data?.faze_jsonb || data?.faze;
                 if (typeof dbFaze === 'string') { try { dbFaze = JSON.parse(dbFaze); } catch(e) { dbFaze = []; } }
@@ -701,7 +701,7 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
             }
 
             if (n.broj_ponude) {
-                const { data: ponuda } = await supabase.from('ponude').select('stavke_jsonb, stavke').eq('id', n.broj_ponude).maybeSingle();
+                const { data: ponuda } = await supabase.from('ponude').select('stavke_jsonb').eq('id', n.broj_ponude).maybeSingle();
                 let ponudaStavke = ponuda?.stavke_jsonb || ponuda?.stavke || [];
                 if (typeof ponudaStavke === 'string') { try { ponudaStavke = JSON.parse(ponudaStavke); } catch(e) { ponudaStavke = []; } }
                 if (!Array.isArray(ponudaStavke)) { ponudaStavke = typeof ponudaStavke === 'object' && ponudaStavke !== null ? Object.values(ponudaStavke) : []; }

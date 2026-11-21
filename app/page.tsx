@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from './utils/supabaseClient';
+import { toLocalIso } from './utils/dateHelpers';
 import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck, Hammer } from 'lucide-react';
@@ -89,7 +90,7 @@ export default function Page() {
     const [kontekstniMeni, setKontekstniMeni] = useState(null);
     const [header, setHeader] = useState({
         mjesto: typeof window !== 'undefined' ? localStorage.getItem('last_loc') || '' : '',
-        datum: new Date().toISOString().split('T')[0],
+        datum: toLocalIso(new Date()),
         masina: typeof window !== 'undefined' ? localStorage.getItem('last_masina') || '' : ''
     });
 
@@ -133,8 +134,10 @@ export default function Page() {
 
     const ucitajDashboardPodatke = async () => {
         setDashLoading(true);
-        const danas = new Date().toISOString().split('T')[0];
-        const sedamDanaNazad = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+        const sada = new Date();
+        const danas = toLocalIso(sada);
+        const sedamDanaObj = new Date(sada.getFullYear(), sada.getMonth(), sada.getDate() - 7);
+        const sedamDanaNazad = toLocalIso(sedamDanaObj);
         try {
             const [trupciRes, paketiRes, racuniRes, blagajnaRes, naloziRes, feedRes, trendRes, trupciLagerRes, paketiLagerRes] = await Promise.all([
                 supabase.from('trupci').select('zapremina, kontrolna_zapremina').eq('datum_prijema', danas),
@@ -157,7 +160,9 @@ export default function Page() {
 
             sviRacuni.forEach(r => {
                 const rid = (r.id || '').toUpperCase().trim();
-                const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+                const valNorm = String(r.valuta || 'KM').toUpperCase().trim();
+                const ukupnoOrig = parseFloat(r.ukupno_sa_pdv || 0);
+                const ukupnoRacun = (valNorm === 'EUR' || valNorm === '€') ? parseFloat((ukupnoOrig * 1.95583).toFixed(2)) : ukupnoOrig;
                 const uplacenoZaRacun = sveUplate
                     .filter(u => (u.racun_id && u.racun_id.toUpperCase().trim() === rid) || (u.opis && u.opis.toUpperCase().includes(rid)))
                     .reduce((s, u) => s + parseFloat(u.iznos || 0), 0);
@@ -171,7 +176,7 @@ export default function Page() {
             const topDuznici = Object.keys(kupciDug).map(k => ({ name: k, dug: parseFloat(kupciDug[k].toFixed(2)) })).sort((a,b) => b.dug - a.dug).slice(0, 5);
 
             const trendMap = {};
-            for(let i=6; i>=0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+            for(let i=6; i>=0; i--) { const dt = new Date(sada.getFullYear(), sada.getMonth(), sada.getDate() - i); const d = toLocalIso(dt);
             trendMap[d] = { dan: d.substring(5,10).replace('-', '.'), m3: 0 }; }
             (trendRes.data || []).forEach(p => { if(trendMap[p.datum_yyyy_mm]) trendMap[p.datum_yyyy_mm].m3 += parseFloat(p.kolicina_final||0); });
             const trupciMap = {};
@@ -182,7 +187,7 @@ export default function Page() {
             const paketiChart = Object.keys(paketiMap).map(k => ({ naziv: k, m3: parseFloat(paketiMap[k].toFixed(2)) })).sort((a,b) => b.m3 - a.m3).slice(0, 8);
             const sviNalozi = naloziRes.data || [];
             
-            const naloziCekanje = sviNalozi.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO').map(n => ({
+            const naloziCekanje = sviNalozi.filter(n => n.status !== 'U PROIZVODNJI' && n.status !== 'ZAVRŠENO' && n.status !== 'OBRISANO').map(n => ({
                 id: n.id, kupac: n.kupac_naziv, rok: n.rok_isporuke, status: n.status, stavki: (n.stavke_jsonb||[]).length
             })).sort((a,b) => new Date(a.rok).getTime() - new Date(b.rok).getTime());
             const naloziProgres = sviNalozi.filter(n => n.status === 'U PROIZVODNJI').map(n => {
@@ -669,14 +674,14 @@ export default function Page() {
                             <img src={loginLogoUrl} alt="ERP Logo" className="max-h-24 max-w-[220px] object-contain mb-2 drop-shadow-xl" crossOrigin="anonymous" />
                         )}
                         {(uiPostavke.login_naslov_1 || uiPostavke.login_naslov_2) && (
-                            <h1 className="text-4xl font-black text-white tracking-tighter">
+                            <h1 className="text-4xl font-black text-theme-text tracking-tighter">
                                 {uiPostavke.login_naslov_1}<span style={{ color: uiPostavke.login_boja_akcenta || '#3b82f6' }}>{uiPostavke.login_naslov_2}</span>
                             </h1>
                         )}
                     </div>
                     <div className="space-y-4">
-                        <input name="user" placeholder={uiPostavke.login_user_label || "Username"} required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center focus:border-blue-500 transition-colors" />
-                        <input name="pass" type="password" placeholder={uiPostavke.login_pass_label || "Password"} required className="w-full p-4 bg-theme-main border border-slate-700 rounded-2xl text-white outline-none text-center focus:border-blue-500 transition-colors" />
+                        <input name="user" placeholder={uiPostavke.login_user_label || "Username"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
+                        <input name="pass" type="password" placeholder={uiPostavke.login_pass_label || "Password"} required className="w-full p-4 bg-theme-main border border-theme-border rounded-2xl text-theme-text outline-none text-center focus:border-blue-500 transition-colors" />
                         <button type="submit" style={{ backgroundColor: uiPostavke.login_boja_akcenta || '#2563eb' }} className="w-full py-5 text-white font-black rounded-2xl uppercase shadow-lg hover:opacity-90 transition-all">
                             {uiPostavke.login_btn_tekst || "Pristupi sistemu"}
                         </button>

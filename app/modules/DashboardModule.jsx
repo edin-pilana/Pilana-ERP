@@ -23,8 +23,8 @@ const imaSirovinu = (val) => {
 export default function DashboardModule({ user, onExit }) {
     
     const saas = useSaaS('dashboard_analitika', {
-        boja_pozadine: '#090e17',
-        boja_kartice: '#111827',
+        boja_pozadine: '',
+        boja_kartice: '',
         boja_akcenta_pilana: '#10b981', 
         boja_akcenta_dorada: '#3b82f6', 
         boja_akcenta_finansije: '#f59e0b', 
@@ -64,12 +64,12 @@ export default function DashboardModule({ user, onExit }) {
     const setBrziDatum = (tip) => {
       const danas = new Date();
       setTipDatuma('period'); setIsPeriodic(true);
-      if (tip === '7d') { setDatumOd(new Date(danas.getTime() - 6*24*60*60*1000).toISOString().split('T')[0]); setDatumDo(danasnjiDatum); } 
-      else if (tip === 'mjesec') { setDatumOd(new Date(danas.getFullYear(), danas.getMonth(), 1).toISOString().split('T')[0]); setDatumDo(new Date(danas.getFullYear(), danas.getMonth() + 1, 0).toISOString().split('T')[0]); } 
-      else if (tip === 'prosli_mjesec') { setDatumOd(new Date(danas.getFullYear(), danas.getMonth() - 1, 1).toISOString().split('T')[0]); setDatumDo(new Date(danas.getFullYear(), danas.getMonth(), 0).toISOString().split('T')[0]); }
+      if (tip === '7d') { setDatumOd(toLocalIso(new Date(danas.getFullYear(), danas.getMonth(), danas.getDate() - 6))); setDatumDo(danasnjiDatum); } 
+      else if (tip === 'mjesec') { setDatumOd(toLocalIso(new Date(danas.getFullYear(), danas.getMonth(), 1))); setDatumDo(toLocalIso(new Date(danas.getFullYear(), danas.getMonth() + 1, 0))); } 
+      else if (tip === 'prosli_mjesec') { setDatumOd(toLocalIso(new Date(danas.getFullYear(), danas.getMonth() - 1, 1))); setDatumDo(toLocalIso(new Date(danas.getFullYear(), danas.getMonth(), 0))); }
     };
   
-    const shiftDate = (n) => { const d = new Date(datumOd); d.setDate(d.getDate()+n); const iso = d.toISOString().split('T')[0]; setDatumOd(iso); setDatumDo(iso); };
+    const shiftDate = (n) => { const [y, m, d] = datumOd.split('-').map(Number); const dt = new Date(y, (m || 1) - 1, (d || 1) + n); const iso = toLocalIso(dt); setDatumOd(iso); setDatumDo(iso); };
   
     const provjeriSmjenu = (vrijemeStr) => {
         if (filterSmjena === 'SVE' || !vrijemeStr) return true;
@@ -247,7 +247,7 @@ export default function DashboardModule({ user, onExit }) {
 
         racuni.forEach(r => {
             fPdv += (r.ukupno_sa_pdv - r.ukupno_bez_pdv);
-            if (r.status.includes('NAPLAĆENO')) {
+            if ((r.status || '').includes('NAPLAĆENO')) {
                 if (r.nacin_placanja === 'Gotovina') fGotovina += r.ukupno_sa_pdv;
                 else fVirman += r.ukupno_sa_pdv;
             } else {
@@ -267,7 +267,7 @@ export default function DashboardModule({ user, onExit }) {
     const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
   
     return (
-      <div className="min-h-screen text-slate-300 font-sans p-4 md:p-8 pb-24 print:bg-white print:p-0 transition-colors duration-500" style={{ backgroundColor: saas.ui.boja_pozadine }}>
+      <div className="min-h-screen text-theme-text font-sans p-4 md:p-8 pb-24 print:bg-white print:p-0 transition-colors duration-500" style={{ backgroundColor: saas.ui.boja_pozadine || undefined }}>
         
         {/* GLAVNI HEADER */}
         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center p-4 rounded-2xl shadow-xl mb-6 gap-4 border transition-colors duration-500 print:hidden" style={{ backgroundColor: saas.ui.boja_kartice, borderColor: saas.isEditMode ? saas.ui.boja_akcenta_pilana : '#1e293b' }}>

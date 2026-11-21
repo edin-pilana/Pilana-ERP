@@ -161,7 +161,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const {data: cat} = await supabase.from('katalog_proizvoda').select('*').order('sifra'); setKatalog(cat||[]);
         const {data: r} = await supabase.from('racuni').select('*').order('datum', { ascending: false }); setRacuni(r||[]);
         const {data: bData} = await supabase.from('blagajna').select('id, racun_id, iznos, tip, opis').eq('tip', 'ULAZ'); setBlagajnaUplate(bData || []);
-        const {data: o} = await supabase.from('otpremnice').select('id, kupac_naziv, datum, broj_veze, stavke_jsonb, stavke').order('datum', { ascending: false }); setOtpremniceZaIzbor(o||[]);
+        const {data: o} = await supabase.from('otpremnice').select('id, kupac_naziv, datum, broj_veze, stavke_jsonb').order('datum', { ascending: false }); setOtpremniceZaIzbor(o||[]);
     };
 
     const zapisiU_Log = async (akcija, detalji, nivo = 'INFO') => {
@@ -169,8 +169,8 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji, nivo_alarma: nivo, pregledano: false, vrijeme: new Date().toISOString()
         }]);
     };
-    // 🟢 POPRAVLJENA SINHRONIZACIJA KASE: Briše auto-uplatu i kod prelaska na Virmanski/Djelimično, ne gazi ručne uplate i odbija avans sa Ponude!
-    const sinhronizujKasu = async (racunId, status, nacinPlacanja, iznos, kupac) => {
+    // 🟢 POPRAVLJENA SINHRONIZACIJA KASE: Briše auto-uplatu i kod prelaska na Virmanski/Djelimično, ne gazi ručne uplate, odbija avans sa Ponude i konvertuje EUR->KM!
+    const sinhronizujKasu = async (racunId, status, nacinPlacanja, iznos, kupac, valuta = 'KM') => {
         const { data: postojeceUplate } = await supabase.from('blagajna').select('*').eq('racun_id', racunId).eq('tip', 'ULAZ');
         const sveUplate = postojeceUplate || [];
         const autoUplata = sveUplate.find(u => (u.opis || '').includes('Automatska gotovinska naplata'));
@@ -197,7 +197,11 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             }
         }
 
-        const cistIznos = parseFloat(Math.max(0, (parseFloat(iznos) || 0) - rucneUplateSum - avansSaPonude).toFixed(2));
+        const valNorm = String(valuta || 'KM').toUpperCase().trim();
+        const iznosKM = (valNorm === 'EUR' || valNorm === '€')
+            ? parseFloat(((parseFloat(iznos) || 0) * 1.95583).toFixed(2))
+            : parseFloat((parseFloat(iznos) || 0).toFixed(2));
+        const cistIznos = parseFloat(Math.max(0, iznosKM - rucneUplateSum - avansSaPonude).toFixed(2));
         const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
 
         if (status === 'NAPLAĆENO' && nacinPlacanja === 'Gotovina') {
@@ -512,7 +516,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             await zapisiU_Log('KREIRAN_RAČUN', `Račun ${form.id}`); 
         }
         
-        await sinhronizujKasu(form.id.toUpperCase(), form.status, form.nacin_placanja, totals.za_naplatu, form.kupac_naziv);
+        await sinhronizujKasu(form.id.toUpperCase(), form.status, form.nacin_placanja, totals.za_naplatu, form.kupac_naziv, form.valuta);
         
         resetFormu(); load(); setTab('lista');
 
@@ -539,7 +543,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
     const promijeniStatusBrzo = async (r, noviStatus) => {
         const stariStatus = r.status;
         await supabase.from('racuni').update({ status: noviStatus }).eq('id', r.id);
-        await sinhronizujKasu(r.id, noviStatus, r.nacin_placanja, r.ukupno_sa_pdv, r.kupac_naziv);
+        await sinhronizujKasu(r.id, noviStatus, r.nacin_placanja, r.ukupno_sa_pdv, r.kupac_naziv, r.valuta);
         if (stariStatus === 'NAPLAĆENO' && noviStatus !== 'NAPLAĆENO') {
             await zapisiU_Log('ALARM_POVRAT_RAČUNA_U_NENAPLAĆENO', `🚨 Račun ${r.id} (${r.kupac_naziv}, Iznos: ${r.ukupno_sa_pdv} ${r.valuta || 'KM'}) je vraćen iz statusa NAPLAĆENO u ${noviStatus}!`, 'CRVENO');
         } else {

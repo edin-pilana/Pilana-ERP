@@ -29,6 +29,7 @@ export default function MasterSearch({
     // NOVO: koliko najviše redova se renderuje u dropdownu. Bez ovoga, prazan upit
     // je renderovao svih 1000+ naloga i zamrzavao mobitel. Default 100.
     maxPrikaz = 100,
+    onEnterNoMatch = null,
 }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState(value || '');
@@ -90,9 +91,11 @@ export default function MasterSearch({
                 selectItem(filtered[selectedIndex]);
             } else {
                 // BITNO za univerzalnu pretragu: Enter bez odabira NE poništava kucanje.
-                // Roditelj već ima tekst preko onChange, pa samo zatvaramo dropdown.
-                // Ranije se ovdje ništa nije dešavalo, a filter je ostajao prazan.
+                // Ako roditelj podržava direktan unos (npr. sken dokumenta u Blagajni), pozovi onEnterNoMatch.
                 setOpen(false);
+                if (typeof onEnterNoMatch === 'function' && String(search || '').trim()) {
+                    onEnterNoMatch(String(search).trim());
+                }
             }
         } else if (e.key === 'Escape') {
             setOpen(false);

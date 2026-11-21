@@ -437,7 +437,9 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
                                 data={sviDokumenti} 
                                 poljaZaPretragu={['id', 'kupac']} 
                                 value={skener}
-                                onSelect={(doc) => izvrsiSkeniranje(doc.id)} 
+                                onChange={(val) => setSkener(val)}
+                                onSelect={(doc) => izvrsiSkeniranje(doc.id)}
+                                onEnterNoMatch={(val) => izvrsiSkeniranje(val)}
                                 placeholder="Skeniraj ili ukucaj broj..."
                                 renderItem={(item) => (
                                     <div className="flex justify-between items-center w-full">

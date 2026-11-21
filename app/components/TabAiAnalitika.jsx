@@ -86,7 +86,9 @@ export default function TabAiAnalitika({ saas }) {
         let stvarniPreostaliDug = 0;
         const detaljiOtvorenihRacuna = otvoreniRacuni.map(r => {
             const rid = (r.id || '').toUpperCase().trim();
-            const ukupnoRacun = parseFloat(r.ukupno_sa_pdv || 0);
+            const valNorm = String(r.valuta || 'KM').toUpperCase().trim();
+            const ukupnoOrig = parseFloat(r.ukupno_sa_pdv || 0);
+            const ukupnoRacun = (valNorm === 'EUR' || valNorm === '€') ? parseFloat((ukupnoOrig * 1.95583).toFixed(2)) : ukupnoOrig;
             const uplacenoUBlagajni = sveTransakcije
                 .filter(t => t.tip === 'ULAZ' && (
                     (t.racun_id && t.racun_id.toUpperCase().trim() === rid) ||
@@ -178,10 +180,12 @@ export default function TabAiAnalitika({ saas }) {
     };
 
     const renderMarkdown = (text) => {
+        const escapeLine = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const lines = (text || '').split('\n');
         return lines.map((line, index) => {
-            let formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            if (formattedLine.trim().startsWith('* ')) return <li key={index} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: formattedLine.substring(2) }} />;
+            const safeLine = escapeLine(line);
+            const formattedLine = safeLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            if (formattedLine.trim().startsWith('* ')) return <li key={index} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: formattedLine.trim().substring(2) }} />;
             if (formattedLine.trim() === '') return <br key={index} />;
             return <p key={index} className="mb-1" dangerouslySetInnerHTML={{ __html: formattedLine }} />;
         });

@@ -60,7 +60,8 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
     };
 
     const oznaciKaoRijeseno = async (id) => {
-        await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
+        const { error } = await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', id);
+        if (error) return toast.error("Greška pri označavanju alarma: " + error.message);
         toast.success("Alarm označen kao riješen!");
         ucitajLogove();
     };
@@ -244,14 +245,18 @@ export default function NadzorModule({ user, header, setHeader, onExit }) {
 
             const losiPon = [];
             (svePonudeRes.data || []).forEach(p => {
-                const st = p.stavke_jsonb || [];
+                let st = p.stavke_jsonb || [];
+                if (typeof st === 'string') { try { st = JSON.parse(st); } catch { st = []; } }
+                if (!Array.isArray(st)) st = [];
                 const imaGresku = p.ukupno_sa_pdv === null || isNaN(parseFloat(p.ukupno_sa_pdv)) || isNaN(parseFloat(p.ukupno_bez_pdv)) || st.some(s => s.ukupno === null || isNaN(parseFloat(s.ukupno)) || s.fiksna_cijena === undefined || s.fiksna_cijena === null || s.cijena_baza === undefined);
                 if (imaGresku) losiPon.push(p);
             });
 
             const losiRac = [];
             (sviRacuniRes.data || []).forEach(r => {
-                const st = r.stavke_jsonb || [];
+                let st = r.stavke_jsonb || [];
+                if (typeof st === 'string') { try { st = JSON.parse(st); } catch { st = []; } }
+                if (!Array.isArray(st)) st = [];
                 const imaGresku = r.ukupno_sa_pdv === null || isNaN(parseFloat(r.ukupno_sa_pdv)) || isNaN(parseFloat(r.ukupno_bez_pdv)) || st.some(s => s.ukupno === null || isNaN(parseFloat(s.ukupno)) || s.fiksna_cijena === undefined || s.fiksna_cijena === null);
                 if (imaGresku) losiRac.push(r);
             });

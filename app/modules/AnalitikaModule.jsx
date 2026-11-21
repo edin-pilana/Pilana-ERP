@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import TabAiAnalitika from '../components/TabAiAnalitika';
 import { printDokument } from '../utils/printHelpers';
+import { escapeHtml } from '../utils/dateHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import {
     ResponsiveContainer,
@@ -79,8 +80,8 @@ const izracunajKomadeStavkePaketa = (p) => {
 
 export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     const saas = useSaaS('analitika_modul', {
-        boja_kartice: '#1e293b',
-        boja_slova: '#ffffff',
+        boja_kartice: '',
+        boja_slova: '',
         boja_akcenta: '#3b82f6'
     });
 
@@ -170,8 +171,9 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    const efektivniOd = datumOd;
-    const efektivniDo = modVremena === 'DAN' ? datumOd : datumDo;
+    const rawDo = modVremena === 'DAN' ? datumOd : datumDo;
+    const efektivniOd = rawDo && datumOd > rawDo ? rawDo : datumOd;
+    const efektivniDo = rawDo && datumOd > rawDo ? datumOd : rawDo;
 
     const uOpseguDatuma = (datumStr, createdAtStr) => {
         let d = (datumStr || '').split('T')[0];
@@ -559,17 +561,17 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             const redovi = analitikaProrez.gotovaRobaLista.map((r, i) => `
                 <tr>
                     <td>${i + 1}.</td>
-                    <td><b>${r.paket_id}</b></td>
-                    <td>${r.naziv_proizvoda}</td>
-                    <td style="text-align:center;"><b>${r.dimenzije}</b></td>
-                    <td style="text-align:center;">${r.prikazKolicine || `${r.komada} kom`}</td>
+                    <td><b>${escapeHtml(r.paket_id)}</b></td>
+                    <td>${escapeHtml(r.naziv_proizvoda)}</td>
+                    <td style="text-align:center;"><b>${escapeHtml(r.dimenzije)}</b></td>
+                    <td style="text-align:center;">${escapeHtml(r.prikazKolicine || `${r.komada} kom`)}</td>
                     <td class="num">${r.m3.toFixed(3)} m³</td>
                 </tr>
             `).join('');
 
             html = `
                 <div class="info-grid">
-                    <div class="info-col-left"><h4>Izvještaj Proreza i Pilane</h4><h2>Period: ${periodTekst}</h2><p>Mašina: <b>${masinaFilter}</b></p></div>
+                    <div class="info-col-left"><h4>Izvještaj Proreza i Pilane</h4><h2>Period: ${escapeHtml(periodTekst)}</h2><p>Mašina: <b>${escapeHtml(masinaFilter)}</b></p></div>
                     <div class="info-col-right"><p>Izrezano Trupaca: <b>${analitikaProrez.izrezanoM3.toFixed(3)} m³ (${analitikaProrez.brojTrupaca} kom)</b></p><p>Proizvedeno Građe: <b>${analitikaProrez.proizvedenoM3.toFixed(3)} m³</b></p><p>Iskorištenost (Yield): <b>${analitikaProrez.yieldProc.toFixed(1)}%</b></p></div>
                 </div>
                 <table>
@@ -582,17 +584,17 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             const redovi = analitikaDorada.sljedivostLista.map((r, i) => `
                 <tr>
                     <td>${i + 1}.</td>
-                    <td><b>${r.paket_id}</b></td>
-                    <td>${r.naziv} (${r.dimenzije})</td>
-                    <td>${r.ulazniPaketi}</td>
-                    <td>${r.masina}</td>
+                    <td><b>${escapeHtml(r.paket_id)}</b></td>
+                    <td>${escapeHtml(r.naziv)} (${escapeHtml(r.dimenzije)})</td>
+                    <td>${escapeHtml(r.ulazniPaketi)}</td>
+                    <td>${escapeHtml(r.masina)}</td>
                     <td class="num">${r.izlazM3.toFixed(3)} m³</td>
                 </tr>
             `).join('');
 
             html = `
                 <div class="info-grid">
-                    <div class="info-col-left"><h4>Izvještaj Dorade</h4><h2>Period: ${periodTekst}</h2><p>Mašina: <b>${masinaFilter}</b></p></div>
+                    <div class="info-col-left"><h4>Izvještaj Dorade</h4><h2>Period: ${escapeHtml(periodTekst)}</h2><p>Mašina: <b>${escapeHtml(masinaFilter)}</b></p></div>
                     <div class="info-col-right"><p>Ulaz Sirovine: <b>${analitikaDorada.ulazSirovinaM3.toFixed(3)} m³</b></p><p>Izlaz Gotove Robe: <b>${analitikaDorada.izlazGotovoM3.toFixed(3)} m³</b></p><p>Stvarni Kalo: <b>${analitikaDorada.stvarniKaloM3.toFixed(3)} m³</b></p></div>
                 </div>
                 <table>
@@ -640,7 +642,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     };
 
     return (
-        <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova }}>
+        <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova || undefined }}>
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-blue-500" user={user} modulIme="analitika" saas={saas} hideMasina={true} />
 
             {/* GLAVNI TABOVI ANALITIKE */}
