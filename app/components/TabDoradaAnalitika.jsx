@@ -1,12 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-
-const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 
 const PALETA = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f43f5e'];
 
@@ -25,7 +24,7 @@ const getSirovineNiz = (val) => {
 };
 
 const formatDatum = (iso) => {
-    if(!iso) return '';
+    if (!iso) return '';
     const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`;
 };
 
@@ -34,13 +33,13 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
     const [data, setData] = useState(null);
     const [radnikFilter, setRadnikFilter] = useState('SVI');
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-    
+
     const [logoUrl, setLogoUrl] = useState('');
     const [imeFirme, setImeFirme] = useState('SMART TIMBER');
 
     useEffect(() => {
         const logo = localStorage.getItem('saas_app_logo');
-        if(logo) setLogoUrl(logo);
+        if (logo) setLogoUrl(logo);
     }, []);
 
     useEffect(() => { ucitajDoradaAnalitiku(); }, [datumOd, datumDo, masinaFilter, radnikFilter]);
@@ -52,7 +51,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             const d30 = new Date(new Date(datumOd).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
             const [paketiRes, zastojiRes] = await Promise.all([
-                supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60), 
+                supabase.from('paketi').select('*').gte('datum_yyyy_mm', d60),
                 supabase.from('dnevnik_masine').select('*').gte('datum', datumOd).lte('datum', datumDo).eq('modul', 'Dorada')
             ]);
 
@@ -83,8 +82,8 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                         }
                     });
                 }
-                
-                if (stvarniUlazM3 === 0) stvarniUlazM3 = izlaz * 1.05; 
+
+                if (stvarniUlazM3 === 0) stvarniUlazM3 = izlaz * 1.05;
                 totalUlazM3 += stvarniUlazM3; totalIzlazM3 += izlaz;
 
                 const operacije = p.oznake && Array.isArray(p.oznake) && p.oznake.length > 0 ? p.oznake : ['Dorada'];
@@ -103,23 +102,23 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
 
             const chartDoradaYield = Object.keys(yieldPoProizvodu).map(naziv => ({
                 name: naziv, Yield: yieldPoProizvodu[naziv].u > 0 ? parseFloat(((yieldPoProizvodu[naziv].i / yieldPoProizvodu[naziv].u) * 100).toFixed(1)) : 0,
-            })).sort((a,b) => b.Yield - a.Yield).slice(0, 8);
+            })).sort((a, b) => b.Yield - a.Yield).slice(0, 8);
 
-            const grafikonOperacija = Object.keys(operacijeMap).map(k => ({ name: k, value: parseFloat(operacijeMap[k].toFixed(2)) })).sort((a,b)=>b.value-a.value);
+            const grafikonOperacija = Object.keys(operacijeMap).map(k => ({ name: k, value: parseFloat(operacijeMap[k].toFixed(2)) })).sort((a, b) => b.value - a.value);
 
             const trendDaniMap = {};
             const dDanas = new Date(datumDo);
             for (let i = 29; i >= 0; i--) {
                 const d = new Date(dDanas.getTime() - i * 24 * 60 * 60 * 1000);
                 const iso = d.toISOString().split('T')[0];
-                trendDaniMap[iso] = { dan: `${d.getDate()}.${d.getMonth()+1}`, doradaM3: 0 };
+                trendDaniMap[iso] = { dan: `${d.getDate()}.${d.getMonth() + 1}`, doradaM3: 0 };
             }
 
             const radnikZaTrend = radnikFilter !== 'SVI' ? radnikFilter : (dostupniRadnici[0] || 'Svi');
 
             sviPaketiBaza.filter(p => p.datum_yyyy_mm >= d30 && p.datum_yyyy_mm <= datumDo && imaSirovinu(p.ai_sirovina_ids)).forEach(p => {
                 const iso = p.datum_yyyy_mm;
-                if(trendDaniMap[iso] && (radnikFilter === 'SVI' || p.snimio_korisnik === radnikZaTrend)) {
+                if (trendDaniMap[iso] && (radnikFilter === 'SVI' || p.snimio_korisnik === radnikZaTrend)) {
                     trendDaniMap[iso].doradaM3 += parseFloat(p.kolicina_final || 0);
                 }
             });
@@ -128,11 +127,11 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             const ukupnoZastojMin = danZastoji.reduce((sum, z) => sum + (parseInt(z.zastoj_min) || 0), 0);
 
             setData({
-                kpi: { 
-                    ulazM3: totalUlazM3.toFixed(2), izlazM3: totalIzlazM3.toFixed(2), kaloM3: Math.max(0, totalUlazM3 - totalIzlazM3).toFixed(2), 
+                kpi: {
+                    ulazM3: totalUlazM3.toFixed(2), izlazM3: totalIzlazM3.toFixed(2), kaloM3: Math.max(0, totalUlazM3 - totalIzlazM3).toFixed(2),
                     yieldProcenat: totalUlazM3 > 0 ? ((totalIzlazM3 / totalUlazM3) * 100).toFixed(1) : "0.0", ukupnoZastojMin
                 },
-                grafikonOperacija, yieldChart: chartDoradaYield, trendChartData, trace_blokovi: traceBlokovi.sort((a,b) => b.out_m3 - a.out_m3), zastoji: danZastoji,
+                grafikonOperacija, yieldChart: chartDoradaYield, trendChartData, trace_blokovi: traceBlokovi.sort((a, b) => b.out_m3 - a.out_m3), zastoji: danZastoji,
                 smjenaInfo: { sviRadnici: dostupniRadnici, glavniRadnik: radnikZaTrend }
             });
             setLoading(false);
@@ -164,12 +163,12 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
             const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
             const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
-            
+
             // 3. DOHVATANJE PUTANJE IZ POSTAVKI
             const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
             const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
             const timestamp = new Date().getTime();
-            
+
             // Finalno ime za Make.com: FOLDER___MODUL_PERIOD_ID.pdf
             const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
 
@@ -178,7 +177,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             // =========================================================
             pdf.save(`${nazivModula}_${periodStr}.pdf`);
             window.open(URL.createObjectURL(pdfBlob), '_blank');
-            
+
             // =========================================================
             // ONDA ŠALJEMO U POZADINI U SUPABASE
             // =========================================================
@@ -191,10 +190,10 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
             } else {
                 console.log("🚀 Poslano u arhivu u pozadini.");
             }
-            
+
         } catch (error) {
             console.error("Greška:", error);
-            alert("Greška prilikom generisanja PDF-a.");
+            toast.error("Greška prilikom generisanja PDF-a.");
         } finally {
             setIsGeneratingPDF(false);
         }
@@ -251,7 +250,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                                 <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
                                 <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} unit="%" />
-                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} cursor={{fill: '#1e293b'}} />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} cursor={{ fill: '#1e293b' }} />
                                 <Bar isAnimationActive={false} dataKey="Yield" fill={saas?.ui?.boja_akcenta_dorada || '#3b82f6'} radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
@@ -264,8 +263,8 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                                 <Pie isAnimationActive={false} data={data.grafikonOperacija} innerRadius="40%" outerRadius="80%" paddingAngle={2} dataKey="value" stroke="none">
                                     {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
                                 </Pie>
-                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
-                                <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#fff'}} />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(v) => `${v} m³`} />
+                                <Legend wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#fff' }} />
                             </PieChart>
                         </ResponsiveContainer>
                     </Card>
@@ -279,7 +278,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                                 <XAxis dataKey="dan" stroke="#64748b" fontSize={9} tickLine={false} />
                                 <YAxis stroke="#64748b" fontSize={9} tickLine={false} />
-                                <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} />
                                 <Area isAnimationActive={false} type="monotone" dataKey="M3" name={data.smjenaInfo.glavniRadnik} stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -298,16 +297,16 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                                 </tr>
                             </thead>
                             <tbody className="text-slate-200">
-                            {data.trace_blokovi?.length === 0 && <tr><td colSpan="5" className="py-4 text-center italic text-slate-500">Nema evidentirane dorade.</td></tr>}
-                            {(data.trace_blokovi || []).map((tb, i) => (
-                                <tr key={i} className="border-b border-theme-border/50">
-                                    <td className="py-1.5"><span className="font-black text-white">{tb.out_id}</span><span className="text-blue-400 ml-1">{tb.out_naziv} ({tb.out_dim})</span></td>
-                                    <td className="py-1.5 text-center font-black text-emerald-400">{tb.out_m3}</td>
-                                    <td className="py-1.5 text-center text-slate-300">{tb.in_m3} <span className="text-rose-400 text-[8px] ml-1">Kalo: {tb.kalo_m3}</span></td>
-                                    <td className="py-1.5 text-[8px] text-slate-400 truncate max-w-[120px]">{tb.in_ids}</td>
-                                    <td className="py-1.5 text-[8px] uppercase truncate max-w-[120px]">{tb.operacije}</td>
-                                </tr>
-                            ))}
+                                {data.trace_blokovi?.length === 0 && <tr><td colSpan="5" className="py-4 text-center italic text-slate-500">Nema evidentirane dorade.</td></tr>}
+                                {(data.trace_blokovi || []).map((tb, i) => (
+                                    <tr key={i} className="border-b border-theme-border/50">
+                                        <td className="py-1.5"><span className="font-black text-white">{tb.out_id}</span><span className="text-blue-400 ml-1">{tb.out_naziv} ({tb.out_dim})</span></td>
+                                        <td className="py-1.5 text-center font-black text-emerald-400">{tb.out_m3}</td>
+                                        <td className="py-1.5 text-center text-slate-300">{tb.in_m3} <span className="text-rose-400 text-[8px] ml-1">Kalo: {tb.kalo_m3}</span></td>
+                                        <td className="py-1.5 text-[8px] text-slate-400 truncate max-w-[120px]">{tb.in_ids}</td>
+                                        <td className="py-1.5 text-[8px] uppercase truncate max-w-[120px]">{tb.operacije}</td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </Card>
@@ -371,7 +370,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                                 <Pie isAnimationActive={false} data={data.grafikonOperacija} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
                                     {data.grafikonOperacija.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
                                 </Pie>
-                                <Legend wrapperStyle={{fontSize:'8px', fontWeight:'bold', color: '#000'}} />
+                                <Legend wrapperStyle={{ fontSize: '8px', fontWeight: 'bold', color: '#000' }} />
                             </PieChart>
                         </div>
                     </div>
@@ -421,7 +420,7 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                             <ul style={{ margin: 0, paddingLeft: '15px', fontSize: '9px', color: '#0f172a' }}>
                                 {data.zastoji.map(z => (
                                     <li key={z.id} style={{ marginBottom: '4px' }}>
-                                        <strong>{z.vrijeme_od} - {z.vrijeme_do || '...'}</strong> 
+                                        <strong>{z.vrijeme_od} - {z.vrijeme_do || '...'}</strong>
                                         {z.zastoj_min > 0 && <span style={{ color: '#ef4444', fontWeight: '900', margin: '0 6px' }}>({z.zastoj_min}m)</span>}
                                         <span>{z.napomena || 'Nema opisa'}</span>
                                     </li>
@@ -429,12 +428,12 @@ export default function TabDoradaAnalitika({ datumOd, datumDo, masinaFilter, saa
                             </ul>
                         )}
                     </div>
-                    
+
                     <div style={{ width: '35%', textAlign: 'right', fontSize: '9px', color: '#475569' }}>
                         <div style={{ textTransform: 'uppercase', color: '#0f172a', fontWeight: '900', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '6px' }}>Detalji Smjene</div>
                         <p style={{ margin: '0 0 4px 0' }}>Vrijeme rada: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.start} - {data.smjenaInfo.end}</strong></p>
                         <p style={{ margin: '0 0 4px 0' }}>Operateri: <strong style={{ color: '#0f172a' }}>{data.smjenaInfo.sviRadnici.join(', ') || 'Nema'}</strong></p>
-                        
+
                         <div style={{ marginTop: '30px', paddingTop: '10px', borderTop: '1px solid #0f172a', textAlign: 'center', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' }}>
                             Potpis Rukovodioca
                         </div>

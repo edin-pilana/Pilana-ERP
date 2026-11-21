@@ -121,13 +121,13 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 supabase.from('masine').select('*').order('naziv'),
                 supabase.from('trupci').select('*'),
                 supabase.from('prorez_log').select('*'),
-                supabase.from('paketi').select('*').gt('kolicina_final', 0),
+                supabase.from('paketi').select('*'),
                 supabase.from('dnevnik_masine').select('*'),
                 supabase.from('katalog_proizvoda').select('*'),
                 supabase.from('reklamacije').select('*'),
                 supabase.from('blagajna').select('*'),
                 supabase.from('radni_sati').select('*'),
-                supabase.from('radnici').select('*')
+                supabase.from('radnici').select('id, ime_prezime, uloga, bruto_satnica, godisnji_ukupno, preostalo_godisnjeg')
             ]);
 
             setMasineBaza(mRes.data || []);
@@ -166,7 +166,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         } else if (tip === 'SVE') {
             setModVremena('PERIOD');
             setDatumOd('2025-01-01');
-            setDatumDo('2026-12-31');
+            setDatumDo(`${d.getFullYear()}-12-31`);
         }
     };
 
@@ -175,7 +175,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
 
     const uOpseguDatuma = (datumStr, createdAtStr) => {
         let d = (datumStr || '').split('T')[0];
-        if (!d && createdAtStr) d = createdAtStr.split('T')[0];
+        if (!d && createdAtStr) d = toLocalIso(new Date(createdAtStr));
         if (!d) return false;
         return d >= efektivniOd && d <= efektivniDo;
     };
@@ -234,10 +234,12 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             poDuzinamaMap[kljucDuz].m3 += vol;
         });
 
-        // Paketi proizvedeni na Pilani u istom periodu
+        // Paketi proizvedeni na Pilani u istom periodu (bez preklapanja sa Dorada mašinama!)
         const paketiPilanaSirovi = paketiBaza.filter(p => {
+            if (parseFloat(p.kolicina_final || 0) <= 0) return false;
             const m = (p.masina || '').toUpperCase();
-            const jePilana = m.includes('PILANA') || m.includes('BRENTA') || !p.ai_sirovina_ids || (Array.isArray(p.ai_sirovina_ids) && p.ai_sirovina_ids.length === 0);
+            const imaSirovinu = Array.isArray(p.ai_sirovina_ids) ? p.ai_sirovina_ids.length > 0 : (typeof p.ai_sirovina_ids === 'string' && p.ai_sirovina_ids.replace(/[{}"[\]\s]/g, '').length > 0);
+            const jePilana = (m.includes('PILANA') || m.includes('BRENTA') || m === '') && !imaSirovinu;
             if (!jePilana) return false;
             if (!uOpseguDatuma(p.datum_yyyy_mm || p.datum, p.created_at)) return false;
             return daLiMasinaOdgovaraProrezu(p.masina, masinaFilter);
@@ -337,8 +339,10 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     // ========================================================================
     const analitikaDorada = useMemo(() => {
         const paketiDorade = paketiBaza.filter(p => {
+            if (parseFloat(p.kolicina_final || 0) <= 0) return false;
             const m = (p.masina || '').toUpperCase();
-            const jeDorada = (!m.includes('PILANA') && !m.includes('BRENTA') && m !== '') || (Array.isArray(p.ai_sirovina_ids) && p.ai_sirovina_ids.length > 0);
+            const imaSirovinu = Array.isArray(p.ai_sirovina_ids) ? p.ai_sirovina_ids.length > 0 : (typeof p.ai_sirovina_ids === 'string' && p.ai_sirovina_ids.replace(/[{}"[\]\s]/g, '').length > 0);
+            const jeDorada = (!m.includes('PILANA') && !m.includes('BRENTA') && m !== '') || imaSirovinu;
             if (!jeDorada) return false;
             if (!uOpseguDatuma(p.datum_yyyy_mm || p.datum, p.created_at)) return false;
             if (masinaFilter !== 'SVE' && m !== masinaFilter.toUpperCase().trim()) return false;

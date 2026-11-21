@@ -1,13 +1,13 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
-const formatDatum = (iso) => { if(!iso) return ''; const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
+const formatDatum = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
 
 export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }) {
     const [loading, setLoading] = useState(true);
@@ -16,7 +16,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
     const [logoUrl, setLogoUrl] = useState('');
     const [imeFirme, setImeFirme] = useState('SMART TIMBER');
 
-    useEffect(() => { const logo = localStorage.getItem('saas_app_logo'); if(logo) setLogoUrl(logo); }, []);
+    useEffect(() => { const logo = localStorage.getItem('saas_app_logo'); if (logo) setLogoUrl(logo); }, []);
     useEffect(() => { ucitajObrazacProizvodnje(); }, [datumOd, datumDo]);
 
     const ucitajObrazacProizvodnje = async () => {
@@ -46,11 +46,11 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 const m3 = parseFloat(p.kolicina_final || 0);
                 const kat = katalogDB.find(k => k.sifra === p.naziv_proizvoda || k.naziv === p.naziv_proizvoda);
                 let cijenaBaza = kat ? parseFloat(kat.cijena || 0) : 0;
-                
+
                 let izracunataVr = 0;
-                if(kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
-                    const v = parseFloat(p.debljina)||1; const s = parseFloat(p.sirina)||1; const d = parseFloat(p.duzina)||1;
-                    const vol1kom = (v/100) * (s/100) * (d/100);
+                if (kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
+                    const v = parseFloat(p.debljina) || 1; const s = parseFloat(p.sirina) || 1; const d = parseFloat(p.duzina) || 1;
+                    const vol1kom = (v / 100) * (s / 100) * (d / 100);
                     izracunataVr = vol1kom > 0 ? (m3 / vol1kom) * cijenaBaza : 0;
                 } else {
                     izracunataVr = m3 * cijenaBaza;
@@ -58,7 +58,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 ukupnaVrijednostRobe += izracunataVr;
 
                 const kljuc = p.naziv_proizvoda || 'Nepoznato';
-                if(!proizvodnjaTabelaMap[kljuc]) proizvodnjaTabelaMap[kljuc] = { naziv: kljuc, m3: 0, vrijednost: 0, cijenaPrikaz: `${cijenaBaza} KM/${kat?.default_jedinica || 'm³'}` };
+                if (!proizvodnjaTabelaMap[kljuc]) proizvodnjaTabelaMap[kljuc] = { naziv: kljuc, m3: 0, vrijednost: 0, cijenaPrikaz: `${cijenaBaza} KM/${kat?.default_jedinica || 'm³'}` };
                 proizvodnjaTabelaMap[kljuc].m3 += m3;
                 proizvodnjaTabelaMap[kljuc].vrijednost += izracunataVr;
             });
@@ -88,8 +88,8 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             const masineTrosakMap = {};
             paketi.forEach(p => {
                 const masinaNaziv = p.masina;
-                if(!masinaNaziv) return;
-                if(!masineTrosakMap[masinaNaziv]) masineTrosakMap[masinaNaziv] = 0;
+                if (!masinaNaziv) return;
+                if (!masineTrosakMap[masinaNaziv]) masineTrosakMap[masinaNaziv] = 0;
                 masineTrosakMap[masinaNaziv] += parseFloat(p.kolicina_final || 0);
             });
 
@@ -98,26 +98,26 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 const cijenaM3 = masina ? parseFloat(masina.cijena_m3 || 0) : 0;
                 const m3Ucinak = masineTrosakMap[mNaziv];
                 const trosak = m3Ucinak * cijenaM3;
-                
+
                 ukupniTrosakPrerade += trosak;
-                if(trosak > 0 || m3Ucinak > 0) {
+                if (trosak > 0 || m3Ucinak > 0) {
                     tabelaTroskova.push({ tip: '2_Mašina', naziv: mNaziv, kolicina: `${m3Ucinak.toFixed(2)} m³`, cijena: `${cijenaM3} KM/m³`, ukupno: trosak });
                 }
             });
 
-            const radniciDnevniceMap = {}; 
+            const radniciDnevniceMap = {};
             logovi.forEach(l => {
-                if(l.brentista) radniciDnevniceMap[l.brentista] = (radniciDnevniceMap[l.brentista]||new Set()).add(l.datum);
-                if(l.viljuskarista) radniciDnevniceMap[l.viljuskarista] = (radniciDnevniceMap[l.viljuskarista]||new Set()).add(l.datum);
+                if (l.brentista) radniciDnevniceMap[l.brentista] = (radniciDnevniceMap[l.brentista] || new Set()).add(l.datum);
+                if (l.viljuskarista) radniciDnevniceMap[l.viljuskarista] = (radniciDnevniceMap[l.viljuskarista] || new Set()).add(l.datum);
             });
             paketi.forEach(p => {
-                if(p.snimio_korisnik) radniciDnevniceMap[p.snimio_korisnik] = (radniciDnevniceMap[p.snimio_korisnik]||new Set()).add(p.datum_yyyy_mm);
+                if (p.snimio_korisnik) radniciDnevniceMap[p.snimio_korisnik] = (radniciDnevniceMap[p.snimio_korisnik] || new Set()).add(p.datum_yyyy_mm);
             });
 
             let ukupnoSatiRadnika = 0; let ukupnoTrosakRadnika = 0;
             Object.keys(radniciDnevniceMap).forEach(rIme => {
                 const radnik = radniciDB.find(r => r.ime_prezime === rIme);
-                const sati = radniciDnevniceMap[rIme].size * 8; 
+                const sati = radniciDnevniceMap[rIme].size * 8;
                 ukupnoSatiRadnika += sati;
                 ukupnoTrosakRadnika += (sati * (radnik ? parseFloat(radnik.bruto_satnica || 0) : 0));
             });
@@ -135,12 +135,12 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                 let m3 = parseFloat(rek.kolicina || 0);
 
                 let izracunataVrijednostGubitka = 0;
-                if(kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
+                if (kat && kat.default_jedinica !== 'm3' && kat.default_jedinica !== 'M3') {
                     // Ako se proizvod inače cijeni po komadu, moramo pretvoriti kubike nazad u komade da bismo pomnožili sa cijenom komada
-                    const v = parseFloat(kat.visina)||1; const s = parseFloat(kat.sirina)||1; const d = parseFloat(kat.duzina)||1;
+                    const v = parseFloat(kat.visina) || 1; const s = parseFloat(kat.sirina) || 1; const d = parseFloat(kat.duzina) || 1;
                     // Pretvaramo dimenzije u metre na osnovu sigurnosti
-                    let vol1kom = (v/1000) * (s/1000) * (d/1000); 
-                    if (d < 1000) vol1kom = (v/100) * (s/100) * (d/100);
+                    let vol1kom = (v / 1000) * (s / 1000) * (d / 1000);
+                    if (d < 1000) vol1kom = (v / 100) * (s / 100) * (d / 100);
 
                     izracunataVrijednostGubitka = vol1kom > 0 ? (m3 / vol1kom) * cijenaBaza : 0;
                 } else {
@@ -153,13 +153,13 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             const brutoProfit = ukupnaVrijednostRobe - ukupniTrosakPrerade - finansijskiGubitakReklamacija;
 
             setData({
-                kpi: { 
-                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2), 
-                    trosakPrerade: ukupniTrosakPrerade.toFixed(2), 
+                kpi: {
+                    vrijednostRobe: ukupnaVrijednostRobe.toFixed(2),
+                    trosakPrerade: ukupniTrosakPrerade.toFixed(2),
                     dodataVrijednost: brutoProfit.toFixed(2),
                     gubitakReklamacije: finansijskiGubitakReklamacija.toFixed(2) // 🟢 Novi podatak
                 },
-                tabelaProizvodnje: Object.values(proizvodnjaTabelaMap).sort((a,b) => b.vrijednost - a.vrijednost),
+                tabelaProizvodnje: Object.values(proizvodnjaTabelaMap).sort((a, b) => b.vrijednost - a.vrijednost),
                 tabelaTroskova: tabelaTroskova.sort((a, b) => a.tip.localeCompare(b.tip)),
                 grafikonFinansija: [
                     { name: 'Vrijednost Robe', Iznos: parseFloat(ukupnaVrijednostRobe.toFixed(2)) },
@@ -179,10 +179,12 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             pdfElement.style.opacity = '1';
             pdfElement.style.zIndex = '9999';
             pdfElement.style.left = '0px';
+            pdfElement.style.top = '0px';
             const canvas = await html2canvas(pdfElement, { scale: 2, useCORS: true, logging: false });
             pdfElement.style.opacity = '0';
             pdfElement.style.zIndex = '-1';
             pdfElement.style.left = '-10000px';
+            pdfElement.style.top = '-10000px';
 
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
@@ -194,21 +196,21 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
             const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
             const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
             const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
-            
+
             const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
             const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
             const timestamp = new Date().getTime();
-            
+
             const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
 
             pdf.save(`${nazivModula}_${periodStr}.pdf`);
             window.open(URL.createObjectURL(pdfBlob), '_blank');
-            
+
             const { error: uploadError } = await supabase.storage.from('izvjestaji_buffer').upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
             if (uploadError) console.error("Greška pri slanju u Cloud:", uploadError);
-            
+
         } catch (error) {
-            alert("Greška prilikom generisanja PDF-a.");
+            toast.error("Greška prilikom generisanja PDF-a.");
         } finally {
             setIsGeneratingPDF(false);
         }
@@ -296,8 +298,8 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                                 <BarChart data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                                     <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
-                                    <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
+                                    <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tickFormatter={v => `${v / 1000}k`} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} cursor={{ fill: '#1e293b' }} formatter={(v) => `${v.toLocaleString('bs-BA')} KM`} />
                                     <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={40}>
                                         {data.grafikonFinansija.map((entry, index) => {
                                             let boja = '#f59e0b';
@@ -390,7 +392,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                         <BarChart width={600} height={200} data={data.grafikonFinansija} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                             <XAxis dataKey="name" stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${v/1000}k`} />
+                            <YAxis stroke="#64748b" fontSize={8} tickLine={false} axisLine={false} tickFormatter={v => `${v / 1000}k`} />
                             <Bar isAnimationActive={false} dataKey="Iznos" radius={[4, 4, 0, 0]} barSize={50}>
                                 {data.grafikonFinansija.map((entry, index) => {
                                     let boja = '#f59e0b';
@@ -403,7 +405,7 @@ export default function TabFinansijeAnalitika({ datumOd, datumDo, saas, header }
                         </BarChart>
                     </div>
                 </div>
-                
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #1e293b', paddingTop: '15px', marginTop: '20px', pageBreakInside: 'avoid' }}>
                     <div style={{ width: '60%', fontSize: '8px', color: '#475569' }}>Dokument generisan iz SmartTimber ERP softvera - {new Date().toLocaleString('bs-BA')}</div>
                     <div style={{ width: '35%', textAlign: 'center', fontSize: '9px', color: '#475569' }}><div style={{ paddingTop: '10px', borderTop: '1px solid #1e293b', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' }}>Direktor / Vlasnik</div></div>

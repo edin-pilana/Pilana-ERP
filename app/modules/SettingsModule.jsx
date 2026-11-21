@@ -1317,7 +1317,9 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     };
 
     const pokreniEdit = (r) => {
-        setForm({ ime_prezime: r.ime_prezime, username: r.username, password: r.password, uloga: r.uloga, bruto_satnica: r.bruto_satnica, preostalo_godisnjeg: r.preostalo_godisnjeg, dozvole: r.dozvole || [], qr_kod: r.qr_kod || '' });
+        const iskoristeno = (r.godisnji_iskoristeno_radnik || 0) + (r.godisnji_iskoristeno_poslodavac || 0);
+        const ukupnoGod = r.godisnji_ukupno ?? ((r.preostalo_godisnjeg ?? 20) + iskoristeno);
+        setForm({ ime_prezime: r.ime_prezime, username: r.username, password: r.password, uloga: r.uloga, bruto_satnica: r.bruto_satnica, preostalo_godisnjeg: ukupnoGod, dozvole: r.dozvole || [], qr_kod: r.qr_kod || '' });
         setEditId(r.id); window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
 
@@ -1333,15 +1335,19 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             return toast.error("Satnica radnika ne može biti negativna!");
         }
 
-        const godisnji = parseInt(form.preostalo_godisnjeg || 0);
-        if (godisnji < 0) {
+        const godisnjiUkupno = parseInt(form.preostalo_godisnjeg || 0);
+        if (godisnjiUkupno < 0) {
             return toast.error("Broj dana godišnjeg odmora ne može biti negativan!");
         }
+
+        const postojeci = editId ? radnici.find(r => r.id === editId) : null;
+        const iskoristeno = (postojeci?.godisnji_iskoristeno_radnik || 0) + (postojeci?.godisnji_iskoristeno_poslodavac || 0);
+        const preostaloIzracunato = Math.max(0, godisnjiUkupno - iskoristeno);
 
         // Sprječava pucanje UNIQUE (qr_kod) constrainta kada je qr_kod prazan string ""
         const siguranQrKod = (form.qr_kod && form.qr_kod.trim() !== '')
             ? form.qr_kod.trim()
-            : `RAD-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+            : (postojeci?.qr_kod || `RAD-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`);
 
         const payload = {
             ime_prezime: form.ime_prezime.trim(),
@@ -1349,7 +1355,8 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             password: form.password,
             uloga: form.uloga || 'operater',
             bruto_satnica: satnica,
-            preostalo_godisnjeg: godisnji,
+            godisnji_ukupno: godisnjiUkupno,
+            preostalo_godisnjeg: preostaloIzracunato,
             dozvole: Array.isArray(form.dozvole) ? form.dozvole : [],
             qr_kod: siguranQrKod
         };
@@ -1385,14 +1392,16 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     };
 
     const printAkreditaciju = (r) => {
+        const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const logo = localStorage.getItem('saas_app_logo') || '';
-        const appName = localStorage.getItem('saas_app_name') || 'SmartERP';
+        const appName = esc(localStorage.getItem('saas_app_name') || 'SmartERP');
         const kodZaQR = r.qr_kod || r.username; 
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(kodZaQR)}&color=0f172a`;
+        const imeEsc = esc(r.ime_prezime);
 
         const printWindow = window.open('', '', 'width=800,height=800');
         printWindow.document.write(`
-            <html><head><title>ID Kartica - ${r.ime_prezime}</title>
+            <html><head><title>ID Kartica - ${imeEsc}</title>
             <style>
                 body { font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f1f5f9; }
                 .id-card { width: 54mm; height: 86mm; background: white; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 2px solid #cbd5e1; overflow: hidden; position: relative; text-align: center; }
@@ -1409,15 +1418,15 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             </head><body>
                 <div class="id-card">
                     <div class="header">
-                        ${logo ? `<img src="${logo}" />` : `<h2>${appName}</h2>`}
+                        ${logo ? `<img src="${esc(logo)}" />` : `<h2>${appName}</h2>`}
                     </div>
-                    <div class="photo-area">${r.ime_prezime.charAt(0)}</div>
-                    <h3 class="name">${r.ime_prezime}</h3>
-                    <p class="role">${r.uloga === 'admin' ? 'Uprava / Šef' : 'Zaposlenik'}</p>
+                    <div class="photo-area">${esc((r.ime_prezime || '?').charAt(0))}</div>
+                    <h3 class="name">${imeEsc}</h3>
+                    <p class="role">${r.uloga === 'admin' || r.uloga === 'superadmin' ? 'Uprava / Šef' : 'Zaposlenik'}</p>
                     <div class="qr-container">
                         <img src="${qrUrl}" class="qr-code" />
                     </div>
-                    <div class="footer">ID: ${kodZaQR}</div>
+                    <div class="footer">ID: ${esc(kodZaQR)}</div>
                 </div>
                 <script>setTimeout(() => { window.print(); }, 1000);</script>
             </body></html>
@@ -1445,7 +1454,7 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
                         <div className="bg-blue-900/10 border border-blue-500/30 p-3 rounded-xl shadow-inner">
                             <label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1 font-black">Serijski broj kartice / QR Kod (Za Kiosk skener)</label>
                             <input value={form.qr_kod} onChange={e=>setForm({...form, qr_kod:e.target.value})} placeholder="Skenirajte karticu u ovo polje..." className="w-full min-w-0 p-3 bg-theme-card rounded-lg text-xs text-blue-400 font-black outline-none border border-blue-500/50 uppercase tracking-widest text-center" />
-                            <p className="text-[8px] text-slate-500 text-center mt-1">Ako ostavite prazno, Kiosk će tražiti njegov username umjesto QR koda.</p>
+                            <p className="text-[8px] text-slate-500 text-center mt-1">Ako ostavite prazno, sistem će automatski generisati jedinstveni QR kod (RAD-...).</p>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

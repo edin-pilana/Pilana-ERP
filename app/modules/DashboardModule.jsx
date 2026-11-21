@@ -1,16 +1,14 @@
 "use client";
 import React, { useState, useEffect, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
+import { toLocalIso } from '../utils/dateHelpers';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, AreaChart, Area, PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
 import { Card, Text, Metric, Flex, Badge, Grid, Divider } from '@tremor/react';
 import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
 import PilanaIzvjestaj from '../components/PilanaIzvjestaj';
 import PilanaPeriodIzvjestaj from '../components/PilanaPeriodIzvjestaj';
 import { useSaaS } from '../utils/useSaaS';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const imaSirovinu = (val) => {
     if (!val) return false;
@@ -40,10 +38,9 @@ export default function DashboardModule({ user, onExit }) {
 
     const customSpasiDizajn = () => {
         saas.spasiDizajn();
-        setTimeout(() => alert("✅ Postavke dizajna su uspješno spremljene!"), 300);
     };
 
-    const danasnjiDatum = new Date().toISOString().split('T')[0];
+    const danasnjiDatum = toLocalIso(new Date());
     const [activeTab, setActiveTab] = useState('pilana');
     const [tipDatuma, setTipDatuma] = useState('dan'); 
     const [datumOd, setDatumOd] = useState(danasnjiDatum);

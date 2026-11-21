@@ -509,9 +509,19 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
     const zavrsiSnimanjeNaloga = async () => {
         let jeModifikovan = false;
         if (form.broj_ponude && originalneStavke) {
-            const trenutneSifreIKol = JSON.stringify(stavke.map(s => ({ sifra: s.sifra, kolicina_obracun: parseFloat(s.kolicina_obracun || 0) })));
-            if (trenutneSifreIKol !== originalneStavke) {
-                jeModifikovan = true;
+            try {
+                const origLista = JSON.parse(originalneStavke);
+                if (!Array.isArray(origLista) || origLista.length !== stavke.length) {
+                    jeModifikovan = true;
+                } else {
+                    jeModifikovan = origLista.some((o, idx) => {
+                        const t = stavke[idx];
+                        if (!t || o.sifra !== t.sifra) return true;
+                        return Math.abs(parseFloat(o.kolicina_obracun || 0) - parseFloat(t.kolicina_obracun || 0)) > 0.0005;
+                    });
+                }
+            } catch (e) {
+                jeModifikovan = false;
             }
         }
 
@@ -776,7 +786,13 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
-    const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('-')[0].length === 4 ? isoString.split('-') : isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
+    const formatirajDatum = (isoString) => {
+        if (!isoString) return '';
+        const clean = String(isoString).split('T')[0];
+        const parts = clean.split('-');
+        if (parts.length !== 3) return String(isoString);
+        return `${parts[2]}.${parts[1]}.${parts[0]}.`;
+    };
     const resetFormu = () => { setForm({ id: generisiID(), broj_ponude: '', kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_isporuke: '', napomena: '', status: 'U PROIZVODNJI', tip_naloga: 'OBIČNI' }); setStavke([]); setOriginalneStavke(null); setSkenerInput(''); setIsEditingNalog(false); setTehnologija({}); };
 
     const naloziZaPrikaz = nalozi.filter(n => n.status !== 'OBRISANO' && (

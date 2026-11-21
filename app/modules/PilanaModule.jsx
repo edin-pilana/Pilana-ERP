@@ -25,7 +25,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 
     useEffect(() => { loadLogove(); }, [header]);
     const loadLogove = async () => {
-        if(!header || !header.datum || !header.masina) return;
+        if (!header || !header.datum || !header.masina) return;
         const { data } = await supabase.from('dnevnik_masine').select('*').eq('datum', header.datum).eq('masina', header.masina).eq('modul', modul).order('vrijeme_od', { ascending: false });
         if (data) setLogovi(data);
     };
@@ -39,7 +39,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         loadLogove();
     };
 
-    const obrisiLog = (id) => { 
+    const obrisiLog = (id) => {
         prikaziDialog({
             tip: 'upozorenje',
             naslov: 'Brisanje zapisa zastoja',
@@ -57,10 +57,10 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
     };
 
     const renderDnevnikPolje = (polje) => {
-        if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
-        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
-        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none shadow-inner text-center" />;
-        if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
+        if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({ ...form, vrijeme_od: e.target.value })} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
+        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({ ...form, vrijeme_do: e.target.value })} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
+        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({ ...form, zastoj_min: e.target.value })} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none shadow-inner text-center" />;
+        if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({ ...form, napomena: e.target.value })} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-theme-accent shadow-inner" />;
         return null;
     };
 
@@ -72,7 +72,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
                     const responsiveSpan = polje.span === 'col-span-4' ? 'col-span-1 sm:col-span-2 md:col-span-4' : (polje.span === 'col-span-2' ? 'col-span-1 sm:col-span-2 md:col-span-2' : 'col-span-1');
                     return (
                         <div key={polje.id} className={`relative flex flex-col ${responsiveSpan} w-full transition-all ${saas.isEditMode ? 'border-2 border-dashed border-amber-500 p-2 rounded-xl bg-black/20 resize overflow-auto' : ''}`} style={{ maxWidth: '100%', ...(saas.isEditMode ? { minWidth: '100px', minHeight: '80px', width: polje.customWidth || undefined, height: polje.customHeight || undefined } : {}) }} draggable={saas.isEditMode} onDragStart={(e) => handleDragStart(e, index, 'polja_dnevnik')} onDragEnter={(e) => handleDragEnter(e, index)} onDragEnd={() => handleDrop('polja_dnevnik')} onDragOver={(e) => e.preventDefault()} onMouseUp={(e) => spremiDimenzije(e, index, 'polja_dnevnik')}>
-                            {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span==='col-span-4'?'100%':polje.span==='col-span-2'?'50%':'25%'}</button></div>)}
+                            {saas.isEditMode && (<div className="flex justify-between items-center mb-2 shrink-0"><span className="text-[9px] text-amber-500 uppercase font-black cursor-move">☰</span><button onClick={() => toggleVelicina(index, 'polja_dnevnik')} className="text-[8px] text-amber-500 font-black bg-amber-500/20 px-2 py-1 rounded">ŠIRINA: {polje.span === 'col-span-4' ? '100%' : polje.span === 'col-span-2' ? '50%' : '25%'}</button></div>)}
                             {saas.isEditMode ? (<input value={polje.label} onChange={(e) => updatePolje(index, 'label', e.target.value, 'polja_dnevnik')} className="w-full bg-theme-card text-amber-400 p-1 mb-1 rounded border border-amber-500/50 text-[8px] uppercase font-black text-center shrink-0" placeholder="Ostavite prazno za bez naslova" />) : (polje.label && <label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1 shrink-0">{polje.label}</label>)}
                             <div className={`flex-1 w-full ${saas.isEditMode ? 'opacity-50 pointer-events-none' : ''}`}>{renderDnevnikPolje(polje)}</div>
                         </div>
@@ -80,7 +80,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
                 })}
                 <button onClick={snimiZastojIliRad} className={`w-full py-4 bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-orange-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
             </div>
-            
+
             <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                 {logovi.length === 0 && <p className="text-center text-slate-500 text-[10px] uppercase">Nema unesenih zastoja za danas.</p>}
                 {logovi.map(l => (
@@ -101,7 +101,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
 }
 
 export default function PilanaModule({ user, header, setHeader, onExit }) {
-    
+
     useEffect(() => {
         const postaviMasinu = async () => {
             const { data } = await supabase.from('masine').select('naziv').ilike('dozvoljeni_moduli', '%Pilana%');
@@ -118,51 +118,51 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         };
         postaviMasinu();
     }, [header?.masina]);
-    
+
     const saas = useSaaS('pilana_izlaz', {
         boja_kartice: '#1e293b', boja_slova: '#ffffff', velicina_naslova: '16',
         naslov_skenera: 'SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)',
-        polja_radnici: [ { id: 'brentista', label: '👨‍🔧 BRENTISTA (IZ PROREZA)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' } ],
-        polja_dnevnik: [ { id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-4' } ]
+        polja_radnici: [{ id: 'brentista', label: '👨‍🔧 BRENTISTA (IZ PROREZA)', span: 'col-span-1' }, { id: 'viljuskarista', label: '🚜 VILJUŠKARISTA', span: 'col-span-1' }],
+        polja_dnevnik: [{ id: 'pocetak', label: 'POČETAK (SATI)', span: 'col-span-1' }, { id: 'kraj', label: 'ZAVRŠETAK (SATI)', span: 'col-span-1' }, { id: 'zastoj', label: 'ZASTOJ (MINUTA)', span: 'col-span-1' }, { id: 'napomena', label: 'NAPOMENA / RAZLOG', span: 'col-span-4' }]
     });
 
     const dragItem = useRef(null);
     const dragOverItem = useRef(null);
     const handleDragStart = (e, index, lista) => { dragItem.current = { index, lista }; };
     const handleDragEnter = (e, index) => { dragOverItem.current = index; };
-    const handleDrop = (listaIme) => { 
-        if(!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
-        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
-        const novaLista = [...aktuelnaLista]; 
-        const premjesteniItem = novaLista[dragItem.current.index]; 
+    const handleDrop = (listaIme) => {
+        if (!dragItem.current || dragOverItem.current === null || dragItem.current.lista !== listaIme) return;
+        const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
+        const novaLista = [...aktuelnaLista];
+        const premjesteniItem = novaLista[dragItem.current.index];
         novaLista.splice(dragItem.current.index, 1);
-        novaLista.splice(dragOverItem.current, 0, premjesteniItem); 
-        dragItem.current = null; dragOverItem.current = null; 
-        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+        novaLista.splice(dragOverItem.current, 0, premjesteniItem);
+        dragItem.current = null; dragOverItem.current = null;
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
     };
-    const updatePolje = (index, key, val, listaIme) => { 
+    const updatePolje = (index, key, val, listaIme) => {
         const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
-        const novaLista = [...aktuelnaLista]; 
-        novaLista[index][key] = val; 
-        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+        const novaLista = [...aktuelnaLista];
+        novaLista[index][key] = val;
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
     };
-    const toggleVelicinaPolja = (index, listaIme) => { 
+    const toggleVelicinaPolja = (index, listaIme) => {
         const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
-        const novaLista = [...aktuelnaLista]; 
-        const trenutno = novaLista[index].span; 
-        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1'); 
-        saas.setUi({...saas.ui, [listaIme]: novaLista}); 
+        const novaLista = [...aktuelnaLista];
+        const trenutno = novaLista[index].span;
+        novaLista[index].span = trenutno === 'col-span-1' ? 'col-span-2' : (trenutno === 'col-span-2' ? 'col-span-4' : 'col-span-1');
+        saas.setUi({ ...saas.ui, [listaIme]: novaLista });
     };
-    const spremiDimenzije = (e, index, listaIme) => { 
-        if (!saas.isEditMode) return; 
+    const spremiDimenzije = (e, index, listaIme) => {
+        if (!saas.isEditMode) return;
         const w = e.currentTarget.style.width; const h = e.currentTarget.style.height;
-        if (w || h) { 
-            const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme]; 
+        if (w || h) {
+            const aktuelnaLista = saas.ui[listaIme]?.length > 0 ? saas.ui[listaIme] : saas.defaultConfig[listaIme];
             const novaLista = [...aktuelnaLista];
-            if (w) novaLista[index].customWidth = w; 
-            if (h) novaLista[index].customHeight = h; 
-            saas.setUi({...saas.ui, [listaIme]: novaLista}); 
-        } 
+            if (w) novaLista[index].customWidth = w;
+            if (h) novaLista[index].customHeight = h;
+            saas.setUi({ ...saas.ui, [listaIme]: novaLista });
+        }
     };
 
     const [izlazScan, setIzlazScan] = useState('');
@@ -170,16 +170,16 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [rnStavke, setRnStavke] = useState([]);
     const [katalog, setKatalog] = useState([]);
     const [aktivniNalozi, setAktivniNalozi] = useState([]);
-    
+
     const [aktivniPaketiInfo, setAktivniPaketiInfo] = useState([]);
     const [selectedIzlazId, setSelectedIzlazId] = useState('');
     const [izlazPackageItems, setIzlazPackageItems] = useState([]);
     const [activeEditItem, setActiveEditItem] = useState(null);
     const [updateMode, setUpdateMode] = useState('dodaj');
-    
+
     const [brentista, setBrentista] = useState('');
     const [viljuskarista, setViljuskarista] = useState('');
-    
+
     const [radniciList, setRadniciList] = useState([]);
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
@@ -188,7 +188,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const [form, setForm] = useState({ naziv: '', debljina: '', sirina: '', duzina: '', kolicina_ulaz: '', jm: 'kom', rn_jm: 'm3', rn_stavka_id: null, naruceno: 0 });
     const [isScanning, setIsScanning] = useState(false);
     const [scanTarget, setScanTarget] = useState('');
-    const [dostupneOznake, setDostupneOznake] = useState([]); 
+    const [dostupneOznake, setDostupneOznake] = useState([]);
     const [odabraneOznake, setOdabraneOznake] = useState([]);
     const timerRef = useRef(null);
 
@@ -198,10 +198,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     useEffect(() => { radniNalogRef.current = radniNalog; }, [radniNalog]);
 
     const zapisiU_Log = async (akcija, detalji) => {
-        await supabase.from('sistem_audit_log').insert([{ 
-            korisnik: user?.ime_prezime || 'Nepoznat', 
-            akcija: akcija, 
-            detalji: detalji 
+        await supabase.from('sistem_audit_log').insert([{
+            korisnik: user?.ime_prezime || 'Nepoznat',
+            akcija: akcija,
+            detalji: detalji
         }]);
     };
 
@@ -212,15 +212,15 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     useEffect(() => {
-        supabase.from('radnici').select('ime_prezime').then(({data}) => setRadniciList(data ? data.map(r=>({naziv: r.ime_prezime})) : []));
-        supabase.from('katalog_proizvoda').select('*').then(({data}) => setKatalog(data || []));
-        supabase.from('radni_nalozi').select('id, kupac_naziv, status, tip_naloga, stavke_jsonb, tehnologija_jsonb').neq('status', 'ZAVRŠENO').then(({data}) => setAktivniNalozi(data || []));
-        
+        supabase.from('radnici').select('ime_prezime').then(({ data }) => setRadniciList(data ? data.map(r => ({ naziv: r.ime_prezime })) : []));
+        supabase.from('katalog_proizvoda').select('*').then(({ data }) => setKatalog(data || []));
+        supabase.from('radni_nalozi').select('id, kupac_naziv, status, tip_naloga, stavke_jsonb, tehnologija_jsonb').neq('status', 'ZAVRŠENO').then(({ data }) => setAktivniNalozi(data || []));
+
         ucitajSveZapoocetePakete();
 
         const ucitajDezurneRadnike = async () => {
             if (!header?.masina) return;
-            const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim(); 
+            const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim();
             const { data } = await supabase.from('aktivni_radnici').select('radnik_ime, uloga').eq('masina_naziv', masinaKojaReze).is('vrijeme_odjave', null);
             let locBrentista = localStorage.getItem('zajednicki_brentista') || '';
             let locViljuskarista = localStorage.getItem('zajednicki_viljuskarista') || '';
@@ -231,18 +231,18 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 if (b) { locBrentista = b.radnik_ime; localStorage.setItem('zajednicki_brentista', b.radnik_ime); }
                 if (v) { locViljuskarista = v.radnik_ime; localStorage.setItem('zajednicki_viljuskarista', v.radnik_ime); }
             }
-            
+
             setBrentista(locBrentista);
             setViljuskarista(locViljuskarista);
         };
         ucitajDezurneRadnike();
 
-        const handleRadniciUpdate = (event) => { 
+        const handleRadniciUpdate = (event) => {
             if (event.detail) {
                 setBrentista(event.detail.brentista);
                 setViljuskarista(event.detail.viljuskarista);
             } else {
-                 ucitajDezurneRadnike(); 
+                ucitajDezurneRadnike();
             }
         };
         window.addEventListener('radnici_updated', handleRadniciUpdate);
@@ -274,7 +274,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const masinaKojaReze = header?.masina ? header.masina.replace('PILANA', 'BRENTA').trim() : 'BRENTA 1';
         await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', masinaKojaReze).eq('uloga', 'brentista').is('vrijeme_odjave', null);
         if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: masinaKojaReze, vrijeme_prijave: new Date().toISOString(), uloga: 'brentista' }]);
-        
+
         setBrentista(novoIme);
         localStorage.setItem('zajednicki_brentista', novoIme);
         emitRadniciUpdate(novoIme, viljuskarista);
@@ -284,7 +284,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const masinaKojaReze = header?.masina ? header.masina.replace('PILANA', 'BRENTA').trim() : 'BRENTA 1';
         await supabase.from('aktivni_radnici').update({ vrijeme_odjave: new Date().toISOString() }).eq('masina_naziv', masinaKojaReze).eq('uloga', 'viljuskarista').is('vrijeme_odjave', null);
         if (novoIme) await supabase.from('aktivni_radnici').insert([{ radnik_ime: novoIme, masina_naziv: masinaKojaReze, vrijeme_prijave: new Date().toISOString(), uloga: 'viljuskarista' }]);
-        
+
         setViljuskarista(novoIme);
         localStorage.setItem('zajednicki_viljuskarista', novoIme);
         emitRadniciUpdate(brentista, novoIme);
@@ -292,7 +292,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
     const ucitajSveZapoocetePakete = async () => {
         if (!header?.masina) return;
-        
+
         const { data, error } = await supabase.from('paketi')
             .select('paket_id, debljina, sirina, duzina, naziv_proizvoda, kolicina_final, kolicina_m3')
             .is('closed_at', null)
@@ -306,20 +306,20 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (data && data.length > 0) {
             const grouped = data.reduce((acc, curr) => {
                 if (!acc[curr.paket_id]) {
-                    acc[curr.paket_id] = { 
-                        id: curr.paket_id, 
-                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`, 
+                    acc[curr.paket_id] = {
+                        id: curr.paket_id,
+                        dimenzija: `${curr.debljina}x${curr.sirina}x${curr.duzina} cm`,
                         proizvod: curr.naziv_proizvoda,
-                        m3: 0, 
-                        stavke: 0 
+                        m3: 0,
+                        stavke: 0
                     };
                 }
                 acc[curr.paket_id].m3 += parseFloat(curr.kolicina_final || curr.kolicina_m3 || 0);
                 acc[curr.paket_id].stavke += 1;
                 return acc;
             }, {});
-            
-            setAktivniPaketiInfo(Object.values(grouped).sort((a,b) => b.id.localeCompare(a.id)));
+
+            setAktivniPaketiInfo(Object.values(grouped).sort((a, b) => b.id.localeCompare(a.id)));
         } else {
             setAktivniPaketiInfo([]);
         }
@@ -329,14 +329,14 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         const fetchMasinaAtribute = async () => {
             if (!header?.masina) return;
             const { data } = await supabase.from('masine').select('atributi_paketa').eq('naziv', header.masina).maybeSingle();
-            setDostupneOznake(data?.atributi_paketa || []); setOdabraneOznake([]); 
+            setDostupneOznake(data?.atributi_paketa || []); setOdabraneOznake([]);
         };
         fetchMasinaAtribute();
     }, [header?.masina]);
 
     const sinhronizujRadniNalog = async (rn_id, headerMasina) => {
         if (!rn_id) return;
-        
+
         const { data: paketiRN } = await supabase.from('paketi').select('*').eq('broj_veze', rn_id);
         if (!paketiRN) return;
 
@@ -347,7 +347,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
         const noveStavke = nalog.stavke_jsonb.map(st => {
             const paketiStavke = paketiRN.filter(p => p.stavka_id === st.id);
-            
+
             let izracunatoTotal = 0;
             let izracunatoFaza = 0;
 
@@ -362,8 +362,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
                 if (rnJm === 'm3') napravljenoZaOvajPaket = m3;
                 else if (rnJm === 'kom') napravljenoZaOvajPaket = kom;
-                else if (rnJm === 'm2') napravljenoZaOvajPaket = kom * (s/100) * (d/100);
-                else if (rnJm === 'm1') napravljenoZaOvajPaket = kom * (d/100);
+                else if (rnJm === 'm2') napravljenoZaOvajPaket = kom * (s / 100) * (d / 100);
+                else if (rnJm === 'm1') napravljenoZaOvajPaket = kom * (d / 100);
 
                 izracunatoTotal += napravljenoZaOvajPaket;
                 if (isFazni && p.masina?.toUpperCase() === headerMasina?.toUpperCase()) {
@@ -382,13 +382,13 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     };
 
     const handleNalogSelect = async (val) => {
-        if(!val) return;
+        if (!val) return;
         setRadniNalog(val);
-        const {data: nalog} = await supabase.from('radni_nalozi').select('*').eq('id', val.toUpperCase()).maybeSingle();
-        
+        const { data: nalog } = await supabase.from('radni_nalozi').select('*').eq('id', val.toUpperCase()).maybeSingle();
+
         if (nalog) {
-            const {data: proizvedeniPaketi} = await supabase.from('paketi').select('paket_id, stavka_id, naziv_proizvoda, kolicina_ulaz, kolicina_final, masina').eq('broj_veze', val.toUpperCase());
-            
+            const { data: proizvedeniPaketi } = await supabase.from('paketi').select('paket_id, stavka_id, naziv_proizvoda, kolicina_ulaz, kolicina_final, masina').eq('broj_veze', val.toUpperCase());
+
             const ucitaneStavke = nalog.stavke_jsonb || nalog.stavke || [];
             const tehnologija = nalog.tehnologija_jsonb || {};
             const isFazni = nalog.tip_naloga === 'FAZNI';
@@ -398,14 +398,14 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 ucitaneStavke.forEach(s => {
                     const katItem = katalog.find(k => k.sifra === s.sifra) || {};
                     let dimenzijeStr = s.dimenzije || s.dimenzija || s.naziv || '';
-                    
+
                     let naruceno = parseFloat(s.kolicina_obracun || s.kolicina || 0);
                     let jm = s.jm_obracun || s.jm_unos || 'm3';
                     let oznake = []; let skica = null;
 
                     if (isFazni) {
                         const fazaZaOvuMasinu = (tehnologija[s.id] || []).find(f => f.masina?.toUpperCase() === header.masina?.toUpperCase());
-                        if (!fazaZaOvuMasinu) return; 
+                        if (!fazaZaOvuMasinu) return;
                         dimenzijeStr = fazaZaOvuMasinu.dimenzija || dimenzijeStr;
                         naruceno = parseFloat(fazaZaOvuMasinu.kolicina || 0);
                         jm = fazaZaOvuMasinu.jm || jm;
@@ -422,19 +422,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                         sir = parseFloat(dimRegex[2]);
                         d = parseFloat(dimRegex[3]);
                     } else {
-                        v = parseFloat(katItem.visina) || 0; 
-                        sir = parseFloat(katItem.sirina) || 0; 
+                        v = parseFloat(katItem.visina) || 0;
+                        sir = parseFloat(katItem.sirina) || 0;
                         d = parseFloat(katItem.duzina) || 0;
                     }
-                    
-                    let ispisDimenzije = (v>0 && sir>0 && d>0) ? `${v}x${sir}x${d}` : 'Nema u katalogu';
-                    const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v/100) * (sir/100) * (d/100) : 0;
+
+                    let ispisDimenzije = (v > 0 && sir > 0 && d > 0) ? `${v}x${sir}x${d}` : 'Nema u katalogu';
+                    const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v / 100) * (sir / 100) * (d / 100) : 0;
 
                     let narucenoM3 = 0, narucenoKom = 0;
                     if (jm === 'm3') { narucenoM3 = naruceno; narucenoKom = vol1kom > 0 ? Math.ceil(naruceno / vol1kom) : 0; }
                     else if (jm === 'kom') { narucenoKom = naruceno; narucenoM3 = naruceno * vol1kom; }
-                    else if (jm === 'm2') { narucenoKom = (sir/100 && d/100) ? Math.ceil(naruceno / ((sir/100)*(d/100))) : 0; narucenoM3 = narucenoKom * vol1kom; }
-                    else if (jm === 'm1') { narucenoKom = (d/100) ? Math.ceil(naruceno / (d/100)) : 0; narucenoM3 = narucenoKom * vol1kom; }
+                    else if (jm === 'm2') { narucenoKom = (sir / 100 && d / 100) ? Math.ceil(naruceno / ((sir / 100) * (d / 100))) : 0; narucenoM3 = narucenoKom * vol1kom; }
+                    else if (jm === 'm1') { narucenoKom = (d / 100) ? Math.ceil(naruceno / (d / 100)) : 0; narucenoM3 = narucenoKom * vol1kom; }
 
                     let relPaketi = proizvedeniPaketi || [];
                     if (isFazni) relPaketi = relPaketi.filter(p => p.masina?.toUpperCase() === header.masina?.toUpperCase());
@@ -445,12 +445,12 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     const paketiIds = [...new Set(relPaketi.map(p => p.paket_id))];
 
                     mapiraneStavke.push({
-                        id: s.id, sifra_proizvoda: s.sifra, naziv_proizvoda: s.naziv, jm: jm, 
+                        id: s.id, sifra_proizvoda: s.sifra, naziv_proizvoda: s.naziv, jm: jm,
                         narucenoM3, narucenoKom, napravljenoM3, napravljenoKom, paketiIds,
-                        dimenzije: ispisDimenzije, vol1kom: vol1kom, predlozene_oznake: oznake, isFazni: isFazni, skica_url: skica 
+                        dimenzije: ispisDimenzije, vol1kom: vol1kom, predlozene_oznake: oznake, isFazni: isFazni, skica_url: skica
                     });
                 });
-                if(mapiraneStavke.length === 0 && isFazni) prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Faza', poruka: `Ovaj nalog ne sadrži stavke predviđene za mašinu: ${header.masina}`, onCancel: zatvoriDialog });
+                if (mapiraneStavke.length === 0 && isFazni) prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Faza', poruka: `Ovaj nalog ne sadrži stavke predviđene za mašinu: ${header.masina}`, onCancel: zatvoriDialog });
                 setRnStavke(mapiraneStavke);
             } else { prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Nalog ${val} nema stavki!`, onCancel: zatvoriDialog }); setRnStavke([]); }
         } else { prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: `Nalog ${val} ne postoji!`, onCancel: zatvoriDialog }); setRnStavke([]); }
@@ -463,19 +463,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             if (parts.length >= 3) { deb = parts[0].trim(); sir = parts[1].trim(); duz = parts[2].trim(); }
         }
 
-        setForm({ 
-            ...form, 
-            naziv: stavka.naziv_proizvoda, debljina: deb, sirina: sir, duzina: duz, 
-            jm: 'kom', rn_jm: stavka.jm, rn_stavka_id: stavka.id, 
-            naruceno: parseFloat(stavka.narucenoM3 || 0).toFixed(4) 
+        setForm({
+            ...form,
+            naziv: stavka.naziv_proizvoda, debljina: deb, sirina: sir, duzina: duz,
+            jm: 'kom', rn_jm: stavka.jm, rn_stavka_id: stavka.id,
+            naruceno: parseFloat(stavka.narucenoM3 || 0).toFixed(4)
         });
         if (stavka.predlozene_oznake && stavka.predlozene_oznake.length > 0) setOdabraneOznake(stavka.predlozene_oznake); else setOdabraneOznake([]);
         const formElement = document.getElementById('package-form-area'); if (formElement) formElement.scrollIntoView({ behavior: 'smooth' });
     };
 
-    const fetchIzlaz = async (pid) => { 
+    const fetchIzlaz = async (pid) => {
         const { data } = await supabase.from('paketi').select('*').eq('paket_id', pid).order('created_at', { ascending: false });
-        setIzlazPackageItems(data || []); 
+        setIzlazPackageItems(data || []);
         if (data && data.length > 0 && data[0].broj_veze && !radniNalogRef.current) { handleNalogSelect(data[0].broj_veze); }
     };
 
@@ -495,18 +495,18 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const toggleOznaka = (o) => { setOdabraneOznake(prev => prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o]); };
 
     const livePreracunM3 = useMemo(() => {
-        if(!form.kolicina_ulaz || isNaN(form.kolicina_ulaz)) return 0;
+        if (!form.kolicina_ulaz || isNaN(form.kolicina_ulaz)) return 0;
         const v = parseFloat(form.debljina) || 1;
         const s = parseFloat(form.sirina) || 1;
         const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);
-        
+
         let komada = unosKol;
-        if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
-        else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
-        else if (form.jm === 'm1') komada = unosKol / (d/100);
-        
-        return (komada * (v/100) * (s/100) * (d/100)).toFixed(3);
+        if (form.jm === 'm3') komada = unosKol / ((v / 100) * (s / 100) * (d / 100));
+        else if (form.jm === 'm2') komada = unosKol / ((s / 100) * (d / 100));
+        else if (form.jm === 'm1') komada = unosKol / (d / 100);
+
+        return (komada * (v / 100) * (s / 100) * (d / 100)).toFixed(3);
     }, [form.kolicina_ulaz, form.jm, form.debljina, form.sirina, form.duzina]);
 
     const save = async () => {
@@ -519,43 +519,43 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
         if (!form.debljina || parseFloat(form.debljina) <= 0 || !form.sirina || parseFloat(form.sirina) <= 0 || !form.duzina || parseFloat(form.duzina) <= 0) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Sve dimenzije (Debljina, Širina i Dužina u cm) moraju biti veće od nule!", onCancel: zatvoriDialog });
         }
-        
+
         const v = parseFloat(form.debljina) || 1; const s = parseFloat(form.sirina) || 1; const d = parseFloat(form.duzina) || 1;
         const unosKol = parseFloat(form.kolicina_ulaz);
         let komada = unosKol;
-        if (form.jm === 'm3') komada = unosKol / ((v/100) * (s/100) * (d/100));
-        else if (form.jm === 'm2') komada = unosKol / ((s/100) * (d/100));
-        else if (form.jm === 'm1') komada = unosKol / (d/100);
-        const qtyZaPaket = parseFloat((komada * (v/100) * (s/100) * (d/100)).toFixed(3));
-        
+        if (form.jm === 'm3') komada = unosKol / ((v / 100) * (s / 100) * (d / 100));
+        else if (form.jm === 'm2') komada = unosKol / ((s / 100) * (d / 100));
+        else if (form.jm === 'm1') komada = unosKol / (d / 100);
+        const qtyZaPaket = parseFloat((komada * (v / 100) * (s / 100) * (d / 100)).toFixed(3));
+
         let isNusProizvod = false; let currentRnStavka = null;
         const usedStavkaId = form.rn_stavka_id || (activeEditItem ? activeEditItem.stavka_id : null);
 
-        if (usedStavkaId) { 
+        if (usedStavkaId) {
             currentRnStavka = rnStavke.find(rs => rs.id === usedStavkaId);
-            if (currentRnStavka && currentRnStavka.naziv_proizvoda !== (form.naziv || activeEditItem?.naziv_proizvoda)) isNusProizvod = true; 
-        } else if (radniNalog) { 
+            if (currentRnStavka && currentRnStavka.naziv_proizvoda !== (form.naziv || activeEditItem?.naziv_proizvoda)) isNusProizvod = true;
+        } else if (radniNalog) {
             isNusProizvod = true;
         }
 
         if (currentRnStavka && !isNusProizvod && !activeEditItem) {
-            const vecNapravljenoM3 = parseFloat(currentRnStavka.napravljenoM3) || 0; 
+            const vecNapravljenoM3 = parseFloat(currentRnStavka.napravljenoM3) || 0;
             const narucenoM3 = parseFloat(currentRnStavka.narucenoM3) || 0;
             const vecNapravljenoKom = parseFloat(currentRnStavka.napravljenoKom) || 0;
             const narucenoKom = parseFloat(currentRnStavka.narucenoKom) || 0;
 
             const noviTotalM3 = vecNapravljenoM3 + qtyZaPaket;
             const noviTotalKom = vecNapravljenoKom + komada;
-            
+
             if (noviTotalM3 > narucenoM3 + 0.001 || noviTotalKom > narucenoKom) {
                 const visakM3 = noviTotalM3 - narucenoM3;
                 const visakKom = noviTotalKom - narucenoKom;
-                
+
                 return prikaziDialog({
-                    tip: 'greska', 
+                    tip: 'greska',
                     naslov: '⚠️ UPOZORENJE: PRELAZITE NORMU!',
                     poruka: `Dodavanjem ove količine prelazite naručenu normu za:\n\n+ ${visakM3 > 0 ? visakM3.toFixed(3) : 0} m³\n+ ${visakKom > 0 ? visakKom : 0} komada\n\nSistem će ovo evidentirati kao VIŠAK. Da li ste sigurni da želite nastaviti?`,
-                    confirmText: '🚨 DA, NAPRAVI VIŠAK', 
+                    confirmText: '🚨 DA, NAPRAVI VIŠAK',
                     cancelText: '✕ PREKINI',
                     onConfirm: () => { izvrsiSnimanjePaketa(qtyZaPaket, isNusProizvod, currentRnStavka, usedStavkaId, komada, v, s, d); zatvoriDialog(); },
                     onCancel: zatvoriDialog
@@ -568,8 +568,8 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
     const izvrsiSnimanjePaketa = async (qtyZaPaket, isNusProizvod, currentRnStavka, usedStavkaId, komada, v, s, d) => {
         const timeNowFull = new Date().toISOString();
         const timeNow = new Date().toLocaleTimeString('de-DE');
-        
-        const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim(); 
+
+        const masinaKojaReze = header.masina.replace('PILANA', 'BRENTA').trim();
         const { data: aktuelniRadnici } = await supabase.from('aktivni_radnici').select('radnik_ime').eq('masina_naziv', masinaKojaReze).is('vrijeme_odjave', null);
         const sviOstaliIzPristupa = aktuelniRadnici ? aktuelniRadnici.map(r => r.radnik_ime).filter(ime => ime !== brentista && ime !== viljuskarista) : [];
         const radniciIzPilane = [brentista, viljuskarista, ...sviOstaliIzPristupa].filter(Boolean).join(', ');
@@ -590,10 +590,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 ? parseFloat(activeEditItem.kolicina_ulaz || 0) + komada
                 : Math.max(0, parseFloat(activeEditItem.kolicina_ulaz || 0) - komada);
 
-            const res = await supabase.from('paketi').update({ 
+            const res = await supabase.from('paketi').update({
                 vrijeme_tekst: timeNow, snimio_korisnik: user?.ime_prezime,
                 brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, oznake: odabraneOznake.length > 0 ? odabraneOznake : activeEditItem.oznake,
-                broj_veze: radniNalog || activeEditItem.broj_veze, 
+                broj_veze: radniNalog || activeEditItem.broj_veze,
                 rn_id: radniNalog || activeEditItem.broj_veze,
                 stavka_id: usedStavkaId || activeEditItem.stavka_id,
                 ulaz_trupci_ids: currentTrupciIds.length > 0 ? currentTrupciIds : activeEditItem.ulaz_trupci_ids,
@@ -602,34 +602,34 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 kolicina_final: parseFloat(novaKolicinaFinal.toFixed(3))
             }).eq('id', activeEditItem.id);
             error = res.error;
-            if(!error) await zapisiU_Log('IZMJENA_U_PAKETU', `Paket: ${selectedIzlazId}, Proizvod: ${activeEditItem.naziv_proizvoda}, Korekcija: ${qtyZaPaket} m³ (${updateMode})`);
+            if (!error) await zapisiU_Log('IZMJENA_U_PAKETU', `Paket: ${selectedIzlazId}, Proizvod: ${activeEditItem.naziv_proizvoda}, Korekcija: ${qtyZaPaket} m³ (${updateMode})`);
         } else {
             const payload = {
                 paket_id: selectedIzlazId, naziv_proizvoda: form.naziv, debljina: v, sirina: s, duzina: d,
-                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket,  
+                kolicina_ulaz: form.kolicina_ulaz, jm: form.jm, kolicina_final: qtyZaPaket,
                 mjesto: header.mjesto, masina: header.masina,
-                snimio_korisnik: user?.ime_prezime, brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane, 
-                ulaz_trupci_ids: currentTrupciIds, broj_veze: radniNalog, 
-                rn_id: radniNalog, 
+                snimio_korisnik: user?.ime_prezime, brentista: brentista, viljuskarista: viljuskarista, radnici_pilana: radniciIzPilane,
+                ulaz_trupci_ids: currentTrupciIds, broj_veze: radniNalog,
+                rn_id: radniNalog,
                 stavka_id: usedStavkaId,
                 vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, oznake: odabraneOznake, je_nusproizvod: isNusProizvod,
                 planirano_m3: parseFloat(form.naruceno) || 0
             };
             const res = await supabase.from('paketi').insert([payload]);
             error = res.error;
-            if(!error) await zapisiU_Log('DODANA_STAVKA_U_PAKET', `Paket: ${selectedIzlazId}, Proizvod: ${form.naziv}, Količina: ${qtyZaPaket.toFixed(3)} m³`);
+            if (!error) await zapisiU_Log('DODANA_STAVKA_U_PAKET', `Paket: ${selectedIzlazId}, Proizvod: ${form.naziv}, Količina: ${qtyZaPaket.toFixed(3)} m³`);
         }
-        
+
         if (error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog });
 
         if (radniNalog) {
             await sinhronizujRadniNalog(radniNalog, header.masina);
             handleNalogSelect(radniNalog);
         }
-        
+
         fetchIzlaz(selectedIzlazId);
-        ucitajSveZapoocetePakete(); 
-        setForm(f => ({...f, kolicina_ulaz: ''})); setOdabraneOznake([]); setActiveEditItem(null);
+        ucitajSveZapoocetePakete();
+        setForm(f => ({ ...f, kolicina_ulaz: '' })); setOdabraneOznake([]); setActiveEditItem(null);
     };
 
     const obrisiStavkuIzPaketa = async (item, e) => {
@@ -638,18 +638,19 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             tip: 'upozorenje', naslov: 'Brisanje Stavke',
             poruka: `Da li ste sigurni da želite OBRISATI stavku iz ovog paketa?\n(Sistem će automatski uskladiti i količine na Radnom Nalogu!)`,
             confirmText: '🗑️ OBRIŠI', cancelText: '✕ ODUSTANI',
-            onConfirm: async () => { 
-                await supabase.from('paketi').delete().eq('id', item.id); 
+            onConfirm: async () => {
+                await supabase.from('paketi').delete().eq('id', item.id);
                 await zapisiU_Log('OBRISANA_STAVKA_IZ_PAKETA', `Paket: ${selectedIzlazId}, Proizvod: ${item.naziv_proizvoda}, Količina: ${item.kolicina_final} m³`);
 
-                if (item.rn_id) {
-                    await sinhronizujRadniNalog(item.rn_id, header.masina);
-                    handleNalogSelect(item.rn_id); 
+                const rnVeza = item.rn_id || (item.broj_veze && item.broj_veze !== 'SLOBODNA_ROBA' ? item.broj_veze : null);
+                if (rnVeza) {
+                    await sinhronizujRadniNalog(rnVeza, header.masina);
+                    handleNalogSelect(rnVeza);
                 }
 
-                fetchIzlaz(selectedIzlazId); 
-                ucitajSveZapoocetePakete(); 
-                zatvoriDialog(); 
+                fetchIzlaz(selectedIzlazId);
+                ucitajSveZapoocetePakete();
+                zatvoriDialog();
             },
             onCancel: zatvoriDialog
         });
@@ -726,10 +727,10 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
                     <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Veličina naslova (px): <input type="number" value={saas.ui.velicina_naslova} onChange={e => saas.setUi({...saas.ui, velicina_naslova: e.target.value})} className="w-full p-2 mt-1 bg-black text-amber-400 font-mono rounded" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black md:col-span-3">Naslov Skenera: <input type="text" value={saas.ui.naslov_skenera} onChange={e => saas.setUi({...saas.ui, naslov_skenera: e.target.value})} className="w-full p-2 mt-1 bg-black text-amber-400 rounded" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine (Kartice): <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({ ...saas.ui, boja_kartice: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja SVIH slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({ ...saas.ui, boja_slova: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Veličina naslova (px): <input type="number" value={saas.ui.velicina_naslova} onChange={e => saas.setUi({ ...saas.ui, velicina_naslova: e.target.value })} className="w-full p-2 mt-1 bg-black text-amber-400 font-mono rounded" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black md:col-span-3">Naslov Skenera: <input type="text" value={saas.ui.naslov_skenera} onChange={e => saas.setUi({ ...saas.ui, naslov_skenera: e.target.value })} className="w-full p-2 mt-1 bg-black text-amber-400 rounded" /></label>
                     </div>
                 </div>
             )}
@@ -737,7 +738,7 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
             <h2 className="text-theme-accent text-center font-black tracking-widest uppercase text-xl md:text-2xl drop-shadow-md flex items-center justify-center gap-3">
                 🪵 Pilana - Izlaz Daske (Dimenzije u cm)
             </h2>
-            
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-5 space-y-6 flex flex-col">
                     <div className="p-6 rounded-[var(--radius-box)] shadow-2xl transition-all border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-30 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
@@ -762,15 +763,15 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                     <div className="p-6 rounded-[var(--radius-box)] shadow-2xl border border-theme-border backdrop-blur-[var(--glass-blur)] relative z-20 overflow-visible" style={{ backgroundColor: saas.ui.boja_kartice }}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-[10px] text-theme-accent uppercase font-black tracking-widest flex items-center gap-2">📋 Radni Nalog / Ponuda</h3>
-                            {radniNalog && <button onClick={() => {setRadniNalog(''); setRnStavke([]);}} className="text-[9px] text-red-400 hover:text-red-300 uppercase bg-red-900/20 px-2 py-1 rounded border border-red-500/30 transition-all font-black">✕ Ukloni</button>}
+                            {radniNalog && <button onClick={() => { setRadniNalog(''); setRnStavke([]); }} className="text-[9px] text-red-400 hover:text-red-300 uppercase bg-red-900/20 px-2 py-1 rounded border border-red-500/30 transition-all font-black">✕ Ukloni</button>}
                         </div>
-                        
-                        <MasterSearch 
-                            data={aktivniNalozi} 
-                            poljaZaPretragu={['id', 'kupac_naziv']} 
-                            value={radniNalog} 
-                            onSelect={n => handleNalogSelect(n.id)} 
-                            onScanClick={() => {setScanTarget('nalog'); setIsScanning(true);}} 
+
+                        <MasterSearch
+                            data={aktivniNalozi}
+                            poljaZaPretragu={['id', 'kupac_naziv']}
+                            value={radniNalog}
+                            onSelect={n => handleNalogSelect(n.id)}
+                            onScanClick={() => { setScanTarget('nalog'); setIsScanning(true); }}
                             placeholder="Upiši broj naloga/ponude ili skeniraj..."
                             renderItem={(n) => (
                                 <div>
@@ -790,54 +791,55 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                     const jeGotovo = !imaViska && preostaloM3 <= 0.001 && preostaloKom <= 0;
 
                                     return (
-                                    <div key={s.id} onClick={() => {
-                                        if(!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nedostaje Paket', poruka: "Prvo desno skenirajte ili upišite ime novog PAKETA u koji ćete slagati ovu robu!", onCancel: zatvoriDialog });
-                                        handleStavkaSelect(s);
-                                    }} className={`flex flex-col p-4 rounded-xl cursor-pointer transition-all border shadow-md group ${imaViska ? 'bg-red-950/20 border-red-500/50 hover:border-red-400' : jeGotovo ? 'bg-emerald-950/10 border-emerald-500/30 hover:border-emerald-400' : 'bg-theme-panel border-theme-border hover:border-theme-accent'}`}>
-                                        
-                                        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center">
-                                            <div className="flex-1 min-w-0 pr-4">
-                                                <div className={`text-xs font-black transition-colors truncate ${imaViska ? 'text-red-400' : 'text-theme-text group-hover:text-theme-accent'}`}>{s.dimenzije ? `${s.dimenzije} cm | ` : ''}{s.naziv_proizvoda}</div>
-                                                <div className="text-[10px] text-theme-muted mt-1 font-bold">
-                                                    {s.isFazni ? <span className="text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 mr-2">FAZA: {header.masina}</span> : ''}
-                                                    ŠIFRA: {s.sifra_proizvoda}
-                                                </div>
-                                                {s.paketiIds && s.paketiIds.length > 0 && (
-                                                    <div className="mt-2 text-[9px] font-black text-slate-400 bg-black/20 p-2 rounded-lg border border-theme-border/50 break-words">
-                                                        📦 U PAKETIMA: <span className="text-amber-400 font-mono">{s.paketiIds.join(', ')}</span>
+                                        <div key={s.id} onClick={() => {
+                                            if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nedostaje Paket', poruka: "Prvo desno skenirajte ili upišite ime novog PAKETA u koji ćete slagati ovu robu!", onCancel: zatvoriDialog });
+                                            handleStavkaSelect(s);
+                                        }} className={`flex flex-col p-4 rounded-xl cursor-pointer transition-all border shadow-md group ${imaViska ? 'bg-red-950/20 border-red-500/50 hover:border-red-400' : jeGotovo ? 'bg-emerald-950/10 border-emerald-500/30 hover:border-emerald-400' : 'bg-theme-panel border-theme-border hover:border-theme-accent'}`}>
+
+                                            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center">
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <div className={`text-xs font-black transition-colors truncate ${imaViska ? 'text-red-400' : 'text-theme-text group-hover:text-theme-accent'}`}>{s.dimenzije ? `${s.dimenzije} cm | ` : ''}{s.naziv_proizvoda}</div>
+                                                    <div className="text-[10px] text-theme-muted mt-1 font-bold">
+                                                        {s.isFazni ? <span className="text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 mr-2">FAZA: {header.masina}</span> : ''}
+                                                        ŠIFRA: {s.sifra_proizvoda}
                                                     </div>
-                                                )}
-                                            </div>
-                                            <div className="text-right mt-3 xl:mt-0 bg-theme-card/80 p-3 rounded-lg border border-theme-border w-full xl:w-auto shadow-inner min-w-[160px]">
-                                                <div className="flex justify-between gap-4 text-[10px] border-b border-theme-border/50 pb-1 mb-1">
-                                                    <span className="text-slate-500">Volumen:</span>
-                                                    <span className="font-black text-theme-text">{s.narucenoM3.toFixed(3)} <span className="text-slate-500">m³</span> <span className={imaViska ? "text-red-400 ml-1" : "text-emerald-500 ml-1"}>({s.napravljenoM3.toFixed(3)})</span></span>
-                                                </div>
-                                                <div className="flex justify-between gap-4 text-[10px] border-b border-theme-border/50 pb-1 mb-1">
-                                                    <span className="text-slate-500">Komada:</span>
-                                                    <span className="font-black text-theme-text">{s.narucenoKom} <span className="text-slate-500">kom</span> <span className={imaViska ? "text-red-400 ml-1" : "text-emerald-500 ml-1"}>({s.napravljenoKom})</span></span>
-                                                </div>
-                                                <div className="text-xs mt-2 text-right">
-                                                    {imaViska ? (
-                                                        <span className="text-red-500 font-black">VIŠAK: {Math.abs(preostaloM3).toFixed(3)} m³ ({Math.abs(preostaloKom)} kom) ⚠️</span>
-                                                    ) : jeGotovo ? (
-                                                        <span className="text-emerald-500 font-black">GOTOVO ✅</span>
-                                                    ) : (
-                                                        <span className="text-amber-500 font-black">Fali: {preostaloM3.toFixed(3)} m³ ({preostaloKom} kom)</span>
+                                                    {s.paketiIds && s.paketiIds.length > 0 && (
+                                                        <div className="mt-2 text-[9px] font-black text-slate-400 bg-black/20 p-2 rounded-lg border border-theme-border/50 break-words">
+                                                            📦 U PAKETIMA: <span className="text-amber-400 font-mono">{s.paketiIds.join(', ')}</span>
+                                                        </div>
                                                     )}
                                                 </div>
+                                                <div className="text-right mt-3 xl:mt-0 bg-theme-card/80 p-3 rounded-lg border border-theme-border w-full xl:w-auto shadow-inner min-w-[160px]">
+                                                    <div className="flex justify-between gap-4 text-[10px] border-b border-theme-border/50 pb-1 mb-1">
+                                                        <span className="text-slate-500">Volumen:</span>
+                                                        <span className="font-black text-theme-text">{s.narucenoM3.toFixed(3)} <span className="text-slate-500">m³</span> <span className={imaViska ? "text-red-400 ml-1" : "text-emerald-500 ml-1"}>({s.napravljenoM3.toFixed(3)})</span></span>
+                                                    </div>
+                                                    <div className="flex justify-between gap-4 text-[10px] border-b border-theme-border/50 pb-1 mb-1">
+                                                        <span className="text-slate-500">Komada:</span>
+                                                        <span className="font-black text-theme-text">{s.narucenoKom} <span className="text-slate-500">kom</span> <span className={imaViska ? "text-red-400 ml-1" : "text-emerald-500 ml-1"}>({s.napravljenoKom})</span></span>
+                                                    </div>
+                                                    <div className="text-xs mt-2 text-right">
+                                                        {imaViska ? (
+                                                            <span className="text-red-500 font-black">VIŠAK: {Math.abs(preostaloM3).toFixed(3)} m³ ({Math.abs(preostaloKom)} kom) ⚠️</span>
+                                                        ) : jeGotovo ? (
+                                                            <span className="text-emerald-500 font-black">GOTOVO ✅</span>
+                                                        ) : (
+                                                            <span className="text-amber-500 font-black">Fali: {preostaloM3.toFixed(3)} m³ ({preostaloKom} kom)</span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        {s.skica_url && (
-                                            <div className="mt-3 pt-2 border-t border-theme-border">
-                                                <button onClick={(e) => { e.stopPropagation(); window.open(s.skica_url, '_blank'); }} className="text-[9px] bg-theme-accent/20 text-theme-accent px-3 py-1.5 rounded-lg border border-theme-accent/30 flex items-center gap-2 hover:bg-theme-accent hover:text-white transition-colors font-black uppercase tracking-widest w-fit">
-                                                    📎 Prikaz Skice / PDF-a
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )})}
+                                            {s.skica_url && (
+                                                <div className="mt-3 pt-2 border-t border-theme-border">
+                                                    <button onClick={(e) => { e.stopPropagation(); window.open(s.skica_url, '_blank'); }} className="text-[9px] bg-theme-accent/20 text-theme-accent px-3 py-1.5 rounded-lg border border-theme-accent/30 flex items-center gap-2 hover:bg-theme-accent hover:text-white transition-colors font-black uppercase tracking-widest w-fit">
+                                                        📎 Prikaz Skice / PDF-a
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
                             </div>
                         )}
                     </div>
@@ -851,20 +853,20 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                             {saas.ui.naslov_skenera || "SKENIRAJ ILI UPIŠI NOVI PAKET (Dimenzije u cm)"}
                         </label>
                         <div className={`flex bg-theme-panel border-2 rounded-2xl overflow-hidden shadow-inner focus-within:shadow-[inset_0_0_20px_rgba(0,0,0,0.5)] transition-all h-20 mb-8 ${saas.isEditMode ? 'border-amber-500/50 opacity-50 pointer-events-none' : 'border-theme-accent/50 focus-within:border-theme-accent'}`}>
-                            <input value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleIzlazInput(izlazScan, true) }} className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ GOTOV PAKET..." />
-                            <button onClick={() => {setScanTarget('izlaz'); setIsScanning(true);}} className="shrink-0 px-6 md:px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
+                            <input value={izlazScan} onChange={e => handleIzlazInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleIzlazInput(izlazScan, true) }} className="flex-1 min-w-0 px-4 md:px-6 bg-transparent text-lg md:text-2xl text-center text-theme-text outline-none uppercase font-black placeholder:text-theme-muted/30 tracking-widest" placeholder="SKENIRAJ GOTOV PAKET..." />
+                            <button onClick={() => { setScanTarget('izlaz'); setIsScanning(true); }} className="shrink-0 px-6 md:px-8 bg-theme-accent text-white font-black hover:opacity-80 transition-colors text-2xl flex items-center justify-center shadow-lg">📷</button>
                         </div>
-                        
+
                         <div className="mt-8 pt-6 border-t border-theme-border">
                             <label className="text-[10px] text-theme-muted uppercase font-black tracking-widest mb-3 block flex items-center gap-2">📦 Započeti Paketi (Spremni za nastavak):</label>
-                            
+
                             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
                                 {aktivniPaketiInfo.length === 0 && <div className="col-span-full text-xs text-theme-muted italic border border-dashed border-theme-border p-6 rounded-xl text-center">Trenutno nema započetih paketa na ovoj mašini...</div>}
                                 {aktivniPaketiInfo.map(p => (
-                                    <div key={p.id} onClick={() => {setSelectedIzlazId(p.id); fetchIzlaz(p.id);}} className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group ${selectedIzlazId === p.id ? 'bg-theme-accent border-theme-accent shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/60'}`}>
+                                    <div key={p.id} onClick={() => { setSelectedIzlazId(p.id); fetchIzlaz(p.id); }} className={`cursor-pointer flex flex-col p-4 rounded-xl border-2 transition-all shadow-md group ${selectedIzlazId === p.id ? 'bg-theme-accent border-theme-accent shadow-[0_0_15px_rgba(var(--theme-accent-rgb),0.5)] scale-105' : 'bg-theme-panel border-theme-border hover:border-theme-accent/60'}`}>
                                         <div className="flex justify-between items-start mb-2">
                                             <span className={`text-xl font-black ${selectedIzlazId === p.id ? 'text-white' : 'text-theme-text'}`}>{p.id}</span>
-                                            <span className="text-[10px] bg-black/30 px-2 py-1 rounded border border-white/10 text-theme-muted font-bold">{p.stavke} {p.stavke===1?'stavka':'stavki'}</span>
+                                            <span className="text-[10px] bg-black/30 px-2 py-1 rounded border border-white/10 text-theme-muted font-bold">{p.stavke} {p.stavke === 1 ? 'stavka' : 'stavki'}</span>
                                         </div>
                                         <div className={`text-xs font-black mb-1 line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/90' : 'text-theme-accent'}`}>{p.dimenzija}</div>
                                         <div className={`text-[10px] font-bold line-clamp-1 ${selectedIzlazId === p.id ? 'text-white/70' : 'text-slate-400'}`}>{p.proizvod}</div>
@@ -886,17 +888,17 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
 
                             {activeEditItem && (
                                 <div className="p-4 bg-theme-panel rounded-2xl border border-blue-500/50 shadow-inner">
-                                    <div className="flex justify-between items-center mb-3"><span className="text-[10px] text-blue-400 uppercase font-black tracking-widest">Ažuriranje: {activeEditItem.naziv_proizvoda}</span><button onClick={()=>setActiveEditItem(null)} className="text-red-500 text-[10px] font-black hover:underline uppercase bg-red-500/10 px-2 py-1 rounded">Poništi ×</button></div>
-                                    <div className="flex bg-theme-card p-1.5 rounded-xl border border-theme-border shadow-inner"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='dodaj'?'bg-emerald-600 text-white shadow-md':'text-theme-muted hover:bg-theme-panel'}`}>+ Dodaj komade</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode==='oduzmi'?'bg-red-600 text-white shadow-md':'text-theme-muted hover:bg-theme-panel'}`}>- Oduzmi komade</button></div>
+                                    <div className="flex justify-between items-center mb-3"><span className="text-[10px] text-blue-400 uppercase font-black tracking-widest">Ažuriranje: {activeEditItem.naziv_proizvoda}</span><button onClick={() => setActiveEditItem(null)} className="text-red-500 text-[10px] font-black hover:underline uppercase bg-red-500/10 px-2 py-1 rounded">Poništi ×</button></div>
+                                    <div className="flex bg-theme-card p-1.5 rounded-xl border border-theme-border shadow-inner"><button onClick={() => setUpdateMode('dodaj')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode === 'dodaj' ? 'bg-emerald-600 text-white shadow-md' : 'text-theme-muted hover:bg-theme-panel'}`}>+ Dodaj komade</button><button onClick={() => setUpdateMode('oduzmi')} className={`flex-1 py-3 rounded-lg text-[10px] uppercase font-black transition-all ${updateMode === 'oduzmi' ? 'bg-red-600 text-white shadow-md' : 'text-theme-muted hover:bg-theme-panel'}`}>- Oduzmi komade</button></div>
                                 </div>
                             )}
-                            
+
                             <div className="space-y-4">
                                 <div className="relative z-40">
                                     <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Proizvod koji se slaže (Dimenzije u cm)</label>
-                                    <MasterSearch 
-                                        data={katalog} 
-                                        poljaZaPretragu={['sifra', 'naziv']} 
+                                    <MasterSearch
+                                        data={katalog}
+                                        poljaZaPretragu={['sifra', 'naziv']}
                                         value={form.naziv}
                                         onChange={(val) => setForm(prev => ({ ...prev, naziv: val }))}
                                         onSelect={(k) => { setForm(prev => ({ ...prev, naziv: k.naziv, debljina: k.visina, sirina: k.sirina, duzina: k.duzina, jm: 'kom' })); }}
@@ -911,24 +913,24 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-3">
-                                    <DimBox label="Deb (cm)" val={form.debljina} set={v => setForm({...form, debljina: v})} disabled={!!activeEditItem} />
-                                    <DimBox label="Šir (cm)" val={form.sirina} set={v => setForm({...form, sirina: v})} disabled={!!activeEditItem} />
-                                    <DimBox label="Duž (cm)" val={form.duzina} set={v => setForm({...form, duzina: v})} disabled={!!activeEditItem} />
+                                    <DimBox label="Deb (cm)" val={form.debljina} set={v => setForm({ ...form, debljina: v })} disabled={!!activeEditItem} />
+                                    <DimBox label="Šir (cm)" val={form.sirina} set={v => setForm({ ...form, sirina: v })} disabled={!!activeEditItem} />
+                                    <DimBox label="Duž (cm)" val={form.duzina} set={v => setForm({ ...form, duzina: v })} disabled={!!activeEditItem} />
                                 </div>
 
                                 <div className="flex flex-col sm:flex-row gap-3 items-stretch">
                                     <div className="flex-1 relative">
                                         <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Količina</label>
-                                        <input type="number" value={form.kolicina_ulaz} onKeyDown={e => {if(e.key==='Enter') save()}} onChange={e => setForm({...form, kolicina_ulaz: e.target.value})} className="w-full p-5 bg-theme-panel border-2 border-theme-accent/50 rounded-2xl text-2xl text-center text-theme-accent font-black focus:border-theme-accent transition-all placeholder:text-theme-accent/30 shadow-inner outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
+                                        <input type="number" value={form.kolicina_ulaz} onKeyDown={e => { if (e.key === 'Enter') save() }} onChange={e => setForm({ ...form, kolicina_ulaz: e.target.value })} className="w-full p-5 bg-theme-panel border-2 border-theme-accent/50 rounded-2xl text-2xl text-center text-theme-accent font-black focus:border-theme-accent transition-all placeholder:text-theme-accent/30 shadow-inner outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
                                     </div>
                                     <div className="sm:w-32 relative">
                                         <label className="text-[9px] text-theme-muted uppercase ml-2 block mb-1 font-black tracking-widest">Jedinica</label>
-                                        <select value={form.jm} onChange={e => setForm({...form, jm: e.target.value})} className="w-full h-[72px] bg-theme-panel rounded-2xl text-theme-text font-black outline-none border border-theme-border focus:border-theme-accent text-lg uppercase px-4 cursor-pointer shadow-inner">
+                                        <select value={form.jm} onChange={e => setForm({ ...form, jm: e.target.value })} className="w-full h-[72px] bg-theme-panel rounded-2xl text-theme-text font-black outline-none border border-theme-border focus:border-theme-accent text-lg uppercase px-4 cursor-pointer shadow-inner">
                                             <option value="kom">kom</option><option value="m3">m³</option><option value="m2">m²</option><option value="m1">m1</option>
                                         </select>
                                     </div>
                                 </div>
-                                
+
                                 {form.kolicina_ulaz && (
                                     <div className="text-[10px] text-emerald-400 bg-emerald-900/20 p-2 rounded-lg border border-emerald-500/20 text-center uppercase animate-in zoom-in-95 mt-2">
                                         Automatski preračunato: <span className="text-theme-text text-sm ml-1 font-black">{livePreracunM3} m³</span>
@@ -953,24 +955,24 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                     {activeEditItem ? `✅ SAČUVAJ IZMJENE STAVKE` : `➕ DODAJ U PAKET`}
                                 </button>
                             </div>
-                            
+
                             <div className="pt-6 mt-6 border-t border-theme-border">
                                 <label className="text-[10px] text-theme-muted uppercase font-black block mb-4 tracking-widest">Sadržaj trenutnog paketa:</label>
                                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                     {izlazPackageItems.length === 0 && <div className="text-center p-8 border-2 border-dashed border-theme-border rounded-2xl text-theme-muted text-xs font-bold bg-theme-panel/50">Paket je prazan. Unesite prvu stavku.</div>}
                                     {izlazPackageItems.map(item => {
-                                        
-                                        const rnStavka = item.stavka_id 
-                                            ? rnStavke.find(rs => rs.id === item.stavka_id) 
+
+                                        const rnStavka = item.stavka_id
+                                            ? rnStavke.find(rs => rs.id === item.stavka_id)
                                             : rnStavke.find(rs => rs.naziv_proizvoda === item.naziv_proizvoda && (rs.dimenzije || '').includes(String(item.duzina)));
-                                        
+
                                         let preostaloText = null;
                                         let isVisak = false;
 
                                         if (rnStavka && !item.je_nusproizvod) {
                                             const pM3 = rnStavka.narucenoM3 - rnStavka.napravljenoM3;
                                             const pKom = rnStavka.narucenoKom - rnStavka.napravljenoKom;
-                                            
+
                                             if (pM3 < -0.001 || pKom < 0) {
                                                 isVisak = true;
                                                 preostaloText = `VIŠAK: ${Math.abs(pM3).toFixed(3)} m³ (${Math.abs(pKom)} kom) ⚠️`;
@@ -982,46 +984,47 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                                         }
 
                                         return (
-                                        <div key={item.id} onClick={() => { 
-                                            setActiveEditItem(item); 
-                                            setForm({...item, kolicina_ulaz: '', rn_stavka_id: item.stavka_id }); 
-                                            setOdabraneOznake(item.oznake || []); 
-                                        }} className="flex flex-col sm:flex-row justify-between sm:items-center p-5 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-theme-accent transition-all shadow-md group gap-4">
-                                            <div className="flex-1">
-                                                <div className="text-theme-accent text-lg font-black tracking-tighter drop-shadow-md">
-                                                    {item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-theme-muted ml-1">cm</span>
+                                            <div key={item.id} onClick={() => {
+                                                setActiveEditItem(item);
+                                                setForm({ ...form, ...item, naziv: item.naziv_proizvoda || form.naziv, naruceno: item.planirano_m3 ?? form.naruceno, kolicina_ulaz: '', rn_stavka_id: item.stavka_id });
+                                                setOdabraneOznake(item.oznake || []);
+                                            }} className="flex flex-col sm:flex-row justify-between sm:items-center p-5 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer hover:border-theme-accent transition-all shadow-md group gap-4">
+                                                <div className="flex-1">
+                                                    <div className="text-theme-accent text-lg font-black tracking-tighter drop-shadow-md">
+                                                        {item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-theme-muted ml-1">cm</span>
+                                                    </div>
+                                                    <div className="text-xs uppercase text-theme-text font-black group-hover:text-theme-accent transition-colors mt-1">{item.naziv_proizvoda} {item.je_nusproizvod ? <span className="text-amber-500 text-[9px] ml-2 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">NUSPROIZVOD</span> : ''}</div>
+                                                    <div className="flex flex-wrap gap-2 items-center mt-3">
+                                                        {item.oznake && item.oznake.length > 0 && (<div className="flex gap-1">{item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-500/20 text-amber-400 px-2 py-1 rounded uppercase font-black border border-amber-500/30">{o}</span>)}</div>)}
+                                                        {rnStavka && !item.je_nusproizvod && (
+                                                            <div className={`text-[9px] px-2 py-1 rounded uppercase font-black border shadow-sm ${isVisak ? 'bg-red-500/10 border-red-500/30 text-red-400' : preostaloText === 'GOTOVO ✅' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-blue-500/10 border-blue-500/30 text-blue-400'}`}>
+                                                                Nalog Preostalo: <span>{preostaloText}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs uppercase text-theme-text font-black group-hover:text-theme-accent transition-colors mt-1">{item.naziv_proizvoda} {item.je_nusproizvod ? <span className="text-amber-500 text-[9px] ml-2 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">NUSPROIZVOD</span> : ''}</div>
-                                                <div className="flex flex-wrap gap-2 items-center mt-3">
-                                                    {item.oznake && item.oznake.length > 0 && (<div className="flex gap-1">{item.oznake.map(o => <span key={o} className="text-[8px] bg-amber-500/20 text-amber-400 px-2 py-1 rounded uppercase font-black border border-amber-500/30">{o}</span>)}</div>)}
-                                                    {rnStavka && !item.je_nusproizvod && (
-                                                        <div className={`text-[9px] px-2 py-1 rounded uppercase font-black border shadow-sm ${isVisak ? 'bg-red-500/10 border-red-500/30 text-red-400' : preostaloText === 'GOTOVO ✅' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-blue-500/10 border-blue-500/30 text-blue-400'}`}>
-                                                            Nalog Preostalo: <span>{preostaloText}</span>
-                                                        </div>
-                                                    )}
+                                                <div className="flex flex-col sm:items-end gap-3 sm:border-l sm:border-theme-border sm:pl-5 w-full sm:w-auto">
+                                                    <div className="flex sm:flex-col justify-between sm:justify-start items-center sm:items-end w-full sm:w-auto">
+                                                        <div className="text-3xl text-theme-text drop-shadow-lg font-black">{item.kolicina_final} <span className="text-theme-accent text-sm">m³</span></div>
+                                                        <div className="text-[10px] text-theme-muted bg-theme-card px-3 py-1.5 rounded-lg mt-1 text-center border border-theme-border font-bold shadow-inner">{item.kolicina_ulaz} {item.jm}</div>
+                                                    </div>
+                                                    <div className="flex gap-2 w-full sm:w-auto justify-end">
+                                                        <button onClick={(e) => obrisiStavkuIzPaketa(item, e)} className="flex-1 sm:flex-none bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase border border-red-500/30 transition-all shadow-lg sm:opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">🗑️ Obriši</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="flex-1 sm:flex-none bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg sm:opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">🖨️ Print</button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="flex flex-col sm:items-end gap-3 sm:border-l sm:border-theme-border sm:pl-5 w-full sm:w-auto">
-                                                <div className="flex sm:flex-col justify-between sm:justify-start items-center sm:items-end w-full sm:w-auto">
-                                                    <div className="text-3xl text-theme-text drop-shadow-lg font-black">{item.kolicina_final} <span className="text-theme-accent text-sm">m³</span></div>
-                                                    <div className="text-[10px] text-theme-muted bg-theme-card px-3 py-1.5 rounded-lg mt-1 text-center border border-theme-border font-bold shadow-inner">{item.kolicina_ulaz} {item.jm}</div>
-                                                </div>
-                                                <div className="flex gap-2 w-full sm:w-auto justify-end">
-                                                    <button onClick={(e) => obrisiStavkuIzPaketa(item, e)} className="flex-1 sm:flex-none bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase border border-red-500/30 transition-all shadow-lg sm:opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">🗑️ Obriši</button>
-                                                    <button onClick={(e) => { e.stopPropagation(); printDeklaracijaPaketa(item.paket_id, [item], radniNalog); }} className="flex-1 sm:flex-none bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase border border-blue-500/30 transition-all shadow-lg sm:opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1">🖨️ Print</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )})}
+                                        )
+                                    })}
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
             </div>
-            
+
             <SaaS_DnevnikMasine modul="Pilana" header={header} user={user} saas={saas} updatePolje={updatePolje} toggleVelicina={toggleVelicinaPolja} spremiDimenzije={spremiDimenzije} handleDragStart={handleDragStart} handleDragEnter={handleDragEnter} handleDrop={handleDrop} prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />
-            {isScanning && <ScannerOverlay onScan={(text) => { if(scanTarget==='nalog') handleNalogSelect(text); else handleIzlazInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
+            {isScanning && <ScannerOverlay onScan={(text) => { if (scanTarget === 'nalog') handleNalogSelect(text); else handleIzlazInput(text, true); setIsScanning(false); }} onClose={() => setIsScanning(false)} />}
         </div>
     );
 }

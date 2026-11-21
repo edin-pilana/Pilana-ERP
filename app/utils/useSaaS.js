@@ -1,10 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = 'https://awaxwejrhmjeqohrgidm.supabase.co'; 
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+import { toast } from 'sonner';
+import { supabase } from './supabaseClient';
 
 export function useSaaS(modulIme, defaultPostavke) {
     const [ui, setUi] = useState(defaultPostavke);
@@ -14,35 +11,45 @@ export function useSaaS(modulIme, defaultPostavke) {
     useEffect(() => {
         if (!modulIme) return;
         const load = async () => {
-            const { data } = await supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', modulIme).maybeSingle();
-            if (data && data.postavke_jsonb) {
-                setUi({ ...defaultPostavke, ...data.postavke_jsonb });
+            try {
+                const { data } = await supabase
+                    .from('ui_postavke')
+                    .select('postavke_jsonb')
+                    .eq('modul_ime', modulIme)
+                    .maybeSingle();
+                if (data && data.postavke_jsonb) {
+                    setUi({ ...defaultPostavke, ...data.postavke_jsonb });
+                }
+            } catch (e) {
+                console.error(`Greška pri učitavanju dizajna za ${modulIme}:`, e);
             }
         };
         load();
     }, [modulIme]);
 
-    const pokreniEdit = () => { 
-        setBackup(JSON.parse(JSON.stringify(ui))); 
-        setIsEditMode(true); 
+    const pokreniEdit = () => {
+        setBackup(JSON.parse(JSON.stringify(ui)));
+        setIsEditMode(true);
     };
-    
-    const odustani = () => { 
-        if (backup) setUi(backup); 
-        setIsEditMode(false); 
+
+    const odustani = () => {
+        if (backup) setUi(backup);
+        setBackup(null);
+        setIsEditMode(false);
     };
 
     const spasiDizajn = async () => {
-        const { error } = await supabase.from('ui_postavke').upsert([{ modul_ime: modulIme, postavke_jsonb: ui }], { onConflict: 'modul_ime' });
+        const { error } = await supabase
+            .from('ui_postavke')
+            .upsert([{ modul_ime: modulIme, postavke_jsonb: ui }], { onConflict: 'modul_ime' });
         if (error) {
-            alert("Greška pri snimanju dizajna: " + error.message);
+            toast.error('Greška pri snimanju dizajna', { description: error.message });
         } else {
-            alert(`Dizajn modula '${modulIme}' je uspješno spašen!`);
+            toast.success(`Dizajn modula '${modulIme}' je uspješno spašen!`);
             setIsEditMode(false);
             setBackup(null);
         }
     };
 
-    // 🟢 POPRAVLJENO: Vraćena ključna riječ defaultConfig!
     return { ui, setUi, isEditMode, pokreniEdit, odustani, spasiDizajn, defaultConfig: defaultPostavke };
 }

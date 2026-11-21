@@ -355,14 +355,14 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
             const { data: paks } = await supabase.from('paketi')
                 .select('*')
                 .gt('kolicina_final', 0)
-                .is('closed_at', null)
+                .is('otpremnica_id', null)
                 .neq('masina', header.masina)
                 .order('created_at', { ascending: false })
                 .limit(100);
                 
             const { data: techData } = await supabase.from('tehnologija_katalog').select('finalna_sifra, faze_jsonb');
 
-            let validni = paks || [];
+            let validni = (paks || []).filter(p => String(p.status || '').toUpperCase() !== 'POTROŠENO_U_DORADI');
 
             if (radniNalog && tipNaloga === 'FAZNI') {
                 validni = validni.filter(p => p.broj_veze === radniNalog);
@@ -475,17 +475,25 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         const { data: checkR } = await supabase.from('paketi')
             .select('paket_id')
             .eq('paket_id', `${id}-R`)
+            .is('otpremnica_id', null)
             .gt('kolicina_final', 0)
-            .maybeSingle();
+            .limit(1);
            
-        if (checkR) {
+        if (checkR && checkR.length > 0) {
             id = `${id}-R`; 
         }
 
         if (activeUlazIds.includes(id)) { setUlazScan(''); return; }
         
-        const { data, error } = await supabase.from('paketi').select('*').eq('paket_id', id).gt('kolicina_final', 0);
+        const { data: rawData, error } = await supabase
+            .from('paketi')
+            .select('*')
+            .eq('paket_id', id)
+            .is('otpremnica_id', null)
+            .gt('kolicina_final', 0);
         if (error) { prikaziDialog({ tip: 'greska', naslov: 'Baza Greška', poruka: error.message, onCancel: zatvoriDialog }); setUlazScan(''); return; }
+
+        const data = (rawData || []).filter(p => String(p.status || '').toUpperCase() !== 'POTROŠENO_U_DORADI' && String(p.status || '').toUpperCase() !== 'ISPORUČENO');
 
         if (data && data.length > 0) { 
             const paket = data[0];
@@ -549,6 +557,9 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         if (razduziMod === 'potroseno' && unosM3 > trenutnoNaStanju + 0.0005) {
             return toast.error(`Ne možete potrošiti ${unosM3.toFixed(3)} m³ jer je na paketu dostupno ${trenutnoNaStanju.toFixed(3)} m³!`);
         }
+        if (razduziMod === 'ostalo' && unosM3 > trenutnoNaStanju + 0.0005) {
+            return toast.error(`Preostalo stanje (${unosM3.toFixed(3)} m³) ne može biti veće od trenutnog stanja paketa (${trenutnoNaStanju.toFixed(3)} m³)!`);
+        }
 
         let preostalo = 0;
         if (razduziMod === 'potroseno') preostalo = trenutnoNaStanju - unosM3;
@@ -602,7 +613,8 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                         kubikaza: novaKolM3,
                         kolicina_m3: novaKolM3,
                         kolicina_ulaz: noviKomadi,
-                        komada: noviKomadi
+                        komada: noviKomadi,
+                        jm: 'kom'
                     })
                     .eq('id', razduziZapis.id);
 
@@ -655,6 +667,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
         setPotrosenoUlazM3Map(prev => {
             const kopija = { ...prev };
             delete kopija[paket_id];
+            try { if (typeof window !== 'undefined') localStorage.setItem('dorada_potroseno_map', JSON.stringify(kopija)); } catch (e) {}
             return kopija;
         });
     };
@@ -693,8 +706,10 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
     
     const saveIzlaz = async () => {
         if (!selectedIzlazId) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fali Paket', poruka: "Prvo skenirajte IZLAZNI PAKET!", onCancel: zatvoriDialog });
-        if (!form.kolicina_ulaz || parseFloat(form.kolicina_ulaz) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Količina mora biti veća od nule (0)!", onCancel: zatvoriDialog });
-        if (parseFloat(form.debljina) <= 0 || parseFloat(form.sirina) <= 0 || parseFloat(form.duzina) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Sve dimenzije (Debljina, Širina, Dužina u cm) moraju biti veće od nule!", onCancel: zatvoriDialog });
+        const unosNum = parseFloat(form.kolicina_ulaz);
+        if (isNaN(unosNum) || unosNum <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravna Količina', poruka: "Količina mora biti veća od nule (0)!", onCancel: zatvoriDialog });
+        const debNum = parseFloat(form.debljina); const sirNum = parseFloat(form.sirina); const duzNum = parseFloat(form.duzina);
+        if (isNaN(debNum) || debNum <= 0 || isNaN(sirNum) || sirNum <= 0 || isNaN(duzNum) || duzNum <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravne Dimenzije', poruka: "Sve dimenzije (Debljina, Širina, Dužina u cm) moraju biti unesene i veće od nule!", onCancel: zatvoriDialog });
         const izvrsiProcesSnimanja = async () => {
             const timeNow = new Date().toLocaleTimeString('de-DE');
             const unosKol = parseFloat(form.kolicina_ulaz);
@@ -1268,7 +1283,7 @@ export default function DoradaModule({ user, header, setHeader, onExit }) {
                                                     }
 
                                                     return (
-                                                    <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({...item, kolicina_ulaz: '' }); setOdabraneOznake(item.oznake || []); }} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-theme-card border border-theme-border/50 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all shadow-sm group gap-3">
+                                                    <div key={item.id} onClick={() => { setActiveEditItem(item); setForm({ ...form, ...item, naziv: item.naziv_proizvoda || form.naziv, rn_stavka_id: item.stavka_id || form.rn_stavka_id, kolicina_ulaz: '' }); setOdabraneOznake(item.oznake || []); }} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-theme-card border border-theme-border/50 rounded-2xl cursor-pointer hover:border-emerald-500 transition-all shadow-sm group gap-3">
                                                         <div className="flex-1">
                                                             <div className="text-xs uppercase text-theme-text font-black">{item.naziv_proizvoda} {item.je_nusproizvod ? <span className="text-amber-500 text-[9px] ml-2">(Nusproizvod)</span> : ''}</div>
                                                             <div className="text-emerald-500 text-lg font-black tracking-tighter mt-1">{item.debljina}x{item.sirina}x{item.duzina} <span className="text-[10px] text-slate-500 ml-1">cm</span></div>

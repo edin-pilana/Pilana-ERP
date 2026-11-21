@@ -1,15 +1,14 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabaseClient';
+import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import { Card, Metric, Text, Title } from '@tremor/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-
-const supabase = createClient('https://awaxwejrhmjeqohrgidm.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXh3ZWpyaG1qZXFvaHJnaWRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NjI1NDcsImV4cCI6MjA5MDQzODU0N30.gOBhZkUQfKvUFBzk329zl4KEgZTl5y10Cnsp989y8hY');
 const PALETA = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
-const formatDatum = (iso) => { if(!iso) return ''; const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
+const formatDatum = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
 const imaSirovinu = (val) => { if (!val) return false; if (Array.isArray(val) && val.length > 0) return true; if (typeof val === 'string') return val.replace(/[{}"[\]\s]/g, '').length > 0; return false; };
 
 export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
@@ -21,7 +20,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
 
     useEffect(() => {
         const logo = localStorage.getItem('saas_app_logo');
-        if(logo) setLogoUrl(logo);
+        if (logo) setLogoUrl(logo);
     }, []);
 
     useEffect(() => { ucitajUkupnuAnalitiku(); }, [datumOd, datumDo]);
@@ -42,10 +41,10 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
 
             let ulazTrupciM3 = 0; const iskoristeniTrupci = new Set();
             logovi.forEach(l => {
-                if(!iskoristeniTrupci.has(l.trupac_id)) {
+                if (!iskoristeniTrupci.has(l.trupac_id)) {
                     iskoristeniTrupci.add(l.trupac_id);
                     const t = trupciDB.find(tr => tr.id === l.trupac_id);
-                    if(t) ulazTrupciM3 += parseFloat(t.zapremina || 0);
+                    if (t) ulazTrupciM3 += parseFloat(t.zapremina || 0);
                 }
             });
 
@@ -64,7 +63,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 const m3 = parseFloat(p.kolicina_final || 0);
                 const isDorada = imaSirovinu(p.ai_sirovina_ids);
 
-                if (isDorada) { doradaIzlazM3 += m3; doradaUlazSirovineM3 += parseFloat(p.kolicina_ulaz || m3); } 
+                if (isDorada) { doradaIzlazM3 += m3; doradaUlazSirovineM3 += parseFloat(p.kolicina_ulaz || m3); }
                 else { pilanaIzlazM3 += m3; }
 
                 const naziv = p.naziv_proizvoda || 'Ostalo';
@@ -82,17 +81,17 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 { name: 'Kalo (Krojenje)', M3: parseFloat(kaloKrojenjeM3.toFixed(2)) } // 🟢 Dodano na grafikon
             ];
 
-            const grafikonProizvoda = Object.keys(proizvodiMap).map(k => ({ name: k, value: parseFloat(proizvodiMap[k].toFixed(2)) })).sort((a,b) => b.value - a.value).slice(0,10);
+            const grafikonProizvoda = Object.keys(proizvodiMap).map(k => ({ name: k, value: parseFloat(proizvodiMap[k].toFixed(2)) })).sort((a, b) => b.value - a.value).slice(0, 10);
 
             setData({
                 kpi: {
                     ulazTrupci: ulazTrupciM3.toFixed(2), izlazGotoveRobe: ukupanIzlazGOTOVE_ROBE.toFixed(2),
-                    ukupnoKalo: (pilanaKaloM3 + doradaKaloM3).toFixed(2), 
+                    ukupnoKalo: (pilanaKaloM3 + doradaKaloM3).toFixed(2),
                     iskoristenost: ulazTrupciM3 > 0 ? ((ukupanIzlazGOTOVE_ROBE / ulazTrupciM3) * 100).toFixed(1) : 0,
                     kaloKrojenje: kaloKrojenjeM3.toFixed(2)
                 },
                 grafikonTokMaterijala, grafikonProizvoda,
-                tabelaProizvodnje: Object.keys(proizvodiMap).map(k => ({ naziv: k, m3: proizvodiMap[k] })).sort((a,b) => b.m3 - a.m3)
+                tabelaProizvodnje: Object.keys(proizvodiMap).map(k => ({ naziv: k, m3: proizvodiMap[k] })).sort((a, b) => b.m3 - a.m3)
             });
             setLoading(false);
 
@@ -106,10 +105,12 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             pdfElement.style.opacity = '1';
             pdfElement.style.zIndex = '9999';
             pdfElement.style.left = '0px';
+            pdfElement.style.top = '0px';
             const canvas = await html2canvas(pdfElement, { scale: 2, useCORS: true, logging: false });
             pdfElement.style.opacity = '0';
             pdfElement.style.zIndex = '-1';
             pdfElement.style.left = '-10000px';
+            pdfElement.style.top = '-10000px';
 
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
@@ -121,16 +122,16 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             const formatiranoOd = datumOd ? formatDatum(datumOd).replace(/\./g, '') : '';
             const formatiranoDo = datumDo ? formatDatum(datumDo).replace(/\./g, '') : '';
             const periodStr = formatiranoOd === formatiranoDo ? formatiranoOd : `${formatiranoOd}_do_${formatiranoDo}`;
-            
+
             const { data: postavke } = await supabase.from('postavke_izvjestaja').select(nazivKoloneFolder).eq('id', 1).maybeSingle();
             const cistFolder = (postavke?.[nazivKoloneFolder] || 'Ostalo').replace(/\//g, '---');
             const timestamp = new Date().getTime();
-            
+
             const fileName = `${cistFolder}___${nazivModula}_${periodStr}_${timestamp}.pdf`;
 
             pdf.save(`${nazivModula}_${periodStr}.pdf`);
             window.open(URL.createObjectURL(pdfBlob), '_blank');
-            
+
             const { error: uploadError } = await supabase.storage
                 .from('izvjestaji_buffer')
                 .upload(fileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
@@ -140,10 +141,10 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
             } else {
                 console.log("🚀 Poslano u arhivu u pozadini.");
             }
-            
+
         } catch (error) {
             console.error("Greška:", error);
-            alert("Greška prilikom generisanja PDF-a.");
+            toast.error("Greška prilikom generisanja PDF-a.");
         } finally {
             setIsGeneratingPDF(false);
         }
@@ -197,7 +198,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                                     <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
                                     <YAxis stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                    <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'8px', color:'#fff'}} cursor={{fill: '#1e293b'}} formatter={(v) => `${v} m³`} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff' }} cursor={{ fill: '#1e293b' }} formatter={(v) => `${v} m³`} />
                                     <Bar isAnimationActive={false} dataKey="M3" radius={[4, 4, 0, 0]} barSize={40}>
                                         {data.grafikonTokMaterijala.map((entry, index) => {
                                             let boja = '#10b981';
@@ -220,8 +221,8 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                                     <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={40} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
                                         {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
                                     </Pie>
-                                    <Tooltip contentStyle={{backgroundColor: '#0f172a', border:'none', borderRadius:'12px', color:'#fff'}} formatter={(v) => `${v} m³`} />
-                                    <Legend wrapperStyle={{fontSize:'9px', fontWeight:'bold', color: '#fff'}} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(v) => `${v} m³`} />
+                                    <Legend wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#fff' }} />
                                 </PieChart>
                             </ResponsiveContainer>
                         </div>
@@ -236,7 +237,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                 backgroundColor: 'white', color: '#0f172a',
                 padding: '12mm', boxSizing: 'border-box',
                 fontFamily: 'sans-serif'
-             }}>
+            }}>
                 <div style={{ display: 'flex', justifyItems: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #0f172a', paddingBottom: '10px', marginBottom: '15px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         {logoUrl ? <img src={logoUrl} style={{ maxHeight: '50px', maxWidth: '200px', objectFit: 'contain' }} alt="Logo" crossOrigin="anonymous" /> : <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#0f172a' }}>{imeFirme}</h1>}
@@ -294,7 +295,7 @@ export default function TabUkupnoAnalitika({ datumOd, datumDo, saas, header }) {
                                 <Pie isAnimationActive={false} data={data.grafikonProizvoda} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={2} dataKey="value" stroke="none">
                                     {data.grafikonProizvoda.map((e, i) => <Cell key={`c-${i}`} fill={PALETA[i % PALETA.length]} />)}
                                 </Pie>
-                                <Legend wrapperStyle={{fontSize:'8px', fontWeight:'bold', color: '#000'}} />
+                                <Legend wrapperStyle={{ fontSize: '8px', fontWeight: 'bold', color: '#000' }} />
                             </PieChart>
                         </div>
                     </div>

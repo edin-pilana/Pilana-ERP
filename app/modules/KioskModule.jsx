@@ -155,11 +155,11 @@ export default function KioskModule() {
             const sada = new Date().toISOString();
 
             if (aktivnaAkcija === 'PRIJAVA') {
-                const { data: otvoreniZapis } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU').limit(1);
+                const { data: otvoreniZapis } = await supabase.from('radni_sati').select('id, datum').eq('radnik_ime', ime).eq('status', 'NA_POSLU').order('vrijeme_dolaska', { ascending: false }).limit(1);
                 const { data: zatvoreniZapis } = await supabase.from('radni_sati').select('id').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'ZAVRŠIO').limit(1);
                 
                 if (otvoreniZapis && otvoreniZapis.length > 0) {
-                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već prijavljeni na posao!`);
+                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već prijavljeni na posao (od ${otvoreniZapis[0].datum})! Prvo se odjavite.`);
                 } else if (zatvoreniZapis && zatvoreniZapis.length > 0) {
                     prikaziPrivremenuPoruku('error', `⚠️ ${ime}, vi ste već završili smjenu za danas!`);
                 } else {
@@ -175,21 +175,27 @@ export default function KioskModule() {
                 }
             } 
             else if (aktivnaAkcija === 'ODJAVA') {
-                const { data: otvoreniZapisi } = await supabase.from('radni_sati').select('*').eq('radnik_ime', ime).eq('datum', danas).eq('status', 'NA_POSLU');
+                // Traži zadnji otvoreni NA_POSLU zapis (podržava i 3. noćnu smjenu koja prelazi ponoć!)
+                const { data: otvoreniZapisi } = await supabase
+                    .from('radni_sati')
+                    .select('*')
+                    .eq('radnik_ime', ime)
+                    .eq('status', 'NA_POSLU')
+                    .order('vrijeme_dolaska', { ascending: false })
+                    .limit(1);
                 
                 if (otvoreniZapisi && otvoreniZapisi.length > 0) {
-                    for (let z of otvoreniZapisi) {
-                        const dolazakMs = z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).getTime() : Date.now();
-                        const trajanjeSati = Math.max(0.05, parseFloat(((Date.now() - dolazakMs) / 3600000).toFixed(2)));
-                        await supabase.from('radni_sati').update({
-                            vrijeme_odlaska: sada,
-                            status: 'ZAVRŠIO',
-                            obracunato_sati: trajanjeSati
-                        }).eq('id', z.id);
-                    }
-                    prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')}.`);
+                    const z = otvoreniZapisi[0];
+                    const dolazakMs = z.vrijeme_dolaska ? new Date(z.vrijeme_dolaska).getTime() : Date.now();
+                    const trajanjeSati = Math.max(0.05, parseFloat(((Date.now() - dolazakMs) / 3600000).toFixed(2)));
+                    await supabase.from('radni_sati').update({
+                        vrijeme_odlaska: sada,
+                        status: 'ZAVRŠIO',
+                        obracunato_sati: trajanjeSati
+                    }).eq('id', z.id);
+                    prikaziPrivremenuPoruku('success', `👋 Doviđenja, ${ime}! Odjava u ${new Date().toLocaleTimeString('de-DE')} (${trajanjeSati.toFixed(2)} h).`);
                 } else {
-                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, niste prijavljeni na posao za današnji dan!`);
+                    prikaziPrivremenuPoruku('error', `⚠️ ${ime}, niste prijavljeni na posao!`);
                 }
             }
             else if (aktivnaAkcija === 'PROFIL') {
@@ -221,12 +227,13 @@ export default function KioskModule() {
         setIsScanning(false);
     };
 
-    const pokreniZahtjevIzProfila = () => {
+    const pokreniZahtjevIzProfila = async () => {
         if (!radnikProfil || !radnikProfil.radnik) return;
-        setFormaOdmor(prev => ({ ...prev, radnik_ime: radnikProfil.radnik.ime_prezime }));
+        // Resetuje prethodni razlog/tip da sljedeći radnik na Kiosku ne vidi tuđi unos
+        setFormaOdmor({ radnik_ime: radnikProfil.radnik.ime_prezime, tip: 'GODIŠNJI', razlog: '' });
         setRadnikProfil(null);
         
-        ucitajZauzetostI_Izuzetke(); 
+        await ucitajZauzetostI_Izuzetke(); 
         setTrenutniMjesec(new Date());
         setDatumOd(null); 
         setDatumDo(null);
@@ -284,18 +291,28 @@ export default function KioskModule() {
     };
 
     const posaljiKrajnjiZahtjev = async () => {
+        if (isProcessingRef.current || !potvrdaModal) return;
         const p = potvrdaModal;
-        const payload = { 
-            radnik_ime: p.radnik, tip_odsustva: p.tip, 
-            datum_od: formatLocalISODate(p.startD), 
-            datum_do: formatLocalISODate(p.endD), 
-            broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' 
-        };
-        const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
-        if (error) { prikaziPrivremenuPoruku('error', error.message); }
-        else {
-            zatvoriSveModale();
-            prikaziPrivremenuPoruku('success', `✅ Zahtjev za odmor uspješno poslan!`);
+        if (!p.brojDana || p.brojDana <= 0) {
+            return prikaziPrivremenuPoruku('error', 'Odabrani period sadrži 0 radnih dana (samo vikend/praznici).');
+        }
+        isProcessingRef.current = true;
+        try {
+            const payload = { 
+                radnik_ime: p.radnik, tip_odsustva: p.tip, 
+                datum_od: formatLocalISODate(p.startD), 
+                datum_do: formatLocalISODate(p.endD), 
+                broj_radnih_dana: p.brojDana, razlog: formaOdmor.razlog, status: 'NA ČEKANJU', inicijativa: 'RADNIK' 
+            };
+            const { error } = await supabase.from('zahtjevi_odsustva').insert([payload]);
+            if (error) { prikaziPrivremenuPoruku('error', error.message); }
+            else {
+                setFormaOdmor({ radnik_ime: '', tip: 'GODIŠNJI', razlog: '' });
+                zatvoriSveModale();
+                prikaziPrivremenuPoruku('success', `✅ Zahtjev za odmor (${p.brojDana} radnih dana) uspješno poslan!`);
+            }
+        } finally {
+            setTimeout(() => { isProcessingRef.current = false; }, 1000);
         }
     };
 
@@ -402,7 +419,7 @@ export default function KioskModule() {
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-center border-b border-slate-700 pb-2">
                                         <span className="text-sm text-slate-300">Ukupno pripada:</span>
-                                        <span className="text-base font-black text-white">{radnikProfil.radnik.godisnji_ukupno || 20} d</span>
+                                        <span className="text-base font-black text-white">{radnikProfil.radnik.godisnji_ukupno ?? ((radnikProfil.radnik.preostalo_godisnjeg ?? 20) + (radnikProfil.radnik.godisnji_iskoristeno_radnik || 0) + (radnikProfil.radnik.godisnji_iskoristeno_poslodavac || 0))} d</span>
                                     </div>
                                     <div className="flex justify-between items-center border-b border-slate-700 pb-2">
                                         <span className="text-sm text-slate-300">Iskorišteno:</span>
@@ -411,7 +428,7 @@ export default function KioskModule() {
                                     <div className="flex justify-between items-center pt-2">
                                         <span className="text-base font-bold text-slate-300">PREOSTALO:</span>
                                         <span className="text-3xl font-black text-emerald-400">
-                                            {(radnikProfil.radnik.godisnji_ukupno || 20) - ((radnikProfil.radnik.godisnji_iskoristeno_radnik || 0) + (radnikProfil.radnik.godisnji_iskoristeno_poslodavac || 0))} d
+                                            {Math.max(0, (radnikProfil.radnik.godisnji_ukupno ?? ((radnikProfil.radnik.preostalo_godisnjeg ?? 20) + (radnikProfil.radnik.godisnji_iskoristeno_radnik || 0) + (radnikProfil.radnik.godisnji_iskoristeno_poslodavac || 0))) - ((radnikProfil.radnik.godisnji_iskoristeno_radnik || 0) + (radnikProfil.radnik.godisnji_iskoristeno_poslodavac || 0)))} d
                                         </span>
                                     </div>
                                 </div>

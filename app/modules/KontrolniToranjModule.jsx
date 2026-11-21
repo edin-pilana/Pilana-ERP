@@ -18,7 +18,7 @@ const formatirajTacanDatum = (d1, d2, d3) => {
                 const min = String(d.getMinutes()).padStart(2, '0');
                 return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
             }
-        } catch(e) {}
+        } catch (e) { }
     }
     return 'N/A';
 };
@@ -26,7 +26,7 @@ const formatirajTacanDatum = (d1, d2, d3) => {
 const getSortableTime = (d1, d2, d3) => {
     const moguciDatumi = [d1, d2, d3].filter(Boolean);
     for (let dt of moguciDatumi) {
-        try { const d = new Date(dt); if (!isNaN(d.getTime())) return d.getTime(); } catch(e) {}
+        try { const d = new Date(dt); if (!isNaN(d.getTime())) return d.getTime(); } catch (e) { }
     }
     return 0;
 };
@@ -40,9 +40,9 @@ const siguranString = (val) => {
 // 🟢 APSOLUTNA INTIMNA FORENZIKA
 const renderStavkeDiff = (stareRaw, noveRaw) => {
     let stare = []; let nove = [];
-    try { stare = typeof stareRaw === 'string' ? JSON.parse(stareRaw) : (stareRaw || []); } catch(e) { stare = stareRaw && typeof stareRaw === 'object' ? [stareRaw] : []; }
-    try { nove = typeof noveRaw === 'string' ? JSON.parse(noveRaw) : (noveRaw || []); } catch(e) { nove = noveRaw && typeof noveRaw === 'object' ? [noveRaw] : []; }
-    
+    try { stare = typeof stareRaw === 'string' ? JSON.parse(stareRaw) : (stareRaw || []); } catch (e) { stare = stareRaw && typeof stareRaw === 'object' ? [stareRaw] : []; }
+    try { nove = typeof noveRaw === 'string' ? JSON.parse(noveRaw) : (noveRaw || []); } catch (e) { nove = noveRaw && typeof noveRaw === 'object' ? [noveRaw] : []; }
+
     if (!Array.isArray(stare)) stare = [stare];
     if (!Array.isArray(nove)) nove = [nove];
 
@@ -72,7 +72,7 @@ const renderStavkeDiff = (stareRaw, noveRaw) => {
         } else {
             const unutrašnjePromjene = [];
             const unutrašnjiKljučevi = Array.from(new Set([...Object.keys(o), ...Object.keys(n)]));
-            
+
             unutrašnjiKljučevi.forEach(sk => {
                 if (JSON.stringify(o[sk]) !== JSON.stringify(n[sk])) {
                     unutrašnjePromjene.push(
@@ -147,7 +147,7 @@ const PrikazIzmjena = ({ log }) => {
             </div>
         );
     }
-    
+
     return <div className="mt-3 space-y-2">{ispisSvihIzmjena}</div>;
 };
 
@@ -182,13 +182,13 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 supabase.from('trupci').select('id, vrsta, status'),
                 supabase.from('katalog_proizvoda').select('*')
             ]);
-            
-            if(kat.data) setKatalog(kat.data);
+
+            if (kat.data) setKatalog(kat.data);
 
             const unikatniPaks = []; const pakSet = new Set();
             if (pak.data) {
                 pak.data.forEach(p => {
-                    if(!pakSet.has(p.paket_id)) {
+                    if (!pakSet.has(p.paket_id)) {
                         pakSet.add(p.paket_id);
                         let st = p.otpremnica_id ? 'ISPORUČENO' : (p.closed_at ? 'NA STANJU' : 'U PROIZVODNJI');
                         unikatniPaks.push({ id: p.paket_id, meta: p.naziv_proizvoda, tip: 'Paket', status: st, active: p.otpremnica_id ? 0 : 1 });
@@ -313,18 +313,17 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
         const orConditions = cistiIdovi.map(id => `detalji.ilike.%${id}%,akcija.ilike.%${id}%`).join(',');
         const { data: sLogs } = await (orConditions ? supabase.from('sistem_audit_log').select('*').or(orConditions) : { data: [] });
-        
+
         let sysLogsRaw = [];
         if (sLogs) {
             sysLogsRaw = sLogs.filter(l => {
-                const tekst = `${l.akcija || ''} ${l.detalji || ''} ${JSON.stringify(l.stari_podaci || '')} ${JSON.stringify(l.novi_podaci || '')}`.toUpperCase();
+                const akc = String(l.akcija || '').toUpperCase();
+                const tekst = `${akc} ${l.detalji || ''} ${JSON.stringify(l.stari_podaci || '')} ${JSON.stringify(l.novi_podaci || '')}`.toUpperCase();
                 return cistiIdovi.some(cid => {
-                    if (cid.length <= 4) {
-                        const escaped = cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const regex = new RegExp(`(^|[^0-9A-Z.,-])${escaped}([^0-9A-Z.,-]|$)`, 'i');
-                        return regex.test(tekst);
-                    }
-                    return tekst.includes(cid);
+                    if (cid.length <= 4 && akc.startsWith('KASA_')) return false;
+                    const escaped = cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(^|[^0-9A-Z.,-])${escaped}([^0-9A-Z.,-]|$)`, 'i');
+                    return regex.test(tekst);
                 });
             });
 
@@ -345,7 +344,26 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
             }
         }
 
-        const paketiFilterQuery = nalogIdZaLanac ? `paket_id.eq.${val},broj_veze.eq.${nalogIdZaLanac}` : `paket_id.eq.${val}`;
+        // Ako je OTP pronađen naknadno iz audit logova, dopuni vezu prema RAC!
+        if (otpremnicaIdZaLanac && !racunIdZaLanac) {
+            const { data: racIzOtp } = await supabase.from('racuni').select('id').eq('broj_veze', otpremnicaIdZaLanac).limit(1).maybeSingle();
+            if (racIzOtp?.id) {
+                racunIdZaLanac = racIzOtp.id;
+                if (!cistiIdovi.includes(racunIdZaLanac)) cistiIdovi.push(racunIdZaLanac);
+            }
+        }
+
+        // Dopuni reklamacije preko SVIH pronađenih ID-ova u lancu
+        if (cistiIdovi.length > 1) {
+            const rekOr = cistiIdovi.map(cid => `paket_id.eq.${cid},broj_otpremnice.eq.${cid}`).join(',');
+            const { data: rekLanac } = await supabase.from('reklamacije').select('*').or(rekOr);
+            if (rekLanac && rekLanac.length > 0) setReklamacijskiAlarmi(rekLanac);
+        }
+
+        const paketiFilterParts = [`paket_id.eq.${val}`];
+        if (nalogIdZaLanac) paketiFilterParts.push(`broj_veze.eq.${nalogIdZaLanac}`);
+        if (otpremnicaIdZaLanac) paketiFilterParts.push(`otpremnica_id.eq.${otpremnicaIdZaLanac}`);
+        const paketiFilterQuery = paketiFilterParts.join(',');
 
         const [naloziDB, ponudeDB, otpremniceDB, racuniDB, paketiDB] = await Promise.all([
             supabase.from('radni_nalozi').select('*').in('id', cistiIdovi),
@@ -356,18 +374,18 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         ]);
 
         let dataChain = {
-            paketHistory: paketiDB.data?.filter(p => p.paket_id === val) || [], paketSadrzaj: [], paketUkupnoM3: 0, 
-            nalozi: naloziDB.data || [], ponuda: (ponudeDB.data && ponudeDB.data.length > 0) ? ponudeDB.data[0] : null, 
+            paketHistory: paketiDB.data?.filter(p => p.paket_id === val) || [], paketSadrzaj: [], paketUkupnoM3: 0,
+            nalozi: naloziDB.data || [], ponuda: (ponudeDB.data && ponudeDB.data.length > 0) ? ponudeDB.data[0] : null,
             otpremnice: otpremniceDB.data || [], racuni: racuniDB.data || [],
             kupac: null, logovi: [], finansijska_analiza: [], ulazniTrupci: [], ulazniPaketi: [], izlazniPaketi: []
         };
 
         let glavniPaketId = paketiDB.data?.find(p => p.paket_id === val)?.paket_id || (paketiDB.data && paketiDB.data.length > 0 ? paketiDB.data[0].paket_id : null);
-        
+
         if (glavniPaketId) {
             const fokusiraniPaketi = paketiDB.data.filter(p => p.paket_id === glavniPaketId);
             dataChain.paketHistory = fokusiraniPaketi;
-            
+
             const agregacija = {}; let ukupnoM3 = 0;
             fokusiraniPaketi.forEach(p => {
                 const kljuc = p.naziv_proizvoda + '_' + p.debljina + '_' + p.sirina + '_' + p.duzina;
@@ -377,7 +395,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 if (p.oznake) p.oznake.forEach(o => agregacija[kljuc].oznake.add(o));
                 ukupnoM3 += finalDodato;
             });
-            dataChain.paketSadrzaj = Object.values(agregacija).map(s => ({...s, oznake: [...s.oznake]}));
+            dataChain.paketSadrzaj = Object.values(agregacija).map(s => ({ ...s, oznake: [...s.oznake] }));
             dataChain.paketUkupnoM3 = ukupnoM3;
 
             let trupciIds = []; let paketiIds = [];
@@ -432,7 +450,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
         ];
 
         dataChain.logovi = Array.from(new Map(sviLogovi.map(item => [item.id, item])).values()).filter(l => l.created_at > 0).sort((a, b) => a.created_at - b.created_at);
-        setForenzika(dataChain); setLoading(false); setSken(val); 
+        setForenzika(dataChain); setLoading(false); setSken(val);
     };
     return (
         <div className="p-4 max-w-7xl mx-auto space-y-6 font-bold animate-in fade-in" style={{ backgroundColor: saas.ui.boja_pozadine || undefined }}>
@@ -442,8 +460,8 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 <div className="bg-theme-card p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
                     <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna Forenzike</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Kartice: <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine: <input type="color" value={saas.ui.boja_pozadine || '#090e17'} onChange={e => saas.setUi({...saas.ui, boja_pozadine: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Kartice: <input type="color" value={saas.ui.boja_kartice || '#1e293b'} onChange={e => saas.setUi({ ...saas.ui, boja_kartice: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Pozadine: <input type="color" value={saas.ui.boja_pozadine || '#090e17'} onChange={e => saas.setUi({ ...saas.ui, boja_pozadine: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
                     </div>
                 </div>
             )}
@@ -452,7 +470,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
                 <h3 className={`${saas.ui.boja_naslova || 'text-indigo-400'} font-black uppercase text-xs mb-4 tracking-widest flex items-center justify-center gap-2`}><span>🕵️‍♂️ FORENZIČKI SKENER / X-RAY DOKUMENTA (Dimenzije u cm)</span></h3>
                 <div className="flex gap-2 max-w-2xl mx-auto relative w-full">
                     <div className="flex-1 min-w-0 relative">
-                        <input type="text" value={sken} onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} onKeyDown={e => e.key === 'Enter' && analizirajSve(sken)} onFocus={()=>setShowDropdown(true)} placeholder="UPIŠI ID ILI SKENIRAJ..." className="w-full min-w-0 p-5 bg-theme-panel rounded-2xl text-center font-black text-xl md:text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" />
+                        <input type="text" value={sken} onChange={(e) => { setSken(e.target.value.toUpperCase()); setShowDropdown(true); }} onKeyDown={e => e.key === 'Enter' && analizirajSve(sken)} onFocus={() => setShowDropdown(true)} placeholder="UPIŠI ID ILI SKENIRAJ..." className="w-full min-w-0 p-5 bg-theme-panel rounded-2xl text-center font-black text-xl md:text-2xl text-theme-text border-2 border-indigo-500/50 uppercase outline-none focus:border-indigo-400 shadow-inner tracking-widest relative z-10" />
                         {showDropdown && sken && preporuke.length > 0 && (
                             <div className="absolute top-full left-0 right-0 mt-2 bg-theme-panel border border-theme-border rounded-xl shadow-2xl overflow-hidden z-[100] text-left max-h-60 overflow-y-auto custom-scrollbar">
                                 {preporuke.map(p => (
@@ -470,7 +488,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
             {reklamacijskiAlarmi.length > 0 && (
                 <div className="bg-red-950/40 border-2 border-red-500 p-6 rounded-[2rem] shadow-[0_0_40px_rgba(239,68,68,0.25)] space-y-4 animate-in zoom-in-95">
-                    <h3 className="text-red-400 font-black uppercase text-xs md:text-sm tracking-widest flex items-center gap-2"><AlertTriangle className="animate-pulse"/> DETEKTOVAN ALARM: PREDMET REKLAMACIJE KUPCA</h3>
+                    <h3 className="text-red-400 font-black uppercase text-xs md:text-sm tracking-widest flex items-center gap-2"><AlertTriangle className="animate-pulse" /> DETEKTOVAN ALARM: PREDMET REKLAMACIJE KUPCA</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {reklamacijskiAlarmi.map(rek => {
                             const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
@@ -501,7 +519,7 @@ export default function KontrolniToranjModule({ user, header, setHeader, onExit 
 
             {istorijaKrojenjaMajke && (
                 <div className="bg-amber-950/30 border-2 border-amber-500/50 p-6 rounded-[2rem] shadow-xl space-y-3 animate-in slide-in-from-top-4">
-                    <h3 className="text-amber-500 font-black uppercase text-xs tracking-widest flex items-center gap-2"><History size={16}/> LANAC KROJENJA TRUPACA (Sljedivost sirovine)</h3>
+                    <h3 className="text-amber-500 font-black uppercase text-xs tracking-widest flex items-center gap-2"><History size={16} /> LANAC KROJENJA TRUPACA (Sljedivost sirovine)</h3>
                     <div className="p-4 bg-theme-panel rounded-xl border border-theme-border flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
                         <div>
                             <p className="text-theme-text font-black text-sm">Trupac <span className="text-amber-400">{istorijaKrojenjaMajke.dijete.id}</span></p>

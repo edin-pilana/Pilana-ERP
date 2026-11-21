@@ -5,110 +5,117 @@
 @layer base {
   :root {
     /* 1. INDUSTRIAL (Standardna tema) */
-    --bg-main: #0f172a;       
-    --bg-card: rgba(30, 41, 59, 0.8); 
-    --bg-panel: rgba(0, 0, 0, 0.4);   
-    --text-primary: #f8fafc;  
-    --text-muted: #94a3b8;    
-    --border-color: rgba(59, 130, 246, 0.3); 
-    --border-glow: 0 0 0px transparent;      
-    --radius-box: 1rem; 
-    --glass-blur: blur(12px); 
+    --bg-main: #0f172a;
+    --bg-card: rgba(30, 41, 59, 0.88);
+    --bg-panel: rgba(15, 23, 42, 0.72);
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+    --border-color: rgba(59, 130, 246, 0.28);
+    --border-glow: 0 8px 30px -12px rgba(15, 23, 42, 0.6);
+    --radius-box: 1rem;
+    --glass-blur: blur(12px);
+    --theme-accent: #3b82f6;
+    --theme-accent-rgb: 59, 130, 246;
   }
 
   [data-theme="aurora"] {
-    /* 2. NANO BANANA GLOSSY (Pravi stakleni efekt) */
-    --bg-main: #0B0E14; /* Jako tamno plava baza */
-    --bg-card: rgba(255, 255, 255, 0.04); /* Staklena kartica */
-    --bg-panel: rgba(0, 0, 0, 0.5); /* Jako tamna polja za unos da izgledaju utisnuto */
+    /* 2. AURORA GLASS (Stakleni efekt sa ambijentalnim sjajem) */
+    --bg-main: #0B0E14;
+    --bg-card: rgba(255, 255, 255, 0.045);
+    --bg-panel: rgba(0, 0, 0, 0.52);
     --text-primary: #ffffff;
     --text-muted: #cbd5e1;
-    --border-color: rgba(255, 255, 255, 0.12); /* Sivi rub na karticama */
-    --border-glow: 0 0 20px rgba(255,255,255,0.03); 
-    --radius-box: 1.25rem;    
-    --glass-blur: blur(16px);
+    --border-color: rgba(167, 139, 250, 0.22);
+    --border-glow: 0 10px 35px -10px rgba(139, 92, 246, 0.16);
+    --radius-box: 1.25rem;
+    --glass-blur: blur(18px);
+    --theme-accent: #8b5cf6;
+    --theme-accent-rgb: 139, 92, 246;
   }
 
   [data-theme="light"] {
     /* 3. CLINICAL LIGHT BAZA */
-    --bg-main: #f8fafc; --bg-card: #ffffff; --bg-panel: #f1f5f9; 
-    --text-primary: #0f172a; --text-muted: #64748b; 
-    --border-color: #e2e8f0; --border-glow: 0 10px 15px -3px rgba(0,0,0,0.05); 
-    --radius-box: 1rem; --glass-blur: blur(0px);  
+    --bg-main: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-panel: #f8fafc;
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --border-color: #e2e8f0;
+    --border-glow: 0 10px 25px -8px rgba(15, 23, 42, 0.08);
+    --radius-box: 1rem;
+    --glass-blur: blur(0px);
+    --theme-accent: #2563eb;
+    --theme-accent-rgb: 37, 99, 235;
   }
 
   [data-theme="executive"] {
-    /* EXECUTIVE GOLD — Tamna luksuzna tema sa zlatnim akcentima */
+    /* 4. EXECUTIVE GOLD — Tamna luksuzna tema sa zlatnim akcentima */
     --bg-main: #13111a;
     --bg-card: rgba(28, 25, 36, 0.95);
-    --bg-panel: rgba(14, 12, 20, 0.8);
-    --text-primary: #e8e0d5;
-    --text-muted: #8a7f6e;
-    --border-color: rgba(200, 170, 110, 0.22);
-    --border-glow: 0 0 18px rgba(200, 170, 110, 0.08);
-    --radius-box: 0.75rem;
+    --bg-panel: rgba(14, 12, 20, 0.85);
+    --text-primary: #f1e9de;
+    --text-muted: #a69882;
+    --border-color: rgba(200, 170, 110, 0.28);
+    --border-glow: 0 10px 30px -10px rgba(200, 170, 110, 0.14);
+    --radius-box: 0.85rem;
     --glass-blur: blur(14px);
+    --theme-accent: #d4af37;
+    --theme-accent-rgb: 212, 175, 55;
   }
 }
 
 /* ==================================================== */
-/* ☢️ NUKLEARNI PREKIDAČ SA DINAMIČKIM AKCENTNIM BOJAMA */
+/* TAMNE TEME: POLJA SA DINAMIČKIM AKCENTNIM BOJAMA     */
+/* (Pravi selektor na html:not([data-theme="light"]))   */
 /* ==================================================== */
-body:not([data-theme="light"]) input[type="text"],
-body:not([data-theme="light"]) input[type="number"],
-body:not([data-theme="light"]) input[type="date"],
-body:not([data-theme="light"]) select,
-body:not([data-theme="light"]) textarea {
+html:not([data-theme="light"]) input[type="text"],
+html:not([data-theme="light"]) input[type="number"],
+html:not([data-theme="light"]) input[type="date"],
+html:not([data-theme="light"]) input[type="password"],
+html:not([data-theme="light"]) input[type="email"],
+html:not([data-theme="light"]) input[type="search"],
+html:not([data-theme="light"]) select,
+html:not([data-theme="light"]) textarea {
   background-color: var(--bg-panel) !important;
   color: var(--text-primary) !important;
-  
-  /* MAGIJA: Uzima boju tvog modula i pravi je 30% vidljivom za prelijep okvir! */
-  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 30%, transparent) !important; 
-  
-  border-radius: 0.75rem !important; 
-  box-shadow: inset 0 2px 5px rgba(0,0,0,0.5) !important;
-  padding: 0.8rem 1rem !important; 
+  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 32%, transparent) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45) !important;
+  padding: 0.75rem 1rem !important;
   backdrop-filter: blur(8px);
-  transition: all 0.3s ease !important;
+  transition: all 0.25s ease !important;
 }
 
-body:not([data-theme="light"]) input:focus,
-body:not([data-theme="light"]) select:focus,
-body:not([data-theme="light"]) textarea:focus {
+html:not([data-theme="light"]) input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus,
+html:not([data-theme="light"]) select:focus,
+html:not([data-theme="light"]) textarea:focus {
   outline: none !important;
-  
-  /* Kad klikneš na polje, boja modula zasija do 70% vidljivosti */
-  border-color: color-mix(in srgb, var(--theme-accent, rgba(255, 255, 255, 0.4)) 70%, transparent) !important; 
-  
-  /* I dobije lagani unutrašnji sjaj (glow) u boji tvog modula! */
-  box-shadow: inset 0 2px 5px rgba(0,0,0,0.5), 0 0 12px color-mix(in srgb, var(--theme-accent, rgba(255,255,255,0.1)) 20%, transparent) !important;
+  border-color: color-mix(in srgb, var(--theme-accent, rgba(255, 255, 255, 0.4)) 75%, transparent) !important;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), 0 0 12px color-mix(in srgb, var(--theme-accent, rgba(255, 255, 255, 0.1)) 22%, transparent) !important;
 }
 
-/* Rješava problem dropdown menija na tamnoj temi */
-body:not([data-theme="light"]) select option {
+html:not([data-theme="light"]) select option {
   background-color: #1e293b !important;
   color: #ffffff !important;
 }
 
-/* Kartice analitike i veliki blokovi sada dobijaju blagi sjaj po ivicama u boji modula */
-body:not([data-theme="light"]) .bg-white {
+html:not([data-theme="light"]) .bg-white {
   background-color: var(--bg-card) !important;
-  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 15%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--theme-accent, var(--border-color)) 18%, transparent) !important;
   color: var(--text-primary) !important;
 }
 
 /* ==================================================== */
-/* 🍏 MAC-STYLE SCROLLBAROVI */
+/* MAC-STYLE SCROLLBAROVI                               */
 /* ==================================================== */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { 
-  background: var(--border-color); 
-  border-radius: 10px; 
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.45); }
 
-/* Glavno ponašanje tijela */
 body {
   background-color: var(--bg-main);
   color: var(--text-primary);
@@ -116,34 +123,56 @@ body {
   min-height: 100vh;
 }
 
-/* Maglica za Aurora */
-body[data-theme="aurora"]::before {
-  content: ''; position: fixed; top: -10%; left: -10%; width: 50vw; height: 50vh;
-  background: radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 60%);
-  z-index: -1; pointer-events: none;
+/* Ambijentalni sjaj za Aurora i Executive teme (radi sa html[data-theme]) */
+html[data-theme="aurora"] body::before {
+  content: '';
+  position: fixed;
+  top: -10%;
+  left: -10%;
+  width: 55vw;
+  height: 55vh;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.16) 0%, transparent 65%);
+  z-index: 0;
+  pointer-events: none;
 }
-body[data-theme="aurora"]::after {
-  content: ''; position: fixed; bottom: -10%; right: -10%; width: 50vw; height: 50vh;
-  background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 60%);
-  z-index: -1; pointer-events: none;
+html[data-theme="aurora"] body::after {
+  content: '';
+  position: fixed;
+  bottom: -10%;
+  right: -10%;
+  width: 55vw;
+  height: 55vh;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.11) 0%, transparent 65%);
+  z-index: 0;
+  pointer-events: none;
 }
-/* Maglica za Executive */
-body[data-theme="executive"]::before {
-  content: ''; position: fixed; top: -10%; right: -10%; width: 45vw; height: 45vh;
-  background: radial-gradient(circle, rgba(200,170,110,0.07) 0%, transparent 60%);
-  z-index: -1; pointer-events: none;
+
+html[data-theme="executive"] body::before {
+  content: '';
+  position: fixed;
+  top: -10%;
+  right: -10%;
+  width: 50vw;
+  height: 50vh;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.11) 0%, transparent 65%);
+  z-index: 0;
+  pointer-events: none;
 }
-body[data-theme="executive"]::after {
-  content: ''; position: fixed; bottom: -10%; left: -10%; width: 40vw; height: 40vh;
-  background: radial-gradient(circle, rgba(180,140,70,0.05) 0%, transparent 60%);
-  z-index: -1; pointer-events: none;
+html[data-theme="executive"] body::after {
+  content: '';
+  position: fixed;
+  bottom: -10%;
+  left: -10%;
+  width: 45vw;
+  height: 45vh;
+  background: radial-gradient(circle, rgba(180, 140, 70, 0.08) 0%, transparent 65%);
+  z-index: 0;
+  pointer-events: none;
 }
 
 /* ==================================================== */
-/* 📊 FORSIRANJE TREMOR GRAFIKA DA BUDU STAKLENI */
+/* TREMOR & RECHARTS                                    */
 /* ==================================================== */
-
-/* Osvajamo glavne Tremor kartice */
 .tremor-Card-root {
   background-color: var(--bg-card) !important;
   border-color: var(--border-color) !important;
@@ -153,13 +182,11 @@ body[data-theme="executive"]::after {
   color: var(--text-primary) !important;
 }
 
-/* Tekst i Naslovi unutar Tremora */
 .tremor-Text-root, .tremor-Title-root, .tremor-Metric-root {
   color: var(--text-primary) !important;
 }
 
-/* Tooltipovi unutar grafika (da ne budu jarko bijeli dok se prelazi mišem preko grafa) */
-body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-tooltip {
+html:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-tooltip {
   background-color: var(--bg-panel) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: 0.75rem !important;
@@ -167,7 +194,7 @@ body:not([data-theme="light"]) .recharts-tooltip-wrapper .recharts-default-toolt
   color: var(--text-primary) !important;
 }
 
-body:not([data-theme="light"]) .recharts-tooltip-item {
+html:not([data-theme="light"]) .recharts-tooltip-item {
   color: var(--text-primary) !important;
 }
 
@@ -178,120 +205,153 @@ textarea {
   text-transform: uppercase !important;
 }
 
-/* KOREKCIJA PADAJUĆIH MENIJA (Da ne budu providni i da uvijek budu na vrhu) */
+/* KOREKCIJA PADAJUĆIH MENIJA */
 .custom-dropdown-menu {
-  background-color: #0f172a !important; /* Čvrsta, neprovidna tamna boja */
+  background-color: #0f172a !important;
   border: 1px solid var(--border-color);
-  z-index: 9999 !important; /* Uvijek iznad svega */
+  z-index: 9999 !important;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
 }
 
 /* ========================================================= */
-/* 🌞 CLINICAL LIGHT TEMA - GLOBALNI OVERRIDE SVIH MODULA    */
+/* MODERNE SONNER OBAVIJESTI (SVE 4 TEME)                    */
 /* ========================================================= */
-
-[data-theme="light"] {
-  /* 1. Prisilno svijetla pozadina za cijelu aplikaciju */
-  --theme-main: #f1f5f9 !important;
-  --theme-card: #ffffff !important;
-  --theme-panel: #f8fafc !important;
-  --theme-text: #0f172a !important;
-  --theme-muted: #475569 !important;
-  --theme-accent: #2563eb !important;
+[data-sonner-toaster] [data-sonner-toast] {
+  border-radius: 1rem !important;
+  padding: 14px 16px !important;
+  font-weight: 700 !important;
+  backdrop-filter: blur(16px) !important;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.45) !important;
+  border-width: 1px !important;
 }
 
-[data-theme="light"] .bg-theme-accent {
+html:not([data-theme="light"]) [data-sonner-toaster] [data-sonner-toast] {
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #f8fafc !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+html[data-theme="executive"] [data-sonner-toaster] [data-sonner-toast] {
+  background: rgba(24, 21, 32, 0.95) !important;
+  border-color: rgba(212, 175, 55, 0.35) !important;
+}
+
+html[data-theme="light"] [data-sonner-toaster] [data-sonner-toast] {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 16px 36px -10px rgba(15, 23, 42, 0.16) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
+  border-left: 4px solid #10b981 !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
+  border-left: 4px solid #ef4444 !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] {
+  border-left: 4px solid #f59e0b !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] {
+  border-left: 4px solid #3b82f6 !important;
+}
+
+/* ========================================================= */
+/* CLINICAL LIGHT TEMA - GLOBALNI OVERRIDE SVIH MODULA       */
+/* ========================================================= */
+html[data-theme="light"] .bg-theme-accent {
   background-color: var(--theme-accent, #2563eb) !important;
   color: #ffffff !important;
 }
 
-/* 2. Gaženje inline SaaS tamnih boja (kartica i pozadina) iz baze */
-[data-theme="light"] body,
-[data-theme="light"] [style*="background-color: #090e17"],
-[data-theme="light"] [style*="background-color: #1e293b"],
-[data-theme="light"] [style*="background-color: #111827"],
-[data-theme="light"] [style*="background-color: rgb(9, 14, 23)"],
-[data-theme="light"] [style*="background-color: rgb(30, 41, 59)"],
-[data-theme="light"] [style*="background-color: rgb(17, 24, 39)"] {
+html[data-theme="light"] body,
+html[data-theme="light"] [style*="background-color: #090e17"],
+html[data-theme="light"] [style*="background-color: #1e293b"],
+html[data-theme="light"] [style*="background-color: #111827"],
+html[data-theme="light"] [style*="background-color: rgb(9, 14, 23)"],
+html[data-theme="light"] [style*="background-color: rgb(30, 41, 59)"],
+html[data-theme="light"] [style*="background-color: rgb(17, 24, 39)"] {
   background-color: #f1f5f9 !important;
   color: #0f172a !important;
 }
 
-/* 3. Bijele kartice na SVIM modulima */
-[data-theme="light"] .bg-theme-card,
-[data-theme="light"] [class*="bg-theme-card"],
-[data-theme="light"] .bg-theme-panel,
-[data-theme="light"] [class*="bg-theme-panel"] {
+html[data-theme="light"] .bg-theme-card,
+html[data-theme="light"] [class*="bg-theme-card"],
+html[data-theme="light"] .bg-theme-panel,
+html[data-theme="light"] [class*="bg-theme-panel"] {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04) !important;
   border-color: #e2e8f0 !important;
 }
 
-/* 4. OBRUBI POLJA U BOJI TRENUTNOG MODULA (--theme-accent) */
-[data-theme="light"] input,
-[data-theme="light"] select,
-[data-theme="light"] textarea {
+/* Samo tekstualna/brojevna polja (ne dira range, checkbox, radio, color!) */
+html[data-theme="light"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  border: 2px solid var(--theme-accent, #cbd5e1) !important; 
+  border: 1.5px solid color-mix(in srgb, var(--theme-accent, #94a3b8) 55%, #cbd5e1) !important;
   border-radius: 0.75rem !important;
-  box-shadow: none !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
-/* Jači obrub i sjena kada se klikne na polje */
-[data-theme="light"] input:focus,
-[data-theme="light"] select:focus,
-[data-theme="light"] textarea:focus {
+html[data-theme="light"] input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus,
+html[data-theme="light"] select:focus,
+html[data-theme="light"] textarea:focus {
   outline: none !important;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--theme-accent, rgba(0,0,0,0.1)) 40%, transparent) !important;
+  border-color: var(--theme-accent, #2563eb) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent, #2563eb) 20%, transparent) !important;
 }
 
-/* Rješavanje Dropdowna na svijetloj temi */
-[data-theme="light"] select option {
-background-color: #ffffff !important;
-color: #0f172a !important;
+html[data-theme="light"] select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
 }
 
-/* 5. Popravak tekstova (da bijeli tekstovi ne budu nevidljivi na bijeloj pozadini, OSIM kada su na obojenoj pozadini!) */
-[data-theme="light"] .text-white:not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-purple-"]):not([class*="bg-indigo-"]):not([class*="bg-orange-"]):not([class*="bg-pink-"]):not([class*="bg-theme-accent"]),
-[data-theme="light"] .text-slate-300,
-[data-theme="light"] .text-slate-400,
-[data-theme="light"] .text-slate-500 {
+/* Popravak kontrasta tekstova (čuva bijeli tekst na obojenim karticama/dugmadima!) */
+html[data-theme="light"] .text-white:not([class*="bg-blue-"]):not([class*="bg-emerald-"]):not([class*="bg-amber-"]):not([class*="bg-red-"]):not([class*="bg-purple-"]):not([class*="bg-indigo-"]):not([class*="bg-orange-"]):not([class*="bg-pink-"]):not([class*="bg-theme-accent"]):not([style*="background-color"]),
+html[data-theme="light"] .text-slate-300,
+html[data-theme="light"] .text-slate-400,
+html[data-theme="light"] .text-slate-500 {
   color: #334155 !important;
 }
 
-/* Svi elementi i njihova djeca unutar obojenih dugmadi ili aktivnih stavki padajućeg menija ZADRŽAVAJU bijela slova! */
-[data-theme="light"] button.text-white,
-[data-theme="light"] button .text-white,
-[data-theme="light"] .bg-theme-accent,
-[data-theme="light"] .bg-theme-accent *,
-[data-theme="light"] [class*="bg-blue-600"],
-[data-theme="light"] [class*="bg-blue-600"] *,
-[data-theme="light"] [class*="bg-emerald-600"],
-[data-theme="light"] [class*="bg-emerald-600"] *,
-[data-theme="light"] [class*="bg-amber-600"],
-[data-theme="light"] [class*="bg-amber-600"] *,
-[data-theme="light"] [class*="bg-red-600"],
-[data-theme="light"] [class*="bg-red-600"] * {
+html[data-theme="light"] [style*="background-color"] .text-white,
+html[data-theme="light"] button.text-white,
+html[data-theme="light"] button .text-white,
+html[data-theme="light"] .bg-theme-accent,
+html[data-theme="light"] .bg-theme-accent *,
+html[data-theme="light"] [class*="bg-blue-600"],
+html[data-theme="light"] [class*="bg-blue-600"] *,
+html[data-theme="light"] [class*="bg-emerald-600"],
+html[data-theme="light"] [class*="bg-emerald-600"] *,
+html[data-theme="light"] [class*="bg-amber-600"],
+html[data-theme="light"] [class*="bg-amber-600"] *,
+html[data-theme="light"] [class*="bg-red-600"],
+html[data-theme="light"] [class*="bg-red-600"] * {
   color: #ffffff !important;
 }
 
-/* 6. POPRAVAK ZA BEDŽEVE I OSTATAK TAMNIH POLJA */
-[data-theme="light"] .bg-black,
-[data-theme="light"] [class*="bg-black"],
-[data-theme="light"] [class*="bg-slate-800"],
-[data-theme="light"] [class*="bg-slate-900"],
-[data-theme="light"] [class*="bg-slate-950"] {
+/* Tamne pozadine bedževa postaju svijetle, ALI modal backdropovi ostaju poluprozirni tamni! */
+html[data-theme="light"] .bg-black:not(.fixed):not(.erp-modal-backdrop),
+html[data-theme="light"] [class*="bg-black"]:not(.fixed):not(.erp-modal-backdrop),
+html[data-theme="light"] [class*="bg-slate-800"]:not(.fixed),
+html[data-theme="light"] [class*="bg-slate-900"]:not(.fixed),
+html[data-theme="light"] [class*="bg-slate-950"]:not(.fixed):not(.erp-modal-backdrop) {
   background-color: #f8fafc !important;
   border: 1px solid #cbd5e1 !important;
   color: #0f172a !important;
 }
 
-/* 7. Aktivno dugme u bočnom i gornjem meniju uvijek ima bijeli tekst */
-[data-theme="light"] aside nav button[style*="background-color"] *,
-[data-theme="light"] aside nav button[style*="background-color"],
-[data-theme="light"] header nav button[style*="background-color"] *,
-[data-theme="light"] header nav button[style*="background-color"] {
+html[data-theme="light"] .erp-modal-backdrop {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+}
+
+/* Aktivno dugme u bočnom i gornjem meniju uvijek ima bijeli tekst */
+html[data-theme="light"] aside nav button[style*="background-color"] *,
+html[data-theme="light"] aside nav button[style*="background-color"],
+html[data-theme="light"] header nav button[style*="background-color"] *,
+html[data-theme="light"] header nav button[style*="background-color"] {
   color: #ffffff !important;
 }

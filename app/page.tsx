@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from './utils/supabaseClient';
 import { toast } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -677,24 +677,30 @@ export default function Page() {
     const aktivniModulKonfig = (uiPostavke.moduli || []).find(m => m.id === activeModule);
     const modulBoja = aktivniModulKonfig?.hex_boja || '';
 
-    // 🟢 MENI SADA PRATI TAČAN REDOSLIJED I ŠIRINE KOJE ADMIN SPASI
-    const finalniModuliZaMeni = (uiPostavke.moduli && uiPostavke.moduli.length > 0)
-        ? uiPostavke.moduli.map(m => {
-            const def = defaultModuli.find(d => d.id === m.id) || {};
-            return { ...def, ...m };
-        })
-        : defaultModuli;
+    // 🟢 MENI SADA PRATI TAČAN REDOSLIJED I ŠIRINE KOJE ADMIN SPASI (memoizovano da ne resetuje drag & drop)
+    const finalniModuliZaMeni = useMemo(() => (
+        (uiPostavke.moduli && uiPostavke.moduli.length > 0)
+            ? uiPostavke.moduli.map(m => {
+                const def = defaultModuli.find(d => d.id === m.id) || {};
+                return { ...def, ...m };
+            })
+            : defaultModuli
+    ), [uiPostavke.moduli]);
+
+    const stableMenuConfig = useMemo(() => uiPostavke.menu_style || {}, [uiPostavke.menu_style]);
 
     const handleSaveMenuFromShell = async (noviModuli, noviMenuStyle) => {
         const novePostavke = { ...uiPostavke, moduli: noviModuli, menu_style: noviMenuStyle };
         setUiPostavke(novePostavke);
-        localStorage.setItem('erp_dashboard_ui_backup', JSON.stringify(novePostavke));
+        try { localStorage.setItem('erp_dashboard_ui_backup', JSON.stringify(novePostavke)); } catch (e) {}
         const { error } = await supabase
             .from('ui_postavke')
             .upsert([{ modul_ime: 'dashboard', postavke_jsonb: novePostavke }], { onConflict: 'modul_ime' });
         if (error) {
             toast.error("Greška pri snimanju u bazu: " + error.message);
+            return false;
         }
+        return true;
     };
 
     return (
@@ -704,14 +710,14 @@ export default function Page() {
             onModuleChange={setActiveModule} 
             accentColor={modulBoja} 
             dynamicModules={finalniModuliZaMeni}
-            menuConfig={uiPostavke.menu_style || {}}
+            menuConfig={stableMenuConfig}
             onSaveMenuConfig={handleSaveMenuFromShell}
         >
             <PametniDialog {...dialog} />
             
             {/* ACTION HUB / KONTEKSTNI MENI MODAL */}
             {kontekstniMeni && (
-                <div className="fixed inset-0 z-[99999] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+                <div className="erp-modal-backdrop fixed inset-0 z-[99999] bg-slate-950/75 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-theme-card border-2 border-theme-accent p-6 md:p-8 rounded-[2rem] shadow-[0_0_50px_rgba(var(--theme-accent-rgb),0.3)] max-w-sm w-full relative">
                         <button onClick={() => setKontekstniMeni(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center transition-colors">✕</button>
                         <h3 className="text-theme-accent font-black uppercase text-[10px] tracking-widest mb-1">{kontekstniMeni.title}</h3>
@@ -731,7 +737,7 @@ export default function Page() {
                                     </button>
                                 );
                             })}
-                            <button onClick={() => { navigator.clipboard.writeText(kontekstniMeni.id); toast.success("Kopirano!"); setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
+                            <button onClick={async () => { try { await navigator.clipboard.writeText(kontekstniMeni.id); toast.success("ID kopiran u međuspremnik!"); } catch (e) { toast.info(`ID: ${kontekstniMeni.id}`); } setKontekstniMeni(null); }} className="w-full py-3 bg-transparent text-theme-muted hover:text-theme-text rounded-xl text-[10px] font-black uppercase transition-all mt-2">📋 Kopiraj ID</button>
                         </div>
                     </div>
                 </div>
@@ -881,7 +887,7 @@ export default function Page() {
                                                     </div>
                                                 </div>
                                             )}
-                                            <div className={`flex-1 h-full w-full relative ${isEditMode ? 'mt-12 pointer-events-none opacity-50' : 'p-6'}`}>
+                                            <div className={`flex-1 h-full w-full relative ${isEditMode ? (widget.type === 'brzi_moduli' ? 'mt-14 pt-2' : 'mt-12 pointer-events-none opacity-50') : 'p-6'}`}>
                                                 {content}
                                             </div>
                                         </div>

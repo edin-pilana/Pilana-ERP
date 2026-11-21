@@ -163,26 +163,54 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             korisnik: currentUser.ime_prezime || 'Nepoznat', akcija, detalji, nivo_alarma: nivo, pregledano: false, vrijeme: new Date().toISOString()
         }]);
     };
-    // 🟢 POPRAVLJENA SINHRONIZACIJA KASE: Ažurira postojeću uplatu ako se iznos računa promijeni (nema dupliranja ni razlika!)
+    // 🟢 POPRAVLJENA SINHRONIZACIJA KASE: Briše auto-uplatu i kod prelaska na Virmanski/Djelimično, ne gazi ručne uplate i odbija avans sa Ponude!
     const sinhronizujKasu = async (racunId, status, nacinPlacanja, iznos, kupac) => {
         const { data: postojeceUplate } = await supabase.from('blagajna').select('*').eq('racun_id', racunId).eq('tip', 'ULAZ');
-        const cistIznos = parseFloat(iznos) || 0;
+        const sveUplate = postojeceUplate || [];
+        const autoUplata = sveUplate.find(u => (u.opis || '').includes('Automatska gotovinska naplata'));
+        const rucneUplateSum = sveUplate.filter(u => !autoUplata || u.id !== autoUplata.id).reduce((s, u) => s + (parseFloat(u.iznos) || 0), 0);
+
+        // Provjeri da li postoji već uplaćen avans na povezanoj ponudi kako se gotovina ne bi duplo knjižila
+        let avansSaPonude = 0;
+        if (form.broj_veze) {
+            let ponId = form.broj_veze.startsWith('PON-') ? form.broj_veze : null;
+            if (!ponId && form.broj_veze.startsWith('OTP-')) {
+                const { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', form.broj_veze).maybeSingle();
+                if (otp?.broj_veze?.startsWith('PON-')) ponId = otp.broj_veze;
+                else if (otp?.broj_veze?.startsWith('RN-')) {
+                    const { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', otp.broj_veze).maybeSingle();
+                    if (rn?.broj_ponude) ponId = rn.broj_ponude;
+                }
+            } else if (!ponId && form.broj_veze.startsWith('RN-')) {
+                const { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', form.broj_veze).maybeSingle();
+                if (rn?.broj_ponude) ponId = rn.broj_ponude;
+            }
+            if (ponId) {
+                const { data: avansi } = await supabase.from('blagajna').select('iznos').eq('racun_id', ponId).eq('tip', 'ULAZ');
+                avansSaPonude = (avansi || []).reduce((s, a) => s + (parseFloat(a.iznos) || 0), 0);
+            }
+        }
+
+        const cistIznos = parseFloat(Math.max(0, (parseFloat(iznos) || 0) - rucneUplateSum - avansSaPonude).toFixed(2));
+        const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
 
         if (status === 'NAPLAĆENO' && nacinPlacanja === 'Gotovina') {
-            if (!postojeceUplate || postojeceUplate.length === 0) {
+            if (cistIznos <= 0.001) {
+                if (autoUplata) await supabase.from('blagajna').delete().eq('id', autoUplata.id);
+                return;
+            }
+            if (!autoUplata) {
                 await supabase.from('blagajna').insert([{
                     id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`, tip: 'ULAZ', kategorija: 'Naplata Računa',
                     iznos: cistIznos, opis: `Automatska gotovinska naplata računa: ${racunId} (${kupac})`, racun_id: racunId,
-                    datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: currentUser.ime_prezime || 'Sistem'
+                    datum: danasLocal, vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: currentUser.ime_prezime || 'Sistem'
                 }]);
-            } else if (postojeceUplate.length === 1) {
-                if (Math.abs(parseFloat(postojeceUplate[0].iznos) - cistIznos) > 0.01) {
-                    await supabase.from('blagajna').update({ iznos: cistIznos }).eq('id', postojeceUplate[0].id);
-                }
+            } else if (Math.abs(parseFloat(autoUplata.iznos || 0) - cistIznos) > 0.001) {
+                await supabase.from('blagajna').update({ iznos: cistIznos }).eq('id', autoUplata.id);
             }
         } else {
-            if (postojeceUplate && postojeceUplate.length === 1 && (postojeceUplate[0].opis || '').includes('Automatska gotovinska naplata') && status === 'NENAPLAĆENO') {
-                await supabase.from('blagajna').delete().eq('id', postojeceUplate[0].id);
+            if (autoUplata) {
+                await supabase.from('blagajna').delete().eq('id', autoUplata.id);
             }
         }
     };
@@ -335,10 +363,21 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
             const grupisaneOtpStavke = [];
             ucitaneOtpStavke.forEach(s => {
                 const kolicina = parseFloat(s.kolicina_obracun || s.kolicina || 0);
-                const jm = s.jm_obracun || s.jm || 'm3';
+                const jm = (s.jm_obracun || s.jm || 'm3').toLowerCase();
+                const kolUnos = parseFloat(s.kolicina_unos ?? kolicina);
+                const jmUnos = (s.jm_unos || jm).toLowerCase();
                 const postojeca = grupisaneOtpStavke.find(g => g.sifra === s.sifra && g.jm_obracun === jm);
-                if (postojeca) { postojeca.kolicina_obracun = parseFloat((postojeca.kolicina_obracun + kolicina).toFixed(4)); postojeca.kolicina_unos = postojeca.kolicina_obracun; } 
-                else { grupisaneOtpStavke.push({ sifra: s.sifra, naziv: s.naziv, kolicina_unos: kolicina, jm_unos: jm, kolicina_obracun: kolicina, jm_obracun: jm }); }
+                if (postojeca) {
+                    postojeca.kolicina_obracun = parseFloat((postojeca.kolicina_obracun + kolicina).toFixed(6));
+                    if (postojeca.jm_unos === jmUnos) {
+                        postojeca.kolicina_unos = parseFloat((postojeca.kolicina_unos + kolUnos).toFixed(6));
+                    } else {
+                        postojeca.kolicina_unos = postojeca.kolicina_obracun;
+                        postojeca.jm_unos = jm;
+                    }
+                } else {
+                    grupisaneOtpStavke.push({ sifra: s.sifra, naziv: s.naziv, kolicina_unos: kolUnos, jm_unos: jmUnos, kolicina_obracun: parseFloat(kolicina.toFixed(6)), jm_obracun: jm });
+                }
             });
 
             const obracunateStavke = grupisaneOtpStavke.map(s => {
@@ -346,10 +385,18 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                 const kolicina = s.kolicina_obracun; const jm = s.jm_obracun;
                 const cijena_baza = proizvod ? izracunajDinamickuCijenu(proizvod, jm) : 0;
                 const dogovorenaStavka = ponudaStavke.find(ps => ps.sifra === s.sifra);
-                const rabat = dogovorenaStavka ? parseFloat(dogovorenaStavka.rabat_procenat) : (proizvod ? izracunajRabat(proizvod, kupacIzBaze) : 0);
-                const fiksna_cijena = dogovorenaStavka && dogovorenaStavka.fiksna_cijena ? parseFloat(dogovorenaStavka.fiksna_cijena) : (cijena_baza - (cijena_baza * (rabat / 100)));
+                const rabat = dogovorenaStavka && dogovorenaStavka.rabat_procenat !== undefined && dogovorenaStavka.rabat_procenat !== ''
+                    ? parseFloat(dogovorenaStavka.rabat_procenat)
+                    : (proizvod ? izracunajRabat(proizvod, kupacIzBaze) : 0);
+                const istaJedinicaPonude = dogovorenaStavka && (dogovorenaStavka.jm_obracun || 'm3').toLowerCase() === jm.toLowerCase();
+                const parsedDogCijena = dogovorenaStavka && dogovorenaStavka.fiksna_cijena !== undefined && dogovorenaStavka.fiksna_cijena !== ''
+                    ? parseFloat(dogovorenaStavka.fiksna_cijena)
+                    : NaN;
+                const fiksna_cijena = (istaJedinicaPonude && !isNaN(parsedDogCijena))
+                    ? parsedDogCijena
+                    : (cijena_baza - (cijena_baza * (rabat / 100)));
                 const ukupno_bez_rabata = kolicina * cijena_baza; const ukupno_sa_rabatom = kolicina * fiksna_cijena;
-                return normalizujStavkuRacuna({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_unos: kolicina, jm_unos: jm, kolicina_obracun: kolicina, jm_obracun: jm, cijena_baza, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: ukupno_bez_rabata - ukupno_sa_rabatom, ukupno: ukupno_sa_rabatom }, katalog, kupacIzBaze);
+                return normalizujStavkuRacuna({ id: Math.random().toString(), sifra: s.sifra, naziv: s.naziv, kolicina_unos: s.kolicina_unos, jm_unos: s.jm_unos, kolicina_obracun: kolicina, jm_obracun: jm, cijena_baza, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: ukupno_bez_rabata - ukupno_sa_rabatom, ukupno: ukupno_sa_rabatom }, katalog, kupacIzBaze);
             });
 
             setForm({ ...form, kupac_naziv: otp.kupac_naziv, broj_veze: otp.id, napomena: `Povezano sa: ${otp.id}` });
@@ -364,7 +411,10 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         if(!trenutniProizvod || !stavkaForm.kolicina_obracun || parseFloat(stavkaForm.kolicina_obracun) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i provjerite količine!", onCancel: zatvoriDialog });
         if(!odabraniKupac && !form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
         const kolicina = parseFloat(stavkaForm.kolicina_obracun);
-        const fiksna_cijena = parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena;
+        const parsedFiksna = (stavkaForm.fiksna_cijena !== '' && stavkaForm.fiksna_cijena !== null && stavkaForm.fiksna_cijena !== undefined)
+            ? parseFloat(stavkaForm.fiksna_cijena)
+            : NaN;
+        const fiksna_cijena = isNaN(parsedFiksna) ? dinamickaCijena : Math.max(0, parsedFiksna);
         const rabat_konacni = dinamickaCijena > 0 ? ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100 : 0;
         if (rabat_konacni > stavkaForm.sistemski_rabat) { await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Na računu ${form.id}, rabat za "${trenutniProizvod.naziv}" ručno povećan na ${rabat_konacni.toFixed(2)}%`); }
         const ukupno_bez_rabata = kolicina * dinamickaCijena; const ukupno_sa_rabatom = kolicina * fiksna_cijena;

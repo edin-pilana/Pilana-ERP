@@ -62,8 +62,8 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
     const load = async () => {
         const { data: kat } = await supabase.from('blagajna_kategorije').select('*');
         setKategorije(kat || []);
-        if (kat && kat.length > 0 && !form.kategorija) {
-            setForm(f => ({ ...f, kategorija: kat.find(k => k.tip === f.tip)?.naziv || '' }));
+        if (kat && kat.length > 0) {
+            setForm(f => f.kategorija ? f : ({ ...f, kategorija: kat.find(k => k.tip === f.tip)?.naziv || '' }));
         }
 
         const [rnRes, otpRes, ponRes, racRes, bRes, mRes, radRes] = await Promise.all([
@@ -137,18 +137,24 @@ export default function BlagajnaModule({ user, header, setHeader, onExit }) {
         }
 
         if (!glavnaVeza) {
-            let { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', val).maybeSingle();
-            if (otp && otp.broj_veze) {
-                let veza = otp.broj_veze;
-                let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', veza).maybeSingle();
-                if (rn && rn.broj_ponude) veza = rn.broj_ponude;
-                let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', veza).maybeSingle();
-                if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'OTPREMNICA'; }
+            // Prvo provjeri da li je Otpremnica već fakturisana na Računu!
+            let { data: racPoOtp } = await supabase.from('racuni').select('id, ukupno_sa_pdv, kupac_naziv').eq('broj_veze', val).maybeSingle();
+            if (racPoOtp) {
+                glavnaVeza = racPoOtp.id; ukupnoZaPlatiti = racPoOtp.ukupno_sa_pdv; kupac = racPoOtp.kupac_naziv; tipSkenera = 'RAČUN (PO OTPREMNICI)';
+            } else {
+                let { data: otp } = await supabase.from('otpremnice').select('broj_veze').eq('id', val).maybeSingle();
+                if (otp && otp.broj_veze) {
+                    let veza = otp.broj_veze;
+                    let { data: rn } = await supabase.from('radni_nalozi').select('broj_ponude').eq('id', veza).maybeSingle();
+                    if (rn && rn.broj_ponude) veza = rn.broj_ponude;
+                    let { data: pon } = await supabase.from('ponude').select('id, ukupno_sa_pdv, kupac_naziv').eq('id', veza).maybeSingle();
+                    if (pon) { glavnaVeza = pon.id; ukupnoZaPlatiti = pon.ukupno_sa_pdv; kupac = pon.kupac_naziv; tipSkenera = 'OTPREMNICA'; }
+                }
             }
         }
 
         if (ukupnoZaPlatiti > 0) {
-            const vecUplaceno = sveTransakcije.filter(t => t.racun_id === glavnaVeza && t.tip === 'ULAZ').reduce((a, b) => a + parseFloat(b.iznos), 0);
+            const vecUplaceno = sveTransakcije.filter(t => t.racun_id === glavnaVeza && t.tip === 'ULAZ').reduce((a, b) => a + (parseFloat(b.iznos) || 0), 0);
             let preostalo = (ukupnoZaPlatiti - vecUplaceno).toFixed(2);
             
             setSkenDetalji({ tip: tipSkenera, skenirano: val, glavna_veza: glavnaVeza, kupac, ukupno: ukupnoZaPlatiti, placeno: vecUplaceno, preostalo });

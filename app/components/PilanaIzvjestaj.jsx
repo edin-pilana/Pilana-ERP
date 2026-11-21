@@ -20,11 +20,9 @@ export default function PilanaIzvjestaj({ data, datum, lokacija, smjena }) {
     } catch (e) {}
   }, []);
 
-  if (!data || !data.kpi) return <div className="text-center p-10 font-bold text-slate-500">Učitavam podatke za izvještaj...</div>;
-
   const grupisaniIzlaz = useMemo(() => {
     const groups = {};
-    (data.glavna_tabela || []).forEach(p => {
+    (data?.glavna_tabela || []).forEach(p => {
       const vrsta = p.naziv_proizvoda || 'Ostalo';
       if (!groups[vrsta]) groups[vrsta] = { items: [], totalM3: 0, totalKom: 0 };
       groups[vrsta].items.push(p);
@@ -32,31 +30,39 @@ export default function PilanaIzvjestaj({ data, datum, lokacija, smjena }) {
       groups[vrsta].totalKom += parseFloat(p.kolicina_ulaz || 0);
     });
     return groups;
-  }, [data.glavna_tabela]);
+  }, [data?.glavna_tabela]);
 
   const yieldPieData = useMemo(() => {
-    const ulaz = parseFloat(data.kpi.ulaz_m3 || 0);
-    const izlaz = parseFloat(data.kpi.izlaz_m3 || 0);
+    const ulaz = parseFloat(data?.kpi?.ulaz_m3 || 0);
+    const izlaz = parseFloat(data?.kpi?.izlaz_m3 || 0);
     const otpad = Math.max(0, ulaz - izlaz);
     
-    const chartData = (data.izlaz_struktura || []).map(item => ({
-      name: item.name,
-      value: parseFloat(item.m3),
-      proc: ulaz > 0 ? ((item.m3 / ulaz) * 100).toFixed(1) : 0
-    }));
+    const chartData = (data?.izlaz_struktura || []).map(item => {
+      const val = parseFloat(item.m3 ?? item.value ?? 0) || 0;
+      return {
+        name: item.name,
+        value: val,
+        proc: ulaz > 0 ? ((val / ulaz) * 100).toFixed(1) : '0.0'
+      };
+    });
     
-    if (otpad > 0) chartData.push({ name: 'Otpad / Piljevina', value: otpad, proc: ulaz > 0 ? ((otpad / ulaz) * 100).toFixed(1) : 0, isWaste: true });
+    if (otpad > 0) chartData.push({ name: 'Otpad / Piljevina', value: otpad, proc: ulaz > 0 ? ((otpad / ulaz) * 100).toFixed(1) : '0.0', isWaste: true });
     return chartData;
   }, [data]);
 
   const mixPieData = useMemo(() => {
-    const izlaz = parseFloat(data.kpi.izlaz_m3 || 0);
-    return (data.izlaz_struktura || []).map(item => ({
-      name: item.name,
-      value: parseFloat(item.m3),
-      proc: izlaz > 0 ? ((item.m3 / izlaz) * 100).toFixed(1) : 0
-    }));
+    const izlaz = parseFloat(data?.kpi?.izlaz_m3 || 0);
+    return (data?.izlaz_struktura || []).map(item => {
+      const val = parseFloat(item.m3 ?? item.value ?? 0) || 0;
+      return {
+        name: item.name,
+        value: val,
+        proc: izlaz > 0 ? ((val / izlaz) * 100).toFixed(1) : '0.0'
+      };
+    });
   }, [data]);
+
+  if (!data || !data.kpi) return <div className="text-center p-10 font-bold text-slate-500">Učitavam podatke za izvještaj...</div>;
 
   const formatDatum = (iso) => {
     if(!iso) return '';

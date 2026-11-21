@@ -337,8 +337,18 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         
         const { data } = await supabase.from('trupci').select('*').eq('id', id).maybeSingle();
         if (data) {
-            if(data.status === 'prorezano' || data.status === 'PREKROJENO') {
+            const st = String(data.status || '').toLowerCase().trim();
+            if (st === 'prekrojeno') {
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Prekrojen Trupac', poruka: `Trupac ${id} je PREKROJEN u nove komade i ne može na brentu!\nSkenirajte jedan od novih komada.`, onCancel: zatvoriDialog });
+            }
+            if (st === 'prorezano') {
                 return prikaziDialog({ tip: 'upozorenje', naslov: 'Iskorišten Trupac', poruka: `Trupac ${id} je VEĆ PROREZAN!\nSkenirajte drugi.`, onCancel: zatvoriDialog });
+            }
+            if (st && st !== 'na_lageru') {
+                return prikaziDialog({ tip: 'greska', naslov: 'Nedostupan Trupac', poruka: `Trupac ${id} nije na lageru (status: ${data.status}).`, onCancel: zatvoriDialog });
+            }
+            if (data.zakljucen_prijem === false) {
+                return prikaziDialog({ tip: 'upozorenje', naslov: 'Nezaključen Prijem', poruka: `Trupac ${id} pripada otpremnici (${data.otpremnica_broj || '-'}) koja još nije zaključena na Prijemu!`, onCancel: zatvoriDialog });
             }
             
             setTrupac(data); 
@@ -394,22 +404,25 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         zavrsiProrezPravi(brentista, viljuskarista);
     };
 
-    // 🟢 POPRAVLJENO: Ako trupac ima kontrolnu zapreminu, prorez uvijek koristi stvarnu (kontrolnu) zapreminu!
+    // 🟢 POPRAVLJENO: Koristi kontrolnu zapreminu, lokalni datum i atomični rollback ako prorez_log padne!
     const zavrsiProrezPravi = async (brentistaZaSpasiti, viljuskaristaZaSpasiti) => {
+        if (!trupac) return;
+        const trupacSnapshot = trupac;
         const sviRadniciProrez = [brentistaZaSpasiti, viljuskaristaZaSpasiti].filter(Boolean).join(', ');
-        const efektivnaZapremina = parseFloat(trupac.kontrolna_zapremina || trupac.zapremina || 0);
+        const efektivnaZapremina = parseFloat(trupacSnapshot.kontrolna_zapremina || trupacSnapshot.zapremina || 0);
+        const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
         
         const logPayload = {
-            trupac_id: trupac.id, 
+            trupac_id: trupacSnapshot.id, 
             zapremina: efektivnaZapremina,
             mjesto: header.mjesto, 
             masina: header.masina,
-            datum: header.datum || new Date().toISOString().split('T')[0], 
+            datum: header.datum || danasLocal, 
             brentista: brentistaZaSpasiti, 
             viljuskarista: viljuskaristaZaSpasiti, 
             svi_radnici_imena: sviRadniciProrez,
             snimio_korisnik: user?.ime_prezime || 'Sistem', 
-            vrsta_drveta: trupac.vrsta || 'N/A'
+            vrsta_drveta: trupacSnapshot.vrsta || 'N/A'
         };
 
         const tempId = Date.now();
@@ -420,11 +433,22 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         setScan(''); 
         setTimeout(() => inputRef.current?.focus(), 100);
 
-        await supabase.from('trupci').update({ status: 'prorezano' }).eq('id', logPayload.trupac_id);
+        const { data: updTrupac, error: errUpd } = await supabase
+            .from('trupci')
+            .update({ status: 'prorezano' })
+            .eq('id', logPayload.trupac_id)
+            .eq('status', 'na_lageru')
+            .select('id');
+
+        if (errUpd || !updTrupac || updTrupac.length === 0) {
+            setProrezaniLista(prev => prev.filter(p => p.id !== tempId));
+            return prikaziDialog({ tip: 'greska', naslov: 'Već obrađen', poruka: errUpd?.message || `Trupac ${logPayload.trupac_id} je u međuvremenu već prorezan ili prekrojen!`, onCancel: zatvoriDialog });
+        }
         
         const { data: insertedData, error: errInsert } = await supabase.from('prorez_log').insert([logPayload]).select().single();
         
         if (errInsert) {
+            await supabase.from('trupci').update({ status: 'na_lageru' }).eq('id', logPayload.trupac_id);
             setProrezaniLista(prev => prev.filter(p => p.id !== tempId));
             prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: errInsert.message, onCancel: zatvoriDialog });
         } else if (insertedData) {

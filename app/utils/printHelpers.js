@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { toast } from 'sonner';
+import { toLocalIso, escapeHtml, prikazDatumaBHS } from './dateHelpers';
 
 export const POSTAVKE = {
     imeAplikacije: "TTM DOO ERP",
@@ -42,21 +43,23 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
 
     const { brending, firmaInfo } = await fetchPrintSettings();
 
+    const nazivFirme = escapeHtml(firmaInfo?.app_name || POSTAVKE.imeFirme);
     let topBannerHtml = '';
-    let leftLogoHtml = `<div class="company-name">${POSTAVKE.imeFirme}</div>`;
+    let leftLogoHtml = `<div class="company-name">${nazivFirme}</div>`;
 
     const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes(trazenaLokacija)) || 
-                    brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti'));
+                    brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) ||
+                    brending.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)'));
     
     if (logoObj && logoObj.url_slike) {
         if (logoObj.full_width) {
             topBannerHtml = `
                 <div class="full-width-banner">
-                    <img src="${logoObj.url_slike}" alt="Banner Firme" />
+                    <img src="${escapeHtml(logoObj.url_slike)}" alt="Banner Firme" />
                 </div>`;
             leftLogoHtml = ''; 
         } else {
-            leftLogoHtml = `<img src="${logoObj.url_slike}" class="left-logo" alt="Logo Firme" />`;
+            leftLogoHtml = `<img src="${escapeHtml(logoObj.url_slike)}" class="left-logo" alt="Logo Firme" />`;
         }
     }
 
@@ -64,7 +67,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     iframe.style.display = 'none';
     document.body.appendChild(iframe);
 
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${brojDokumenta}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(brojDokumenta || '')}`;
     const printSkripta = decodeURIComponent('%3Cscript%3Ewindow.onload%3Dfunction()%7BsetTimeout(function()%7Bwindow.print()%3B%7D%2C2000)%3B%7D%3B%3C%2Fscript%3E');
 
     const donjiDioHtml = totaliHtml ? `
@@ -282,48 +285,49 @@ export const printDeklaracijaPaketa = async (paketId, items, vezniDokument = '')
 
     let logoUrl = '';
     const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || 
+                    brending.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)')) ||
                     brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
     
     if (logoObj && logoObj.url_slike) {
         logoUrl = logoObj.url_slike;
     }
 
-    const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${paketId}`;
-    const qrVeza = vezniDokument ? `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${vezniDokument}` : '';
+    const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(paketId || '')}`;
+    const qrVeza = vezniDokument ? `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(vezniDokument)}` : '';
+    const nazivFirme = escapeHtml(firmaInfo?.app_name || POSTAVKE.imeFirme);
 
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     document.body.appendChild(iframe);
 
-    const formatDatumTacke = (iso) => {
-        if(!iso) return '';
-        const [y, m, d] = iso.split('-');
-        return `${d}.${m}.${y}.`;
-    };
-    
-    const datum = items[0].datum_yyyy_mm ? formatDatumTacke(items[0].datum_yyyy_mm) : formatDatumTacke(new Date().toISOString().split('T')[0]);
-    const woodType = (items[0].naziv_proizvoda || 'Rezana').split(' ')[0] || 'Rezana'; 
+    const datum = items[0].datum_yyyy_mm ? prikazDatumaBHS(items[0].datum_yyyy_mm) : prikazDatumaBHS(toLocalIso(new Date()));
+    const woodType = escapeHtml((items[0].naziv_proizvoda || 'Rezana').split(' ')[0] || 'Rezana'); 
     let totalLengthM = 0;
 
     const redoviStavki = items.map(item => {
         let pcs = parseFloat(item.kolicina_ulaz || 0);
-        const v = parseFloat(item.debljina)||1; 
-        const s = parseFloat(item.sirina)||1; 
-        const d = parseFloat(item.duzina)||1;
+        const v = parseFloat(item.debljina) || 0;
+        const s = parseFloat(item.sirina) || 0;
+        const d = parseFloat(item.duzina) || 0;
+        const jmNorm = String(item.jm || 'kom').toLowerCase();
         
-        if (item.jm === 'm3') {
-            pcs = Math.round(pcs / ((v/100)*(s/100)*(d/100)));
+        if (jmNorm === 'm3' && v > 0 && s > 0 && d > 0) {
+            pcs = Math.round(pcs / ((v / 100) * (s / 100) * (d / 100)));
+        } else if (jmNorm === 'm2' && s > 0 && d > 0) {
+            pcs = Math.round(pcs / ((s / 100) * (d / 100)));
+        } else if (jmNorm === 'm1' && d > 0) {
+            pcs = Math.round(pcs / (d / 100));
         }
         
-        totalLengthM += (pcs * (d/100));
+        totalLengthM += (pcs * (d / 100));
 
         return `
             <div class="row">
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Thickness (cm)</span></div><div class="box">${item.debljina}</div></div>
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Width (cm)</span></div><div class="box">${item.sirina}</div></div>
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Length (cm)</span></div><div class="box">${item.duzina}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Thickness (cm)</span></div><div class="box">${escapeHtml(item.debljina)}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Width (cm)</span></div><div class="box">${escapeHtml(item.sirina)}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Length (cm)</span></div><div class="box">${escapeHtml(item.duzina)}</div></div>
                 <div class="col"><div class="lbl-wrap"><span class="lbl">PCS</span></div><div class="box">${pcs}</div></div>
-                <div class="col"><div class="lbl-wrap"><span class="lbl">Volume (m³)</span></div><div class="box">${item.kolicina_final}</div></div>
+                <div class="col"><div class="lbl-wrap"><span class="lbl">Volume (m³)</span></div><div class="box">${escapeHtml(item.kolicina_final)}</div></div>
             </div>
         `;
     }).join('');
@@ -438,25 +442,27 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
 
     const { brending, firmaInfo } = await fetchPrintSettings();
     let logoUrl = '';
-    const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) || brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
+    const logoObj = brending.find(b => (b.lokacije_jsonb || []).includes('Svi PDF Dokumenti')) ||
+                    brending.find(b => (b.lokacije_jsonb || []).includes('GLAVNI MENI / SIDEBAR (GORE LIJEVO)')) ||
+                    brending.find(b => (b.lokacije_jsonb || []).includes('Glavni Meni (Dashboard Vrh)'));
     if (logoObj && logoObj.url_slike) logoUrl = logoObj.url_slike;
 
-    const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${paketId}`;
-    const formatDatumTacke = (iso) => { if(!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}.${m}.${y}.`; };
-    const datum = stavke[0]?.datum_yyyy_mm ? formatDatumTacke(stavke[0].datum_yyyy_mm) : formatDatumTacke(new Date().toISOString().split('T')[0]);
+    const nazivFirme = escapeHtml(firmaInfo?.app_name || POSTAVKE.imeFirme);
+    const qrPaket = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(paketId || '')}`;
+    const datum = stavke?.[0]?.datum_yyyy_mm ? prikazDatumaBHS(stavke[0].datum_yyyy_mm) : prikazDatumaBHS(toLocalIso(new Date()));
 
-    let redovi = stavke.map((s, i) => `
+    let redovi = (stavke || []).map((s, i) => `
         <tr>
             <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 6px;">${i+1}.</td>
-            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px;"><b style="font-size: 16px;">${s.sifra_proizvoda || s.naziv_proizvoda}</b></td>
-            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; font-weight: 900; font-size: 20px;">${s.debljina}x${s.sirina}x${s.duzina} cm</td>
-            <td style="text-align: right; border-bottom: 1px solid #cbd5e1; padding: 6px; font-size: 24px; font-weight: 900; color: #d97706;">${s.kolicina_final} <span style="font-size: 14px; color: #475569;">m³</span></td>
+            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px;"><b style="font-size: 16px;">${escapeHtml(s.sifra_proizvoda || s.naziv_proizvoda)}</b></td>
+            <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; font-weight: 900; font-size: 20px;">${escapeHtml(s.debljina)}x${escapeHtml(s.sirina)}x${escapeHtml(s.duzina)} cm</td>
+            <td style="text-align: right; border-bottom: 1px solid #cbd5e1; padding: 6px; font-size: 24px; font-weight: 900; color: #d97706;">${escapeHtml(s.kolicina_final)} <span style="font-size: 14px; color: #475569;">m³</span></td>
         </tr>
     `).join('');
 
     let tehnologijaHtml = '<p style="font-size: 12px; color: #64748b;">Nema definisanih faza.</p>';
     if (tehnologija && tehnologija.length > 0) {
-        const fazaIndex = tehnologija.findIndex(f => f.masina.toUpperCase() === masina.toUpperCase());
+        const fazaIndex = tehnologija.findIndex(f => String(f?.masina || '').toUpperCase() === String(masina || '').toUpperCase());
         
         tehnologijaHtml = tehnologija.map((f, i) => {
             const isTrenutna = i === fazaIndex;
@@ -529,10 +535,10 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
                             <tbody>${redovi}</tbody>
                         </table>
                         <div class="qr-area">
-                            <div>${logoUrl ? `<img src="${logoUrl}" class="logo" />` : `<h3 style="margin:0;">${POSTAVKE.imeFirme}</h3>`}</div>
+                            <div class="logo">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" />` : `<h3 style="margin:0;">${nazivFirme}</h3>`}</div>
                             <div style="text-align:center;">
                                 <img src="${qrPaket}" class="qr-img" />
-                                <div style="font-family:monospace; font-size:14px; font-weight:900; letter-spacing: 2px;">${paketId}</div>
+                                <div style="font-family:monospace; font-size:14px; font-weight:900; letter-spacing: 2px;">${escapeHtml(paketId)}</div>
                             </div>
                         </div>
                     </div>
@@ -564,24 +570,24 @@ export const printFaznaDeklaracijaPaketa = async (paketId, stavke, rn, masina, t
 // 4. RADNI NALOG ZA SPECIFIČNU MAŠINU (WIP)
 // ==========================================
 export const printRadniNalogZaMasinu = async (rn, masina) => {
-    const stariNaslov = document.title; 
-    document.title = `RN_${rn.id}_${masina}`;
-    
-    const stavkeZaMasinu = rn.stavke_jsonb.map((s, i) => {
-        const faza = (rn.tehnologija_jsonb[s.id] || []).find(f => f.masina === masina); 
+    const stavkeArr = Array.isArray(rn?.stavke_jsonb) ? rn.stavke_jsonb : [];
+    const tehObj = rn?.tehnologija_jsonb || {};
+
+    const stavkeZaMasinu = stavkeArr.map((s, i) => {
+        const faza = (tehObj[s.id] || []).find(f => String(f?.masina || '').toUpperCase() === String(masina || '').toUpperCase()); 
         if (!faza) return null;
         return `
             <tr>
                 <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; vertical-align: top;">${i+1}.</td>
                 <td style="border-bottom: 1px solid #cbd5e1; vertical-align: top;">
-                    <span class="prod-sifra">${s.sifra}</span>
-                    <span class="prod-naziv">${s.naziv}</span>
+                    <span class="prod-sifra">${escapeHtml(s.sifra)}</span>
+                    <span class="prod-naziv">${escapeHtml(s.naziv)}</span>
                 </td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #d97706; vertical-align: top;">${faza.dimenzija} cm</td>
-                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; vertical-align: top;">${faza.kolicina} <span style="font-size: 10px; color: #64748b;">${faza.jm}</span></td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #d97706; vertical-align: top;">${escapeHtml(faza.dimenzija)} cm</td>
+                <td style="text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; vertical-align: top;">${escapeHtml(faza.kolicina)} <span style="font-size: 10px; color: #64748b;">${escapeHtml(faza.jm)}</span></td>
                 <td style="border-bottom: 1px solid #cbd5e1; font-size: 10px; vertical-align: top; color: #475569;">
-                    <b>${faza.oznake?.join(', ') || ''}</b><br/> 
-                    <i>${faza.napomena || ''}</i>
+                    <b>${escapeHtml(faza.oznake?.join(', ') || '')}</b><br/> 
+                    <i>${escapeHtml(faza.napomena || '')}</i>
                 </td>
             </tr>
         `;
@@ -593,11 +599,11 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
         <div class="info-grid">
             <div class="info-col-left">
                 <h4>Kupac / Klijent</h4>
-                <h2>${rn.kupac_naziv}</h2>
+                <h2>${escapeHtml(rn.kupac_naziv)}</h2>
                 <p>Detalji nisu uneseni</p>
             </div>
             <div class="info-col-right">
-                <p>Rok Isporuke: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
+                <p>Rok Isporuke: <b>${prikazDatumaBHS(rn.rok_isporuke)}</b></p>
             </div>
         </div>
 
@@ -615,22 +621,21 @@ export const printRadniNalogZaMasinu = async (rn, masina) => {
         </table>
     `;
     
-    await printDokument(`PROIZVODNI NALOG: ${masina}`, rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#0f172a');
-    setTimeout(() => { document.title = stariNaslov; }, 2000);
+    await printDokument(`PROIZVODNI NALOG: ${masina}`, rn.id, prikazDatumaBHS(rn.datum), htmlSadrzaj, '#0f172a');
 };
 
 // ==========================================
 // 5. RADNI NALOG KOMPLETNA RAZRADA (SVE FAZE)
 // ==========================================
 export const printRadniNalogSveFaze = async (rn) => {
-    const stariNaslov = document.title; 
-    document.title = `RN_SVE_FAZE_${rn.id}`;
-    
-    let redovi = rn.stavke_jsonb.map((s, i) => {
-        const faze = rn.tehnologija_jsonb[s.id] || [];
+    const stavkeArr = Array.isArray(rn?.stavke_jsonb) ? rn.stavke_jsonb : [];
+    const tehObj = rn?.tehnologija_jsonb || {};
+
+    let redovi = stavkeArr.map((s, i) => {
+        const faze = tehObj[s.id] || [];
         const fazeHtml = faze.map((f, fi) => `
             <div style="font-size: 9px; border-left: 2px solid #d97706; padding-left: 5px; margin-bottom: 3px; color: #475569;">
-                <b style="color: #0f172a;">${fi+1}. ${f.masina}</b> &mdash; Dimenzija: <b>${f.dimenzija} cm</b> | Target: <b>${f.kolicina} ${f.jm}</b>
+                <b style="color: #0f172a;">${fi+1}. ${escapeHtml(f.masina)}</b> &mdash; Dimenzija: <b>${escapeHtml(f.dimenzija)} cm</b> | Target: <b>${escapeHtml(f.kolicina)} ${escapeHtml(f.jm)}</b>
             </div>
         `).join('');
         
@@ -638,15 +643,15 @@ export const printRadniNalogSveFaze = async (rn) => {
             <tr>
                 <td style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding: 6px; vertical-align: top;">${i+1}.</td>
                 <td style="border-bottom: 1px solid #cbd5e1; padding: 6px; vertical-align: top;">
-                    <span class="prod-sifra">${s.sifra}</span>
-                    <span class="prod-naziv">${s.naziv}</span>
+                    <span class="prod-sifra">${escapeHtml(s.sifra)}</span>
+                    <span class="prod-naziv">${escapeHtml(s.naziv)}</span>
                     <div style="margin-top: 6px; background: #f8fafc; padding: 6px; border-radius: 4px;">
                         <span style="display: block; font-size: 8px; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; font-weight: 800;">Tehnološki proces (BOM):</span>
                         ${fazeHtml}
                     </div>
                 </td>
                 <td class="num" style="border-bottom: 1px solid #cbd5e1; vertical-align: top; font-weight: 900; font-size: 14px; color: #a855f7; padding: 6px;">
-                    ${s.kolicina_obracun} <span style="font-size: 10px; color: #64748b;">${s.jm_obracun}</span>
+                    ${escapeHtml(s.kolicina_obracun)} <span style="font-size: 10px; color: #64748b;">${escapeHtml(s.jm_obracun)}</span>
                 </td>
             </tr>
         `;
@@ -656,11 +661,11 @@ export const printRadniNalogSveFaze = async (rn) => {
         <div class="info-grid" style="border-left-color: #a855f7;">
             <div class="info-col-left">
                 <h4>Naručilac Projekta</h4>
-                <h2>${rn.kupac_naziv}</h2>
+                <h2>${escapeHtml(rn.kupac_naziv)}</h2>
             </div>
             <div class="info-col-right">
                 <p>Tip naloga: <b>FAZNI (VIŠE MAŠINA)</b></p>
-                <p>Rok Isporuke: <b>${new Date(rn.rok_isporuke).toLocaleDateString('de-DE')}</b></p>
+                <p>Rok Isporuke: <b>${prikazDatumaBHS(rn.rok_isporuke)}</b></p>
             </div>
         </div>
 
@@ -676,6 +681,5 @@ export const printRadniNalogSveFaze = async (rn) => {
         </table>
     `;
     
-    await printDokument('GLAVNI RADNI NALOG', rn.id, new Date(rn.datum).toLocaleDateString('de-DE'), htmlSadrzaj, '#a855f7');
-    setTimeout(() => { document.title = stariNaslov; }, 2000);
+    await printDokument('GLAVNI RADNI NALOG', rn.id, prikazDatumaBHS(rn.datum), htmlSadrzaj, '#a855f7');
 };

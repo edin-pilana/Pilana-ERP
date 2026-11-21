@@ -17,7 +17,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
     const hasKupacEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Baza Kupaca (Edit)'));
     const hasKatalogEdit = currentUser.uloga === 'admin' || currentUser.uloga === 'superadmin' || (currentUser.dozvole && currentUser.dozvole.includes('Katalog Proizvoda (Edit)'));
     
-    // 🟢 SUPER GOD MODE - KOMPLETNE POSTAVKE DIZAJNA I POLJA
     const saas = useSaaS('ponude_zaglavlje', {
         boja_kartice: '#1e293b', 
         boja_slova: '#ffffff', 
@@ -115,11 +114,9 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
     const [pretragaPonuda, setPretragaPonuda] = useState('');
     const [isScanning, setIsScanning] = useState(false);
 
-    // Modal za brisanje ponude sa razlogom
     const [brisanjePonudeModal, setBrisanjePonudeModal] = useState(null);
     const [razlogBrisanja, setRazlogBrisanja] = useState('');
     
-    // PAMETNI DIJALOZI
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
@@ -219,7 +216,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         return cijena_komad / (faktor_cilj || 1);
     };
 
-    // 🟢 ZAŠTITA OD NaN VRIJEDNOSTI: Svaka stavka se automatski sanira pri učitavanju i prihvatanju izmjena
     const normalizujStavkuPonude = (s, katLista = katalog, kupacObj = odabraniKupac) => {
         const katItem = (katLista || []).find(k => k.sifra === s.sifra) || null;
         const jmObr = (s.jm_obracun || katItem?.default_jedinica || 'm3').toLowerCase();
@@ -240,7 +236,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             cijenaBaza = katItem ? izracunajDinamickuCijenu(katItem, jmObr) : (parseFloat(s.fiksna_cijena) || 0);
         }
 
-        // Ako je rabat_procenat eksplicitno 0 ili "0" ili "0.00", zadrži 0 (ne vraćaj defaultni rabat kupca!)
         let rabatProc = (s.rabat_procenat !== undefined && s.rabat_procenat !== null && String(s.rabat_procenat).trim() !== '')
             ? parseFloat(s.rabat_procenat)
             : NaN;
@@ -253,9 +248,12 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             ? parseFloat(s.fiksna_cijena)
             : NaN;
 
-        // Uvijek uskladi fiksnu cijenu sa rabatom ako je rabat 0% ili 100%, ili ako fiksna cijena nije validna
-        if (isNaN(fiksnaCijena) || fiksnaCijena < 0 || Math.abs(rabatProc - 100) < 0.001 || Math.abs(rabatProc) < 0.001) {
+        if (isNaN(fiksnaCijena) || fiksnaCijena < 0) {
             fiksnaCijena = cijenaBaza * (1 - rabatProc / 100);
+        } else if (Math.abs(rabatProc - 100) < 0.001) {
+            fiksnaCijena = 0;
+        } else if (Math.abs(rabatProc) < 0.001 && fiksnaCijena < cijenaBaza) {
+            fiksnaCijena = cijenaBaza;
         }
 
         if (fiksnaCijena > cijenaBaza) {
@@ -318,42 +316,32 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         );
         const obracun = preracun.ciljnaKolicina;
         const kol = parseFloat(stavkaForm.kolicina_unos);
-        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? parseFloat(obracun.toFixed(6)) : kol}));
+        setStavkaForm(prev => ({...prev, kolicina_obracun: obracun > 0 ? obracun.toFixed(6) : kol}));
     }, [stavkaForm.kolicina_unos, stavkaForm.jm_unos, stavkaForm.jm_obracun, trenutniProizvod]);
 
     const dodajStavku = async () => {
-        const kolUnosVal = parseFloat(stavkaForm.kolicina_unos);
-        const kolObrVal = parseFloat(stavkaForm.kolicina_obracun);
-        if(!trenutniProizvod || isNaN(kolUnosVal) || kolUnosVal <= 0 || isNaN(kolObrVal) || kolObrVal <= 0) {
-            return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i unesite pozitivnu količinu veću od 0!", onCancel: zatvoriDialog });
-        }
+        if(!trenutniProizvod || !stavkaForm.kolicina_obracun || parseFloat(stavkaForm.kolicina_obracun) <= 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Odaberite proizvod i provjerite količine!", onCancel: zatvoriDialog });
         if(!odabraniKupac && !form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Fale Podaci', poruka: "Prvo odaberite kupca!", onCancel: zatvoriDialog });
-
+        
+        const kolicina = parseFloat(stavkaForm.kolicina_obracun) || 0;
         const uneseniRabat = stavkaForm.konacni_rabat !== '' && stavkaForm.konacni_rabat !== null ? parseFloat(stavkaForm.konacni_rabat) : 0;
-        const unesenaCijena = stavkaForm.fiksna_cijena !== '' && stavkaForm.fiksna_cijena !== null ? parseFloat(stavkaForm.fiksna_cijena) : dinamickaCijena;
-
-        if (isNaN(uneseniRabat) || uneseniRabat < 0 || uneseniRabat > 100 || isNaN(unesenaCijena) || unesenaCijena < 0) {
-            return prikaziDialog({ tip: 'upozorenje', naslov: 'Neispravan Popust / Cijena', poruka: "Popust mora biti između 0% i 100%, a konačna cijena ne smije biti negativna!", onCancel: zatvoriDialog });
-        }
-
-        const kolicina = kolObrVal;
-        const fiksna_cijena = Math.abs(uneseniRabat - 100) < 0.001 ? 0 : unesenaCijena;
-        const rabat_konacni = dinamickaCijena > 0 ? Math.max(0, Math.min(100, ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100)) : 0;
+        const fiksna_cijena = Math.abs(uneseniRabat - 100) < 0.001 ? 0 : (parseFloat(stavkaForm.fiksna_cijena) || dinamickaCijena || 0);
+        const rabat_konacni = dinamickaCijena > 0 ? ((dinamickaCijena - fiksna_cijena) / dinamickaCijena) * 100 : 0;
         
         if (rabat_konacni > stavkaForm.sistemski_rabat) { 
             await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Za "${trenutniProizvod.naziv}" kupcu "${form.kupac_naziv}" na ponudi ${form.id}, rabat ručno povećan na ${rabat_konacni.toFixed(2)}% (Sistem davao: ${stavkaForm.sistemski_rabat}%).`, 'ŽUTO'); 
         }
         
-        const ukupno_bez_rabata = parseFloat((kolicina * dinamickaCijena).toFixed(2));
-        const ukupno_sa_rabatom = parseFloat((kolicina * fiksna_cijena).toFixed(2));
-        const iznos_rabata = parseFloat(Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom).toFixed(2));
+        const ukupno_bez_rabata = kolicina * dinamickaCijena;
+        const ukupno_sa_rabatom = kolicina * fiksna_cijena;
+        const iznos_rabata = Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom);
 
         const novaStavka = normalizujStavkuPonude({
             id: stavkaForm.id || Math.random().toString(), 
             sifra: trenutniProizvod.sifra, 
             naziv: trenutniProizvod.naziv,
             dimenzije: `${trenutniProizvod.visina || 0}x${trenutniProizvod.sirina || 0}x${trenutniProizvod.duzina || 0}`,
-            kolicina_unos: kolUnosVal, 
+            kolicina_unos: parseFloat(stavkaForm.kolicina_unos), 
             jm_unos: stavkaForm.jm_unos, 
             kolicina_obracun: kolicina, 
             jm_obracun: stavkaForm.jm_obracun,
@@ -381,9 +369,9 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                 const noveStavke = stavke.map(st => {
                     const s = normalizujStavkuPonude(st);
                     const fiksna_cijena = s.cijena_baza - (s.cijena_baza * (rabat / 100));
-                    const ukupno_bez_rabata = parseFloat((s.kolicina_obracun * s.cijena_baza).toFixed(2));
-                    const ukupno_sa_rabatom = parseFloat((s.kolicina_obracun * fiksna_cijena).toFixed(2));
-                    return { ...s, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: parseFloat(Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom).toFixed(2)), ukupno: ukupno_sa_rabatom };
+                    const ukupno_bez_rabata = s.kolicina_obracun * s.cijena_baza;
+                    const ukupno_sa_rabatom = s.kolicina_obracun * fiksna_cijena;
+                    return { ...s, rabat_procenat: rabat.toFixed(2), fiksna_cijena: fiksna_cijena.toFixed(2), iznos_rabata: Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom), ukupno: parseFloat(ukupno_sa_rabatom.toFixed(2)) };
                 });
                 setStavke(noveStavke); setGlobalRabat(''); 
                 await zapisiU_Log('RUČNA_IZMJENA_RABATA', `Globalni rabat ${rabat}% primijenjen na ponudi ${form.id}`, 'ŽUTO'); 
@@ -428,31 +416,66 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         };
     }, [stavke, form.ukljuciPDV, katalog, odabraniKupac]);
 
+    const sinhronizujAvansPonude = async (ponIdRaw, status, depozitRaw) => {
+        const ponId = String(ponIdRaw || '').toUpperCase().trim();
+        if (!ponId) return;
+        const depozitIznos = parseFloat(depozitRaw) || 0;
+        const jePotvrdjena = status === 'POTVRĐENA' || status === 'REALIZOVANA ✅';
+
+        const { data: postojeciAvansi } = await supabase
+            .from('blagajna')
+            .select('id, iznos, opis')
+            .eq('racun_id', ponId)
+            .eq('tip', 'ULAZ')
+            .order('created_at', { ascending: true });
+
+        const autoAvans = (postojeciAvansi || []).find(a => (a.opis || '').includes('Automatski depozit')) || (postojeciAvansi || [])[0];
+        const danasLocal = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+
+        if (jePotvrdjena && depozitIznos > 0) {
+            if (!autoAvans) {
+                await supabase.from('blagajna').insert([{
+                    id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`,
+                    tip: 'ULAZ',
+                    kategorija: 'Avans po Ponudi',
+                    iznos: parseFloat(depozitIznos.toFixed(2)),
+                    opis: `Automatski depozit: ${ponId}`,
+                    racun_id: ponId,
+                    datum: danasLocal,
+                    vrijeme_tekst: new Date().toLocaleTimeString('de-DE'),
+                    snimio_korisnik: currentUser.ime_prezime || 'Sistem'
+                }]);
+            } else if (Math.abs(parseFloat(autoAvans.iznos || 0) - depozitIznos) > 0.001) {
+                await supabase.from('blagajna').update({ iznos: parseFloat(depozitIznos.toFixed(2)) }).eq('id', autoAvans.id);
+            }
+        } else if (autoAvans && (autoAvans.opis || '').includes('Automatski depozit')) {
+            await supabase.from('blagajna').delete().eq('id', autoAvans.id);
+        }
+    };
+
     const snimiPonudu = async () => {
         if(!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Kupac je obavezan!", onCancel: zatvoriDialog }); 
         if(stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Ponuda mora imati stavke!", onCancel: zatvoriDialog });
         
         const cisteStavke = stavke.map(s => normalizujStavkuPonude(s));
+        const cistPonId = form.id.toUpperCase().trim();
 
         const payload = {
-            id: form.id.toUpperCase(), kupac_naziv: form.kupac_naziv, datum: form.datum, rok_vazenja: form.rok_vazenja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, paritet: form.paritet, depozit: parseFloat(form.depozit) || 0, napomena: form.napomena, stavke_jsonb: cisteStavke, status: form.status,
+            id: cistPonId, kupac_naziv: form.kupac_naziv, datum: form.datum, rok_vazenja: form.rok_vazenja, nacin_placanja: form.nacin_placanja, valuta: form.valuta, paritet: form.paritet, depozit: parseFloat(form.depozit) || 0, napomena: form.napomena, stavke_jsonb: cisteStavke, status: form.status,
             ukupno_bez_pdv: parseFloat(totals.osnovica) || 0, ukupno_rabat: parseFloat(totals.rabat) || 0, ukupno_sa_pdv: parseFloat(totals.za_naplatu) || 0, snimio_korisnik: currentUser.ime_prezime, rn_modifikovan: form.rn_modifikovan
         };
         
         if (isEditingPonuda) {
-            const { error } = await supabase.from('ponude').update(payload).eq('id', form.id);
+            const { error } = await supabase.from('ponude').update(payload).eq('id', cistPonId);
             if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
-            await zapisiU_Log('IZMJENA_PONUDE', `Ažurirana ponuda ${form.id}`); 
+            await zapisiU_Log('IZMJENA_PONUDE', `Ažurirana ponuda ${cistPonId}`); 
         } else {
             const { error } = await supabase.from('ponude').insert([payload]);
             if(error) return prikaziDialog({ tip: 'greska', naslov: 'Greška', poruka: error.message, onCancel: zatvoriDialog }); 
-            await zapisiU_Log('KREIRANA_PONUDA', `Ponuda ${form.id}`); 
+            await zapisiU_Log('KREIRANA_PONUDA', `Ponuda ${cistPonId}`); 
         }
 
-        if ((form.status === 'POTVRĐENA' || form.status === 'REALIZOVANA ✅') && parseFloat(form.depozit) > 0) {
-            const { data: postojiAvans } = await supabase.from('blagajna').select('id').eq('racun_id', form.id).maybeSingle();
-            if (!postojiAvans) { await supabase.from('blagajna').insert([{ id: `KASA-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000)}`, tip: 'ULAZ', kategorija: 'Avans po Ponudi', iznos: parseFloat(form.depozit), opis: `Automatski depozit: ${form.id}`, racun_id: form.id, datum: new Date().toISOString().split('T')[0], vrijeme_tekst: new Date().toLocaleTimeString('de-DE'), snimio_korisnik: currentUser.ime_prezime || 'Sistem' }]); }
-        }
+        await sinhronizujAvansPonude(cistPonId, form.status, form.depozit);
         
         resetFormu(); load(); setTab('lista');
 
@@ -467,7 +490,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    // 🟢 DIREKTNO KREIRANJE RADNOG NALOGA IZ PONUDE
     const kreirajRadniNalogIzPonude = async (p, e) => {
         if (e) e.stopPropagation();
         const { data: postojeciRN } = await supabase.from('radni_nalozi').select('id').eq('broj_ponude', p.id).neq('status', 'OBRISANO').limit(1);
@@ -528,6 +550,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
 
                 if (p.status === 'NA ODLUČIVANJU') {
                     await supabase.from('ponude').update({ status: 'POTVRĐENA' }).eq('id', p.id);
+                    await sinhronizujAvansPonude(p.id, 'POTVRĐENA', p.depozit);
                 }
                 await zapisiU_Log('KREIRAN_RN_IZ_PONUDE', `Iz ponude ${p.id} kreiran Radni Nalog ${noviRnId}`);
                 load();
@@ -537,7 +560,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         });
     };
 
-    // 🟢 BRISANJE PONUDE SA RAZLOGOM ZA SUPERADMINA
     const potvrdiBrisanjePonude = async () => {
         if (!razlogBrisanja.trim()) {
             return prikaziDialog({ tip: 'upozorenje', naslov: 'Razlog obavezan', poruka: "Morate unijeti razlog brisanja ponude!", onCancel: zatvoriDialog });
@@ -546,6 +568,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         if (error) {
             return prikaziDialog({ tip: 'greska', naslov: 'Greška baze', poruka: error.message, onCancel: zatvoriDialog });
         }
+        await sinhronizujAvansPonude(brisanjePonudeModal.id, 'OBRISANO', 0);
         await zapisiU_Log('OBRISANA_PONUDA', `Korisnik je obrisao Ponudu ${brisanjePonudeModal.id} (${brisanjePonudeModal.kupac_naziv}). Razlog: ${razlogBrisanja}`, 'CRVENO');
         setBrisanjePonudeModal(null);
         setRazlogBrisanja('');
@@ -566,7 +589,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         setOdabraniKupac(kupacObj);
 
         const saniraneStavke = (p.stavke_jsonb || []).map(st => normalizujStavkuPonude(st, currentKatalog, kupacObj));
-        const izracunataOsnovica = saniraneStavke.reduce((sum, st) => sum + (parseFloat(st.ukupno) || 0), 0);
         const ukljuciPDV = p.ukupno_sa_pdv && p.ukupno_bez_pdv ? (parseFloat(p.ukupno_sa_pdv) > parseFloat(p.ukupno_bez_pdv)) : true;
 
         setForm({ 
@@ -594,7 +616,12 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         }
     };
 
-    const promijeniStatusBrzo = async (p, noviStatus) => { await supabase.from('ponude').update({ status: noviStatus }).eq('id', p.id); await zapisiU_Log('STATUS_PONUDE', `Ponuda ${p.id} prebačena u ${noviStatus}`); load(); };
+    const promijeniStatusBrzo = async (p, noviStatus) => {
+        await supabase.from('ponude').update({ status: noviStatus }).eq('id', p.id);
+        await sinhronizujAvansPonude(p.id, noviStatus, p.depozit);
+        await zapisiU_Log('STATUS_PONUDE', `Ponuda ${p.id} prebačena u ${noviStatus}`);
+        load();
+    };
     const resetFormu = () => { setForm({ id: generisiID(), kupac_naziv: '', datum: new Date().toISOString().split('T')[0], rok_vazenja: new Date(new Date().setDate(new Date().getDate() + 7)).toISOString().split('T')[0], nacin_placanja: 'Virmanski', valuta: 'KM', paritet: 'FCA Srebrenik', depozit: '', napomena: '', status: 'NA ODLUČIVANJU', rn_modifikovan: false, ukljuciPDV: true }); setStavke([]); setOdabraniKupac(null); setIsEditingPonuda(false); setPovezaniRN(null); setGlobalRabat(''); };
     const formatirajDatum = (isoString) => { if(!isoString) return ''; const [y, m, d] = isoString.split('T')[0].split('-'); return `${d}.${m}.${y}.`; };
 
@@ -604,7 +631,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         rnStavke.forEach(rs => { if (!stavke.find(p => p.sifra === rs.sifra)) { razlike.push({ sifra: rs.sifra, naziv: rs.naziv, tip: 'dodato', poruka: `Dodato naknadno (${rs.kolicina_unos} ${rs.jm_unos})` }); } }); return razlike;
     }, [stavke, povezaniRN]);
 
-    // 🟢 POPRAVLJENO PRIHVATANJE IZMJENA IZ POGONA: Uzima cijene iz ponude ili iz kataloga (nikada NaN!) i odmah ažurira sume u bazi
     const prihvatiIzmjene = async () => {
         if(!povezaniRN) return;
         const noveStavke = (povezaniRN.stavke_jsonb || []).map(rs => {
@@ -628,9 +654,9 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             }
 
             const kolicina = parseFloat(rs.kolicina_obracun) || 0;
-            const ukupno_bez_rabata = kolicina * cijena_baza;
-            const ukupno_sa_rabatom = kolicina * fiksna_cijena;
-            const iznos_rabata = Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom);
+            const ukupno_bez_rabata = parseFloat((kolicina * cijena_baza).toFixed(2));
+            const ukupno_sa_rabatom = parseFloat((kolicina * fiksna_cijena).toFixed(2));
+            const iznos_rabata = parseFloat(Math.max(0, ukupno_bez_rabata - ukupno_sa_rabatom).toFixed(2));
 
             return normalizujStavkuPonude({
                 id: postojeca ? postojeca.id : Math.random().toString(),
@@ -696,7 +722,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
 
     const kreirajPDF = () => { kreirajPDFPrivremeni(form); };
 
-    // 🟢 POPRAVLJEN PDF GENERATOR: Uvijek računa čiste brojeve bez undefined i NaN vrijednosti
     const kreirajPDFPrivremeni = (podaci) => {
         const stariNaslov = document.title; 
         document.title = `ponuda_${podaci.id}_${(podaci.kupac_naziv || 'Nepoznat_Kupac').replace(/\s+/g, '_')}`;
@@ -720,16 +745,17 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             const rabatP = parseFloat(s.rabat_procenat) || 0;
             const uk = parseFloat(s.ukupno) || 0;
 
-            sumaBezRabata += (kol * cBaza);
-            sumaRabata += Math.max(0, (kol * cBaza) - uk);
+            const bzRabSt = parseFloat((kol * cBaza).toFixed(2));
+            sumaBezRabata += bzRabSt;
+            sumaRabata += Math.max(0, bzRabSt - uk);
             sumaOsnovica += uk;
 
             return `<tr><td style="font-weight: bold; color: #64748b; vertical-align: top; padding-top: 8px;">${i+1}.</td><td style="vertical-align: top; padding-top: 8px;"><span class="prod-sifra">ŠIFRA: ${s.sifra}</span><span class="prod-naziv">${s.naziv}</span>${dimenzijeTekst}</td><td class="num" style="color: #0f172a; text-align: center; vertical-align: top; padding-top: 8px;">${kol} <span style="color: #64748b; font-size: 9px; font-weight: 600;">${s.jm_obracun}</span></td><td class="num" style="font-weight: 600; vertical-align: top; padding-top: 8px;">${cBaza.toFixed(2)}</td><td class="num" style="color: #ec4899; font-weight: 800; vertical-align: top; padding-top: 8px;">${rabatP > 0 ? rabatP + '%' : '-'}</td><td class="num" style="font-weight: 900; color: #0f172a; font-size: 13px; vertical-align: top; padding-top: 8px;">${uk.toFixed(2)}</td></tr>`;
         }).join('');
 
         const imaPdv = podaci.ukljuciPDV !== undefined ? podaci.ukljuciPDV : (parseFloat(podaci.ukupno_sa_pdv || 0) > parseFloat(podaci.ukupno_bez_pdv || 0));
-        const pdvIznos = imaPdv ? (sumaOsnovica * 0.17) : 0;
-        const ukupnoSaPDV = sumaOsnovica + pdvIznos;
+        const pdvIznos = imaPdv ? parseFloat((sumaOsnovica * 0.17).toFixed(2)) : 0;
+        const ukupnoSaPDV = parseFloat((sumaOsnovica + pdvIznos).toFixed(2));
         const depozit = parseFloat(podaci.depozit) || 0;
         const preostaloZaNaplatu = (ukupnoSaPDV - depozit).toFixed(2);
         const val = podaci.valuta || 'KM';
@@ -754,7 +780,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
         if (polje.id === 'rok') return <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
         if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border cursor-pointer"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
         if (polje.id === 'paritet') return <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" placeholder="npr. FCA Srebrenik" />;
-        if (polje.id === 'depozit') return <input type="number" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />;
+        if (polje.id === 'depozit') return <input type="number" step="0.01" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />;
         if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-pink-900/20 rounded-xl text-xs text-theme-accent font-black outline-none border border-pink-500/50 cursor-pointer"><option value="NA ODLUČIVANJU">Na odlučivanju</option><option value="POTVRĐENA">POTVRĐENA ✅</option><option value="REALIZOVANA ✅">REALIZOVANA (Zatvorena)</option></select>;
         if (polje.id === 'placanje') return (
             <div className="flex flex-col gap-2 h-full w-full min-w-0">
@@ -805,7 +831,6 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             
             <MasterHeader header={header} setHeader={setHeader} onExit={onExit} color="text-pink-500" user={user} modulIme="ponude" saas={saas} hideMasina={true} />
 
-            {/* 🟢 KOMPLETAN SUPER GOD MODE PANEL */}
             {saas.isEditMode && (
                 <div className="bg-theme-card/90 backdrop-blur-md p-6 rounded-2xl border-2 border-amber-500/50 mb-6 shadow-2xl">
                     <div className="flex justify-between items-center border-b border-amber-500/20 pb-4 mb-4">
@@ -1139,7 +1164,7 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                             </div>
                             {filtriranePonude.filter(p => p.status === 'REALIZOVANA ✅').length > 0 && (
                                 <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-blue-500/30 shadow-2xl opacity-70 hover:opacity-100 transition-all" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
-                                    <h3 className="text-blue-500 font-black uppercase text-xs mb-4">🔐 REALIZOVANO (ZATVORENO)</h3>
+                                    <h3 className="text-blue-400 font-black uppercase text-xs mb-4">🔐 REALIZOVANO (ZATVORENO)</h3>
                                     <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                                         {filtriranePonude.filter(p => p.status === 'REALIZOVANA ✅').map(p => (
                                             <div key={p.id} onClick={() => pokreniIzmjenuPonude(p)} className="p-4 bg-theme-panel border border-theme-border rounded-2xl cursor-pointer shadow-sm">

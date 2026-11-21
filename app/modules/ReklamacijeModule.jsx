@@ -83,11 +83,14 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
             };
             
             const { data: istorijaRek } = await supabase.from('reklamacije')
-                .select('kolicina')
+                .select('kolicina, status, tip_reklamacije')
                 .eq('paket_id', id)
                 .in('status', ['CEKA_ODOBRENJE', 'ODOBRENO']);
             
-            const ukupnoPotrosenoM3 = (istorijaRek || []).reduce((acc, r) => acc + parseFloat(r.kolicina || 0), 0);
+            // Odobreni POVRAT je već umanjio kolicina_final na izvornom paketu -> ne oduzimaj ga dva puta!
+            const ukupnoPotrosenoM3 = (istorijaRek || [])
+                .filter(r => !(r.status === 'ODOBRENO' && r.tip_reklamacije === 'POVRAT'))
+                .reduce((acc, r) => acc + parseFloat(r.kolicina || 0), 0);
             const preostaliKapacitetM3 = Math.max(0, ukupniKapacitetM3 - ukupnoPotrosenoM3);
 
             const kat = katalog.find(k => k.naziv === paketZaReklamaciju.naziv_proizvoda || k.sifra === paketZaReklamaciju.naziv_proizvoda);
@@ -148,13 +151,12 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
         const s = parseFloat(paket?.sirina || trenutniProizvod?.sirina) || 1;
         const d = parseFloat(paket?.duzina || trenutniProizvod?.duzina) || 1;
         
-        if (form.jm_unos === 'kom') {
+        const jmNorm = String(form.jm_unos || 'kom').toLowerCase();
+        if (jmNorm === 'kom') {
             obracun = kol * (v / 100) * (s / 100) * (d / 100);
-        } else if (form.jm_unos === 'm2') {
-            // 🟢 Kvadratura (m²) * debljina u metrima (v / 100) = kubikaža (m³)! (npr. 0.2 m² * 0.02 m = 0.004 m³)
+        } else if (jmNorm === 'm2') {
             obracun = kol * (v / 100);
-        } else if (form.jm_unos === 'm1') {
-            // Dužni metar (m1) * debljina (v / 100) * širina (s / 100) = kubikaža (m³)!
+        } else if (jmNorm === 'm1') {
             obracun = kol * (v / 100) * (s / 100);
         }
         
@@ -225,7 +227,22 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                 zatvoriDialog();
                 
                 try {
-                    const { data: orig } = await supabase.from('paketi').select('*').eq('paket_id', rek.paket_id).maybeSingle();
+                    // Atomična provjera statusa sprječava duplo odobravanje na dupli klik
+                    const { data: claimRek, error: claimErr } = await supabase
+                        .from('reklamacije')
+                        .update({ status: 'ODOBRENO', odobrio_korisnik: user?.ime_prezime || 'Admin' })
+                        .eq('id', rek.id)
+                        .eq('status', 'CEKA_ODOBRENJE')
+                        .select('id');
+
+                    if (claimErr) throw claimErr;
+                    if (!claimRek || claimRek.length === 0) {
+                        await loadReklamacije();
+                        return prikaziDialog({ tip: 'upozorenje', naslov: 'Već obrađeno', poruka: 'Ova reklamacija je već obrađena.', onCancel: zatvoriDialog });
+                    }
+
+                    const { data: redoviPaketa } = await supabase.from('paketi').select('*').eq('paket_id', rek.paket_id).order('created_at', { ascending: true });
+                    const orig = redoviPaketa && redoviPaketa.length > 0 ? redoviPaketa[0] : null;
                     const kat = katalog.find(k => k.naziv === rek.naziv_proizvoda || k.sifra === rek.naziv_proizvoda);
                     const v = parseFloat(orig?.debljina || kat?.visina || 0);
                     const s = parseFloat(orig?.sirina || kat?.sirina || 0);
@@ -233,24 +250,47 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                     const vol1Kom = (v > 0 && s > 0 && d > 0) ? (v / 100) * (s / 100) * (d / 100) : 0;
                     const rekM3 = parseFloat(rek.kolicina || 0);
 
-                    if (rek.tip_reklamacije === 'POVRAT' && orig) {
-                        // Umanji izvorni paket za vraćenu količinu i kreiraj -R paket za preradu
-                        const stariM3 = parseFloat(orig.kolicina_final || 0);
-                        const preostaloOrigM3 = Math.max(0, parseFloat((stariM3 - rekM3).toFixed(4)));
-                        if (preostaloOrigM3 > 0) {
-                            const noviKomOrig = vol1Kom > 0 ? parseFloat((preostaloOrigM3 / vol1Kom).toFixed(2)) : orig.kolicina_ulaz;
-                            await supabase.from('paketi').update({ kolicina_final: preostaloOrigM3, kolicina_ulaz: noviKomOrig }).eq('id', orig.id);
+                    if (rek.tip_reklamacije === 'POVRAT' && redoviPaketa && redoviPaketa.length > 0) {
+                        // FIFO umanjenje preko svih redova paketa (podržava i 100% povrat i višeredne pakete!)
+                        let preostaloZaSkinuti = rekM3;
+                        for (const red of redoviPaketa) {
+                            if (preostaloZaSkinuti <= 0.0001) break;
+                            const redM3 = parseFloat(red.kolicina_final || 0);
+                            if (redM3 <= 0) continue;
+                            if (preostaloZaSkinuti >= redM3 - 0.0004) {
+                                await supabase.from('paketi').update({
+                                    status: 'POVRAT_REKLAMACIJA',
+                                    otpremnica_id: red.otpremnica_id || `REKLAMACIJA-${rek.paket_id}`
+                                }).eq('id', red.id);
+                                preostaloZaSkinuti = Math.max(0, preostaloZaSkinuti - redM3);
+                            } else {
+                                const preostaloOrigM3 = parseFloat((redM3 - preostaloZaSkinuti).toFixed(4));
+                                const noviKomOrig = vol1Kom > 0 ? parseFloat((preostaloOrigM3 / vol1Kom).toFixed(2)) : red.kolicina_ulaz;
+                                await supabase.from('paketi').update({
+                                    kolicina_final: preostaloOrigM3,
+                                    kubikaza: preostaloOrigM3,
+                                    kolicina_m3: preostaloOrigM3,
+                                    kolicina_ulaz: noviKomOrig,
+                                    komada: noviKomOrig,
+                                    jm: 'kom'
+                                }).eq('id', red.id);
+                                preostaloZaSkinuti = 0;
+                            }
                         }
+
+                        const { id: _oldId, created_at: _oldCreated, ...cleanOrig } = orig;
                         const noviPaket = {
-                            ...orig,
-                            id: undefined, 
-                            paket_id: `${rek.paket_id}-R`, 
-                            kolicina_ulaz: rek.kolicina,
-                            kolicina_final: rek.kolicina,
+                            ...cleanOrig,
+                            paket_id: `${rek.paket_id}-R`,
+                            kolicina_ulaz: rekM3,
+                            kolicina_final: rekM3,
+                            kubikaza: rekM3,
+                            kolicina_m3: rekM3,
                             jm: 'm3',
-                            masina: 'MAGACIN_REKLAMACIJA', 
+                            status: 'NA STANJU',
+                            masina: 'MAGACIN_REKLAMACIJA',
                             oznake: ['REKLAMACIJA'],
-                            closed_at: null, 
+                            closed_at: null,
                             otpremnica_id: null,
                             broj_veze: 'POVRAT'
                         };
@@ -286,10 +326,14 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                         }
                     }
 
-                    await supabase.from('reklamacije').update({ 
-                        status: 'ODOBRENO', 
-                        odobrio_korisnik: user?.ime_prezime || 'Admin' 
-                    }).eq('id', rek.id);
+                    await supabase.from('sistem_audit_log').insert([{
+                        korisnik: user?.ime_prezime || 'Admin',
+                        akcija: 'ODOBRENA_REKLAMACIJA',
+                        detalji: `Odobrena reklamacija (${rek.tip_reklamacije}) za paket ${rek.paket_id} (${rekM3.toFixed(3)} m³).`,
+                        nivo_alarma: 'INFO',
+                        pregledano: true,
+                        vrijeme: new Date().toISOString()
+                    }]);
 
                     await loadReklamacije();
                     prikaziDialog({ tip: 'uspjeh', naslov: 'Odobreno', poruka: "Reklamacija je uspješno obrađena! Zalihe i nalozi su ažurirani.", onCancel: zatvoriDialog });
@@ -490,7 +534,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                             <span className="text-[9px] bg-slate-800 border border-slate-600 px-2 py-1 rounded text-slate-300 font-black uppercase">RAZLOG: {rek.razlog}</span>
                                             {rek.nova_isporuka && <span className="text-[9px] bg-blue-900/40 border border-blue-500/50 px-2 py-1 rounded text-blue-400 font-black uppercase">ZAHTJEVA NOVU IZRADU</span>}
                                         </div>
-                                        {rek.napomena && <p className="text-[10px] text-slate-400 mt-3 italic border-l-2 border-slate-600 pl-2 leading-relaxed">Napomena: "{rek.napomena.replace(/\[Unos:\s*\d+\s*\w+\]/i, '').trim()}"</p>}
+                                        {rek.napomena && <p className="text-[10px] text-slate-400 mt-3 italic border-l-2 border-slate-600 pl-2 leading-relaxed">Napomena: "{rek.napomena.replace(/\[Unos:\s*[0-9.,]+\s*\w+\]/i, '').trim()}"</p>}
                                     </div>
 
                                     {rek.status === 'CEKA_ODOBRENJE' && imaPravoNadzora && (

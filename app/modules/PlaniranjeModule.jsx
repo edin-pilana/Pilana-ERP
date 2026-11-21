@@ -46,33 +46,33 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const [nerasporedjeniNalozi, setNerasporedjeniNalozi] = useState([]);
     const [raspored, setRaspored] = useState([]);
-    const [sviPlanoviGlobal, setSviPlanoviGlobal] = useState([]); 
-    
+    const [sviPlanoviGlobal, setSviPlanoviGlobal] = useState([]);
+
     const [pocetakSedmice, setPocetakSedmice] = useState(getStartOfWeek(new Date()));
     const [highlightedRN, setHighlightedRN] = useState(null);
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
 
-    const [pregledNaloga, setPregledNaloga] = useState(null); 
-    const [planiranjeModal, setPlaniranjeModal] = useState(null); 
-    const [stavkeZaPlaniranje, setStavkeZaPlaniranje] = useState([]); 
+    const [pregledNaloga, setPregledNaloga] = useState(null);
+    const [planiranjeModal, setPlaniranjeModal] = useState(null);
+    const [stavkeZaPlaniranje, setStavkeZaPlaniranje] = useState([]);
 
     useEffect(() => {
         const autoId = localStorage.getItem('erp_auto_open_id');
         const autoAction = localStorage.getItem('erp_auto_action');
-        
+
         if (autoId && autoAction === 'planiraj' && nerasporedjeniNalozi.length > 0) {
             setHighlightedRN(autoId);
-            
+
             const nToPlan = nerasporedjeniNalozi.find(n => n.id === autoId);
             if (nToPlan) {
                 otvoriPlaniranjeModal(nToPlan);
             }
-            
+
             localStorage.removeItem('erp_auto_open_id');
             localStorage.removeItem('erp_auto_action');
-            
+
             setTimeout(() => {
                 const el = document.getElementById(`rn_card_${autoId}`);
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -83,7 +83,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     }, [nerasporedjeniNalozi]);
 
     useEffect(() => { loadInitialData(); }, []);
-    useEffect(() => { if (odabranaMasina && katalog.length > 0) loadRaspored(); }, [odabranaMasina, pocetakSedmice, katalog]);
+    useEffect(() => { if (odabranaMasina) loadRaspored(); }, [odabranaMasina, pocetakSedmice, katalog]);
 
     function getStartOfWeek(date) {
         const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -124,7 +124,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         setSviPlanoviGlobal(sviPlanovi || []);
 
         const { data: rnData } = await supabase.from('radni_nalozi').select('*').neq('status', 'ZAVRŠENO').neq('status', 'OBRISANO');
-        
+
         let naloziZaLijevuStranu = [];
 
         (rnData || []).forEach(rn => {
@@ -137,15 +137,15 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 let originalKol = parseFloat(st.kolicina_unos || 0);
 
                 const katItem = katalog.find(k => k.sifra === st.sifra) || {};
-                let v = parseFloat(katItem.visina) || 0; 
-                let sir = parseFloat(katItem.sirina) || 0; 
+                let v = parseFloat(katItem.visina) || 0;
+                let sir = parseFloat(katItem.sirina) || 0;
                 let d = parseFloat(katItem.duzina) || 0;
                 let dimPrikaz = st.dimenzije || (v > 0 ? `${v}x${sir}x${d}` : 'BEZ DIMENZIJE');
 
                 if (rn.tip_naloga === 'FAZNI') {
                     const faza = (rn.tehnologija_jsonb?.[st.id] || []).find(f => (f.masina || '').toUpperCase().trim() === (odabranaMasina || '').toUpperCase().trim());
                     if (faza) {
-                        originalKol = parseFloat(faza.kolicina || 0); 
+                        originalKol = parseFloat(faza.kolicina || 0);
                         jm_unos = (faza.jm || jm_unos || 'kom').toLowerCase();
 
                         // 🟢 Koristi ulazne dimenzije FAZE (npr. 2.4x17x420 cm) ako su unesene u BOM-u!
@@ -157,7 +157,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             d = parseFloat(matchDim[3].replace(',', '.'));
                             dimPrikaz = `${v}x${sir}x${d}`;
                         }
-                    } else return; 
+                    } else return;
                 }
 
                 const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v / 100) * (sir / 100) * (d / 100) : 0;
@@ -190,11 +190,11 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         const ratio = preostaloM3 / ukupnoZaUraditiM3;
                         const preostaloOriginal = parseFloat((originalKol * ratio).toFixed(2));
 
-                        stavkeZaMasinu.push({ 
-                            ...st, 
-                            preostalo: preostaloM3.toFixed(4), 
+                        stavkeZaMasinu.push({
+                            ...st,
+                            preostalo: preostaloM3.toFixed(4),
                             preostaloOriginal,
-                            jm_unos, 
+                            jm_unos,
                             dimenzije_prikaz: dimPrikaz,
                             ukupnoZaUraditiM3,
                             vol1kom, area1kom, len1kom,
@@ -209,7 +209,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             }
         });
 
-        setNerasporedjeniNalozi(naloziZaLijevuStranu.sort((a,b) => parseLocalIsoDate(a.rok_isporuke) - parseLocalIsoDate(b.rok_isporuke)));
+        setNerasporedjeniNalozi(naloziZaLijevuStranu.sort((a, b) => parseLocalIsoDate(a.rok_isporuke) - parseLocalIsoDate(b.rok_isporuke)));
         setLoading(false);
     };
 
@@ -230,20 +230,20 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         const nalogId = e.dataTransfer.getData('nalogId');
         if (!nalogId) return;
         const nalog = nerasporedjeniNalozi.find(n => n.id === nalogId);
-        if(!nalog) return;
+        if (!nalog) return;
         otvoriPlaniranjeModal(nalog, ciljniDatum);
     };
 
     const otvoriPlaniranjeModal = (nalog, datum = '') => {
-        if(isReadOnly) return;
+        if (isReadOnly) return;
         const pocetnoStanjeStavki = nalog.stavkeZaPlaniranje.map(st => ({
-            id: st.id, naziv: st.naziv, dimenzije: st.dimenzije_prikaz, sifra: st.sifra, jm_unos: st.jm_unos, 
-            maxKolicina: st.preostalo, 
-            preostaloOriginal: st.preostaloOriginal, 
-            kolicinaZaUnos: st.preostaloOriginal, 
-            kolicinaM3: st.preostalo, 
+            id: st.id, naziv: st.naziv, dimenzije: st.dimenzije_prikaz, sifra: st.sifra, jm_unos: st.jm_unos,
+            maxKolicina: st.preostalo,
+            preostaloOriginal: st.preostaloOriginal,
+            kolicinaZaUnos: st.preostaloOriginal,
+            kolicinaM3: st.preostalo,
             vol1kom: st.vol1kom, area1kom: st.area1kom, len1kom: st.len1kom,
-            checked: true 
+            checked: true
         }));
         let finalniDatum = datum;
         if (!finalniDatum) { finalniDatum = toLocalIsoString(izracunajPreporuku(nalog.rok_isporuke)); }
@@ -252,8 +252,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     };
 
     const toggleStavkaPlaniranje = (id) => { setStavkeZaPlaniranje(prev => prev.map(s => s.id === id ? { ...s, checked: !s.checked } : s)); };
-    
-    const promjeniKolicinuPlaniranja = (id, novaKolOriginal) => { 
+
+    const promjeniKolicinuPlaniranja = (id, novaKolOriginal) => {
         setStavkeZaPlaniranje(prev => prev.map(s => {
             if (s.id === id) {
                 const unos = parseFloat(novaKolOriginal) || 0;
@@ -264,16 +264,17 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
                 let novim3 = (komada * s.vol1kom).toFixed(4);
                 if (s.jm_unos === 'm3') novim3 = unos.toFixed(4);
-                
+
                 if (s.vol1kom === 0 && s.jm_unos === 'kom') {
-                    const ratio = unos / parseFloat(s.preostaloOriginal);
-                    novim3 = (parseFloat(s.maxKolicina) * ratio).toFixed(4);
+                    const origPreostalo = parseFloat(s.preostaloOriginal) || 0;
+                    const ratio = origPreostalo > 0 ? (unos / origPreostalo) : 0;
+                    novim3 = (parseFloat(s.maxKolicina || 0) * ratio).toFixed(4);
                 }
 
-                return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: isNaN(novim3) ? 0 : novim3 };
+                return { ...s, kolicinaZaUnos: novaKolOriginal, kolicinaM3: (!isFinite(parseFloat(novim3)) || isNaN(parseFloat(novim3))) ? 0 : novim3 };
             }
             return s;
-        })); 
+        }));
     };
 
     const isSubmittingPlanRef = React.useRef(false);
@@ -292,7 +293,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         try {
             const payload = stavkeZaBazu.map(s => ({
                 rn_id: aktivniModal.nalog.id, stavka_id: s.id, proizvod_naziv: s.naziv, dimenzije: s.dimenzije,
-                masina: odabranaMasina, datum_plana: aktivniModal.datum, 
+                masina: odabranaMasina, datum_plana: aktivniModal.datum,
                 planirano_m3: parseFloat(s.kolicinaM3), proizvedeno_m3: 0, status: 'ZAKAZANO', snimio_korisnik: user?.ime_prezime || 'Nepoznat'
             }));
 
@@ -329,7 +330,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
         if (neispravanUnos) return;
 
         const danStr = planiranjeModal.datum;
-        const trenutnoPlaniranoNaDan = raspored.filter(r => r.datum_plana === danStr).reduce((s, r) => s + parseFloat(r.planirano_m3 || 0), 0);
+        const trenutnoPlaniranoNaDan = sviPlanoviGlobal.filter(r => r.datum_plana === danStr).reduce((s, r) => s + parseFloat(r.planirano_m3 || 0), 0);
         const prelaziKapacitet = (trenutnoPlaniranoNaDan + ukupnoNovihKubika) > kapacitetMasine;
 
         if (prekoracenaStavka || prelaziKapacitet) {
@@ -362,6 +363,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const obrisiIzPlana = (id, e) => {
         e.stopPropagation();
+        if (isReadOnly) return;
         prikaziDialog({
             tip: 'upozorenje',
             naslov: 'Uklanjanje iz rasporeda',
@@ -380,7 +382,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
 
     const DaniUSedmici = useMemo(() => {
         const dani = []; const imena = ['PONEDJELJAK', 'UTORAK', 'SRIJEDA', 'ČETVRTAK', 'PETAK', 'SUBOTA', 'NEDJELJA'];
-        for(let i=0; i<7; i++) {
+        for (let i = 0; i < 7; i++) {
             const d = new Date(pocetakSedmice.getFullYear(), pocetakSedmice.getMonth(), pocetakSedmice.getDate() + i);
             dani.push({ datum: d, ime: imena[i], iso: toLocalIsoString(d) });
         }
@@ -402,9 +404,9 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 <div className="bg-black/60 p-6 rounded-2xl border-2 border-amber-500/50 shadow-2xl shrink-0">
                     <h3 className="text-amber-500 font-black uppercase text-sm mb-4">God Mode - Kontrole Dizajna Planiranja</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Kartica: <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({...saas.ui, boja_kartice: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({...saas.ui, boja_slova: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
-                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Akcenta: <input type="color" value={saas.ui.boja_akcenta} onChange={e => saas.setUi({...saas.ui, boja_akcenta: e.target.value})} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Kartica: <input type="color" value={saas.ui.boja_kartice} onChange={e => saas.setUi({ ...saas.ui, boja_kartice: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Slova: <input type="color" value={saas.ui.boja_slova} onChange={e => saas.setUi({ ...saas.ui, boja_slova: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
+                        <label className="text-[10px] text-amber-500 uppercase font-black">Boja Akcenta: <input type="color" value={saas.ui.boja_akcenta} onChange={e => saas.setUi({ ...saas.ui, boja_akcenta: e.target.value })} className="w-full h-10 mt-1 cursor-pointer rounded bg-transparent" /></label>
                     </div>
                 </div>
             )}
@@ -419,8 +421,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             {pregledNaloga && (
                 <div className="fixed inset-0 z-[10000] bg-[#090e17]/95 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
                     <div className="bg-theme-card border-2 border-blue-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(59,130,246,0.5)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col relative mt-10 md:mt-0">
-                        <button onClick={() => setPregledNaloga(null)} className="absolute top-2 right-2 md:top-4 md:right-4 bg-slate-800 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50"><X size={18}/></button>
-                        
+                        <button onClick={() => setPregledNaloga(null)} className="absolute top-2 right-2 md:top-4 md:right-4 bg-slate-800 w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 transition-colors z-50"><X size={18} /></button>
+
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start border-b border-theme-border pb-4 mb-4 gap-2">
                             <div>
                                 <h3 className="text-blue-400 font-black uppercase text-[10px] md:text-xs tracking-widest mb-1">Detalji Radnog Naloga</h3>
@@ -431,7 +433,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                 <span className={`text-[9px] md:text-[10px] px-2 md:px-3 py-1 md:py-1.5 rounded-lg font-black uppercase tracking-widest ${parseLocalIsoDate(pregledNaloga.rok_isporuke) <= DaniUSedmici[6].datum ? 'bg-red-900/30 text-red-400 border border-red-500/30' : 'bg-slate-800 text-slate-300'}`}>Rok: {formatirajDatumBezPomaka(pregledNaloga.rok_isporuke)}</span>
                             </div>
                         </div>
-                        
+
                         <div className="flex-1 overflow-y-auto pr-1 md:pr-2 custom-scrollbar">
                             <p className="text-[9px] md:text-[10px] text-slate-500 uppercase font-black mb-3">Stavke na čekanju za mašinu: <span className="text-amber-400">{odabranaMasina}</span></p>
                             <div className="space-y-2 md:space-y-3">
@@ -469,7 +471,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
             {planiranjeModal && !isReadOnly && (
                 <div className="fixed inset-0 z-[9999] bg-[#090e17]/90 flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in zoom-in-95">
                     <div className="bg-theme-card border-2 border-amber-500 p-4 md:p-8 rounded-2xl md:rounded-[2rem] shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-2xl w-full max-h-[95vh] md:max-h-[90vh] flex flex-col mt-10 md:mt-0 relative">
-                        <button onClick={() => setPlaniranjeModal(null)} className="absolute top-2 right-2 md:hidden bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 z-50"><X size={16}/></button>
+                        <button onClick={() => setPlaniranjeModal(null)} className="absolute top-2 right-2 md:hidden bg-slate-800 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-red-500 z-50"><X size={16} /></button>
 
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start border-b border-theme-border pb-4 mb-4 gap-4">
                             <div>
@@ -479,12 +481,12 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             </div>
                             <div className="w-full sm:w-auto bg-amber-900/10 border border-amber-500/30 p-2 md:p-3 rounded-xl shadow-inner">
                                 <label className="text-[9px] md:text-[10px] text-amber-500 uppercase font-black block mb-1 md:mb-2">Odaberi Datum</label>
-                                <input type="date" min={danasnjiDatum} value={planiranjeModal.datum} onChange={e => setPlaniranjeModal({...planiranjeModal, datum: e.target.value})} className="w-full p-2 md:p-3 bg-theme-panel text-amber-400 rounded-lg outline-none border border-amber-500/50 focus:border-amber-400 font-black text-xs md:text-sm uppercase cursor-pointer" />
+                                <input type="date" min={danasnjiDatum} value={planiranjeModal.datum} onChange={e => setPlaniranjeModal({ ...planiranjeModal, datum: e.target.value })} className="w-full p-2 md:p-3 bg-theme-panel text-amber-400 rounded-lg outline-none border border-amber-500/50 focus:border-amber-400 font-black text-xs md:text-sm uppercase cursor-pointer" />
                             </div>
                         </div>
-                        
+
                         <p className="text-[9px] md:text-[10px] text-slate-400 uppercase font-black mb-2 md:mb-3 border-b border-theme-border/50 pb-2">Stavke za mašinu (odčekirajte šta nećete):</p>
-                        
+
                         <div className="flex-1 overflow-y-auto pr-1 md:pr-2 custom-scrollbar space-y-2 md:space-y-3 mb-4 md:mb-6">
                             {stavkeZaPlaniranje.map(st => (
                                 <div key={st.id} className={`p-3 md:p-4 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm ${st.checked ? 'bg-theme-panel border-amber-500/50' : 'bg-black/40 border-slate-800 opacity-50'}`}>
@@ -516,61 +518,60 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-<div className="flex flex-wrap justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 shrink-0 w-full max-w-full overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
+            <div className="flex flex-wrap justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 shrink-0 w-full max-w-full overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                 <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-amber-500 font-black tracking-widest uppercase text-xs md:text-sm flex items-center gap-2 truncate"><span>📅</span> Planer Proizvodnje (Dimenzije u cm)</h2>
                 </div>
-                
+
                 <div className="flex flex-wrap w-full xl:w-auto items-center justify-end gap-2 sm:gap-3 min-w-0">
                     <div className="flex items-center justify-between bg-theme-panel rounded-xl border border-theme-border p-1 shadow-inner shrink-0">
-                        <button onClick={()=>shiftWeek(-1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronLeft size={16}/></button>
+                        <button onClick={() => shiftWeek(-1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronLeft size={16} /></button>
                         <span className="px-2 text-[9px] md:text-[10px] font-black uppercase text-amber-400 text-center whitespace-nowrap">{DaniUSedmici[0].iso.substring(5)} do {DaniUSedmici[6].iso.substring(5)}</span>
-                        <button onClick={()=>shiftWeek(1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronRight size={16}/></button>
+                        <button onClick={() => shiftWeek(1)} className="px-2.5 py-1.5 hover:bg-slate-700 rounded-lg text-theme-text font-black"><ChevronRight size={16} /></button>
                     </div>
 
-                    <select value={odabranaMasina} onChange={e => {setOdabranaMasina(e.target.value); setKapacitetMasine(parseFloat(masine.find(m=>m.naziv===e.target.value)?.dnevni_kapacitet_m3)||30); }} className="flex-1 sm:flex-initial max-w-full sm:max-w-[260px] min-w-0 bg-theme-panel text-theme-text px-3 py-2 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
+                    <select value={odabranaMasina} onChange={e => { setOdabranaMasina(e.target.value); setKapacitetMasine(parseFloat(masine.find(m => m.naziv === e.target.value)?.dnevni_kapacitet_m3) || 30); }} className="flex-1 sm:flex-initial max-w-full sm:max-w-[260px] min-w-0 bg-theme-panel text-theme-text px-3 py-2 rounded-xl text-[10px] md:text-xs font-black uppercase outline-none border border-theme-border shadow-inner focus:border-amber-500 cursor-pointer truncate">
                         {masine.map(m => <option key={m.naziv} value={m.naziv}>{m.naziv} (Kapacitet: {m.dnevni_kapacitet_m3}m³)</option>)}
                     </select>
                 </div>
             </div>
 
             <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-[550px]">
-                
+
                 <div className="w-full lg:w-[350px] max-h-[45vh] lg:max-h-[75vh] bg-theme-card backdrop-blur-[var(--glass-blur)] border border-theme-border rounded-xl md:rounded-2xl flex flex-col shadow-2xl shrink-0" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                     <div className="p-3 md:p-4 border-b border-theme-border bg-theme-card/90 sticky top-0 z-10 rounded-t-2xl">
                         <h3 className="text-[10px] md:text-xs text-slate-400 font-black uppercase tracking-widest flex justify-between items-center">
                             Neraspoređeno <span className="bg-theme-panel px-2 py-0.5 rounded text-theme-text">{nerasporedjeniNalozi.length}</span>
                         </h3>
                     </div>
-                    
+
                     <div className="flex-1 overflow-y-auto p-2 md:p-3 space-y-2 md:space-y-3 custom-scrollbar">
                         {loading && <div className="text-center text-amber-500 text-[10px] md:text-xs animate-pulse p-4 font-black">Učitavam...</div>}
                         {!loading && nerasporedjeniNalozi.length === 0 && <div className="text-center text-slate-500 text-[9px] md:text-[10px] p-4 border border-dashed border-theme-border rounded-xl font-bold mt-2">Nema neraspoređenih naloga!</div>}
-                        
+
                         {!loading && nerasporedjeniNalozi.map((rn) => {
                             const isHitno = parseLocalIsoDate(rn.rok_isporuke) <= DaniUSedmici[6].datum;
                             const preostaloM3 = rn.stavkeZaPlaniranje.reduce((s, st) => s + parseFloat(st.preostalo), 0).toFixed(2);
                             const preporuceniDatum = izracunajPreporuku(rn.rok_isporuke);
-                            const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${String(preporuceniDatum.getDate()).padStart(2,'0')}.${String(preporuceniDatum.getMonth()+1).padStart(2,'0')}.)`;
+                            const preporukaText = `${imenaDanaBHS[preporuceniDatum.getDay()]} (${String(preporuceniDatum.getDate()).padStart(2, '0')}.${String(preporuceniDatum.getMonth() + 1).padStart(2, '0')}.)`;
 
                             return (
-                                <div 
+                                <div
                                     id={`rn_card_${rn.id}`}
-                                    key={rn.id} 
+                                    key={rn.id}
                                     draggable={!isReadOnly}
                                     onDragStart={(e) => !isReadOnly && handleDragStart(e, rn)}
-                                    className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all group ${
-                                        highlightedRN === rn.id 
-                                        ? 'bg-amber-900/40 border-2 border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.6)] animate-pulse scale-[1.02] z-50 relative' 
-                                        : 'bg-theme-panel border ' + (isHitno ? 'border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'border-theme-border') + ' ' + (!isReadOnly ? 'cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800/60' : 'opacity-90')
-                                    }`}
+                                    className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all group ${highlightedRN === rn.id
+                                            ? 'bg-amber-900/40 border-2 border-amber-500 shadow-[0_0_30px_rgba(245,158,11,0.6)] animate-pulse scale-[1.02] z-50 relative'
+                                            : 'bg-theme-panel border ' + (isHitno ? 'border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.1)]' : 'border-theme-border') + ' ' + (!isReadOnly ? 'cursor-grab active:cursor-grabbing hover:border-blue-500/50 hover:bg-slate-800/60' : 'opacity-90')
+                                        }`}
                                 >
                                     <div className="flex justify-between items-start mb-2 gap-2">
                                         <span className="text-[10px] md:text-[11px] text-blue-400 font-black uppercase bg-blue-900/20 px-2 py-0.5 md:py-1 rounded border border-blue-500/30 truncate">{rn.id}</span>
                                         <span className={`text-[8px] md:text-[9px] font-black uppercase px-2 py-0.5 md:py-1 rounded whitespace-nowrap ${isHitno ? 'bg-rose-900/30 text-rose-400' : 'bg-theme-card text-slate-400 border border-theme-border'}`}>Rok: {formatirajDatumBezPomaka(rn.rok_isporuke)}</span>
                                     </div>
                                     <p className="text-theme-text text-xs md:text-sm font-bold uppercase truncate">{rn.kupac_naziv}</p>
-                                    
+
                                     <div className="mt-2 md:mt-4 flex justify-between items-center border-t border-theme-border/50 pt-2 md:pt-3">
                                         <span className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-widest">Stavki: <span className="text-theme-text">{rn.stavkeZaPlaniranje.length}</span></span>
                                         <span className="text-sm md:text-xl text-emerald-400 font-black bg-emerald-900/10 px-2 md:px-3 py-0.5 md:py-1 rounded-lg border border-emerald-500/20 shadow-sm">{preostaloM3} <span className="text-[8px] md:text-[10px] text-emerald-600">m³</span></span>
@@ -582,7 +583,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                             <span className="text-[9px] md:text-[10px] text-white font-bold bg-blue-600/40 px-1.5 md:px-2 py-0.5 rounded">{preporukaText}</span>
                                         </div>
                                     )}
-                                    
+
                                     <div className="mt-2 md:mt-3 flex gap-2">
                                         <button onClick={() => setPregledNaloga(rn)} className="flex-[1] bg-theme-card text-blue-400 py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase border border-theme-border hover:bg-slate-700 hover:text-white transition-colors">👁️ Detalji</button>
                                         {!isReadOnly && <button onClick={() => otvoriPlaniranjeModal(rn)} className="flex-[2] bg-amber-600 text-white py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase hover:bg-amber-500 transition-colors shadow-md">📅 Zakaži</button>}
@@ -601,7 +602,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                         const procenat = Math.min(100, (ukupnoDanas / kapacitetMasine) * 100);
 
                         return (
-                            <div 
+                            <div
                                 key={dan.iso}
                                 onDragOver={!isReadOnly ? handleDragOver : undefined}
                                 onDragLeave={!isReadOnly ? handleDragLeave : undefined}
@@ -610,8 +611,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             >
                                 <div className="p-2 md:p-3 border-b border-theme-border/50 text-center shrink-0 bg-theme-panel/50 sticky top-0 z-10 backdrop-blur-md">
                                     <h4 className="text-[9px] md:text-[10px] text-slate-400 uppercase font-black tracking-widest">{dan.ime}</h4>
-                                    <h3 className={`text-sm md:text-base font-black mt-0.5 md:mt-1 ${dan.iso === danasnjiDatum ? 'text-blue-400' : 'text-theme-text'}`}>{String(dan.datum.getDate()).padStart(2,'0')}.{String(dan.datum.getMonth()+1).padStart(2,'0')}.</h3>
-                                    
+                                    <h3 className={`text-sm md:text-base font-black mt-0.5 md:mt-1 ${dan.iso === danasnjiDatum ? 'text-blue-400' : 'text-theme-text'}`}>{String(dan.datum.getDate()).padStart(2, '0')}.{String(dan.datum.getMonth() + 1).padStart(2, '0')}.</h3>
+
                                     <div className="mt-2 bg-black/30 p-1.5 md:p-2 rounded-lg md:rounded-xl border border-theme-border/50 shadow-inner">
                                         <div className="flex justify-between text-[7px] md:text-[8px] font-black uppercase mb-1">
                                             <span className={isPrekoKapaciteta ? 'text-red-400' : 'text-emerald-400'}>{ukupnoDanas.toFixed(2)} m³ Rezervisano</span>
@@ -631,7 +632,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                         const proizvedeno = parseFloat(st.proizvedeno_m3 || 0);
                                         const ukupniBlok = plan + proizvedeno;
                                         const procenatBloka = ukupniBlok > 0 ? Math.round((proizvedeno / ukupniBlok) * 100) : 0;
-                                        
+
                                         const jeZavrseno = st.status === 'ZAVRŠENO' || procenatBloka >= 100;
 
                                         return (
@@ -640,13 +641,13 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                                                     <span className="text-[8px] md:text-[10px] text-blue-300 uppercase font-black bg-blue-900/20 px-2 py-0.5 rounded border border-blue-500/30 truncate max-w-[80%]">{st.rn_id}</span>
                                                     {!isReadOnly && <button onClick={(e) => obrisiIzPlana(st.id, e)} className="text-red-500 bg-red-900/30 w-6 h-6 flex items-center justify-center rounded-md text-[10px] transition-opacity font-black hover:bg-red-500 hover:text-white shrink-0">✕</button>}
                                                 </div>
-                                                
+
                                                 {dijeljen && <span className="text-[7px] md:text-[8px] bg-amber-900/40 text-amber-400 px-1.5 md:px-2 py-0.5 rounded uppercase font-black border border-amber-500/30 mb-1 md:mb-2 inline-block">✂️ DIJELJEN NALOG</span>}
-                                                
+
                                                 <p className="text-[10px] md:text-[11px] text-theme-text font-black uppercase leading-tight truncate mb-1" title={st.proizvod_naziv}>
                                                     <span className="text-amber-500">{st.dimenzije || 'N/A'} cm</span> <span className="opacity-50 mx-1">|</span> {st.proizvod_naziv}
                                                 </p>
-                                                
+
                                                 <div className="mt-3 bg-black/40 p-1.5 rounded-lg border border-slate-700/50">
                                                     <div className="flex justify-between text-[7px] md:text-[8px] text-slate-400 uppercase font-black mb-1">
                                                         <span>{proizvedeno.toFixed(2)} m³ ODRADIO</span>

@@ -119,18 +119,32 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
         const dStart = new Date(zapis.vrijeme_dolaska);
         const dEnd = new Date(zapis.vrijeme_odlaska);
-        
+        const stvarnoTrajanjeSati = Math.max(0, (dEnd - dStart) / 3600000);
+
         const [hStart, mStart] = pocetakSmjene.split(':');
         const [hEnd, mEnd] = krajSmjene.split(':');
-        
-        let officialStart = new Date(dStart); officialStart.setHours(parseInt(hStart), parseInt(mStart), 0);
-        let officialEnd = new Date(dStart); officialEnd.setHours(parseInt(hEnd), parseInt(mEnd), 0);
+
+        let officialStart = new Date(dStart); officialStart.setHours(parseInt(hStart), parseInt(mStart), 0, 0);
+        let officialEnd = new Date(dStart); officialEnd.setHours(parseInt(hEnd), parseInt(mEnd), 0, 0);
+
+        // Podrška za noćnu smjenu koja prelazi ponoć (npr. 22:00 -> 06:00)
+        const jeNocnaSmjena = officialEnd <= officialStart;
+        if (jeNocnaSmjena) {
+            officialEnd.setDate(officialEnd.getDate() + 1);
+        }
+
+        // Ako je stvarni dolazak/odlazak potpuno van dnevne smjene ali traje (npr. radnik radio 3. smjenu uz dnevne postavke)
+        const prelaziPonoc = dEnd.getDate() !== dStart.getDate() || dEnd.getMonth() !== dStart.getMonth() || dEnd.getFullYear() !== dStart.getFullYear();
 
         let kasnjenjeMin = 0; let ranijiIzlazakMin = 0;
         let radniSatiDec = 0;
 
         if (dStart >= officialEnd || dEnd <= officialStart) {
-            radniSatiDec = 0; kasnjenjeMin = 0; ranijiIzlazakMin = 0;
+            if (prelaziPonoc && stvarnoTrajanjeSati > 0) {
+                radniSatiDec = stvarnoTrajanjeSati;
+            } else {
+                radniSatiDec = 0;
+            }
         } else {
             let obracunskiStart = new Date(dStart); let obracunskiEnd = new Date(dEnd);
             if (dStart < officialStart) { obracunskiStart = officialStart; }
@@ -144,12 +158,14 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
 
         await supabase.from('radni_sati').update({ obracunato_sati: radniSatiDec.toFixed(2), kasnjenje_min: kasnjenjeMin, raniji_izlazak_min: ranijiIzlazakMin }).eq('id', zapis.id);
         loadAll();
-        prikaziDialog({ tip: 'uspjeh', naslov: 'Uspješan obračun', poruka: `Sistem je ponovo izračunao sate za radnika ${zapis.radnik_ime}.`, onCancel: zatvoriDialog });
+        toast.success(`Obračunati sati za radnika ${zapis.radnik_ime}: ${radniSatiDec.toFixed(2)} h`);
     };
 
     const otvoriModalUredi = (zapis) => {
         setModalUredi(zapis);
-        const stvarni = (new Date(zapis.vrijeme_odlaska) - new Date(zapis.vrijeme_dolaska)) / 3600000;
+        const stvarni = (zapis.vrijeme_dolaska && zapis.vrijeme_odlaska)
+            ? (new Date(zapis.vrijeme_odlaska) - new Date(zapis.vrijeme_dolaska)) / 3600000
+            : 0;
         setStvarniSati(stvarni > 0 ? stvarni : 0);
         setEditSati(zapis.obracunato_sati || 0); setEditPrekovremeno((zapis.prekovremeno_min || 0) / 60); setEditKasnjenje(zapis.kasnjenje_min || 0); setEditRanije(zapis.raniji_izlazak_min || 0);
     };
@@ -190,16 +206,35 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             tip: status === 'ODOBRENO' ? 'info' : 'upozorenje', naslov: 'Obrada Zahtjeva', poruka,
             confirmText: '✅ POTVRDI', cancelText: '✕ ODUSTANI',
             onConfirm: async () => {
-                await supabase.from('zahtjevi_odsustva').update({ status, inicijativa, odobrio_korisnik: user?.ime_prezime }).eq('id', z.id);
+                // Atomična provjera statusa 'NA ČEKANJU' sprječava duplo skidanje kvote
+                const { data: azuriran, error: errZ } = await supabase
+                    .from('zahtjevi_odsustva')
+                    .update({ status, inicijativa, odobrio_korisnik: user?.ime_prezime })
+                    .eq('id', z.id)
+                    .eq('status', 'NA ČEKANJU')
+                    .select('id');
+
+                if (errZ) {
+                    zatvoriDialog();
+                    return toast.error("Greška pri obradi zahtjeva: " + errZ.message);
+                }
+                if (!azuriran || azuriran.length === 0) {
+                    zatvoriDialog();
+                    await loadAll();
+                    return toast.warning("Ovaj zahtjev je već obrađen.");
+                }
+
                 if (status === 'ODOBRENO' && z.tip_odsustva === 'GODIŠNJI') {
-                    const radnik = radnici.find(r => r.ime_prezime === z.radnik_ime);
+                    const { data: svjezRadnik } = await supabase.from('radnici').select('id, godisnji_ukupno, preostalo_godisnjeg, godisnji_iskoristeno_radnik, godisnji_iskoristeno_poslodavac').eq('ime_prezime', z.radnik_ime).maybeSingle();
+                    const radnik = svjezRadnik || radnici.find(r => r.ime_prezime === z.radnik_ime);
                     if (radnik) {
                         const poljeUpdate = inicijativa === 'RADNIK' ? 'godisnji_iskoristeno_radnik' : 'godisnji_iskoristeno_poslodavac';
-                        const novaKvota = (radnik[poljeUpdate] || 0) + (parseInt(z.broj_radnih_dana) || 0);
-                        const ukupno = radnik.godisnji_ukupno || 20;
+                        const dana = parseInt(z.broj_radnih_dana) || 0;
+                        const novaKvota = (radnik[poljeUpdate] || 0) + dana;
                         const drugoPolje = inicijativa === 'RADNIK' ? (radnik.godisnji_iskoristeno_poslodavac || 0) : (radnik.godisnji_iskoristeno_radnik || 0);
+                        const ukupno = radnik.godisnji_ukupno ?? ((radnik.preostalo_godisnjeg ?? 20) + (radnik.godisnji_iskoristeno_radnik || 0) + (radnik.godisnji_iskoristeno_poslodavac || 0));
                         const preostalo = Math.max(0, ukupno - novaKvota - drugoPolje);
-                        await supabase.from('radnici').update({ [poljeUpdate]: novaKvota, preostalo_godisnjeg: preostalo }).eq('id', radnik.id);
+                        await supabase.from('radnici').update({ [poljeUpdate]: novaKvota, godisnji_ukupno: ukupno, preostalo_godisnjeg: preostalo }).eq('id', radnik.id);
                     }
                 }
                 setSelektovaniZahtjev(null); await loadAll(); zatvoriDialog();
@@ -215,29 +250,40 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             return toast.error("Greška: Krajnji datum izostanka (Do Datuma) ne može biti prije početnog datuma (Od Datuma)!");
         }
 
+        const izuzeciMapa = {};
+        (praznici || []).forEach(p => { if (p.datum) izuzeciMapa[p.datum] = p.je_radni_dan; });
+
         const startD = parseISODateLocal(formaUpis.datum_od);
         const endD = parseISODateLocal(formaUpis.datum_do);
         let brojDana = 0;
         for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+            const iso = formatLocalISODate(d);
             const day = d.getDay();
-            if (day !== 0 && day !== 6) brojDana++;
+            if (izuzeciMapa[iso] !== undefined) {
+                if (izuzeciMapa[iso] === true || izuzeciMapa[iso] === 'true' || izuzeciMapa[iso] === 1) brojDana++;
+            } else {
+                if (day !== 0 && day !== 6) brojDana++;
+            }
         }
-        if (brojDana <= 0) brojDana = 1;
+        if (brojDana <= 0) {
+            return toast.warning("Odabrani period sadrži samo neradne dane/praznike (0 radnih dana).");
+        }
 
-        // Provjeri da li već postoji identičan ili preklapajući zapis istog tipa za ovog radnika
-        const postojeciDuplikat = zahtjevi.find(z =>
+        const postojeciPreklop = zahtjevi.find(z =>
             z.radnik_ime === odabraniRadnik.ime_prezime &&
             z.status === 'ODOBRENO' &&
             z.tip_odsustva === formaUpis.tip_odsustva &&
-            z.datum_od === formaUpis.datum_od &&
-            z.datum_do === formaUpis.datum_do
+            z.datum_od <= formaUpis.datum_do &&
+            z.datum_do >= formaUpis.datum_od
         );
 
-        if (postojeciDuplikat) {
+        if (postojeciPreklop && postojeciPreklop.datum_od === formaUpis.datum_od && postojeciPreklop.datum_do === formaUpis.datum_do) {
             await supabase.from('zahtjevi_odsustva').update({
                 razlog: formaUpis.razlog,
                 broj_radnih_dana: brojDana
-            }).eq('id', postojeciDuplikat.id);
+            }).eq('id', postojeciPreklop.id);
+        } else if (postojeciPreklop) {
+            return toast.warning(`Već postoji odobreno odsustvo (${postojeciPreklop.datum_od} → ${postojeciPreklop.datum_do}) koje se preklapa sa odabranim periodom!`);
         } else {
             const payload = {
                 radnik_ime: odabraniRadnik.ime_prezime,
@@ -254,15 +300,17 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
             if (error) return toast.error("Greška: " + error.message);
         }
 
+        setFormaUpis({ tip_odsustva: 'BOLOVANJE', datum_od: '', datum_do: '', razlog: '' });
         setShowRucniUpis(false);
-        toast.success(`Izostanak za radnika ${odabraniRadnik.ime_prezime} je uspješno zaveden!`);
+        toast.success(`Izostanak (${brojDana} radnih dana) za radnika ${odabraniRadnik.ime_prezime} je uspješno zaveden!`);
         await loadAll();
     };
 
     const dodajPraznik = async () => {
         if (!formaPraznik.datum || !formaPraznik.naziv) return toast.warning("Unesite datum i naziv praznika/izuzetka!");
-        await supabase.from('kalendar_izuzeci').insert([formaPraznik]); 
-        setFormaPraznik({ datum: '', naziv: '', je_radni_dan: false }); 
+        const { error } = await supabase.from('kalendar_izuzeci').upsert([formaPraznik], { onConflict: 'datum' });
+        if (error) return toast.error("Greška pri snimanju izuzetka: " + error.message);
+        setFormaPraznik({ datum: '', naziv: '', je_radni_dan: false });
         toast.success("Izuzetak je dodan u kalendar!");
         loadAll();
     };
@@ -290,47 +338,47 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
     const generisiSubote = async (tip) => {
         if (!datumGenOd) return toast.warning("Odaberite datum od kojeg pravilo važi!");
 
-        const startObj = new Date(datumGenOd);
+        const startObj = parseISODateLocal(datumGenOd);
         const godina = startObj.getFullYear();
         let zaUbaciti = [];
+        let globalCounterSubota = 0;
 
         for (let m = startObj.getMonth(); m < 12; m++) {
-            let prvaSubotaNadjen = false; 
-            let counterSubota = 0;
-            
+            let prvaSubotaNadjen = false;
+
             for (let d = 1; d <= 31; d++) {
                 const dateObj = new Date(godina, m, d);
-                if (dateObj.getMonth() !== m) break; 
+                if (dateObj.getMonth() !== m) break;
                 if (dateObj < startObj) continue;
 
                 if (dateObj.getDay() === 6) {
-                    counterSubota++;
-                    const iso = formatLocalISODate(dateObj); 
-                    
+                    globalCounterSubota++;
+                    const iso = formatLocalISODate(dateObj);
+
                     if (tip === 'SVE') {
                         zaUbaciti.push({ datum: iso, naziv: 'Radna Subota', je_radni_dan: true });
-                    } 
-                    else if (tip === 'PRVA' && !prvaSubotaNadjen) { 
-                        zaUbaciti.push({ datum: iso, naziv: 'Radna Subota (Prva)', je_radni_dan: true }); 
-                        prvaSubotaNadjen = true; 
-                    } 
-                    else if (tip === 'DRUGA' && counterSubota % 2 !== 0) { 
-                        zaUbaciti.push({ datum: iso, naziv: 'Radna Subota (Svaka druga)', je_radni_dan: true }); 
+                    }
+                    else if (tip === 'PRVA' && !prvaSubotaNadjen) {
+                        zaUbaciti.push({ datum: iso, naziv: 'Radna Subota (Prva)', je_radni_dan: true });
+                        prvaSubotaNadjen = true;
+                    }
+                    else if (tip === 'DRUGA' && globalCounterSubota % 2 !== 0) {
+                        zaUbaciti.push({ datum: iso, naziv: 'Radna Subota (Svaka druga)', je_radni_dan: true });
                     }
                 }
             }
         }
-        
+
         prikaziDialog({
-            tip: 'info', naslov: 'Automatski Kalendar', 
-            poruka: `Pronađeno je ${zaUbaciti.length} subota od ${new Date(datumGenOd).toLocaleDateString('bs-BA')} do kraja godine.\n\nPAŽNJA: Ovo će izbrisati sve stare automatske subote iz ovog perioda kako se ne bi duplale. Nastaviti?`,
+            tip: 'info', naslov: 'Automatski Kalendar',
+            poruka: `Pronađeno je ${zaUbaciti.length} subota od ${prikazDatumaBHS(datumGenOd)} do kraja godine.\n\nPAŽNJA: Ovo će izbrisati sve stare automatske radne subote iz ovog perioda kako se ne bi duplale. Nastaviti?`,
             confirmText: '✅ PRIMIJENI', cancelText: '✕ ODUSTANI',
-            onConfirm: async () => { 
-                await supabase.from('kalendar_izuzeci').delete().gte('datum', datumGenOd).ilike('naziv', '%Subota%');
-                if(zaUbaciti.length > 0) await supabase.from('kalendar_izuzeci').upsert(zaUbaciti); 
-                loadAll(); zatvoriDialog(); 
+            onConfirm: async () => {
+                await supabase.from('kalendar_izuzeci').delete().gte('datum', datumGenOd).ilike('naziv', 'Radna Subota%');
+                if (zaUbaciti.length > 0) await supabase.from('kalendar_izuzeci').upsert(zaUbaciti);
+                loadAll(); zatvoriDialog();
                 toast.success("Kalendar radnih subota je uspješno generisan!");
-            }, 
+            },
             onCancel: zatvoriDialog
         });
     };
@@ -397,7 +445,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                             <div className="text-right"><p className="text-slate-400 text-[10px] uppercase">Datum:</p><p className="text-theme-text font-black text-sm">{prikazDatumaBHS(modalUredi.datum)}</p></div>                        </div>
 
                         <div className="bg-blue-900/10 border border-blue-500/30 p-4 rounded-xl mb-6 flex justify-between items-center shadow-inner">
-                            <div><p className="text-[10px] text-blue-400 uppercase font-black tracking-widest mb-1">Stvarno vrijeme na poslu:</p><p className="text-sm text-slate-300">Od: <span className="text-theme-text">{new Date(modalUredi.vrijeme_dolaska).toLocaleTimeString('de-DE')}</span> do <span className="text-theme-text">{new Date(modalUredi.vrijeme_odlaska).toLocaleTimeString('de-DE')}</span></p></div>
+                            <div><p className="text-[10px] text-blue-400 uppercase font-black tracking-widest mb-1">Stvarno vrijeme na poslu:</p><p className="text-sm text-theme-muted">Od: <span className="text-theme-text">{modalUredi.vrijeme_dolaska ? new Date(modalUredi.vrijeme_dolaska).toLocaleTimeString('de-DE') : '-'}</span> do <span className="text-theme-text">{modalUredi.vrijeme_odlaska ? new Date(modalUredi.vrijeme_odlaska).toLocaleTimeString('de-DE') : 'NA POSLU'}</span></p></div>
                             <div className="text-right"><p className="text-2xl text-blue-400 font-black">{stvarniSati.toFixed(2)} <span className="text-xs">h</span></p></div>
                         </div>
 
@@ -466,7 +514,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                             {zahtjevi.filter(z => z.status === 'NA ČEKANJU').map(z => {
                                 const isSel = selektovaniZahtjev?.id === z.id;
                                 return (
-                                    <div key={z.id} onClick={() => {setSelektovaniZahtjev(z); setTrenutniMjesecKalendara(nparseISODateLocal(z.datum_od)); setPrikazKalendara('MJESEC');}} className={`p-3 md:p-4 rounded-xl md:rounded-2xl cursor-pointer transition-all border shadow-sm ${isSel ? 'bg-amber-900/10 border-amber-500/50' : 'bg-theme-panel border-theme-border hover:border-amber-500/30'}`}>
+                                    <div key={z.id} onClick={() => { setSelektovaniZahtjev(z); setTrenutniMjesecKalendara(parseISODateLocal(z.datum_od)); setPrikazKalendara('MJESEC'); }} className={`p-3 md:p-4 rounded-xl md:rounded-2xl cursor-pointer transition-all border shadow-sm ${isSel ? 'bg-amber-900/10 border-amber-500/50' : 'bg-theme-panel border-theme-border hover:border-amber-500/30'}`}>
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
                                             <span className="text-xs font-black text-theme-text uppercase">{z.radnik_ime}</span><span className="text-[8px] md:text-[9px] bg-blue-900/30 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-black w-fit">{z.tip_odsustva}</span>
                                         </div>
@@ -475,10 +523,10 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                             <div className="mt-3 md:mt-4 pt-2 md:pt-3 border-t border-theme-border/50">
                                                 <p className="text-[8px] md:text-[9px] text-slate-400 uppercase font-black mb-2">Čija je inicijativa?</p>
                                                 <div className="flex gap-2 mb-2">
-                                                    <button onClick={() => obradiZahtjevOdmor(z, 'ODOBRENO', 'RADNIK')} className="flex-1 bg-emerald-900/30 hover:bg-emerald-600 text-emerald-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-emerald-500/30 transition-all">✅ Radnik</button>
-                                                    <button onClick={() => obradiZahtjevOdmor(z, 'ODOBRENO', 'POSLODAVAC')} className="flex-1 bg-amber-900/30 hover:bg-amber-600 text-amber-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-amber-500/30 transition-all">✅ Poslodavac</button>
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); obradiZahtjevOdmor(z, 'ODOBRENO', 'RADNIK'); }} className="flex-1 bg-emerald-900/30 hover:bg-emerald-600 text-emerald-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-emerald-500/30 transition-all">✅ Radnik</button>
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); obradiZahtjevOdmor(z, 'ODOBRENO', 'POSLODAVAC'); }} className="flex-1 bg-amber-900/30 hover:bg-amber-600 text-amber-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-amber-500/30 transition-all">✅ Poslodavac</button>
                                                 </div>
-                                                <button onClick={() => obradiZahtjevOdmor(z, 'ODBIJENO', 'N/A')} className="w-full bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-red-500/30 transition-all">✕ ODBIJ</button>
+                                                <button type="button" onClick={(e) => { e.stopPropagation(); obradiZahtjevOdmor(z, 'ODBIJENO', 'N/A'); }} className="w-full bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white px-2 py-1.5 md:py-2 rounded-lg text-[8px] md:text-[9px] font-black uppercase border border-red-500/30 transition-all">✕ ODBIJ</button>
                                             </div>
                                         )}
                                     </div>
@@ -593,24 +641,32 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                 ukupnoSatiMjesec += (h + prek);
                                 if (z.datum) unikatniDaniPrisustva.add(z.datum);
                             });
-                            const ukupnoRadnihDana = Math.max(unikatniDaniPrisustva.size, mjesecniZapis.length);
+                            const ukupnoRadnihDana = unikatniDaniPrisustva.size;
                             
-                            const kvotaUkupno = odabraniRadnik.godisnji_ukupno || 20;
                             const kvotaRadnik = odabraniRadnik.godisnji_iskoristeno_radnik || 0;
                             const kvotaFirma = odabraniRadnik.godisnji_iskoristeno_poslodavac || 0;
-                            const kvotaOstalo = kvotaUkupno - kvotaRadnik - kvotaFirma;
+                            const kvotaUkupno = odabraniRadnik.godisnji_ukupno ?? ((odabraniRadnik.preostalo_godisnjeg ?? 20) + kvotaRadnik + kvotaFirma);
+                            const kvotaOstalo = Math.max(0, kvotaUkupno - kvotaRadnik - kvotaFirma);
 
                             const svaOdsustva = zahtjevi.filter(z => z.radnik_ime === odabraniRadnik.ime_prezime && z.status === 'ODOBRENO');
                             
-                            // Brojanje unikatnih radnih dana za bolovanje i neopravdano (sprječava duplo brojanje ako se isti datum unese 2 puta!)
+                            const izuzeciKalendarMapa = {};
+                            (praznici || []).forEach(p => { if (p.datum) izuzeciKalendarMapa[p.datum] = p.je_radni_dan; });
+
+                            // Brojanje unikatnih radnih dana za bolovanje i neopravdano uz poštivanje praznika i radnih subota
                             const izracunajUnikatneDaneZaTip = (tip) => {
                                 const daniSet = new Set();
                                 svaOdsustva.filter(z => z.tip_odsustva === tip).forEach(z => {
                                     const sD = parseISODateLocal(z.datum_od);
                                     const eD = parseISODateLocal(z.datum_do);
                                     for (let d = new Date(sD); d <= eD; d.setDate(d.getDate() + 1)) {
-                                        if (d.getDay() !== 0 && d.getDay() !== 6) {
-                                            daniSet.add(formatLocalISODate(d));
+                                        const iso = formatLocalISODate(d);
+                                        if (izuzeciKalendarMapa[iso] !== undefined) {
+                                            if (izuzeciKalendarMapa[iso] === true || izuzeciKalendarMapa[iso] === 'true' || izuzeciKalendarMapa[iso] === 1) {
+                                                daniSet.add(iso);
+                                            }
+                                        } else if (d.getDay() !== 0 && d.getDay() !== 6) {
+                                            daniSet.add(iso);
                                         }
                                     }
                                 });
