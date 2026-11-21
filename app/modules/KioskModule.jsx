@@ -425,7 +425,7 @@ export default function KioskModule() {
             )}
 
             {radnikProfil && (
-                <div className="fixed inset-0 z-[99995] bg-black/95 flex items-start sm:items-center justify-center p-2 sm:p-4 pt-4 backdrop-blur-xl animate-in zoom-in-95 overflow-y-auto">
+                <div className="fixed inset-0 z-[99995] bg-black/95 flex items-start sm:items-center justify-center p-2 sm:p-4 pt-20 sm:pt-4 backdrop-blur-xl animate-in zoom-in-95 overflow-y-auto">
                     <div className="bg-theme-card border-2 border-blue-500 p-5 md:p-10 rounded-[2rem] shadow-[0_0_80px_rgba(59,130,246,0.3)] max-w-3xl w-full flex flex-col relative max-h-[calc(100dvh-1.5rem)] overflow-y-auto my-auto">
                         <button onClick={zatvoriSveModale} aria-label="Zatvori profil" className="sticky top-0 self-end bg-slate-800 w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-red-500 transition-colors z-50 shadow-lg shrink-0 -mb-6"><X size={22}/></button>
                         

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, History, CheckCircle2, XCircle, ExternalLink, ShieldCheck, Clock, User, AlertTriangle, Bell, FileSearch } from 'lucide-react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import { toast } from 'sonner';
@@ -407,7 +408,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
 
     const xRayTargetId = parsed.ponudaId || parsed.rnId || parsed.otpremnicaId || parsed.racunId || parsed.paketId || parsed.trupacId || null;
 
-    return (
+    const modalNode = (
         <div
             className="erp-modal-backdrop fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[10050] flex items-center justify-center p-3 sm:p-6 animate-in fade-in"
             onClick={onClose}
@@ -729,4 +730,9 @@ export default function NotificationDetailModal({ notification, user, onClose, o
             </div>
         </div>
     );
+
+    if (typeof document !== 'undefined') {
+        return createPortal(modalNode, document.body);
+    }
+    return modalNode;
 }
