@@ -2,11 +2,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Bot, Send, Sparkles, Printer, FileSpreadsheet, RefreshCw, KeyRound,
-    Trash2, Copy, Check, ShieldCheck, BarChart3, MessageSquare, SlidersHorizontal
+    Trash2, Copy, Check, ShieldCheck, BarChart3, Zap, CheckCircle2, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
-import { toLocalIso, prikazDatumaBHS, escapeHtml } from '../utils/dateHelpers';
+import { toLocalIso, prikazDatumaBHS, formatBrojBHS, escapeHtml } from '../utils/dateHelpers';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
 import {
@@ -19,12 +19,14 @@ import SmartChart, { uhvatiSmartChartSvgHtml } from './SmartChart';
 const AI_CONFIG_KEY = 'ai_kontrolor_config';
 
 const STARTER_PROMPTS = [
+    { icon: '🚨', label: 'Gdje gubimo novac & Rizici', query: 'Pronađi najveće rizike, anomalije, kašnjenja i gdje firma potencijalno gubi novac. Daj konkretan plan akcije.' },
     { icon: '📊', label: 'Uporedi ovaj i prošli mjesec', query: 'Uporedi ovaj i prošli mjesec po proizvodnji, prinosu (Yield), fakturisanju i keš toku sa procentima promjene.' },
-    { icon: '💎', label: 'Top 10 najprofitabilnijih naloga', query: 'Napravi izvještaj najprofitabilnijih radnih naloga sa neto maržom, prihodom i troškovima.' },
-    { icon: '🚨', label: 'Dužnici & Aging 30/60/90', query: 'Koji kupci najviše duguju, koliki je dospjeli dug i kakva je Aging 30/60/90 struktura?' },
-    { icon: '⚙️', label: 'Mašine, Yield & Zastoji', query: 'Analiziraj učinak mašina, iskorištenje (Yield) i zastoje u proizvodnji.' },
-    { icon: '🌿', label: 'Biomasa, Peći, FSC & Sušare', query: 'Napravi izvještaj biomase, piljevine, okorka, utroška peći, FSC udjela i aktivnih sušara.' },
-    { icon: '📋', label: 'Kompletni direktorski izvještaj', query: 'Napravi kompletni direktorski izvještaj stanja firme sa dijagramom i poređenjima.' },
+    { icon: '📈', label: '6-mjesečni trend', query: 'Prikaži 6-mjesečni trend proizvodnje, fakturisanja i keš priliva sa dijagramom.' },
+    { icon: '💎', label: 'Profit po nalozima', query: 'Napravi izvještaj najprofitabilnijih radnih naloga sa neto maržom, prihodom i troškovima.' },
+    { icon: '⏳', label: 'Dužnici & Aging 30/60/90', query: 'Koji kupci najviše duguju, koliki je dospjeli dug i kakva je Aging 30/60/90 struktura?' },
+    { icon: '📅', label: 'Današnji & Jučerašnji učinak', query: 'Kakav je današnji operativni učinak u poređenju sa jučerašnjim danom?' },
+    { icon: '📝', label: 'Ponude, Rabati & Otpreme', query: 'Analiziraj ponude, stopu konverzije, visoke rabate i status otpremnica.' },
+    { icon: '👥', label: 'HR Sati & Prisustvo', query: 'Napravi izvještaj radnih sati radnika, kašnjenja i zahtjeva za odsustvo za ovaj mjesec.' },
 ];
 
 const KPI_STYLE_MAP = {
@@ -40,17 +42,31 @@ const WELCOME_MSG = {
     role: 'ai',
     mode: 'system',
     naslov: 'AI Direktorski Analitičar & Kontrolor',
-    text: `Zdravo šefe! Spreman sam za normalnu, direktnu komunikaciju nad **cijelom Pilana-ERP bazom podataka**.\n\n### Šta mogu uraditi za tebe:\n- Generišem **kompletne izvještaje sa interaktivnim dijagramima** i tabelama koje možeš jednim klikom **isprintati u PDF ili izvesti u Excel**.\n- Radim **poređenja** (ovaj vs prošli mjesec, mašine, kupci, profitabilnost naloga, Aging dugovi, biomasa/FSC/sušare).\n- Ako dodaš svoj besplatni **Google Gemini** ili **OpenAI** API ključ gore (🔑), dobijaš potpuno slobodnu AI konverzaciju kao u Antigravity-ju — a i bez ključa ugrađeni ERP analitički motor odmah odgovara sa grafikonima i tabelama!`,
+    text: `Zdravo šefe! Povezan sam uživo na **svih 19 modula Pilana-ERP baze** (proizvodnja, lager, trupci, ponude, radni nalozi, otpremnice, računi, blagajna, reklamacije, planiranje, sušare, biomasa/FSC/CBAM i HR).\n\n### Kako da izvučeš maksimum:\n- Pitaj me za **konkretan period** (*danas, juče, zadnjih 7 dana, oktobar, zadnjih 6 mjeseci*) ili **poređenje** (*ovaj vs prošli mjesec*).\n- Napiši ime **bilo kog kupca, mašine, proizvoda ili broj dokumenta** (` + '`RN-...`, `PK-...`' + `) za instant 360° izvještaj.\n- Za punu **Antigravity-level slobodnu konverzaciju**, klikni **🔑 AI Ključ** gore desno i unesi besplatan **Google Gemini** ili **Groq** ključ (ili OpenAI / Claude) — čuva se trajno za cijelu firmu!`,
     kpi: [],
     chart: null,
     tabela: null,
     predlozi: [
+        'Pronađi najveće rizike i gdje gubimo novac',
+        'Prikaži 6-mjesečni trend proizvodnje i prihoda',
         'Uporedi ovaj i prošli mjesec',
         'Koji kupci najviše duguju (Aging)?',
-        'Top 10 najprofitabilnijih naloga',
-        'Analiza učinka i zastoja po mašinama',
     ],
 };
+
+function detectProviderLabel(key, model, serverProvider) {
+    const k = String(key || '').trim();
+    if (!k) {
+        if (serverProvider) return `Server AI (${serverProvider.toUpperCase()})`;
+        return 'Ugrađeni ERP AI Motor';
+    }
+    if (k.startsWith('AIza')) return `Gemini (${model || 'gemini-2.5-flash'})`;
+    if (k.startsWith('gsk_')) return 'Groq Llama 3.3 70B';
+    if (k.startsWith('sk-ant-')) return 'Anthropic Claude';
+    if (k.startsWith('sk-or-')) return 'OpenRouter AI';
+    if (k.startsWith('sk-')) return `OpenAI (${model || 'gpt-4o-mini'})`;
+    return `AI API (${model || 'Auto'})`;
+}
 
 function renderMarkdownBlocks(text) {
     const safe = (s) =>
@@ -74,7 +90,7 @@ function renderMarkdownBlocks(text) {
             return (
                 <h4
                     key={idx}
-                    className="text-xs font-black uppercase tracking-wider text-theme-accent mt-3 mb-1.5 flex items-center gap-1.5"
+                    className="text-xs font-black uppercase tracking-wider text-theme-accent mt-3 mb-1.5"
                     dangerouslySetInnerHTML={{ __html: inlineFormat(trimmed.slice(4)) }}
                 />
             );
@@ -115,7 +131,10 @@ export default function TabAiAnalitika({ saas, user }) {
     const [showConfig, setShowConfig] = useState(false);
     const [apiKey, setApiKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_gemini_key') || '' : ''));
     const [modelName, setModelName] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_ai_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash'));
+    const [serverStatus, setServerStatus] = useState({ hasServerKey: false, serverProvider: null });
     const [savingKey, setSavingKey] = useState(false);
+    const [testingKey, setTestingKey] = useState(false);
+    const [testResult, setTestResult] = useState(null);
     const [dbCache, setDbCache] = useState(null);
     const [lastSync, setLastSync] = useState(null);
     const [copiedId, setCopiedId] = useState(null);
@@ -128,18 +147,20 @@ export default function TabAiAnalitika({ saas, user }) {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isTyping]);
 
-    // Učitaj sačuvani AI API ključ iz Supabase ui_postavke ako postoji
+    // Provjeri server env ključ i učitaj sačuvani AI ključ iz Supabase ui_postavke
     useEffect(() => {
         let cancelled = false;
-        const loadRemoteKey = async () => {
+        const initKeys = async () => {
             try {
-                const { data } = await supabase
-                    .from('ui_postavke')
-                    .select('postavke_jsonb')
-                    .eq('modul_ime', AI_CONFIG_KEY)
-                    .maybeSingle();
+                const [srvRes, dbRes] = await Promise.all([
+                    fetch('/api/ai-kontrolor').then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+                    supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', AI_CONFIG_KEY).maybeSingle(),
+                ]);
                 if (cancelled) return;
-                const cfg = data?.postavke_jsonb;
+                if (srvRes?.hasServerKey) {
+                    setServerStatus({ hasServerKey: true, serverProvider: srvRes.serverProvider || 'gemini' });
+                }
+                const cfg = dbRes?.data?.postavke_jsonb;
                 if (cfg?.apiKey && !localStorage.getItem('erp_gemini_key')) {
                     setApiKey(cfg.apiKey);
                     try { localStorage.setItem('erp_gemini_key', cfg.apiKey); } catch (e) {}
@@ -150,7 +171,7 @@ export default function TabAiAnalitika({ saas, user }) {
                 }
             } catch (e) {}
         };
-        loadRemoteKey();
+        initKeys();
         return () => { cancelled = true; };
     }, []);
 
@@ -158,8 +179,9 @@ export default function TabAiAnalitika({ saas, user }) {
         if (dbCache && !force) return dbCache;
         const [
             trupciRes, prorezRes, paketiRes, racuniRes, ponudeRes, otpremniceRes,
-            blagajnaRes, naloziRes, reklamacijeRes, zastojiRes, radniciRes, katalogRes,
-            kupciRes, susRes, srvRes, bioRes, cbamRes
+            blagajnaRes, naloziRes, reklamacijeRes, zastojiRes, rasporedRes, masineRes,
+            radniciRes, radniSatiRes, odsustvaRes, katalogRes, kupciRes,
+            susRes, srvRes, bioRes, cbamRes
         ] = await Promise.all([
             supabase.from('trupci').select('*'),
             supabase.from('prorez_log').select('*'),
@@ -171,7 +193,11 @@ export default function TabAiAnalitika({ saas, user }) {
             supabase.from('radni_nalozi').select('*'),
             supabase.from('reklamacije').select('*'),
             supabase.from('dnevnik_masine').select('*'),
+            supabase.from('raspored_proizvodnje').select('*'),
+            supabase.from('masine').select('naziv, dnevni_kapacitet_m3'),
             supabase.from('radnici').select('id, ime_prezime, uloga'),
+            supabase.from('radni_sati').select('*').order('datum', { ascending: false }).limit(500),
+            supabase.from('zahtjevi_odsustva').select('*').order('created_at', { ascending: false }).limit(150),
             supabase.from('katalog_proizvoda').select('*'),
             supabase.from('kupci').select('id, naziv, adresa, pdv_broj'),
             supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'susare_sarze').maybeSingle(),
@@ -191,7 +217,11 @@ export default function TabAiAnalitika({ saas, user }) {
             radni_nalozi: naloziRes.data || [],
             reklamacije: reklamacijeRes.data || [],
             dnevnik_masine: zastojiRes.data || [],
+            raspored_proizvodnje: rasporedRes.data || [],
+            masine: masineRes.data || [],
             radnici: radniciRes.data || [],
+            radni_sati: radniSatiRes.data || [],
+            zahtjevi_odsustva: odsustvaRes.data || [],
             katalog_proizvoda: katalogRes.data || [],
             kupci: kupciRes.data || [],
             susare_sarze: susRes.data?.postavke_jsonb || {},
@@ -203,6 +233,34 @@ export default function TabAiAnalitika({ saas, user }) {
         setLastSync(new Date());
         return fresh;
     }, [dbCache]);
+
+    const handleTestApiKey = async () => {
+        const cleanKey = apiKey.trim();
+        if (!cleanKey && !serverStatus.hasServerKey) {
+            return toast.warning('Prvo zalijepi svoj Gemini, Groq, OpenAI, Claude ili OpenRouter API ključ.');
+        }
+        setTestingKey(true);
+        setTestResult(null);
+        try {
+            const resp = await fetch('/api/ai-kontrolor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'test', apiKey: cleanKey, model: modelName }),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                setTestResult({ ok: true, msg: `Veza uspješna! Aktivni provajder: ${String(data.provider || '').toUpperCase()} (${data.model})` });
+                toast.success(`AI API veza uspješna (${data.model})!`);
+            } else {
+                setTestResult({ ok: false, msg: `Greška provjere: ${data.error || 'Nevažeći API ključ ili ograničena kvota'}` });
+                toast.error('API ključ nije prošao provjeru.');
+            }
+        } catch (e) {
+            setTestResult({ ok: false, msg: 'Mrežna greška pri testiranju API ključa.' });
+        } finally {
+            setTestingKey(false);
+        }
+    };
 
     const handleSaveConfig = async (saveToCloud = false) => {
         const cleanKey = apiKey.trim();
@@ -218,12 +276,12 @@ export default function TabAiAnalitika({ saas, user }) {
                     .from('ui_postavke')
                     .upsert([{ modul_ime: AI_CONFIG_KEY, postavke_jsonb: { apiKey: cleanKey, model: modelName, updated_at: new Date().toISOString() } }], { onConflict: 'modul_ime' });
                 if (error) toast.error('Greška pri spremanju u bazu: ' + error.message);
-                else toast.success('AI konfiguracija sačuvana za sve administratore!');
+                else toast.success('AI API konfiguracija sačuvana za cijelu firmu!');
             } finally {
                 setSavingKey(false);
             }
         } else {
-            toast.success(cleanKey ? 'AI API ključ je aktivan u ovom pregledaču!' : 'Prebačeno na ugrađeni ERP AI motor.');
+            toast.success(cleanKey ? 'AI API ključ je aktivan!' : 'Prebačeno na ugrađeni ERP AI motor.');
         }
         setShowConfig(false);
     };
@@ -245,19 +303,20 @@ export default function TabAiAnalitika({ saas, user }) {
 
             let aiResult = null;
             let engineMode = 'local';
+            let activeModel = '';
             let fallbackNotice = '';
 
-            // Pokušaj LLM backend (koristi korisnički ključ ili server env GEMINI_API_KEY / OPENAI_API_KEY)
             try {
                 const compactHistory = nextHistory
                     .filter((m) => m.id !== 'welcome')
-                    .slice(-9, -1)
+                    .slice(-11, -1)
                     .map((m) => ({ role: m.role, text: m.text }));
 
                 const res = await fetch('/api/ai-kontrolor', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        action: 'chat',
                         message: userText,
                         history: compactHistory,
                         erpContext,
@@ -270,13 +329,14 @@ export default function TabAiAnalitika({ saas, user }) {
                     if (payload?.ok && payload?.data) {
                         aiResult = payload.data;
                         engineMode = payload.mode || 'gemini';
-                    } else if (apiKey.trim() && payload?.reason && payload.reason !== 'NO_API_KEY') {
-                        fallbackNotice = `Vanjski AI model nedostupan (${payload.reason}) — odgovor generisao ugrađeni ERP AI motor.`;
+                        activeModel = payload.model || '';
+                    } else if ((apiKey.trim() || serverStatus.hasServerKey) && payload?.reason && payload.reason !== 'NO_API_KEY') {
+                        fallbackNotice = `Vanjski AI model trenutno nije odgovorio (${payload.reason}) — odgovor generisao ugrađeni ERP AI motor.`;
                     }
                 }
             } catch (e) {
-                if (apiKey.trim()) {
-                    fallbackNotice = 'Mrežna greška prema AI API-ju — odgovor generisao ugrađeni ERP AI motor.';
+                if (apiKey.trim() || serverStatus.hasServerKey) {
+                    fallbackNotice = 'Mrežna greška prema vanjskom AI API-ju — odgovor generisao ugrađeni ERP AI motor.';
                 }
             }
 
@@ -292,6 +352,7 @@ export default function TabAiAnalitika({ saas, user }) {
                     id: aiMsgId,
                     role: 'ai',
                     mode: engineMode,
+                    model: activeModel,
                     fallbackNotice,
                     naslov: aiResult.naslov || 'AI ERP Izvještaj',
                     text: aiResult.odgovor || 'Analiza je završena.',
@@ -311,11 +372,11 @@ export default function TabAiAnalitika({ saas, user }) {
                     role: 'ai',
                     mode: 'error',
                     naslov: 'Greška pri analizi',
-                    text: 'Došlo je do greške pri čitanju baze podataka. Pokušaj kliknuti **Osvježi Bazu** i ponovi pitanje.',
+                    text: 'Došlo je do greške pri čitanju baze podataka. Klikni **Osvježi Bazu** i pokušaj ponovo.',
                     kpi: [],
                     chart: null,
                     tabela: null,
-                    predlozi: ['Uporedi ovaj i prošli mjesec', 'Kompletni direktorski izvještaj'],
+                    predlozi: ['Uporedi ovaj i prošli mjesec', 'Pronađi najveće rizike u firmi'],
                 },
             ]);
         } finally {
@@ -359,9 +420,12 @@ export default function TabAiAnalitika({ saas, user }) {
             const tr = msg.tabela.redovi.map((r) => `
                 <tr>
                     ${msg.tabela.kolone.map((c) => {
-                        const v = r[c.key] ?? '-';
-                        const d = c.suffix && v !== '-' ? `${v}${c.suffix}` : v;
-                        return `<td class="${c.align === 'right' ? 'num' : ''}">${escapeHtml(d)}</td>`;
+                        const raw = r[c.key];
+                        const val = c.type === 'number' && typeof raw === 'number'
+                            ? formatBrojBHS(raw, Number.isInteger(raw) ? 0 : 2)
+                            : (raw ?? '-');
+                        const disp = c.suffix && val !== '-' ? `${val}${c.suffix}` : val;
+                        return `<td class="${c.align === 'right' ? 'num' : ''}">${escapeHtml(disp)}</td>`;
                     }).join('')}
                 </tr>
             `).join('');
@@ -409,21 +473,19 @@ export default function TabAiAnalitika({ saas, user }) {
     };
 
     const handleRefreshDb = async () => {
-        toast.info('Osvježavam podatke iz baze...');
+        toast.info('Osvježavam svih 19 tabela iz ERP baze...');
         await fetchCijelaBaza(true);
-        toast.success('AI Kontrolor je sinhronizovan sa najnovijim podacima!');
+        toast.success('AI Kontrolor sinhronizovan sa najnovijim podacima!');
     };
 
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
-    const hasKey = Boolean(apiKey.trim());
-    const providerLabel = hasKey
-        ? (apiKey.trim().startsWith('sk-') ? 'OpenAI + ERP Baza' : `Gemini (${modelName}) + ERP Baza`)
-        : 'Ugrađeni ERP AI Motor';
+    const hasLlm = Boolean(apiKey.trim()) || serverStatus.hasServerKey;
+    const providerLabel = detectProviderLabel(apiKey, modelName, serverStatus.serverProvider);
 
     return (
         <div
             data-testid="ai-kontrolor-workspace"
-            className="relative max-w-6xl mx-auto h-[820px] max-h-[85vh] flex flex-col bg-theme-card rounded-3xl border border-theme-border shadow-2xl overflow-hidden animate-in fade-in"
+            className="relative max-w-6xl mx-auto h-[840px] max-h-[86vh] flex flex-col bg-theme-card rounded-3xl border border-theme-border shadow-2xl overflow-hidden animate-in fade-in"
         >
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-theme-border bg-gradient-to-r from-theme-panel via-theme-card to-theme-panel flex flex-wrap justify-between items-center gap-3 shrink-0 z-10">
@@ -437,14 +499,14 @@ export default function TabAiAnalitika({ saas, user }) {
                     <div className="min-w-0">
                         <h3 className="text-theme-text font-black uppercase tracking-widest text-xs sm:text-sm flex items-center gap-2 flex-wrap">
                             <span>TTM AI Kontrolor</span>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full border font-black uppercase ${hasKey ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'}`}>
-                                {hasKey ? '🧠 ' : '⚡ '}{providerLabel}
+                            <span className={`text-[9px] px-2.5 py-0.5 rounded-full border font-black uppercase ${hasLlm ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'}`}>
+                                {hasLlm ? '🧠 ' : '⚡ '}{providerLabel}
                             </span>
                         </h3>
                         <p className="text-[10px] text-theme-muted font-bold flex items-center gap-1.5 mt-0.5 truncate">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0" />
-                            Konverzacijska analitika, poređenja, interaktivni dijagrami & PDF/Excel
-                            {lastSync && <span className="hidden md:inline opacity-75">• Sinhronizovano {lastSync.toLocaleTimeString('bs-BA', { hour: '2-digit', minute: '2-digit' })}</span>}
+                            19 modula uživo • 12-mjesečni trendovi • 360° pretraga • PDF & Excel
+                            {lastSync && <span className="hidden md:inline opacity-75">• {lastSync.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>}
                         </p>
                     </div>
                 </div>
@@ -459,7 +521,6 @@ export default function TabAiAnalitika({ saas, user }) {
                                 ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40'
                                 : 'bg-amber-600/20 text-amber-300 border-amber-500/40'
                         }`}
-                        title="Sakrij ili prikaži QA test zapise u AI analizama"
                     >
                         {bezQaTesta ? '🧹 Bez QA testa' : '🧪 Sa QA testom'}
                     </button>
@@ -477,7 +538,6 @@ export default function TabAiAnalitika({ saas, user }) {
                         type="button"
                         onClick={() => setMessages([WELCOME_MSG])}
                         data-testid="ai-new-chat-btn"
-                        title="Započni novi razgovor"
                         className="px-2.5 py-1.5 rounded-xl bg-theme-panel hover:bg-theme-card border border-theme-border text-[10px] font-black uppercase text-theme-muted hover:text-red-400 flex items-center gap-1 transition-colors"
                     >
                         <Trash2 size={12} /> Novi
@@ -488,41 +548,42 @@ export default function TabAiAnalitika({ saas, user }) {
                         onClick={() => setShowConfig((v) => !v)}
                         data-testid="ai-api-config-btn"
                         className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase flex items-center gap-1 transition-all ${
-                            showConfig ? 'bg-theme-accent text-white border-theme-accent' : 'bg-theme-panel border-theme-border text-theme-text hover:border-theme-accent'
+                            showConfig ? 'bg-theme-accent text-white border-theme-accent' : hasLlm ? 'bg-purple-600/20 border-purple-500/50 text-purple-300' : 'bg-amber-600/20 border-amber-500/50 text-amber-300 hover:bg-amber-600 hover:text-white'
                         }`}
                     >
-                        <KeyRound size={12} /> AI Ključ
+                        <KeyRound size={12} /> {hasLlm ? 'AI Ključ ✓' : 'Poveži AI Ključ'}
                     </button>
                 </div>
             </div>
 
-            {/* Konfiguracija API ključa (Gemini / OpenAI) */}
+            {/* Konfiguracija API ključa (Gemini / Groq / OpenAI / Claude / OpenRouter) */}
             {showConfig && (
                 <div className="p-4 bg-theme-panel border-b border-theme-border space-y-3 animate-in slide-in-from-top-2 shrink-0">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                             <p className="text-xs font-black text-theme-text uppercase flex items-center gap-1.5">
-                                <Sparkles size={14} className="text-purple-400" /> Poveži Google Gemini (besplatni tier) ili OpenAI API ključ
+                                <Sparkles size={14} className="text-purple-400" /> Poveži AI API ključ (Automatski prepoznaje Gemini, Groq, OpenAI, Claude i OpenRouter)
                             </p>
-                            <p className="text-[11px] text-theme-muted font-medium">
-                                Sa ključem AI razumije svako slobodno pitanje i pravi prilagođene dijagrame i poređenja. Bez ključa koristi ugrađeni ERP analitički motor.
+                            <p className="text-[11px] text-theme-muted font-medium mt-0.5">
+                                Za puni Antigravity-level razgovor preporučujemo besplatni <b>Google Gemini</b> (`AIza...`) ili ultra-brzi <b>Groq</b> (`gsk_...`) ključ.
                             </p>
                         </div>
-                        <a
-                            href="https://aistudio.google.com/app/apikey"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] font-black uppercase text-blue-400 hover:underline"
-                        >
-                            Uzmi besplatan Gemini ključ →
-                        </a>
+                        <div className="flex items-center gap-3">
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[10px] font-black uppercase text-blue-400 hover:underline">
+                                Besplatan Gemini ključ →
+                            </a>
+                            <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-[10px] font-black uppercase text-emerald-400 hover:underline">
+                                Besplatan Groq ključ →
+                            </a>
+                        </div>
                     </div>
+
                     <div className="flex flex-wrap gap-2 items-center">
                         <input
                             type="password"
                             value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            placeholder="Zalijepi Gemini API ključ (AIza...) ili OpenAI ključ (sk-...) — ili ostavi prazno"
+                            onChange={(e) => { setApiKey(e.target.value); setTestResult(null); }}
+                            placeholder="Zalijepi Gemini API (AIza...), Groq (gsk_...), OpenAI (sk-...), Claude (sk-ant-...)..."
                             className="flex-1 min-w-[240px] px-3.5 py-2.5 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text font-bold outline-none focus:border-theme-accent"
                         />
                         <select
@@ -531,10 +592,21 @@ export default function TabAiAnalitika({ saas, user }) {
                             className="px-3 py-2.5 bg-theme-card border border-theme-border rounded-xl text-xs font-black text-theme-text outline-none"
                         >
                             <option value="gemini-2.5-flash">Gemini 2.5 Flash (Preporučeno)</option>
-                            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Duboka analiza)</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Najdublja analiza)</option>
+                            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                            <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B (Ultra-brz)</option>
                             <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
                             <option value="gpt-4o">OpenAI GPT-4o</option>
+                            <option value="claude-sonnet-4-20250514">Anthropic Claude Sonnet 4</option>
                         </select>
+                        <button
+                            type="button"
+                            disabled={testingKey}
+                            onClick={handleTestApiKey}
+                            className="px-3.5 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-1"
+                        >
+                            <Zap size={12} /> {testingKey ? 'Testiram...' : 'Testiraj'}
+                        </button>
                         <button
                             type="button"
                             onClick={() => handleSaveConfig(false)}
@@ -553,10 +625,17 @@ export default function TabAiAnalitika({ saas, user }) {
                             </button>
                         )}
                     </div>
+
+                    {testResult && (
+                        <div className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 ${testResult.ok ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300' : 'bg-red-950/30 border-red-500/40 text-red-300'}`}>
+                            {testResult.ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                            <span>{testResult.msg}</span>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* Brzi galerija predložaka */}
+            {/* Brzi izvještaji */}
             <div className="px-4 py-2.5 bg-theme-panel/50 border-b border-theme-border/70 flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0">
                 <span className="text-[9px] font-black uppercase text-theme-muted whitespace-nowrap shrink-0 flex items-center gap-1">
                     <BarChart3 size={11} /> Brzi izvještaji:
@@ -586,14 +665,13 @@ export default function TabAiAnalitika({ saas, user }) {
                                 className={`rounded-3xl shadow-lg ${
                                     isUser
                                         ? 'max-w-[85%] md:max-w-[70%] px-5 py-3.5 bg-theme-accent text-white rounded-tr-md'
-                                        : 'w-full max-w-[96%] xl:max-w-[92%] p-5 bg-theme-card text-theme-text rounded-tl-md border border-theme-border'
+                                        : 'w-full max-w-[97%] xl:max-w-[94%] p-5 bg-theme-card text-theme-text rounded-tl-md border border-theme-border'
                                 }`}
                             >
                                 {isUser ? (
                                     <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                                 ) : (
                                     <div className="space-y-4">
-                                        {/* Top bar AI poruke */}
                                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-theme-border/60">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <Sparkles size={15} className="text-theme-accent shrink-0" />
@@ -602,12 +680,11 @@ export default function TabAiAnalitika({ saas, user }) {
                                                 </span>
                                                 {msg.mode && msg.mode !== 'system' && (
                                                     <span className="text-[9px] px-2 py-0.5 rounded-full bg-theme-panel border border-theme-border text-theme-muted font-black uppercase">
-                                                        {msg.mode === 'gemini' ? 'Gemini AI' : msg.mode === 'openai' ? 'OpenAI' : 'ERP AI Motor'}
+                                                        {msg.mode === 'local' ? 'ERP AI Motor' : `${String(msg.mode).toUpperCase()}${msg.model ? ` • ${msg.model}` : ''}`}
                                                     </span>
                                                 )}
                                             </div>
 
-                                            {/* Dugmad za print, Excel i kopiranje izvještaja */}
                                             {msg.id !== 'welcome' && (
                                                 <div className="flex items-center gap-1.5">
                                                     <button
@@ -646,12 +723,10 @@ export default function TabAiAnalitika({ saas, user }) {
                                             </div>
                                         )}
 
-                                        {/* Markdown tekstualna analiza */}
                                         <div className="prose-sm max-w-none">
                                             {renderMarkdownBlocks(msg.text)}
                                         </div>
 
-                                        {/* KPI Kartice */}
                                         {Array.isArray(msg.kpi) && msg.kpi.length > 0 && (
                                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
                                                 {msg.kpi.map((k, kIdx) => (
@@ -669,7 +744,6 @@ export default function TabAiAnalitika({ saas, user }) {
                                             </div>
                                         )}
 
-                                        {/* Interaktivni SmartChart */}
                                         {msg.chart && msg.chart.data?.length > 0 && (
                                             <div className="bg-theme-panel/60 border border-theme-border rounded-2xl p-3.5">
                                                 <SmartChart
@@ -686,7 +760,6 @@ export default function TabAiAnalitika({ saas, user }) {
                                             </div>
                                         )}
 
-                                        {/* Detaljna Tabela */}
                                         {msg.tabela && msg.tabela.kolone?.length > 0 && msg.tabela.redovi?.length > 0 && (
                                             <div className="border border-theme-border rounded-2xl overflow-hidden bg-theme-panel/40">
                                                 <div className="px-3.5 py-2 border-b border-theme-border bg-theme-panel/70 flex items-center justify-between">
@@ -713,8 +786,11 @@ export default function TabAiAnalitika({ saas, user }) {
                                                                 <tr key={rIdx} className="hover:bg-theme-card/70 transition-colors">
                                                                     {msg.tabela.kolone.map((c) => {
                                                                         const raw = row[c.key];
-                                                                        const disp = raw !== undefined && raw !== null && raw !== ''
-                                                                            ? `${raw}${c.suffix || ''}`
+                                                                        const val = c.type === 'number' && typeof raw === 'number'
+                                                                            ? formatBrojBHS(raw, Number.isInteger(raw) ? 0 : 2)
+                                                                            : raw;
+                                                                        const disp = val !== undefined && val !== null && val !== ''
+                                                                            ? `${val}${c.suffix || ''}`
                                                                             : '-';
                                                                         return (
                                                                             <td key={c.key} className={`p-2.5 ${c.align === 'right' ? 'text-right font-mono font-black' : 'font-bold'} text-theme-text`}>
@@ -730,7 +806,6 @@ export default function TabAiAnalitika({ saas, user }) {
                                             </div>
                                         )}
 
-                                        {/* Sljedeći prijedlozi za razgovor */}
                                         {Array.isArray(msg.predlozi) && msg.predlozi.length > 0 && (
                                             <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-theme-border/40">
                                                 <span className="text-[9px] font-black uppercase text-theme-muted mr-1">Nastavi razgovor:</span>
@@ -759,7 +834,7 @@ export default function TabAiAnalitika({ saas, user }) {
                         <div className="px-5 py-3.5 rounded-3xl rounded-tl-md bg-theme-card border border-theme-accent/40 flex items-center gap-3 shadow-lg">
                             <span className="w-2.5 h-2.5 rounded-full bg-theme-accent animate-ping" />
                             <span className="text-xs font-black text-theme-text animate-pulse">
-                                Analiziram ERP bazu i pripremam izvještaj sa dijagramom...
+                                Dubinski analiziram svih 19 modula ERP baze i generišem izvještaj...
                             </span>
                         </div>
                     </div>
@@ -767,7 +842,7 @@ export default function TabAiAnalitika({ saas, user }) {
                 <div ref={chatEndRef} />
             </div>
 
-            {/* Input Composer */}
+            {/* Composer */}
             <div className="p-3.5 sm:p-4 bg-theme-card border-t border-theme-border shrink-0">
                 <div className="relative flex items-end gap-2">
                     <textarea
@@ -782,7 +857,7 @@ export default function TabAiAnalitika({ saas, user }) {
                                 posaljiPoruku();
                             }
                         }}
-                        placeholder="Pitaj bilo šta, npr: Uporedi ovaj i prošli mjesec, ili Koji kupci kasne sa plaćanjem?"
+                        placeholder="Pitaj bilo šta, npr: Gdje gubimo novac? / Kakav je današnji učinak? / Prikaži 6-mjesečni trend / Dosije kupca..."
                         disabled={isTyping}
                         className="flex-1 px-4 py-3.5 bg-theme-panel rounded-2xl text-sm text-theme-text font-bold outline-none border border-theme-border focus:border-theme-accent transition-all resize-none max-h-32 disabled:opacity-50"
                     />

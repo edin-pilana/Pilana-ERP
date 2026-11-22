@@ -1,49 +1,80 @@
 import { NextResponse } from 'next/server';
 
-const SYSTEM_INSTRUCTION = `Ti si elitni AI Direktorski Analitičar i ERP Kontrolor za pilanu i drvnu industriju (TTM Pilana-ERP).
-Komuniciraš prirodno, jasno, precizno i prijateljski na bosanskom/hrvatskom jeziku — baš kao vrhunski lični poslovni savjetnik.
+const SYSTEM_INSTRUCTION = `Ti si vrhunski AI Direktorski Analitičar, Finansijski Kontrolor i Proizvodni Konsultant za pilanu i drvnu industriju (TTM Pilana-ERP).
+Komuniciraš prirodno, inteligentno, konkretno i direktno na bosanskom/hrvatskom jeziku — baš kao elitni lični savjetnik direktora (u stilu Antigravity asistenta).
 
-PRAVILA:
-1. Koristi ISKLJUČIVO stvarne podatke iz dostavljenog ERP konteksta (erpContext). Nikad ne izmišljaj brojke! Ako nešto nedostaje u bazi, to jasno reci.
-2. Kada korisnik traži POREĐENJE (npr. ovaj vs prošli mjesec, mašina vs mašina, kupac vs kupac, prorez vs izlaz), obavezno izračunaj apsolutne razlike i procente promjene (%).
-3. Za svaki izvještaj ili analizu, uvijek kada ima smisla pripremi i vizualizaciju ("chart") sa čistim numeričkim podacima i preglednu tabelu ("tabela") kako bi korisnik mogao odmah da vidi dijagram i isprinta PDF ili izveze Excel.
-4. Odgovor MORA biti isključivo validan JSON objekat (bez markdown code-block ograda) sljedeće strukture:
+STRIKTNA PRAVILA TAČNOSTI I FORMATIRANJA:
+1. Koristi ISKLJUČIVO stvarne podatke iz dostavljenog JSON objekta "erpContext". NIKAD ne izmišljaj, ne nagađaj i ne zaokružuj grubo brojke kojih nema u kontekstu. Ako nečega nema u bazi (npr. 0 zapisa za traženi dan/mjesec), to jasno i iskreno reci i odmah ponudi najbliži dostupan podatak iz konteksta.
+2. Sve datume u tekstu, KPI karticama i tabelama piši isključivo u BHS formatu DD.MM.YYYY. (npr. 22.11.2026.).
+3. Sve brojeve u tekstu i KPI karticama piši po BHS standardu: tačka za hiljade, zarez za decimale (npr. 12.450,50 KM, 145,250 m³, 64,8%). U "chart.data" i numeričkim kolonama tabele vrijednosti MORAJU biti čisti JSON brojevi (npr. 12450.5), da bi ih grafikon i Excel pravilno iscrtali!
+4. Razumiješ drvnu industriju: trupci (m³), prorez, pilana (izlaz m³), iskorištenje / Yield (%), dorada, lager paketa, otpremnice, ponude, rabati, radni nalozi (RN), rokovi isporuke, Aging potraživanja (u roku / 1-30 / 31-60 / 61-90 / 90+ dana), PDV 17%, EUR→KM (1,95583), sušare, servis pila, zastoji mašina, biomasa (kora/piljevina/okorak/peći), FSC CoC, CBAM CO₂ i HR evidencija rada.
+5. Kada korisnik pita "šta ne valja", "gdje gubimo", "analiziraj", "uporedi" ili postavi složeno pitanje:
+   - Daj prvo jasan **Direktorski zaključak** u 1-2 rečenice.
+   - Zatim konkretne brojčane nalaze (sa poređenjima i % promjene kad god ima smisla).
+   - Istakni **⚠️ Anomalije / Rizike** ako ih vidiš u podacima (kašnjenja, pad yielda, visoki rabati, dugovi > 60d, zastoji).
+   - Završi sa 2-3 konkretne **💡 Preporuke za akciju**.
+6. Za svako analitičko pitanje napravi optimalan interaktivni dijagram ("chart"):
+   - Vremenski trendovi (dani/mjeseci) → "area" ili "line" ili "bar"
+   - Poređenja (ovaj vs prošli mjesec, prihod vs trošak) → grupisani "bar" sa 2-3 serije
+   - Rang liste (top kupci, dužnici, proizvodi, mašine) → "hbar"
+   - Udjeli (troškovi po kategoriji, status ponuda/reklamacija) → "donut"
+7. Odgovor MORA biti ISKLJUČIVO validan JSON objekat (bez ikakvog teksta prije/poslije) ove šeme:
 {
-  "naslov": "Kratak naslov izvještaja (npr. Poređenje Ovaj vs Prošli Mjesec)",
-  "odgovor": "Prirodan konverzacijski odgovor u Markdown formatu (koristi ### podnaslove, **podebljane brojeve**, i bullet liste - ...). Budi konkretan i daj jasne preporuke direktoru.",
+  "naslov": "Jasan naslov izvještaja (npr. Analiza Profitabilnosti i Marži — Novembar 2026)",
+  "odgovor": "Bogat konverzacijski odgovor u Markdownu (### podnaslovi, **podebljani brojevi**, - liste). Prirodan, pametan i bez suhoparnog ponavljanja tabele.",
   "kpi": [
-    { "label": "Naziv metrike", "value": "12.450,00 KM", "sub": "kratki kontekst ili % promjene", "color": "emerald|blue|amber|red|purple" }
+    { "label": "Naziv metrike", "value": "12.450,00 KM", "sub": "kratki kontekst ili +14,2% vs prošli mj.", "color": "emerald|blue|amber|red|purple" }
   ],
   "chart": {
     "title": "Naslov grafikona",
-    "subtitle": "Kratki opis perioda/metrike",
+    "subtitle": "Period ili objašnjenje",
     "type": "bar|hbar|area|line|donut|pie|composed",
     "xKey": "naziv",
-    "unit": "KM ili m³ ili % ili kom",
+    "unit": "KM ili m³ ili % ili min ili kom",
     "series": [
-      { "key": "v1", "name": "Naziv serije 1", "color": "#3b82f6", "unit": "m³" }
+      { "key": "v1", "name": "Serija 1", "color": "#3b82f6", "unit": "KM" }
     ],
     "data": [
-      { "naziv": "Kategorija 1", "v1": 12.5 }
+      { "naziv": "Stavka 1", "v1": 1250.5 }
     ]
   },
   "tabela": {
-    "naslov": "Naslov detaljne tabele",
+    "naslov": "Naslov tabele",
     "kolone": [
       { "key": "naziv", "label": "Naziv", "type": "string", "align": "left" },
-      { "key": "vrijednost", "label": "Vrijednost", "type": "number", "align": "right", "suffix": " KM" }
+      { "key": "iznos", "label": "Iznos", "type": "number", "align": "right", "suffix": " KM" }
     ],
     "redovi": [
-      { "naziv": "Stavka 1", "vrijednost": 100.5 }
+      { "naziv": "Stavka 1", "iznos": 1250.5 }
     ]
   },
   "predlozi": [
-    "Sljedeće pametno pitanje za nastavak analize 1",
-    "Sljedeće pametno pitanje 2",
-    "Sljedeće pametno pitanje 3"
+    "Pametno logično sljedeće pitanje 1",
+    "Pametno logično sljedeće pitanje 2",
+    "Pametno logično sljedeće pitanje 3"
   ]
 }
-Ako je korisnik samo pozdravio ili postavio kratko pitanje gdje tabela/dijagram nisu potrebni, stavi "chart": null i "tabela": null, ali "odgovor" i "predlozi" uvijek popuni.`;
+Ako korisnik samo kratko pozdravi ili postavi jednostavno pitanje bez potrebe za grafikonima/tabelom, stavi "chart": null i "tabela": null, ali "odgovor" i "predlozi" uvijek popuni.`;
+
+function detectProvider(apiKey) {
+    const k = String(apiKey || '').trim();
+    if (!k) return null;
+    if (k.startsWith('AIza')) return 'gemini';
+    if (k.startsWith('gsk_')) return 'groq';
+    if (k.startsWith('sk-ant-')) return 'anthropic';
+    if (k.startsWith('sk-or-')) return 'openrouter';
+    if (k.startsWith('sk-')) return 'openai';
+    return 'gemini';
+}
+
+function resolveServerKey() {
+    if (process.env.GEMINI_API_KEY) return { key: process.env.GEMINI_API_KEY.trim(), provider: 'gemini' };
+    if (process.env.GROQ_API_KEY) return { key: process.env.GROQ_API_KEY.trim(), provider: 'groq' };
+    if (process.env.OPENAI_API_KEY) return { key: process.env.OPENAI_API_KEY.trim(), provider: 'openai' };
+    if (process.env.ANTHROPIC_API_KEY) return { key: process.env.ANTHROPIC_API_KEY.trim(), provider: 'anthropic' };
+    if (process.env.OPENROUTER_API_KEY) return { key: process.env.OPENROUTER_API_KEY.trim(), provider: 'openrouter' };
+    return { key: '', provider: null };
+}
 
 function parseJsonSafe(rawText) {
     if (!rawText || typeof rawText !== 'string') return null;
@@ -97,7 +128,7 @@ function sanitizeResponsePayload(parsed) {
                 color: String(s.color || ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'][idx % 4]),
                 unit: s.unit !== undefined ? String(s.unit) : String(parsed.chart.unit || ''),
             })),
-            data: parsed.chart.data.slice(0, 24),
+            data: parsed.chart.data.slice(0, 30),
         };
     }
 
@@ -112,7 +143,7 @@ function sanitizeResponsePayload(parsed) {
                 align: c.align === 'right' || c.type === 'number' ? 'right' : 'left',
                 suffix: c.suffix ? String(c.suffix) : '',
             })),
-            redovi: parsed.tabela.redovi.slice(0, 60),
+            redovi: parsed.tabela.redovi.slice(0, 80),
         };
     }
 
@@ -130,107 +161,244 @@ function sanitizeResponsePayload(parsed) {
     };
 }
 
-export async function POST(request) {
-    try {
-        const body = await request.json();
-        const message = String(body?.message || '').trim();
-        const history = Array.isArray(body?.history) ? body.history.slice(-10) : [];
-        const erpContext = body?.erpContext || {};
-        const userKey = String(body?.apiKey || '').trim();
-        const requestedModel = String(body?.model || '').trim();
+async function callGemini({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
+    const candidates = Array.from(new Set([
+        ...(requestedModel && requestedModel.startsWith('gemini-') ? [requestedModel] : []),
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-1.5-flash',
+    ]));
 
-        if (!message) {
-            return NextResponse.json({ ok: false, mode: 'local', reason: 'EMPTY_MESSAGE' }, { status: 200 });
-        }
-
-        const effectiveKey = userKey || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
-        if (!effectiveKey) {
-            return NextResponse.json({ ok: false, mode: 'local', reason: 'NO_API_KEY' }, { status: 200 });
-        }
-
-        const contextBlock = `TRENUTNI PODACI IZ PILANA-ERP BAZE (JSON):\n${JSON.stringify(erpContext)}`;
-        const isOpenAI = effectiveKey.startsWith('sk-');
-
-        if (isOpenAI) {
-            const openaiModel = requestedModel && requestedModel.startsWith('gpt-') ? requestedModel : 'gpt-4o-mini';
-            const messages = [
-                { role: 'system', content: `${SYSTEM_INSTRUCTION}\n\n${contextBlock}` },
-                ...history.map((h) => ({
-                    role: h.role === 'user' ? 'user' : 'assistant',
-                    content: String(h.text || '').slice(0, 1500),
-                })),
-                { role: 'user', content: message },
-            ];
-
-            const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${effectiveKey}`,
-                },
-                body: JSON.stringify({
-                    model: openaiModel,
-                    temperature: 0.35,
-                    response_format: { type: 'json_object' },
-                    messages,
-                }),
-            });
-
-            if (!resp.ok) {
-                const errTxt = await resp.text().catch(() => '');
-                return NextResponse.json({ ok: false, mode: 'local', reason: `OPENAI_HTTP_${resp.status}`, detail: errTxt.slice(0, 220) }, { status: 200 });
-            }
-
-            const json = await resp.json();
-            const content = json?.choices?.[0]?.message?.content || '';
-            const parsed = sanitizeResponsePayload(parseJsonSafe(content));
-            if (!parsed) {
-                return NextResponse.json({ ok: false, mode: 'local', reason: 'INVALID_JSON' }, { status: 200 });
-            }
-
-            return NextResponse.json({ ok: true, mode: 'openai', model: openaiModel, data: parsed }, { status: 200 });
-        }
-
-        // Google Gemini API
-        const geminiModel = requestedModel && requestedModel.startsWith('gemini-') ? requestedModel : 'gemini-2.5-flash';
+    let lastErr = 'GEMINI_UNAVAILABLE';
+    for (const model of candidates) {
         const contents = [
             ...history.map((h) => ({
                 role: h.role === 'user' ? 'user' : 'model',
-                parts: [{ text: String(h.text || '').slice(0, 1500) }],
+                parts: [{ text: String(h.text || '').slice(0, 1800) }],
             })),
-            {
-                role: 'user',
-                parts: [{ text: `${contextBlock}\n\nPITANJE KORISNIKA:\n${message}` }],
-            },
+            { role: 'user', parts: [{ text: userPrompt }] },
         ];
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
         const resp = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+                systemInstruction: { parts: [{ text: systemPrompt }] },
                 contents,
                 generationConfig: {
-                    temperature: 0.35,
+                    temperature: 0.25,
                     responseMimeType: 'application/json',
                 },
             }),
         });
 
-        if (!resp.ok) {
-            const errTxt = await resp.text().catch(() => '');
-            return NextResponse.json({ ok: false, mode: 'local', reason: `GEMINI_HTTP_${resp.status}`, detail: errTxt.slice(0, 220) }, { status: 200 });
+        if (resp.ok) {
+            const json = await resp.json();
+            const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            return { ok: true, model, rawText };
         }
 
-        const json = await resp.json();
-        const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const parsed = sanitizeResponsePayload(parseJsonSafe(rawText));
+        const errTxt = await resp.text().catch(() => '');
+        lastErr = `GEMINI_${resp.status}: ${errTxt.slice(0, 180)}`;
+        // Ako je nevažeći API ključ (400 API_KEY_INVALID ili 401/403), nema smisla pokušavati druge modele
+        if (resp.status === 401 || resp.status === 403 || errTxt.includes('API_KEY_INVALID')) {
+            break;
+        }
+    }
+    return { ok: false, error: lastErr };
+}
+
+async function callOpenAICompatible({ endpoint, apiKey, model, systemPrompt, history, userPrompt, extraHeaders = {} }) {
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        ...history.map((h) => ({
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: String(h.text || '').slice(0, 1800),
+        })),
+        { role: 'user', content: userPrompt },
+    ];
+
+    const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+            ...extraHeaders,
+        },
+        body: JSON.stringify({
+            model,
+            temperature: 0.25,
+            response_format: { type: 'json_object' },
+            messages,
+        }),
+    });
+
+    if (!resp.ok) {
+        const errTxt = await resp.text().catch(() => '');
+        return { ok: false, error: `HTTP_${resp.status}: ${errTxt.slice(0, 180)}` };
+    }
+    const json = await resp.json();
+    const rawText = json?.choices?.[0]?.message?.content || '';
+    return { ok: true, model, rawText };
+}
+
+async function callAnthropic({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
+    const model = requestedModel && requestedModel.startsWith('claude-') ? requestedModel : 'claude-sonnet-4-20250514';
+    const messages = [
+        ...history.map((h) => ({
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: String(h.text || '').slice(0, 1800),
+        })),
+        { role: 'user', content: userPrompt },
+    ];
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+            model,
+            max_tokens: 4096,
+            temperature: 0.25,
+            system: systemPrompt,
+            messages,
+        }),
+    });
+
+    if (!resp.ok) {
+        const errTxt = await resp.text().catch(() => '');
+        return { ok: false, error: `CLAUDE_${resp.status}: ${errTxt.slice(0, 180)}` };
+    }
+    const json = await resp.json();
+    const rawText = json?.content?.[0]?.text || '';
+    return { ok: true, model, rawText };
+}
+
+export async function GET() {
+    const srv = resolveServerKey();
+    return NextResponse.json({
+        hasServerKey: Boolean(srv.key),
+        serverProvider: srv.provider,
+    });
+}
+
+export async function POST(request) {
+    try {
+        const body = await request.json();
+        const action = String(body?.action || 'chat');
+        const message = String(body?.message || '').trim();
+        const history = Array.isArray(body?.history) ? body.history.slice(-12) : [];
+        const erpContext = body?.erpContext || {};
+        const userKey = String(body?.apiKey || '').trim();
+        const requestedModel = String(body?.model || '').trim();
+
+        const serverFallback = resolveServerKey();
+        const effectiveKey = userKey || serverFallback.key;
+        if (!effectiveKey) {
+            return NextResponse.json({ ok: false, mode: 'local', reason: 'NO_API_KEY' }, { status: 200 });
+        }
+
+        const provider = userKey ? detectProvider(userKey) : serverFallback.provider;
+
+        // Ping / Test mode za dugme "⚡ Testiraj Ključ"
+        if (action === 'test') {
+            const testPrompt = 'Vrati JSON: {"naslov":"Test","odgovor":"Veza aktivna.","kpi":[],"chart":null,"tabela":null,"predlozi":[]}';
+            let res;
+            if (provider === 'gemini') {
+                res = await callGemini({ apiKey: effectiveKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            } else if (provider === 'groq') {
+                res = await callOpenAICompatible({ endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.startsWith('llama-') ? requestedModel : 'llama-3.3-70b-versatile', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            } else if (provider === 'anthropic') {
+                res = await callAnthropic({ apiKey: effectiveKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            } else if (provider === 'openrouter') {
+                res = await callOpenAICompatible({ endpoint: 'https://openrouter.ai/api/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.includes('/') ? requestedModel : 'google/gemini-2.5-flash', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            } else {
+                res = await callOpenAICompatible({ endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.startsWith('gpt-') ? requestedModel : 'gpt-4o-mini', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            }
+            return NextResponse.json({
+                ok: res.ok,
+                provider,
+                model: res.model || requestedModel,
+                error: res.ok ? null : res.error,
+            }, { status: 200 });
+        }
+
+        if (!message) {
+            return NextResponse.json({ ok: false, mode: 'local', reason: 'EMPTY_MESSAGE' }, { status: 200 });
+        }
+
+        const contextBlock = `TRENUTNI PODACI IZ PILANA-ERP BAZE (JSON):\n${JSON.stringify(erpContext)}`;
+        const userPrompt = `${contextBlock}\n\nPITANJE DIREKTORA / KORISNIKA:\n${message}`;
+
+        let llmRes;
+        if (provider === 'gemini') {
+            llmRes = await callGemini({ apiKey: effectiveKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+        } else if (provider === 'groq') {
+            const groqModel = requestedModel.startsWith('llama-') || requestedModel.startsWith('qwen') ? requestedModel : 'llama-3.3-70b-versatile';
+            llmRes = await callOpenAICompatible({
+                endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+                apiKey: effectiveKey,
+                model: groqModel,
+                systemPrompt: SYSTEM_INSTRUCTION,
+                history,
+                userPrompt,
+            });
+        } else if (provider === 'anthropic') {
+            llmRes = await callAnthropic({ apiKey: effectiveKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+        } else if (provider === 'openrouter') {
+            const orModel = requestedModel.includes('/') ? requestedModel : 'google/gemini-2.5-flash';
+            llmRes = await callOpenAICompatible({
+                endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+                apiKey: effectiveKey,
+                model: orModel,
+                systemPrompt: SYSTEM_INSTRUCTION,
+                history,
+                userPrompt,
+                extraHeaders: { 'HTTP-Referer': 'https://pilana-erp.vercel.app', 'X-Title': 'Pilana-ERP AI Kontrolor' },
+            });
+        } else {
+            const openaiModel = requestedModel.startsWith('gpt-') || requestedModel.startsWith('o3') || requestedModel.startsWith('o4') ? requestedModel : 'gpt-4o-mini';
+            llmRes = await callOpenAICompatible({
+                endpoint: 'https://api.openai.com/v1/chat/completions',
+                apiKey: effectiveKey,
+                model: openaiModel,
+                systemPrompt: SYSTEM_INSTRUCTION,
+                history,
+                userPrompt,
+            });
+        }
+
+        if (!llmRes.ok) {
+            return NextResponse.json({ ok: false, mode: 'local', reason: llmRes.error || 'LLM_FAILED' }, { status: 200 });
+        }
+
+        const parsed = sanitizeResponsePayload(parseJsonSafe(llmRes.rawText));
         if (!parsed) {
+            // Ako model vrati običan tekst umjesto JSON-a, sačuvaj taj moćan tekst umjesto da ga baciš!
+            if (llmRes.rawText && llmRes.rawText.trim().length > 20) {
+                return NextResponse.json({
+                    ok: true,
+                    mode: provider,
+                    model: llmRes.model,
+                    data: {
+                        naslov: 'AI ERP Analiza',
+                        odgovor: llmRes.rawText.trim(),
+                        kpi: [],
+                        chart: null,
+                        tabela: null,
+                        predlozi: ['Prikaži mi ovo sa dijagramom', 'Uporedi ovaj i prošli mjesec', 'Pronađi najveće rizike u firmi'],
+                    },
+                }, { status: 200 });
+            }
             return NextResponse.json({ ok: false, mode: 'local', reason: 'INVALID_JSON' }, { status: 200 });
         }
 
-        return NextResponse.json({ ok: true, mode: 'gemini', model: geminiModel, data: parsed }, { status: 200 });
+        return NextResponse.json({ ok: true, mode: provider, model: llmRes.model, data: parsed }, { status: 200 });
     } catch (err) {
         return NextResponse.json({ ok: false, mode: 'local', reason: 'SERVER_ERROR', detail: String(err?.message || err) }, { status: 200 });
     }
