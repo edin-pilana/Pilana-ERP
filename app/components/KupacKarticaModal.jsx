@@ -175,7 +175,7 @@ export default function KupacKarticaModal({ kupacNaziv, user, onClose, onLimitSa
                         <button type="button" onClick={handlePrintPdf} className="px-3 py-2 rounded-xl bg-theme-card hover:bg-theme-accent text-theme-text hover:text-white border border-theme-border text-[10px] font-black uppercase flex items-center gap-1.5 transition-colors">
                             <Printer size={14} /> PDF
                         </button>
-                        <button type="button" onClick={onClose} className="p-2 rounded-xl bg-theme-card border border-theme-border text-theme-muted hover:text-red-400">
+                        <button type="button" aria-label="Zatvori karticu kupca" onClick={onClose} className="p-2 rounded-xl bg-theme-card border border-theme-border text-theme-muted hover:text-red-400">
                             <X size={18} />
                         </button>
                     </div>
@@ -216,7 +216,9 @@ export default function KupacKarticaModal({ kupacNaziv, user, onClose, onLimitSa
                                 <div className="flex items-center justify-between gap-2">
                                     <h4 className="text-[11px] font-black uppercase tracking-widest text-theme-accent">📊 Starost Potraživanja (Aging 30 / 60 / 90+ dana)</h4>
                                     {kartica.najstarijeKasnjenjeDana > 0 && (
-                                        <span className="text-[10px] font-black text-red-400">Najstariji dug kasni {kartica.najstarijeKasnjenjeDana} dana</span>
+                                        <span className="text-[10px] font-black text-red-400">
+                                            Najstariji dug{kartica.najstarijiRacunId ? ` (${kartica.najstarijiRacunId})` : ''} kasni {kartica.najstarijeKasnjenjeDana} dana{kartica.najstarijiRokIso ? ` • rok ${prikazDatumaBHS(kartica.najstarijiRokIso)}` : ''}
+                                        </span>
                                     )}
                                 </div>
                                 <div className="w-full h-3 rounded-full bg-theme-card overflow-hidden flex border border-theme-border">

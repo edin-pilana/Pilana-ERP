@@ -22,6 +22,9 @@ import {
     ucitajPravilaNotifikacija,
     oznaciNotifikacijuProcitanom,
     oznaciNotifikacijeProcitanim,
+    izvuciEntiteteNotifikacije,
+    izvuciPromjenuStanja,
+    daLiKorisnikImaDozvoluZaModul,
 } from '../utils/notificationHelpers';
 import {
     aktivirajPushNaUredjaju,
@@ -59,9 +62,10 @@ export default function AppShell({
     const [isSidebarOpen, setIsSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true));
     const [logoutDialog, setLogoutDialog] = useState(false);
 
-    // ⌘ Globalna Ctrl+K komandna paleta, globalna Finansijska kartica kupca & Offline red hale
+    // ⌘ Globalna Ctrl+K komandna paleta, globalna Finansijska kartica kupca, fokus obavještenja & Offline red hale
     const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
     const [karticaKupcaNaziv, setKarticaKupcaNaziv] = useState(null);
+    const [fokusObavjestenje, setFokusObavjestenje] = useState(null);
     const [isOffline, setIsOffline] = useState(false);
     const [offlineQueueCount, setOfflineQueueCount] = useState(0);
     const [syncingOffline, setSyncingOffline] = useState(false);
@@ -175,6 +179,9 @@ export default function AppShell({
             const naziv = ev?.detail?.kupacNaziv;
             if (naziv) setKarticaKupcaNaziv(naziv);
         };
+        const onFokusObavjestenja = (ev) => {
+            if (ev?.detail?.notification) setFokusObavjestenje(ev.detail);
+        };
         const onQueueUpdate = () => setOfflineQueueCount(ucitajOfflineRed().length);
         const onOffline = () => setIsOffline(true);
         const onOnline = async () => {
@@ -190,6 +197,7 @@ export default function AppShell({
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('open_command_palette', onOpenPalette);
         window.addEventListener('otvori_karticu_kupca', onOpenKartica);
+        window.addEventListener('fokus_obavjestenja', onFokusObavjestenja);
         window.addEventListener('offline_queue_updated', onQueueUpdate);
         window.addEventListener('offline', onOffline);
         window.addEventListener('online', onOnline);
@@ -202,6 +210,7 @@ export default function AppShell({
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('open_command_palette', onOpenPalette);
             window.removeEventListener('otvori_karticu_kupca', onOpenKartica);
+            window.removeEventListener('fokus_obavjestenja', onFokusObavjestenja);
             window.removeEventListener('offline_queue_updated', onQueueUpdate);
             window.removeEventListener('offline', onOffline);
             window.removeEventListener('online', onOnline);
@@ -765,7 +774,7 @@ export default function AppShell({
                                     Profil: {user?.ime_prezime || user?.username || 'Korisnik'} • Samo vaše notifikacije i odobrenja
                                 </p>
                             </div>
-                            <button type="button" onClick={() => setIsNotifDrawerOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors">
+                            <button type="button" aria-label="Zatvori obavještenja" onClick={() => setIsNotifDrawerOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors">
                                 <X size={20} />
                             </button>
                         </div>
@@ -857,20 +866,36 @@ export default function AppShell({
                                             ? 'border-l-amber-500'
                                             : 'border-l-blue-500';
 
+                                    const promjena = izvuciPromjenuStanja(notif);
+                                    const ent = izvuciEntiteteNotifikacije(notif);
+                                    const targetDocId = ent?.ponudaId || ent?.rnId || ent?.otpremnicaId || ent?.racunId || ent?.paketId || ent?.trupacId || ent?.primaryId || null;
+
+                                    const otvoriObavjestenjeIFokusiraj = () => {
+                                        setFokusObavjestenje({
+                                            notification: notif,
+                                            promjenaStanja: promjena,
+                                            targetId: targetDocId,
+                                            modulAppId: modKey ? MODUL_META[modKey]?.appId : null,
+                                        });
+                                        if (modKey && MODUL_META[modKey]?.appId && daLiKorisnikImaDozvoluZaModul(user, modKey)) {
+                                            window.dispatchEvent(new CustomEvent('navigacija_na_modul', {
+                                                detail: { modul: MODUL_META[modKey].appId, autoOpenId: targetDocId, autoAction: 'pregled' }
+                                            }));
+                                        }
+                                        setSelectedNotif(notif);
+                                        setIsNotifDrawerOpen(false);
+                                    };
+
                                     return (
                                         <div
                                             key={notif.id}
                                             role="button"
                                             tabIndex={0}
-                                            onClick={() => {
-                                                setSelectedNotif(notif);
-                                                setIsNotifDrawerOpen(false);
-                                            }}
+                                            onClick={otvoriObavjestenjeIFokusiraj}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'Enter' || e.key === ' ') {
                                                     e.preventDefault();
-                                                    setSelectedNotif(notif);
-                                                    setIsNotifDrawerOpen(false);
+                                                    otvoriObavjestenjeIFokusiraj();
                                                 }
                                             }}
                                             className={`p-3.5 rounded-2xl bg-theme-panel border border-theme-border border-l-4 ${borderTone} hover:border-theme-accent transition-all cursor-pointer relative group ${jeProcitano ? 'opacity-70' : ''}`}
@@ -886,6 +911,11 @@ export default function AppShell({
                                                         {MODUL_META[modKey]?.ikona || '📌'} {getNazivModula(modKey)}
                                                     </span>
                                                 )}
+                                                {notif._ponavljanja > 1 && (
+                                                    <span className="text-[8px] font-black uppercase bg-amber-500/20 text-amber-400 border border-amber-500/40 px-1.5 py-0.5 rounded-full">
+                                                        ×{notif._ponavljanja}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="flex justify-between items-center gap-2 mb-1">
                                                 <span className="text-[11px] font-black text-theme-text uppercase truncate">{notif.akcija}</span>
@@ -894,9 +924,16 @@ export default function AppShell({
                                                 </span>
                                             </div>
                                             <p className="text-xs text-theme-muted leading-snug line-clamp-2">{ocistiTekstDetalja(notif.detalji)}</p>
+                                            {promjena.prethodno && promjena.novo && promjena.prethodno !== 'Prethodno stanje' && (
+                                                <div className="mt-1.5 px-2 py-1 rounded-lg bg-theme-card/80 border border-theme-border/60 text-[9px] font-black flex flex-wrap items-center gap-1">
+                                                    <span className="text-amber-400 truncate max-w-[44%]">{promjena.prethodno}</span>
+                                                    <span className="text-theme-muted">→</span>
+                                                    <span className="text-emerald-400 truncate max-w-[46%]">{promjena.novo}</span>
+                                                </div>
+                                            )}
                                             <div className="flex items-center justify-between mt-2 text-[9px] font-bold text-theme-muted">
                                                 <span>👤 {notif.korisnik}</span>
-                                                <span className="text-theme-accent font-black uppercase group-hover:underline">Detalji / Odobrenje →</span>
+                                                <span className="text-theme-accent font-black uppercase group-hover:underline">Otvori modul & detalje →</span>
                                             </div>
                                             {!jeProcitano && (
                                                 <button
@@ -925,7 +962,7 @@ export default function AppShell({
                 <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-0 right-0 h-full w-full max-w-[100vw] sm:w-96 bg-theme-card border-l border-theme-border shadow-2xl z-[5000] p-4 sm:p-6 flex flex-col backdrop-blur-[var(--glass-blur)] overflow-x-hidden">
                     <div className="flex justify-between items-center gap-2 mb-6 border-b border-theme-border pb-4">
                         <h2 className="text-sm sm:text-base font-black text-theme-text uppercase tracking-widest flex items-center gap-2 min-w-0 truncate"><Settings size={18} className="shrink-0" /> <span className="truncate">Postavke Ekrana</span></h2>
-                        <button type="button" onClick={() => setIsSettingsOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors"><X size={22} /></button>
+                        <button type="button" aria-label="Zatvori postavke ekrana" onClick={() => setIsSettingsOpen(false)} className="shrink-0 p-1 text-theme-muted hover:text-red-500 transition-colors"><X size={22} /></button>
                     </div>
                     <div className="space-y-6 flex-1 overflow-y-auto pr-1 custom-scrollbar">
                         <div>
@@ -1025,7 +1062,7 @@ export default function AppShell({
                     <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-theme-card border-r border-theme-border z-[9001] p-4 flex flex-col md:hidden shadow-2xl">
                         <div className="flex justify-between items-center mb-4 border-b border-theme-border pb-3">
                             {renderLogoDisplay(true)}
-                            <button type="button" onClick={() => setMobileMenuOpen(false)} className="p-2 bg-theme-panel rounded-lg text-theme-muted hover:text-theme-text border border-theme-border"><X size={20} /></button>
+                            <button type="button" aria-label="Zatvori mobilni meni" onClick={() => setMobileMenuOpen(false)} className="p-2 bg-theme-panel rounded-lg text-theme-muted hover:text-theme-text border border-theme-border"><X size={20} /></button>
                         </div>
                         <div className="flex items-center gap-3 p-3 mb-4 bg-theme-panel rounded-xl border border-theme-border shadow-inner">
                             <div className="w-8 h-8 rounded-full bg-theme-accent flex items-center justify-center text-white font-black"><User size={16} /></div>
@@ -1079,7 +1116,7 @@ export default function AppShell({
                 {localLayout === 'sidebar' && (
                     <>
                         <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-theme-card border-b border-theme-border flex items-center justify-between px-4 z-40 backdrop-blur-md">
-                            <button type="button" onClick={() => setMobileMenuOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Menu size={20} /></button>
+                            <button type="button" aria-label="Otvori mobilni meni" onClick={() => setMobileMenuOpen(true)} className="p-2 bg-theme-panel text-theme-text rounded-xl border border-theme-border"><Menu size={20} /></button>
                             {renderLogoDisplay(true)}
                             <div className="flex items-center gap-2">
                                 {renderNotifBellButton('w-10 h-10', 18)}
@@ -1278,6 +1315,42 @@ export default function AppShell({
                                     {syncingOffline ? 'Sinhronizujem...' : 'Sinhronizuj sada'}
                                 </button>
                             )}
+                        </div>
+                    )}
+                    {fokusObavjestenje?.notification && (
+                        <div data-testid="focused-notif-banner" className="mb-4 p-3.5 rounded-2xl bg-amber-950/35 border-2 border-amber-500/70 shadow-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+                            <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase">
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">🔔 Fokusirano obavještenje</span>
+                                    <span className="text-amber-300">{fokusObavjestenje.notification.akcija}</span>
+                                    {fokusObavjestenje.targetId && (
+                                        <span className="px-2 py-0.5 rounded bg-theme-card border border-amber-500/40 text-theme-text font-mono">ID: {fokusObavjestenje.targetId}</span>
+                                    )}
+                                    <span className="text-blue-300">👤 Mijenja: {fokusObavjestenje.promjenaStanja?.ko || fokusObavjestenje.notification.korisnik}</span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs font-black">
+                                    <span className="text-amber-300">◀️ {fokusObavjestenje.promjenaStanja?.prethodno || 'Prethodno'}</span>
+                                    <span className="text-theme-muted">➔</span>
+                                    <span className="text-emerald-400">▶️ {fokusObavjestenje.promjenaStanja?.novo || ocistiTekstDetalja(fokusObavjestenje.notification.detalji)}</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedNotif(fokusObavjestenje.notification)}
+                                    className="px-3 py-2 rounded-xl bg-theme-accent text-white text-[10px] font-black uppercase hover:opacity-90"
+                                >
+                                    🔍 Detalji / Historija
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label="Zatvori fokus obavještenja"
+                                    onClick={() => setFokusObavjestenje(null)}
+                                    className="px-3 py-2 rounded-xl bg-theme-card border border-theme-border text-theme-muted hover:text-white text-[10px] font-black uppercase"
+                                >
+                                    ✕ Zatvori
+                                </button>
+                            </div>
                         </div>
                     )}
                     {children}

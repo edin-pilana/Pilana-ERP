@@ -694,8 +694,24 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         if (actualId === 'vrsta') return <select tabIndex="-1" ref={refs.vrsta} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] min-w-0 px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{vrsteList.map(v => <option key={v} value={v} className="bg-theme-panel text-theme-text">{v}</option>)}</select>;
         if (actualId === 'klasa') return <select tabIndex="-1" ref={refs.klasa} value={val} onChange={e => setVal(e.target.value)} className="w-full h-full min-h-[45px] min-w-0 px-3 py-0 bg-theme-panel border border-theme-border outline-none uppercase text-center shadow-inner cursor-pointer transition-colors" style={inputStyle}>{klaseList.map(k => <option key={k} value={k} className="bg-theme-panel text-theme-text">{k}</option>)}</select>;
 
-        if (actualId === 'duzina') return <input ref={refs.duzina} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
-        if (actualId === 'promjer') return <input ref={refs.promjer} type="number" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" style={inputStyle} placeholder="0" />;
+        if (actualId === 'duzina') {
+            const bad = val !== '' && val !== null && val !== undefined && (isNaN(Number(val)) || Number(val) <= 0);
+            return (
+                <div className="w-full h-full flex flex-col">
+                    <input ref={refs.duzina} type="number" min="0.1" step="0.1" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className={`w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border outline-none text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${bad ? 'border-red-500 text-red-400 ring-2 ring-red-500/40' : 'border-theme-border focus:border-theme-accent'}`} style={inputStyle} placeholder="0" />
+                    {bad && <span data-testid="prijem-duzina-error" className="text-[9px] text-red-400 font-black text-center mt-0.5">⚠️ Dužina &gt; 0!</span>}
+                </div>
+            );
+        }
+        if (actualId === 'promjer') {
+            const bad = val !== '' && val !== null && val !== undefined && (isNaN(Number(val)) || Number(val) <= 0);
+            return (
+                <div className="w-full h-full flex flex-col">
+                    <input ref={refs.promjer} type="number" min="1" step="1" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className={`w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border outline-none text-center shadow-inner transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${bad ? 'border-red-500 text-red-400 ring-2 ring-red-500/40' : 'border-theme-border focus:border-theme-accent'}`} style={inputStyle} placeholder="0" />
+                    {bad && <span data-testid="prijem-promjer-error" className="text-[9px] text-red-400 font-black text-center mt-0.5">⚠️ Prečnik &gt; 0!</span>}
+                </div>
+            );
+        }
 
         return null;
     };
@@ -955,7 +971,22 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
                                     )}
                                 </div>
 
-                                <button ref={refs.btn_dodaj} onClick={snimiTrupac} className={`w-full py-6 text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90 transition-all text-sm tracking-widest ${isEditingTrupac ? 'bg-amber-600 shadow-[0_0_20px_rgba(245,158,11,0.4)] border border-amber-400' : 'bg-theme-accent border border-transparent'}`}>
+                                {((form.duzina !== '' && Number(form.duzina) <= 0) || (form.promjer !== '' && Number(form.promjer) <= 0) || (form.isKontrola && ((form.kontrolna_duzina !== '' && Number(form.kontrolna_duzina) <= 0) || (form.kontrolni_promjer !== '' && Number(form.kontrolni_promjer) <= 0)))) && (
+                                    <div data-testid="prijem-validation-alert" className="mb-3 p-3 rounded-xl bg-red-950/40 border border-red-500 text-red-300 text-xs font-black text-center">
+                                        ⚠️ Dužina (m) i prečnik (cm) trupca moraju biti pozitivni brojevi veći od 0!
+                                    </div>
+                                )}
+
+                                <button
+                                    ref={refs.btn_dodaj}
+                                    disabled={
+                                        (form.duzina !== '' && (isNaN(Number(form.duzina)) || Number(form.duzina) <= 0)) ||
+                                        (form.promjer !== '' && (isNaN(Number(form.promjer)) || Number(form.promjer) <= 0)) ||
+                                        (form.isKontrola && ((form.kontrolna_duzina !== '' && Number(form.kontrolna_duzina) <= 0) || (form.kontrolni_promjer !== '' && Number(form.kontrolni_promjer) <= 0)))
+                                    }
+                                    onClick={snimiTrupac}
+                                    className={`w-full py-6 text-white font-black rounded-2xl uppercase shadow-xl hover:opacity-90 transition-all text-sm tracking-widest disabled:opacity-40 disabled:cursor-not-allowed ${isEditingTrupac ? 'bg-amber-600 shadow-[0_0_20px_rgba(245,158,11,0.4)] border border-amber-400' : 'bg-theme-accent border border-transparent'}`}
+                                >
                                     {isEditingTrupac ? '✅ SAČUVAJ IZMJENE TRUPCA' : '➕ DODAJ NA OTPREMNICU'}
                                 </button>
                             </div>

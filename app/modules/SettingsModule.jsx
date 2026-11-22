@@ -1287,6 +1287,13 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
         });
     };
 
+    const ukupniRabatNum = form.ukupni_rabat === '' || form.ukupni_rabat === null ? 0 : Number(form.ukupni_rabat);
+    const ukupniRabatNeispravan = form.ukupni_rabat !== '' && form.ukupni_rabat !== null && (isNaN(ukupniRabatNum) || !isFinite(ukupniRabatNum) || ukupniRabatNum < 0 || ukupniRabatNum > 100);
+    const tempPRabatNum = tempP_rabat === '' || tempP_rabat === null ? null : Number(tempP_rabat);
+    const tempPRabatNeispravan = tempPRabatNum !== null && (isNaN(tempPRabatNum) || !isFinite(tempPRabatNum) || tempPRabatNum < 0 || tempPRabatNum > 100);
+    const tempKRabatNum = tempK_rabat === '' || tempK_rabat === null ? null : Number(tempK_rabat);
+    const tempKRabatNeispravan = tempKRabatNum !== null && (isNaN(tempKRabatNum) || !isFinite(tempKRabatNum) || tempKRabatNum < 0 || tempKRabatNum > 100);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in">
             <div className="lg:col-span-7 space-y-6">
@@ -1321,7 +1328,10 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
                         <div className="md:col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">👤 Kontakt Osoba</label><input value={form.kontakt_osoba || ''} onChange={e=>setForm({...form, kontakt_osoba:e.target.value})} placeholder="Ime i prezime kontakt osobe..." className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-amber-500 shadow-inner" /></div>
                         <div className="md:col-span-2 mt-2">
                             <label className="text-[10px] text-amber-500 uppercase ml-2 block mb-2 font-black">🌟 UKUPNI RABAT NA SVE PROIZVODE (%)</label>
-                            <input type="number" value={form.ukupni_rabat} onChange={e=>setForm({...form, ukupni_rabat:e.target.value})} className="w-full min-w-0 p-4 bg-amber-900/20 rounded-xl text-lg text-amber-400 font-black outline-none border border-amber-500/50 focus:border-amber-400 text-center shadow-inner" placeholder="0" />
+                            <input type="number" min="0" max="100" step="0.1" value={form.ukupni_rabat} onChange={e=>setForm({...form, ukupni_rabat:e.target.value})} className={`w-full min-w-0 p-4 rounded-xl text-lg font-black outline-none text-center shadow-inner border ${ukupniRabatNeispravan ? 'bg-red-950/40 text-red-400 border-red-500 ring-2 ring-red-500/40' : 'bg-amber-900/20 text-amber-400 border-amber-500/50 focus:border-amber-400'}`} placeholder="0" />
+                            {ukupniRabatNeispravan && (
+                                <p data-testid="kupac-rabat-error" className="text-[10px] text-red-400 font-black uppercase mt-1.5 text-center">⚠️ Ukupni rabat mora biti između 0% i 100%!</p>
+                            )}
                         </div>
                     </div>
 
@@ -1374,7 +1384,7 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
                             </div>
                         </div>
                     </div>
-                    <button onClick={snimiKupca} className={`w-full py-5 text-white font-black rounded-xl uppercase text-sm shadow-xl mt-6 transition-all border ${isEditing ? 'bg-amber-600 hover:bg-amber-500 border-amber-400' : 'bg-theme-accent hover:opacity-80 border-blue-400'}`}>{isEditing ? '✅ Ažuriraj Kupca' : '➕ Snimi Kupca u Bazu'}</button>
+                    <button disabled={ukupniRabatNeispravan || tempPRabatNeispravan || tempKRabatNeispravan} onClick={snimiKupca} className={`w-full py-5 text-white font-black rounded-xl uppercase text-sm shadow-xl mt-6 transition-all border disabled:opacity-40 disabled:cursor-not-allowed ${isEditing ? 'bg-amber-600 hover:bg-amber-500 border-amber-400' : 'bg-theme-accent hover:opacity-80 border-blue-400'}`}>{isEditing ? '✅ Ažuriraj Kupca' : '➕ Snimi Kupca u Bazu'}</button>
                 </div>
             </div>
 

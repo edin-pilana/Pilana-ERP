@@ -17,6 +17,8 @@ import {
     oznaciNotifikacijuProcitanom,
     oznacPovezaneNotifikacijeRijesenim,
     posaljiNotifikaciju,
+    deduplicirajNotifikacije,
+    izvuciPromjenuStanja,
 } from '../utils/notificationHelpers';
 
 const formatDatumVrijeme = (iso) => {
@@ -208,7 +210,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
             }
 
             historyRows.sort((a, b) => new Date(a.vrijeme || 0).getTime() - new Date(b.vrijeme || 0).getTime());
-            setHistorija(historyRows);
+            setHistorija(deduplicirajNotifikacije(historyRows));
         } catch (err) {
             setHistorija([notification]);
         } finally {
@@ -234,14 +236,22 @@ export default function NotificationDetailModal({ notification, user, onClose, o
         onClose();
     };
 
+    const promjenaStanja = izvuciPromjenuStanja(notification);
+    const povezaniKupac = povezaniZapis?.data?.kupac_naziv || povezaniZapis?.data?.ponuda?.kupac_naziv || povezaniZapis?.data?.rn?.kupac_naziv || null;
+    const primaryTargetId = parsed.ponudaId || parsed.rnId || parsed.otpremnicaId || parsed.racunId || parsed.paketId || parsed.trupacId || parsed.primaryId || null;
+
     const handleNavigateModule = (modulKey, autoOpenId = null, autoAction = null) => {
         const meta = MODUL_META[modulKey];
         if (!meta?.appId) return;
         if (!daLiKorisnikImaDozvoluZaModul(user, modulKey)) {
             return toast.error('Nemate dozvolu za otvaranje tog modula.');
         }
+        const resolvedId = autoOpenId || primaryTargetId || null;
+        window.dispatchEvent(new CustomEvent('fokus_obavjestenja', {
+            detail: { notification, promjenaStanja, targetId: resolvedId, modulAppId: meta.appId }
+        }));
         window.dispatchEvent(new CustomEvent('navigacija_na_modul', {
-            detail: { modul: meta.appId, autoOpenId, autoAction }
+            detail: { modul: meta.appId, autoOpenId: resolvedId, autoAction }
         }));
         onClose();
     };
@@ -454,6 +464,7 @@ export default function NotificationDetailModal({ notification, user, onClose, o
                     </div>
                     <button
                         type="button"
+                        aria-label="Zatvori detalje obavještenja"
                         onClick={onClose}
                         className="p-2 rounded-xl bg-theme-panel border border-theme-border text-theme-muted hover:text-red-500 hover:border-red-500 transition-colors shrink-0"
                         title="Zatvori"
@@ -464,6 +475,28 @@ export default function NotificationDetailModal({ notification, user, onClose, o
 
                 {/* TIJELO MODALA */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
+                    {/* 🔄 NAGLAŠENA KARTICA PROMJENE STANJA: KO MIJENJA + PRETHODNO STANJE -> NOVO STANJE */}
+                    <div data-testid="notif-diff-card" className="bg-gradient-to-br from-theme-panel to-theme-card p-4 rounded-2xl border-2 border-theme-accent/40 space-y-3 shadow-md">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-theme-border/60 pb-2.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-theme-accent">
+                                🔄 Pregled izmjene ({promjenaStanja.opisPromjene || 'Promjena'})
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/40 text-blue-300 text-[10px] font-black flex items-center gap-1.5">
+                                <User size={12} /> Mijenja: <strong className="text-white uppercase">{promjenaStanja.ko}</strong>
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+                            <div className="p-3 rounded-xl bg-amber-950/25 border border-amber-500/40">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 block mb-1">◀️ Prethodno stanje</span>
+                                <p className="text-xs font-black text-theme-text break-words">{promjenaStanja.prethodno || '—'}</p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-emerald-950/25 border border-emerald-500/50">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-400 block mb-1">▶️ Novo stanje (u šta se mijenja)</span>
+                                <p className="text-xs font-black text-emerald-300 break-words">{promjenaStanja.novo || '—'}</p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* OPIS OBAVJEŠTENJA */}
                     <div className="bg-theme-panel p-4 rounded-2xl border border-theme-border">
                         <p className="text-[10px] text-theme-muted font-black uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
@@ -692,14 +725,28 @@ export default function NotificationDetailModal({ notification, user, onClose, o
                         {primarniModul && daLiKorisnikImaDozvoluZaModul(user, primarniModul) && (
                             <button
                                 type="button"
+                                data-testid="notif-jump-module-btn"
                                 onClick={() => handleNavigateModule(
                                     primarniModul,
-                                    primarniModul === 'ponude' ? parsed.ponudaId : (primarniModul === 'radni_nalog' ? parsed.rnId : null),
-                                    primarniModul === 'radni_nalog' ? 'uredi' : null
+                                    primaryTargetId,
+                                    primarniModul === 'radni_nalog' ? 'uredi' : 'pregled'
                                 )}
-                                className="px-3.5 py-2.5 bg-theme-card hover:bg-theme-accent hover:text-white text-theme-text border border-theme-border rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-all"
+                                className="px-3.5 py-2.5 bg-theme-accent hover:opacity-90 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-all shadow-md"
                             >
-                                <ExternalLink size={13} /> Otvori {getNazivModula(primarniModul)}
+                                <ExternalLink size={13} /> Otvori i označi u {getNazivModula(primarniModul)}
+                            </button>
+                        )}
+
+                        {povezaniKupac && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: povezaniKupac } }));
+                                    onClose();
+                                }}
+                                className="px-3.5 py-2.5 bg-emerald-600/15 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-all"
+                            >
+                                💳 Kartica: {povezaniKupac}
                             </button>
                         )}
 

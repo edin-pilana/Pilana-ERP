@@ -186,6 +186,112 @@ export const parsirajMetapodatkeNotifikacije = (logOrDetalji) => {
 
 export const ocistiTekstDetalja = (detalji) => parsirajMetapodatkeNotifikacije(detalji).cleanDetalji;
 
+/**
+ * Deduplicira identične događaje (isti korisnik, akcija, tekst i ista minuta) da spriječi šum u listi i historiji.
+ */
+export const deduplicirajNotifikacije = (lista = []) => {
+    const mapa = new Map();
+    const out = [];
+    (lista || []).forEach((item) => {
+        if (!item) return;
+        const clean = ocistiTekstDetalja(item.detalji || '').trim();
+        const minuta = String(item.vrijeme || item.created_at || '').slice(0, 16);
+        const kljuc = `${String(item.akcija || '').toUpperCase()}|${String(item.korisnik || '').toLowerCase()}|${clean}|${minuta}`;
+        if (mapa.has(kljuc)) {
+            const postojeci = mapa.get(kljuc);
+            postojeci._ponavljanja = (postojeci._ponavljanja || 1) + 1;
+            postojeci._duplikatIds = [...(postojeci._duplikatIds || [postojeci.id]), item.id];
+        } else {
+            const kopija = { ...item, _ponavljanja: 1, _duplikatIds: [item.id] };
+            mapa.set(kljuc, kopija);
+            out.push(kopija);
+        }
+    });
+    return out;
+};
+
+/**
+ * Izvlači strukturiranu promjenu stanja (KO MIJENJA + PRETHODNO STANJE -> NOVO STANJE) iz teksta i metapodataka obavještenja.
+ */
+export const izvuciPromjenuStanja = (log) => {
+    if (!log) return { ko: 'Sistem', prethodno: null, novo: null, opisPromjene: '' };
+    const { cleanDetalji, meta } = parsirajMetapodatkeNotifikacije(log);
+    const ko = log.korisnik || 'Sistem';
+    const akc = String(log.akcija || '').toUpperCase();
+    const txt = cleanDetalji || '';
+
+    // 1. Eksplicitni metapodaci ako postoje
+    if (meta.staro_stanje || meta.novo_stanje) {
+        return { ko, prethodno: meta.staro_stanje || '—', novo: meta.novo_stanje || '—', opisPromjene: 'Direktna izmjena' };
+    }
+
+    // 2. Ručna korekcija rabata: "...povećan na 15.00% (Sistem davao: 7.5%)"
+    const rabatMatch = txt.match(/na\s+([0-9.,]+%)\s*\(Sistem davao:\s*([0-9.,]+%)\)/i);
+    if (rabatMatch) {
+        return {
+            ko,
+            prethodno: `Sistemski rabat: ${rabatMatch[2]}`,
+            novo: `Ručni rabat: ${rabatMatch[1]}`,
+            opisPromjene: 'Korekcija rabata',
+        };
+    }
+
+    // 3. Promjena statusa: "prebačen iz X u Y" ili "vraćen iz statusa X u Y"
+    const statusMatch = txt.match(/(?:prebačen|vraćen|vraćena)\s+iz(?:\s+statusa)?\s+([A-ZČĆŽŠĐ0-9_ -]+?)\s+u\s+([A-ZČĆŽŠĐ0-9_ -]+?)(?:[!.(),]|$)/i);
+    if (statusMatch) {
+        return {
+            ko,
+            prethodno: `Status: ${statusMatch[1].trim()}`,
+            novo: `Status: ${statusMatch[2].trim()}`,
+            opisPromjene: 'Promjena statusa dokumenta',
+        };
+    }
+
+    // 4. Strelice "A -> B" ili "A → B"
+    const arrowMatch = txt.match(/([^:;()]{2,55}?)\s*(?:->|→)\s*([^:;()]{2,55})/);
+    if (arrowMatch && !/\d{4}-\d{2}-\d{2}/.test(arrowMatch[1])) {
+        return {
+            ko,
+            prethodno: arrowMatch[1].trim(),
+            novo: arrowMatch[2].trim(),
+            opisPromjene: 'Izmjena vrijednosti',
+        };
+    }
+
+    // 5. Specifične akcije (Brisanje, Reklamacija, Kreditni limit, Korekcija paketa, Odmor)
+    if (akc.includes('BRISANJ') || akc.includes('OBRISAN')) {
+        return { ko, prethodno: 'Aktivan zapis u bazi', novo: 'OBRISANO / UKLONJENO', opisPromjene: 'Brisanje zapisa' };
+    }
+    if (akc.includes('KREDITNI_LIMIT')) {
+        return { ko, prethodno: 'Prethodni kreditni limit kupca', novo: txt, opisPromjene: 'Izmjena kreditnog limita' };
+    }
+    if (akc.includes('REKLAMACIJ')) {
+        const jeNova = akc.includes('NOVA');
+        return {
+            ko,
+            prethodno: jeNova ? 'Isporučena roba kod kupca' : 'Reklamacija na čekanju',
+            novo: akc.includes('ODOBREN') ? 'ODOBRENA REKLAMACIJA' : akc.includes('ODBIJEN') ? 'ODBIJENA REKLAMACIJA' : 'ČEKA ODOBRENJE UPRAVE',
+            opisPromjene: 'Status reklamacije',
+        };
+    }
+    if (akc.includes('ODMOR') || akc.includes('ODSUSTV')) {
+        return {
+            ko,
+            prethodno: akc.includes('ZAHTJEV') && !akc.includes('ODOBREN') && !akc.includes('ODBIJEN') ? 'Novi zahtjev radnika' : 'Zahtjev NA ČEKANJU',
+            novo: akc.includes('ODOBREN') ? 'ODOBRENO ODSUSTVO' : akc.includes('ODBIJEN') ? 'ODBIJENO ODSUSTVO' : 'NA ČEKANJU ODOBRENJA',
+            opisPromjene: 'HR zahtjev',
+        };
+    }
+    if (akc.includes('IZMJENA_U_PAKETU')) {
+        return { ko, prethodno: 'Prethodno stanje stavke u paketu', novo: txt, opisPromjene: 'Korekcija količine u paketu' };
+    }
+    if (akc.includes('TRAŽI_ODOBRENJE_PONUDE')) {
+        return { ko, prethodno: 'Zaključana ponuda / RN', novo: 'Zatražena izmjena (Čeka odobrenje)', opisPromjene: 'Izmjena u proizvodnji' };
+    }
+
+    return { ko, prethodno: 'Prethodno stanje', novo: log.akcija || 'Nova aktivnost', opisPromjene: 'Sistemski događaj' };
+};
+
 export const odrediModuleNotifikacije = (log) => {
     if (!log) return [];
     const { cleanDetalji, meta } = parsirajMetapodatkeNotifikacije(log);
@@ -500,12 +606,13 @@ export const oznaciNotifikacijuProcitanom = async (notif, user) => {
     if (!notif?.id) return { error: null };
     const isAdminOrSuper = user?.uloga === 'superadmin' || user?.uloga === 'admin';
     const isPersonal = daLiJeLicnaNotifikacijaZaKorisnika(notif, user);
+    const sviIds = Array.isArray(notif._duplikatIds) && notif._duplikatIds.length > 0 ? notif._duplikatIds : [notif.id];
 
-    oznaciLokalnoProcitano(user, [notif.id]);
+    oznaciLokalnoProcitano(user, sviIds);
 
     let error = null;
     if (isAdminOrSuper || isPersonal) {
-        const res = await supabase.from('sistem_audit_log').update({ pregledano: true }).eq('id', notif.id);
+        const res = await supabase.from('sistem_audit_log').update({ pregledano: true }).in('id', sviIds);
         error = res.error || null;
     }
 
@@ -563,7 +670,7 @@ export const ucitajNotifikacijeZaKorisnika = async (user, modulIme = null, { inc
         return true;
     });
 
-    return filtered.slice(0, limit);
+    return deduplicirajNotifikacije(filtered).slice(0, limit);
 };
 
 export const posaljiNotifikaciju = async ({ korisnik, akcija, detalji, nivo_alarma = 'INFO', meta = null, pregledano = null }) => {

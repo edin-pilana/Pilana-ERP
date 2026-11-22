@@ -171,7 +171,7 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
         if (preostaloKM > 0.01) {
             if (rokIso) {
                 const rokMs = new Date(`${rokIso}T12:00:00`).getTime();
-                kasniDana = Math.floor((danasMs - rokMs) / 86400000);
+                kasniDana = Math.round((danasMs - rokMs) / 86400000);
             }
             if (kasniDana <= 0) {
                 aging.uRoku += preostaloKM;
@@ -184,7 +184,6 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
             } else {
                 aging.d90plus += preostaloKM;
             }
-            if (kasniDana > najstarijeKasnjenjeDana) najstarijeKasnjenjeDana = kasniDana;
         }
 
         return {
@@ -198,6 +197,20 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
             status: preostaloKM <= 0.01 ? 'NAPLAĆENO' : (kasniDana > 0 ? 'DOSPJELO' : r.status || 'OTVORENO'),
         };
     });
+
+    // Sortiraj tako da najstariji dospjeli neplaćeni računi budu NA VRHU (uvijek 100% usklađeno sa sažetkom!)
+    racuniDetalji.sort((a, b) => {
+        const aOtv = a.preostaloKM > 0.01 ? 1 : 0;
+        const bOtv = b.preostaloKM > 0.01 ? 1 : 0;
+        if (aOtv !== bOtv) return bOtv - aOtv;
+        if (a.kasniDana !== b.kasniDana) return b.kasniDana - a.kasniDana;
+        return String(b.datum || '').localeCompare(String(a.datum || ''));
+    });
+
+    const najstarijiOtvoreni = racuniDetalji.find((r) => r.preostaloKM > 0.01 && r.kasniDana > 0) || null;
+    najstarijeKasnjenjeDana = najstarijiOtvoreni ? najstarijiOtvoreni.kasniDana : 0;
+    const najstarijiRacunId = najstarijiOtvoreni ? najstarijiOtvoreni.id : '';
+    const najstarijiRokIso = najstarijiOtvoreni ? najstarijiOtvoreni.rokIso : '';
 
     const uplateKupca = (blagRes.data || []).filter((b) => {
         const opisUp = normKupacKljuc(b.opis || '');
@@ -228,6 +241,8 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
         projektovaniDugKM,
         povratReklamacijeKM: parseFloat(povratReklamacijeKM.toFixed(2)),
         najstarijeKasnjenjeDana,
+        najstarijiRacunId,
+        najstarijiRokIso,
         maxKasnjenjeKupca: najstarijeKasnjenjeDana,
         aging: {
             uRoku: parseFloat(aging.uRoku.toFixed(2)),

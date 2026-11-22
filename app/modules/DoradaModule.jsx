@@ -61,10 +61,20 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
         });
     };
 
+    const siroviZastojLive = String(form.zastoj_min ?? '').trim();
+    const zastojNumLive = siroviZastojLive === '' ? 0 : Number(siroviZastojLive);
+    const zastojNeispravan = siroviZastojLive !== '' && (isNaN(zastojNumLive) || !isFinite(zastojNumLive) || zastojNumLive < 0 || zastojNumLive > 1440 || /[eE]/.test(siroviZastojLive));
+    const vrijemeNeispravno = Boolean(form.vrijeme_do && form.vrijeme_od && form.vrijeme_do < form.vrijeme_od);
+
     const renderDnevnikPolje = (polje) => {
         if (polje.id === 'pocetak') return <input type="time" value={form.vrijeme_od} onChange={e => setForm({...form, vrijeme_od: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
-        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
-        if (polje.id === 'zastoj') return <input type="number" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className="w-full h-full min-h-[45px] p-3 bg-red-900/20 rounded-xl text-xs text-red-400 font-black border border-red-500/50 outline-none text-center" />;
+        if (polje.id === 'kraj') return <input type="time" value={form.vrijeme_do} onChange={e => setForm({...form, vrijeme_do: e.target.value})} className={`w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border outline-none ${vrijemeNeispravno ? 'border-red-500 ring-2 ring-red-500/40' : 'border-theme-border focus:border-amber-500'}`} />;
+        if (polje.id === 'zastoj') return (
+            <div className="w-full flex flex-col">
+                <input type="number" min="0" max="1440" value={form.zastoj_min} onChange={e => setForm({...form, zastoj_min: e.target.value})} placeholder="0" className={`w-full h-full min-h-[45px] p-3 rounded-xl text-xs font-black border outline-none text-center ${zastojNeispravan ? 'bg-red-950/60 text-red-300 border-red-500 ring-2 ring-red-500/50' : 'bg-red-900/20 text-red-400 border-red-500/50'}`} />
+                {zastojNeispravan && <span className="text-[9px] text-red-400 font-black mt-1 text-center">⚠️ 0–1440 min!</span>}
+            </div>
+        );
         if (polje.id === 'napomena') return <input type="text" value={form.napomena} onChange={e => setForm({...form, napomena: e.target.value})} placeholder="Održavanje, kvar..." className="w-full h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none focus:border-amber-500" />;
         return null;
     };
@@ -102,7 +112,7 @@ function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVeli
                         </div>
                     );
                 })}
-                <button onClick={snimiZastojIliRad} className={`w-full py-3.5 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
+                <button disabled={zastojNeispravan || vrijemeNeispravno} onClick={snimiZastojIliRad} className={`w-full py-3.5 bg-amber-600 text-white font-black rounded-xl text-[10px] uppercase shadow-lg hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed ${saas.isEditMode ? 'opacity-50 pointer-events-none col-span-1 sm:col-span-2 md:col-span-4' : 'col-span-1 sm:col-span-2 md:col-span-4 mt-2'}`}>➕ Dodaj Zapis u Dnevnik</button>
             </div>
             
             <div className="space-y-2 mt-4 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
