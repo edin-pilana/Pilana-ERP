@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { toLocalIso } from '../utils/dateHelpers';
 import { jeQaTestniZapis } from '../utils/smartReminders';
-import { Sun, ChevronDown, ChevronUp, Search, AlertTriangle, Flame, Wrench, TrendingUp, CheckCircle2 } from 'lucide-react';
+import { Sun, ChevronDown, ChevronUp, Search, AlertTriangle, Flame, Wrench, TrendingUp, CheckCircle2, FileBarChart2 } from 'lucide-react';
+import BrifingIzvjestajModal from './BrifingIzvjestajModal';
 
 export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
     const [collapsed, setCollapsed] = useState(false);
     const [loading, setLoading] = useState(true);
     const [brifing, setBrifing] = useState(null);
+    const [activeReportTip, setActiveReportTip] = useState(null);
 
     const isExec = user?.uloga === 'superadmin' || user?.uloga === 'admin';
 
@@ -108,11 +110,6 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
         }
     };
 
-    const otvoriSusare = () => {
-        try { localStorage.setItem('planiranje_auto_tab', 'susare'); } catch (e) {}
-        onNavigateModule?.('planiranje');
-    };
-
     return (
         <div
             data-testid="jutarnji-brifing-card"
@@ -168,8 +165,9 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                             <button
                                 type="button"
-                                onClick={() => onNavigateModule?.('analitika')}
-                                className="text-left p-3.5 rounded-2xl bg-theme-panel/80 hover:border-emerald-500/60 border border-theme-border transition-all group"
+                                data-testid="brifing-tile-prorez"
+                                onClick={() => setActiveReportTip('prorez')}
+                                className="text-left p-3.5 rounded-2xl bg-theme-panel/80 hover:border-emerald-500/60 hover:-translate-y-0.5 border border-theme-border transition-all group"
                             >
                                 <span className="text-[9px] font-black uppercase text-theme-muted flex items-center justify-between">
                                     <span>🪵 Juče Prorez / Izlaz</span>
@@ -181,12 +179,16 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                                 <p className="text-[10px] text-theme-muted font-bold mt-0.5">
                                     {brifing.juceProrezKom} trupaca • Yield {brifing.juceYield.toFixed(1)}%
                                 </p>
+                                <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-400/90 group-hover:text-emerald-300">
+                                    <FileBarChart2 size={10} /> Izvještaj & Print →
+                                </span>
                             </button>
 
                             <button
                                 type="button"
-                                onClick={() => onNavigateModule?.('blagajna')}
-                                className="text-left p-3.5 rounded-2xl bg-theme-panel/80 hover:border-blue-500/60 border border-theme-border transition-all"
+                                data-testid="brifing-tile-kes"
+                                onClick={() => setActiveReportTip('kes')}
+                                className="text-left p-3.5 rounded-2xl bg-theme-panel/80 hover:border-blue-500/60 hover:-translate-y-0.5 border border-theme-border transition-all group"
                             >
                                 <span className="text-[9px] font-black uppercase text-theme-muted block">💵 Jučerašnji Keš Tok</span>
                                 <p className="text-base sm:text-lg font-black text-emerald-400 mt-1">
@@ -195,12 +197,16 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                                 <p className="text-[10px] text-theme-muted font-bold mt-0.5">
                                     Neto: {(brifing.juceUlazKM - brifing.juceIzlazKM).toFixed(2)} KM
                                 </p>
+                                <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black uppercase text-blue-400/90 group-hover:text-blue-300">
+                                    <FileBarChart2 size={10} /> Izvještaj & Print →
+                                </span>
                             </button>
 
                             <button
                                 type="button"
-                                onClick={() => onNavigateModule?.('racuni')}
-                                className={`text-left p-3.5 rounded-2xl border transition-all ${brifing.dospjeliBroj > 0 ? 'bg-red-950/20 border-red-500/40 hover:border-red-400' : 'bg-theme-panel/80 border-theme-border hover:border-emerald-500/60'}`}
+                                data-testid="brifing-tile-dospjeli"
+                                onClick={() => setActiveReportTip('dospjeli')}
+                                className={`text-left p-3.5 rounded-2xl border hover:-translate-y-0.5 transition-all group ${brifing.dospjeliBroj > 0 ? 'bg-red-950/20 border-red-500/40 hover:border-red-400' : 'bg-theme-panel/80 border-theme-border hover:border-emerald-500/60'}`}
                             >
                                 <span className="text-[9px] font-black uppercase text-theme-muted flex items-center justify-between">
                                     <span>🧾 Dospjeli Računi</span>
@@ -210,14 +216,18 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                                     {brifing.dospjeliBroj} kom • {brifing.dospjeloKM.toFixed(0)} KM
                                 </p>
                                 <p className="text-[10px] text-theme-muted font-bold mt-0.5">
-                                    {brifing.dospjeliBroj > 0 ? 'Klikni za naplatu & kartice' : 'Nema zakašnjelih faktura'}
+                                    {brifing.dospjeliBroj > 0 ? 'Aging analiza & kartice' : 'Nema zakašnjelih faktura'}
                                 </p>
+                                <span className={`mt-1.5 inline-flex items-center gap-1 text-[9px] font-black uppercase ${brifing.dospjeliBroj > 0 ? 'text-red-400/90 group-hover:text-red-300' : 'text-emerald-400/90'}`}>
+                                    <FileBarChart2 size={10} /> Izvještaj & Print →
+                                </span>
                             </button>
 
                             <button
                                 type="button"
-                                onClick={otvoriSusare}
-                                className={`text-left p-3.5 rounded-2xl border transition-all ${brifing.susareSpremne > 0 ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-400' : 'bg-theme-panel/80 border-theme-border hover:border-amber-500/50'}`}
+                                data-testid="brifing-tile-susare"
+                                onClick={() => setActiveReportTip('susare')}
+                                className={`text-left p-3.5 rounded-2xl border hover:-translate-y-0.5 transition-all group ${brifing.susareSpremne > 0 ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-400' : 'bg-theme-panel/80 border-theme-border hover:border-amber-500/50'}`}
                             >
                                 <span className="text-[9px] font-black uppercase text-theme-muted flex items-center justify-between">
                                     <span>🔥 Sušare & Servis</span>
@@ -227,26 +237,41 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                                     {brifing.aktivneSarzeBroj} aktivnih šarži
                                 </p>
                                 <p className="text-[10px] text-theme-muted font-bold mt-0.5">
-                                    {brifing.susareSpremne > 0 ? `🔥 ${brifing.susareSpremne} pri kraju!` : 'Otvori Sušare & Servis pila'}
+                                    {brifing.susareSpremne > 0 ? `🔥 ${brifing.susareSpremne} pri kraju!` : `${brifing.servisiUpozorenje} pila za servis`}
                                 </p>
+                                <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black uppercase text-amber-400/90 group-hover:text-amber-300">
+                                    <FileBarChart2 size={10} /> Izvještaj & Print →
+                                </span>
                             </button>
 
                             <button
                                 type="button"
-                                onClick={() => onNavigateModule?.('toranj')}
-                                className={`text-left p-3.5 rounded-2xl border transition-all col-span-2 lg:col-span-1 ${brifing.neprocitaniKrit > 0 ? 'bg-amber-950/25 border-amber-500/50 hover:border-amber-400' : 'bg-theme-panel/80 border-theme-border hover:border-theme-accent'}`}
+                                data-testid="brifing-tile-alarmi"
+                                onClick={() => setActiveReportTip('alarmi')}
+                                className={`text-left p-3.5 rounded-2xl border hover:-translate-y-0.5 transition-all group col-span-2 lg:col-span-1 ${brifing.neprocitaniKrit > 0 ? 'bg-amber-950/25 border-amber-500/50 hover:border-amber-400' : 'bg-theme-panel/80 border-theme-border hover:border-theme-accent'}`}
                             >
                                 <span className="text-[9px] font-black uppercase text-theme-muted block">🔔 Aktivni Alarmi</span>
                                 <p className={`text-base sm:text-lg font-black mt-1 ${brifing.neprocitaniKrit > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                                     {brifing.neprocitaniKrit} neriješenih
                                 </p>
                                 <p className="text-[10px] text-theme-muted font-bold mt-0.5">
-                                    Otvori Kontrolni Toranj →
+                                    Pregled izmjena & alarma
                                 </p>
+                                <span className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-black uppercase text-amber-400/90 group-hover:text-amber-300">
+                                    <FileBarChart2 size={10} /> Izvještaj & Print →
+                                </span>
                             </button>
                         </div>
                     )}
                 </div>
+            )}
+
+            {activeReportTip && (
+                <BrifingIzvjestajModal
+                    tip={activeReportTip}
+                    onClose={() => setActiveReportTip(null)}
+                    onNavigateModule={onNavigateModule}
+                />
             )}
         </div>
     );

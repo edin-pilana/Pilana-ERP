@@ -1,270 +1,804 @@
 "use client";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+    Bot, Send, Sparkles, Printer, FileSpreadsheet, RefreshCw, KeyRound,
+    Trash2, Copy, Check, ShieldCheck, BarChart3, MessageSquare, SlidersHorizontal
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
+import { toLocalIso, prikazDatumaBHS, escapeHtml } from '../utils/dateHelpers';
+import { printDokument } from '../utils/printHelpers';
+import { exportToExcel } from '../utils/exportHelpers';
+import {
+    izgradiErpSnimak,
+    napraviKompaktanKontekstZaLLM,
+    odgovoriLokalniAiKontrolor,
+} from '../utils/aiKontrolorEngine';
+import SmartChart, { uhvatiSmartChartSvgHtml } from './SmartChart';
 
-export default function TabAiAnalitika({ saas }) {
-    const [messages, setMessages] = useState([
-        { role: 'ai', text: 'Zdravo šefe! Ja sam tvoj AI ERP Asistent. Imam **neograničen pristup cijeloj bazi podataka** (svi proizvodi, paketi, trupci, računi, nalozi i reklamacije). Šta te zanima?' }
-    ]);
-    const [input, setInput] = useState('');
-    const [isTyping, setIsTyping] = useState(false);
-    const [customKey, setCustomKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_gemini_key') || '' : ''));
-    const [showKeyInput, setShowKeyInput] = useState(false);
-    
-    const chatEndRef = useRef(null);
+const AI_CONFIG_KEY = 'ai_kontrolor_config';
 
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+const STARTER_PROMPTS = [
+    { icon: '📊', label: 'Uporedi ovaj i prošli mjesec', query: 'Uporedi ovaj i prošli mjesec po proizvodnji, prinosu (Yield), fakturisanju i keš toku sa procentima promjene.' },
+    { icon: '💎', label: 'Top 10 najprofitabilnijih naloga', query: 'Napravi izvještaj najprofitabilnijih radnih naloga sa neto maržom, prihodom i troškovima.' },
+    { icon: '🚨', label: 'Dužnici & Aging 30/60/90', query: 'Koji kupci najviše duguju, koliki je dospjeli dug i kakva je Aging 30/60/90 struktura?' },
+    { icon: '⚙️', label: 'Mašine, Yield & Zastoji', query: 'Analiziraj učinak mašina, iskorištenje (Yield) i zastoje u proizvodnji.' },
+    { icon: '🌿', label: 'Biomasa, Peći, FSC & Sušare', query: 'Napravi izvještaj biomase, piljevine, okorka, utroška peći, FSC udjela i aktivnih sušara.' },
+    { icon: '📋', label: 'Kompletni direktorski izvještaj', query: 'Napravi kompletni direktorski izvještaj stanja firme sa dijagramom i poređenjima.' },
+];
 
-    const fetchCijelaBaza = async () => {
-        try {
-            const [trupciRes, paketiRes, racuniRes, blagajnaRes, radniciRes, katalogRes, reklamacijeRes, naloziRes, otpremniceRes, prorezRes] = await Promise.all([
-                supabase.from('trupci').select('*'),
-                supabase.from('paketi').select('*'),
-                supabase.from('racuni').select('*'),
-                supabase.from('blagajna').select('*'),
-                supabase.from('radnici').select('*'),
-                supabase.from('katalog_proizvoda').select('*'),
-                supabase.from('reklamacije').select('*'),
-                supabase.from('radni_nalozi').select('*'),
-                supabase.from('otpremnice').select('*'),
-                supabase.from('prorez_log').select('*')
-            ]);
+const KPI_STYLE_MAP = {
+    emerald: 'border-emerald-500/40 bg-emerald-950/15 text-emerald-400',
+    blue: 'border-blue-500/40 bg-blue-950/15 text-blue-400',
+    amber: 'border-amber-500/40 bg-amber-950/15 text-amber-400',
+    red: 'border-red-500/40 bg-red-950/15 text-red-400',
+    purple: 'border-purple-500/40 bg-purple-950/15 text-purple-400',
+};
 
-            return {
-                tabela_trupci: trupciRes.data || [],
-                tabela_paketi_proizvodnja: paketiRes.data || [],
-                tabela_izdati_racuni: racuniRes.data || [],
-                tabela_blagajna_troskovi: blagajnaRes.data || [],
-                tabela_radnici: radniciRes.data || [],
-                tabela_katalog_artikala: katalogRes.data || [],
-                tabela_reklamacije_i_povrati: reklamacijeRes.data || [],
-                tabela_radni_nalozi: naloziRes.data || [],
-                tabela_otpremnice: otpremniceRes.data || [],
-                tabela_prorez_log: prorezRes.data || []
-            };
-        } catch (error) {
-            console.error("Greška pri čitanju baze:", error);
-            return null;
-        }
-    };
+const WELCOME_MSG = {
+    id: 'welcome',
+    role: 'ai',
+    mode: 'system',
+    naslov: 'AI Direktorski Analitičar & Kontrolor',
+    text: `Zdravo šefe! Spreman sam za normalnu, direktnu komunikaciju nad **cijelom Pilana-ERP bazom podataka**.\n\n### Šta mogu uraditi za tebe:\n- Generišem **kompletne izvještaje sa interaktivnim dijagramima** i tabelama koje možeš jednim klikom **isprintati u PDF ili izvesti u Excel**.\n- Radim **poređenja** (ovaj vs prošli mjesec, mašine, kupci, profitabilnost naloga, Aging dugovi, biomasa/FSC/sušare).\n- Ako dodaš svoj besplatni **Google Gemini** ili **OpenAI** API ključ gore (🔑), dobijaš potpuno slobodnu AI konverzaciju kao u Antigravity-ju — a i bez ključa ugrađeni ERP analitički motor odmah odgovara sa grafikonima i tabelama!`,
+    kpi: [],
+    chart: null,
+    tabela: null,
+    predlozi: [
+        'Uporedi ovaj i prošli mjesec',
+        'Koji kupci najviše duguju (Aging)?',
+        'Top 10 najprofitabilnijih naloga',
+        'Analiza učinka i zastoja po mašinama',
+    ],
+};
 
-    const generisiPametniLokalniOdgovor = (baza, pitanje) => {
-        if (!baza) return "Došlo je do greške pri čitanju baze podataka.";
+function renderMarkdownBlocks(text) {
+    const safe = (s) =>
+        String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
 
-        const sviPaketi = (baza.tabela_paketi_proizvodnja || []).filter(p => parseFloat(p.kolicina_final || 0) > 0);
-        const paketiNaStanju = sviPaketi.filter(p => p.closed_at !== null && p.otpremnica_id === null);
-        const paketiURadu = sviPaketi.filter(p => p.closed_at === null && p.otpremnica_id === null);
-        const paketiOtpremljeni = sviPaketi.filter(p => p.otpremnica_id !== null);
+    const inlineFormat = (s) =>
+        safe(s)
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-theme-text font-black">$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em class="opacity-90">$1</em>')
+            .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 rounded bg-theme-panel border border-theme-border text-[11px] font-mono text-theme-accent">$1</code>');
 
-        const ukupnoPaketaM3 = sviPaketi.reduce((s, p) => s + parseFloat(p.kolicina_final || 0), 0);
-        const naStanjuM3 = paketiNaStanju.reduce((s, p) => s + parseFloat(p.kolicina_final || 0), 0);
-
-        const sviTrupci = baza.tabela_trupci || [];
-        const trupciNaLageru = sviTrupci.filter(t => t.zakljucen_prijem && t.status === 'na_lageru');
-        const prorezaniTrupci = sviTrupci.filter(t => t.status === 'prorezano');
-        const ulazProrezanoM3 = prorezaniTrupci.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
-        const trupciNaLageruM3 = trupciNaLageru.reduce((s, t) => s + parseFloat(t.kontrolna_zapremina || t.zapremina || 0), 0);
-
-        const paketiPilana = sviPaketi.filter(p => {
-            const m = (p.masina || '').toUpperCase();
-            return (m.includes('PILANA') || m.includes('BRENTA')) && (!p.ai_sirovina_ids || p.ai_sirovina_ids.length === 0);
-        });
-        const izlazPilanaM3 = paketiPilana.reduce((s, p) => s + parseFloat(p.kolicina_final || 0), 0);
-        const prinosPilanaProc = ulazProrezanoM3 > 0 ? ((izlazPilanaM3 / ulazProrezanoM3) * 100).toFixed(1) : "0.0";
-        const omjerUkupnoProc = ulazProrezanoM3 > 0 ? ((ukupnoPaketaM3 / ulazProrezanoM3) * 100).toFixed(1) : "0.0";
-
-        const sveTransakcije = baza.tabela_blagajna_troskovi || [];
-        const sviRacuni = baza.tabela_izdati_racuni || [];
-        const placeniRacuni = sviRacuni.filter(r => r.status === 'NAPLAĆENO');
-        const otvoreniRacuni = sviRacuni.filter(r => r.status !== 'NAPLAĆENO');
-
-        const ukupnoSviRacuniIznos = sviRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
-        const nominalnoOtvoreniIznos = otvoreniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
-
-        let stvarniPreostaliDug = 0;
-        const detaljiOtvorenihRacuna = otvoreniRacuni.map(r => {
-            const rid = (r.id || '').toUpperCase().trim();
-            const valNorm = String(r.valuta || 'KM').toUpperCase().trim();
-            const ukupnoOrig = parseFloat(r.ukupno_sa_pdv || 0);
-            const ukupnoRacun = (valNorm === 'EUR' || valNorm === '€') ? parseFloat((ukupnoOrig * 1.95583).toFixed(2)) : ukupnoOrig;
-            const uplacenoUBlagajni = sveTransakcije
-                .filter(t => t.tip === 'ULAZ' && (
-                    (t.racun_id && t.racun_id.toUpperCase().trim() === rid) ||
-                    (t.opis && t.opis.toUpperCase().includes(rid))
-                ))
-                .reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
-            const uplacenoPolje = parseFloat(r.uplaceno || 0);
-            const stvarnoPlaceno = Math.max(uplacenoUBlagajni, uplacenoPolje);
-            const preostalo = Math.max(0, parseFloat((ukupnoRacun - stvarnoPlaceno).toFixed(2)));
-            stvarniPreostaliDug += preostalo;
-            return `**${r.id}** (Kupac: **${r.kupac_naziv}**, Ukupno: ${ukupnoRacun.toFixed(2)} KM, Već uplaćeno: ${stvarnoPlaceno.toFixed(2)} KM, Stvarni preostali dug: **${preostalo.toFixed(2)} KM**)`;
-        });
-
-        const ukupnoNaplaceno = placeniRacuni.reduce((s, r) => s + parseFloat(r.ukupno_sa_pdv || 0), 0);
-
-        const ulazKasa = sveTransakcije.filter(t => t.tip === 'ULAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
-        const izlazKasa = sveTransakcije.filter(t => t.tip === 'IZLAZ').reduce((s, t) => s + parseFloat(t.iznos || 0), 0);
-        const stanjeKase = ulazKasa - izlazKasa;
-
-        const sveReklamacije = baza.tabela_reklamacije_i_povrati || [];
-        const odobreneReklamacije = sveReklamacije.filter(r => r.status === 'ODOBRENO');
-        const reklamacijeM3 = odobreneReklamacije.reduce((s, r) => s + parseFloat(r.kolicina || 0), 0);
-        const aktivniNalozi = (baza.tabela_radni_nalozi || []).filter(n => n.status !== 'ZAVRŠENO' && n.status !== 'OBRISANO');
-
-        let posebniDetalji = [];
-        const rijeciUpita = (pitanje || '').toUpperCase().split(/[\s,?.!:;"'()]+/).filter(Boolean);
-        const trazeniPaketi = sviPaketi.filter(p => rijeciUpita.includes(String(p.paket_id).toUpperCase()));
-        if (trazeniPaketi.length > 0) {
-            const pid = trazeniPaketi[0].paket_id;
-            const m3Pak = trazeniPaketi.reduce((s, x) => s + parseFloat(x.kolicina_final || 0), 0);
-            const komPak = trazeniPaketi.reduce((s, x) => s + parseFloat(x.kolicina_ulaz || 0), 0);
-            const stPak = trazeniPaketi[0].otpremnica_id ? `OTPREMLJENO (${trazeniPaketi[0].otpremnica_id})` : (trazeniPaketi[0].closed_at ? 'NA STANJU (Završen paket na lageru)' : 'U PROIZVODNJI');
-            const opisStavki = trazeniPaketi.map(x => `${x.naziv_proizvoda} — Dimenzije: **${x.debljina}x${x.sirina}x${x.duzina} cm**, Količina: **${x.kolicina_ulaz} ${x.jm || 'kom'}** (**${parseFloat(x.kolicina_final || 0).toFixed(3)} m³**), Mašina: ${x.masina || '-'}`).join(' | ');
-            posebniDetalji.push(
-                `**🔎 Detalji traženog paketa ${pid}:**`,
-                `* Identitet paketa: **Paket ${pid}** | Status: **${stPak}**`,
-                `* Sadržaj i dimenzije: ${opisStavki}`,
-                `* Ukupna količina i volumen paketa ${pid}: **${komPak} ${trazeniPaketi[0].jm || 'kom'}** (**${m3Pak.toFixed(3)} m³**) | Vezni nalog: **${trazeniPaketi[0].broj_veze || 'Slobodna roba'}**`
+    const lines = String(text || '').split('\n');
+    return lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return <div key={idx} className="h-2" />;
+        if (trimmed.startsWith('### ')) {
+            return (
+                <h4
+                    key={idx}
+                    className="text-xs font-black uppercase tracking-wider text-theme-accent mt-3 mb-1.5 flex items-center gap-1.5"
+                    dangerouslySetInnerHTML={{ __html: inlineFormat(trimmed.slice(4)) }}
+                />
             );
         }
+        if (trimmed.startsWith('## ')) {
+            return (
+                <h3
+                    key={idx}
+                    className="text-sm font-black uppercase tracking-wide text-theme-text mt-3 mb-1.5"
+                    dangerouslySetInnerHTML={{ __html: inlineFormat(trimmed.slice(3)) }}
+                />
+            );
+        }
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            return (
+                <li
+                    key={idx}
+                    className="ml-4 list-disc text-[13px] leading-relaxed text-theme-text/95 mb-1"
+                    dangerouslySetInnerHTML={{ __html: inlineFormat(trimmed.slice(2)) }}
+                />
+            );
+        }
+        return (
+            <p
+                key={idx}
+                className="text-[13px] leading-relaxed text-theme-text/95 mb-1.5"
+                dangerouslySetInnerHTML={{ __html: inlineFormat(trimmed) }}
+            />
+        );
+    });
+}
 
-        return [
-            `Na osnovu trenutnog stanja u ERP bazi podataka, evo tačnog izvještaja za tvoj upit:`,
-            ...(posebniDetalji.length > 0 ? [``, ...posebniDetalji] : []),
-            ``,
-            `**🧾 Računi i Stvarni Preostali Dug (Otvorena potraživanja):**`,
-            `* Ukupno svih računa u bazi: **${sviRacuni.length} računa** (Ukupna vrijednost svih računa: **${ukupnoSviRacuniIznos.toFixed(2)} KM**)`,
-            `* Plaćeni (arhivirani) računi: **${placeniRacuni.length} računa** (Ukupno naplaćeno u arhivi: **${ukupnoNaplaceno.toFixed(2)} KM**)`,
-            `* Otvoreni (neplaćeni / djelimični) računi: **${otvoreniRacuni.length} računa**`,
-            `* **Stvarni preostali dug na otvorenim računima (nakon uračunatih uplata): ${stvarniPreostaliDug.toFixed(2)} KM** (Nominalni zbir otvorenih računa prije oduzimanja uplata: ${nominalnoOtvoreniIznos.toFixed(2)} KM)`,
-            `* Identiteti i detalji otvorenih računa: ${detaljiOtvorenihRacuna.join(' ; ') || 'Nema otvorenih računa'}`,
-            ``,
-            `**📦 Paketi i Proizvodnja (Prinos / Yield):**`,
-            `* Ukupno paketa u bazi (svi statusi: lager + u proizvodnji + otpremljeno + ručni ulaz): **${sviPaketi.length} paketa** (ukupnog volumena **${ukupnoPaketaM3.toFixed(3)} m³**)`,
-            `* Zaključani paketi trenutno na stanju (Lager): **${paketiNaStanju.length} paketa** (**${naStanjuM3.toFixed(3)} m³**)`,
-            `* Otpremljeni paketi kupcima: **${paketiOtpremljeni.length} paketa** | U radu na mašinama: **${paketiURadu.length} paketa**`,
-            `* Proizvodni prinos Pilane (izlaz Pilane ${izlazPilanaM3.toFixed(3)} m³ / prorezani trupci ${ulazProrezanoM3.toFixed(3)} m³): **${prinosPilanaProc}%** (Omjer ukupnog inventara svih paketa prema prorezanim trupcima: ${omjerUkupnoProc}%)`,
-            ``,
-            `**🪵 Sirovina (Trupci na placu):**`,
-            `* Trupci spremni na lageru: **${trupciNaLageru.length} kom** (**${trupciNaLageruM3.toFixed(3)} m³**)`,
-            `* Ukupno prorezano trupaca: **${prorezaniTrupci.length} kom** (**${ulazProrezanoM3.toFixed(3)} m³**)`,
-            ``,
-            `**💰 Blagajna (Gotovina):**`,
-            `* Trenutno stanje gotovine u Blagajni: **${stanjeKase.toFixed(2)} KM** (Ulaz: **${ulazKasa.toFixed(2)} KM** | Izlaz: **${izlazKasa.toFixed(2)} KM**)`,
-            ``,
-            `**⚙️ Nalozi, Katalog i Reklamacije:**`,
-            `* Aktivni radni nalozi: **${aktivniNalozi.length}** | Artikala u katalogu: **${(baza.tabela_katalog_artikala || []).length}**`,
-            `* Evidentirane reklamacije: **${sveReklamacije.length}** (Odobreno: **${odobreneReklamacije.length}** — ukupno **${reklamacijeM3.toFixed(3)} m³**)`
-        ].join('\n');
+export default function TabAiAnalitika({ saas, user }) {
+    const [messages, setMessages] = useState([WELCOME_MSG]);
+    const [input, setInput] = useState('');
+    const [isTyping, setIsTyping] = useState(false);
+    const [bezQaTesta, setBezQaTesta] = useState(true);
+    const [showConfig, setShowConfig] = useState(false);
+    const [apiKey, setApiKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_gemini_key') || '' : ''));
+    const [modelName, setModelName] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_ai_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash'));
+    const [savingKey, setSavingKey] = useState(false);
+    const [dbCache, setDbCache] = useState(null);
+    const [lastSync, setLastSync] = useState(null);
+    const [copiedId, setCopiedId] = useState(null);
+
+    const chatEndRef = useRef(null);
+    const inputRef = useRef(null);
+    const isAdmin = !user || user?.uloga === 'superadmin' || user?.uloga === 'admin';
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isTyping]);
+
+    // Učitaj sačuvani AI API ključ iz Supabase ui_postavke ako postoji
+    useEffect(() => {
+        let cancelled = false;
+        const loadRemoteKey = async () => {
+            try {
+                const { data } = await supabase
+                    .from('ui_postavke')
+                    .select('postavke_jsonb')
+                    .eq('modul_ime', AI_CONFIG_KEY)
+                    .maybeSingle();
+                if (cancelled) return;
+                const cfg = data?.postavke_jsonb;
+                if (cfg?.apiKey && !localStorage.getItem('erp_gemini_key')) {
+                    setApiKey(cfg.apiKey);
+                    try { localStorage.setItem('erp_gemini_key', cfg.apiKey); } catch (e) {}
+                }
+                if (cfg?.model) {
+                    setModelName(cfg.model);
+                    try { localStorage.setItem('erp_ai_model', cfg.model); } catch (e) {}
+                }
+            } catch (e) {}
+        };
+        loadRemoteKey();
+        return () => { cancelled = true; };
+    }, []);
+
+    const fetchCijelaBaza = useCallback(async (force = false) => {
+        if (dbCache && !force) return dbCache;
+        const [
+            trupciRes, prorezRes, paketiRes, racuniRes, ponudeRes, otpremniceRes,
+            blagajnaRes, naloziRes, reklamacijeRes, zastojiRes, radniciRes, katalogRes,
+            kupciRes, susRes, srvRes, bioRes, cbamRes
+        ] = await Promise.all([
+            supabase.from('trupci').select('*'),
+            supabase.from('prorez_log').select('*'),
+            supabase.from('paketi').select('*'),
+            supabase.from('racuni').select('*'),
+            supabase.from('ponude').select('*'),
+            supabase.from('otpremnice').select('*'),
+            supabase.from('blagajna').select('*'),
+            supabase.from('radni_nalozi').select('*'),
+            supabase.from('reklamacije').select('*'),
+            supabase.from('dnevnik_masine').select('*'),
+            supabase.from('radnici').select('id, ime_prezime, uloga'),
+            supabase.from('katalog_proizvoda').select('*'),
+            supabase.from('kupci').select('id, naziv, adresa, pdv_broj'),
+            supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'susare_sarze').maybeSingle(),
+            supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'servis_masina_pila').maybeSingle(),
+            supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'biomasa_postavke').maybeSingle(),
+            supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'cbam_energenti').maybeSingle(),
+        ]);
+
+        const fresh = {
+            trupci: trupciRes.data || [],
+            prorez_log: prorezRes.data || [],
+            paketi: paketiRes.data || [],
+            racuni: racuniRes.data || [],
+            ponude: ponudeRes.data || [],
+            otpremnice: otpremniceRes.data || [],
+            blagajna: blagajnaRes.data || [],
+            radni_nalozi: naloziRes.data || [],
+            reklamacije: reklamacijeRes.data || [],
+            dnevnik_masine: zastojiRes.data || [],
+            radnici: radniciRes.data || [],
+            katalog_proizvoda: katalogRes.data || [],
+            kupci: kupciRes.data || [],
+            susare_sarze: susRes.data?.postavke_jsonb || {},
+            servis_masina_pila: srvRes.data?.postavke_jsonb || {},
+            biomasa_postavke: bioRes.data?.postavke_jsonb || {},
+            cbam_energenti: cbamRes.data?.postavke_jsonb || {},
+        };
+        setDbCache(fresh);
+        setLastSync(new Date());
+        return fresh;
+    }, [dbCache]);
+
+    const handleSaveConfig = async (saveToCloud = false) => {
+        const cleanKey = apiKey.trim();
+        try {
+            localStorage.setItem('erp_gemini_key', cleanKey);
+            localStorage.setItem('erp_ai_model', modelName);
+        } catch (e) {}
+
+        if (saveToCloud && isAdmin) {
+            setSavingKey(true);
+            try {
+                const { error } = await supabase
+                    .from('ui_postavke')
+                    .upsert([{ modul_ime: AI_CONFIG_KEY, postavke_jsonb: { apiKey: cleanKey, model: modelName, updated_at: new Date().toISOString() } }], { onConflict: 'modul_ime' });
+                if (error) toast.error('Greška pri spremanju u bazu: ' + error.message);
+                else toast.success('AI konfiguracija sačuvana za sve administratore!');
+            } finally {
+                setSavingKey(false);
+            }
+        } else {
+            toast.success(cleanKey ? 'AI API ključ je aktivan u ovom pregledaču!' : 'Prebačeno na ugrađeni ERP AI motor.');
+        }
+        setShowConfig(false);
     };
 
-    const posaljiPoruku = async () => {
-        if (!input.trim()) return;
+    const posaljiPoruku = async (overrideText = null) => {
+        const userText = String(overrideText ?? input).trim();
+        if (!userText || isTyping) return;
 
-        const userText = input.trim();
-        setMessages(prev => [...prev, { role: 'user', text: userText }]);
-        setInput('');
+        const userMsgId = `u_${Date.now()}`;
+        const nextHistory = [...messages, { id: userMsgId, role: 'user', text: userText }];
+        setMessages(nextHistory);
+        if (overrideText === null) setInput('');
         setIsTyping(true);
 
         try {
-            const dbObject = await fetchCijelaBaza();
-            const lokalniOdgovor = generisiPametniLokalniOdgovor(dbObject, userText);
-            setMessages(prev => [...prev, { role: 'ai', text: lokalniOdgovor }]);
-        } catch (error) {
-            setMessages(prev => [...prev, { role: 'ai', text: 'Došlo je do greške pri analizi baze podataka.' }]);
+            const baza = await fetchCijelaBaza(false);
+            const snimak = izgradiErpSnimak(baza, { bezQaTesta });
+            const erpContext = napraviKompaktanKontekstZaLLM(snimak, userText);
+
+            let aiResult = null;
+            let engineMode = 'local';
+            let fallbackNotice = '';
+
+            // Pokušaj LLM backend (koristi korisnički ključ ili server env GEMINI_API_KEY / OPENAI_API_KEY)
+            try {
+                const compactHistory = nextHistory
+                    .filter((m) => m.id !== 'welcome')
+                    .slice(-9, -1)
+                    .map((m) => ({ role: m.role, text: m.text }));
+
+                const res = await fetch('/api/ai-kontrolor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: userText,
+                        history: compactHistory,
+                        erpContext,
+                        apiKey: apiKey.trim(),
+                        model: modelName,
+                    }),
+                });
+                if (res.ok) {
+                    const payload = await res.json();
+                    if (payload?.ok && payload?.data) {
+                        aiResult = payload.data;
+                        engineMode = payload.mode || 'gemini';
+                    } else if (apiKey.trim() && payload?.reason && payload.reason !== 'NO_API_KEY') {
+                        fallbackNotice = `Vanjski AI model nedostupan (${payload.reason}) — odgovor generisao ugrađeni ERP AI motor.`;
+                    }
+                }
+            } catch (e) {
+                if (apiKey.trim()) {
+                    fallbackNotice = 'Mrežna greška prema AI API-ju — odgovor generisao ugrađeni ERP AI motor.';
+                }
+            }
+
+            if (!aiResult) {
+                aiResult = odgovoriLokalniAiKontrolor(snimak, userText);
+                engineMode = 'local';
+            }
+
+            const aiMsgId = `ai_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: aiMsgId,
+                    role: 'ai',
+                    mode: engineMode,
+                    fallbackNotice,
+                    naslov: aiResult.naslov || 'AI ERP Izvještaj',
+                    text: aiResult.odgovor || 'Analiza je završena.',
+                    kpi: Array.isArray(aiResult.kpi) ? aiResult.kpi : [],
+                    chart: aiResult.chart || null,
+                    chartId: aiResult.chart ? `ai_msg_chart_${aiMsgId}` : null,
+                    tabela: aiResult.tabela || null,
+                    predlozi: Array.isArray(aiResult.predlozi) ? aiResult.predlozi : [],
+                },
+            ]);
+        } catch (err) {
+            console.error('Greška AI Kontrolor:', err);
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: `err_${Date.now()}`,
+                    role: 'ai',
+                    mode: 'error',
+                    naslov: 'Greška pri analizi',
+                    text: 'Došlo je do greške pri čitanju baze podataka. Pokušaj kliknuti **Osvježi Bazu** i ponovi pitanje.',
+                    kpi: [],
+                    chart: null,
+                    tabela: null,
+                    predlozi: ['Uporedi ovaj i prošli mjesec', 'Kompletni direktorski izvještaj'],
+                },
+            ]);
+        } finally {
+            setIsTyping(false);
+            setTimeout(() => inputRef.current?.focus(), 60);
         }
-        
-        setIsTyping(false);
     };
 
-    const renderMarkdown = (text) => {
-        const escapeLine = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        const lines = (text || '').split('\n');
-        return lines.map((line, index) => {
-            const safeLine = escapeLine(line);
-            const formattedLine = safeLine.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            if (formattedLine.trim().startsWith('* ')) return <li key={index} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: formattedLine.trim().substring(2) }} />;
-            if (formattedLine.trim() === '') return <br key={index} />;
-            return <p key={index} className="mb-1" dangerouslySetInnerHTML={{ __html: formattedLine }} />;
+    const handlePrintReport = (msg) => {
+        const chartSvgHtml = msg.chart && msg.chartId
+            ? uhvatiSmartChartSvgHtml(msg.chartId, msg.chart.title, msg.chart.subtitle)
+            : '';
+
+        const kpiHtml = (msg.kpi && msg.kpi.length > 0) ? `
+            <div style="display:grid; grid-template-columns:repeat(${Math.min(4, msg.kpi.length)}, 1fr); gap:10px; margin:12px 0;">
+                ${msg.kpi.map((k) => `
+                    <div style="border:1px solid #cbd5e1; border-radius:8px; padding:10px; background:#f8fafc;">
+                        <div style="font-size:8px; font-weight:800; text-transform:uppercase; color:#64748b;">${escapeHtml(k.label)}</div>
+                        <div style="font-size:15px; font-weight:900; color:#0f172a; margin-top:4px;">${escapeHtml(k.value)}</div>
+                        ${k.sub ? `<div style="font-size:8px; color:#475569; margin-top:2px;">${escapeHtml(k.sub)}</div>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+        ` : '';
+
+        const proseHtml = String(msg.text || '')
+            .split('\n')
+            .map((line) => {
+                const t = line.trim();
+                if (!t) return '';
+                const fmt = escapeHtml(t).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                if (t.startsWith('### ')) return `<h4 style="font-size:11px;font-weight:900;text-transform:uppercase;color:#1e40af;margin:10px 0 4px 0;">${fmt.slice(4)}</h4>`;
+                if (t.startsWith('- ') || t.startsWith('* ')) return `<div style="font-size:10px;margin:2px 0 2px 12px;">• ${fmt.slice(2)}</div>`;
+                return `<p style="font-size:10px;margin:4px 0;line-height:1.5;color:#1e293b;">${fmt}</p>`;
+            })
+            .join('');
+
+        let tableHtml = '';
+        if (msg.tabela && msg.tabela.kolone?.length && msg.tabela.redovi?.length) {
+            const th = msg.tabela.kolone.map((c) => `<th class="${c.align === 'right' ? 'num' : ''}">${escapeHtml(c.label)}</th>`).join('');
+            const tr = msg.tabela.redovi.map((r) => `
+                <tr>
+                    ${msg.tabela.kolone.map((c) => {
+                        const v = r[c.key] ?? '-';
+                        const d = c.suffix && v !== '-' ? `${v}${c.suffix}` : v;
+                        return `<td class="${c.align === 'right' ? 'num' : ''}">${escapeHtml(d)}</td>`;
+                    }).join('')}
+                </tr>
+            `).join('');
+            tableHtml = `
+                <div style="font-size:11px;font-weight:900;text-transform:uppercase;color:#0f172a;margin:14px 0 6px 0;">${escapeHtml(msg.tabela.naslov || 'Tabela')}</div>
+                <table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>
+            `;
+        }
+
+        const bodyHtml = `
+            <div style="background:#f8fafc;border:1px solid #cbd5e1;border-left:4px solid #3b82f6;border-radius:8px;padding:12px;margin-bottom:12px;">
+                ${proseHtml}
+            </div>
+            ${kpiHtml}
+            ${chartSvgHtml}
+            ${tableHtml}
+        `;
+
+        printDokument(
+            (msg.naslov || 'AI ANALITIČKI IZVJEŠTAJ').toUpperCase(),
+            `AI-REPORT-${toLocalIso(new Date())}`,
+            prikazDatumaBHS(toLocalIso(new Date())),
+            bodyHtml,
+            saas?.ui?.boja_akcenta || '#3b82f6'
+        );
+    };
+
+    const handleExportExcel = (msg) => {
+        if (!msg.tabela?.redovi?.length) return;
+        exportToExcel({
+            filename: `AI_Izvjestaj_${toLocalIso(new Date())}`,
+            sheetName: (msg.naslov || 'AI Izvjestaj').slice(0, 28),
+            title: `${msg.naslov || 'AI Izvještaj'} (${prikazDatumaBHS(toLocalIso(new Date()))})`,
+            columns: msg.tabela.kolone.map((c) => ({ key: c.key, label: c.label, type: c.type || 'string' })),
+            rows: msg.tabela.redovi,
         });
     };
 
+    const handleCopyText = (msg) => {
+        const plain = `${msg.naslov ? msg.naslov + '\n\n' : ''}${msg.text || ''}`;
+        navigator.clipboard?.writeText(plain).then(() => {
+            setCopiedId(msg.id);
+            setTimeout(() => setCopiedId(null), 1800);
+        });
+    };
+
+    const handleRefreshDb = async () => {
+        toast.info('Osvježavam podatke iz baze...');
+        await fetchCijelaBaza(true);
+        toast.success('AI Kontrolor je sinhronizovan sa najnovijim podacima!');
+    };
+
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
+    const hasKey = Boolean(apiKey.trim());
+    const providerLabel = hasKey
+        ? (apiKey.trim().startsWith('sk-') ? 'OpenAI + ERP Baza' : `Gemini (${modelName}) + ERP Baza`)
+        : 'Ugrađeni ERP AI Motor';
 
     return (
-        <div className="relative max-w-4xl mx-auto h-[750px] flex flex-col bg-theme-card rounded-box border border-slate-700 shadow-2xl overflow-hidden animate-in zoom-in-95">
-            
-            <div className="p-5 border-b border-theme-border flex flex-wrap justify-between items-center gap-3 bg-theme-card z-10 shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-theme-card border border-slate-700 flex items-center justify-center text-2xl shadow-inner">🤖</div>
-                    <div>
-                        <h3 className="text-theme-text font-black uppercase tracking-widest text-sm">TTM AI Kontrolor</h3>
-                        <p className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span> 
-                            Puni pristup bazi | Direktna ERP Analitika Aktivna
+        <div
+            data-testid="ai-kontrolor-workspace"
+            className="relative max-w-6xl mx-auto h-[820px] max-h-[85vh] flex flex-col bg-theme-card rounded-3xl border border-theme-border shadow-2xl overflow-hidden animate-in fade-in"
+        >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-theme-border bg-gradient-to-r from-theme-panel via-theme-card to-theme-panel flex flex-wrap justify-between items-center gap-3 shrink-0 z-10">
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg border shrink-0"
+                        style={{ backgroundColor: `${bojaAkcenta}20`, borderColor: `${bojaAkcenta}66`, color: bojaAkcenta }}
+                    >
+                        <Bot size={24} />
+                    </div>
+                    <div className="min-w-0">
+                        <h3 className="text-theme-text font-black uppercase tracking-widest text-xs sm:text-sm flex items-center gap-2 flex-wrap">
+                            <span>TTM AI Kontrolor</span>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full border font-black uppercase ${hasKey ? 'bg-purple-500/20 text-purple-300 border-purple-500/40' : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'}`}>
+                                {hasKey ? '🧠 ' : '⚡ '}{providerLabel}
+                            </span>
+                        </h3>
+                        <p className="text-[10px] text-theme-muted font-bold flex items-center gap-1.5 mt-0.5 truncate">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse shrink-0" />
+                            Konverzacijska analitika, poređenja, interaktivni dijagrami & PDF/Excel
+                            {lastSync && <span className="hidden md:inline opacity-75">• Sinhronizovano {lastSync.toLocaleTimeString('bs-BA', { hour: '2-digit', minute: '2-digit' })}</span>}
                         </p>
                     </div>
                 </div>
-                <button onClick={() => setShowKeyInput(!showKeyInput)} className="text-[9px] text-slate-400 hover:text-white bg-theme-panel px-3 py-1.5 rounded-lg border border-theme-border uppercase font-black">
-                    🔑 API Ključ (Opciono)
-                </button>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                        type="button"
+                        onClick={() => setBezQaTesta((v) => !v)}
+                        data-testid="ai-qa-filter-btn"
+                        className={`px-2.5 py-1.5 rounded-xl border text-[10px] font-black uppercase transition-all ${
+                            bezQaTesta
+                                ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40'
+                                : 'bg-amber-600/20 text-amber-300 border-amber-500/40'
+                        }`}
+                        title="Sakrij ili prikaži QA test zapise u AI analizama"
+                    >
+                        {bezQaTesta ? '🧹 Bez QA testa' : '🧪 Sa QA testom'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleRefreshDb}
+                        title="Osvježi živu bazu podataka"
+                        className="px-2.5 py-1.5 rounded-xl bg-theme-panel hover:bg-theme-card border border-theme-border text-[10px] font-black uppercase text-theme-muted hover:text-theme-text flex items-center gap-1 transition-colors"
+                    >
+                        <RefreshCw size={12} /> Baza
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setMessages([WELCOME_MSG])}
+                        data-testid="ai-new-chat-btn"
+                        title="Započni novi razgovor"
+                        className="px-2.5 py-1.5 rounded-xl bg-theme-panel hover:bg-theme-card border border-theme-border text-[10px] font-black uppercase text-theme-muted hover:text-red-400 flex items-center gap-1 transition-colors"
+                    >
+                        <Trash2 size={12} /> Novi
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setShowConfig((v) => !v)}
+                        data-testid="ai-api-config-btn"
+                        className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase flex items-center gap-1 transition-all ${
+                            showConfig ? 'bg-theme-accent text-white border-theme-accent' : 'bg-theme-panel border-theme-border text-theme-text hover:border-theme-accent'
+                        }`}
+                    >
+                        <KeyRound size={12} /> AI Ključ
+                    </button>
+                </div>
             </div>
 
-            {showKeyInput && (
-                <div className="p-3 bg-theme-panel border-b border-theme-border flex gap-2 items-center">
-                    <input
-                        type="password"
-                        value={customKey}
-                        onChange={e => { setCustomKey(e.target.value); localStorage.setItem('erp_gemini_key', e.target.value); }}
-                        placeholder="Unesi opcioni Gemini API ključ (ili ostavi prazno za ugrađeni ERP analitički motor)..."
-                        className="flex-1 min-w-0 p-2 bg-theme-card border border-theme-border rounded-lg text-xs text-theme-text outline-none"
-                    />
-                    <button onClick={() => setShowKeyInput(false)} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase">Sačuvaj</button>
+            {/* Konfiguracija API ključa (Gemini / OpenAI) */}
+            {showConfig && (
+                <div className="p-4 bg-theme-panel border-b border-theme-border space-y-3 animate-in slide-in-from-top-2 shrink-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <p className="text-xs font-black text-theme-text uppercase flex items-center gap-1.5">
+                                <Sparkles size={14} className="text-purple-400" /> Poveži Google Gemini (besplatni tier) ili OpenAI API ključ
+                            </p>
+                            <p className="text-[11px] text-theme-muted font-medium">
+                                Sa ključem AI razumije svako slobodno pitanje i pravi prilagođene dijagrame i poređenja. Bez ključa koristi ugrađeni ERP analitički motor.
+                            </p>
+                        </div>
+                        <a
+                            href="https://aistudio.google.com/app/apikey"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-black uppercase text-blue-400 hover:underline"
+                        >
+                            Uzmi besplatan Gemini ključ →
+                        </a>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <input
+                            type="password"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            placeholder="Zalijepi Gemini API ključ (AIza...) ili OpenAI ključ (sk-...) — ili ostavi prazno"
+                            className="flex-1 min-w-[240px] px-3.5 py-2.5 bg-theme-card border border-theme-border rounded-xl text-xs text-theme-text font-bold outline-none focus:border-theme-accent"
+                        />
+                        <select
+                            value={modelName}
+                            onChange={(e) => setModelName(e.target.value)}
+                            className="px-3 py-2.5 bg-theme-card border border-theme-border rounded-xl text-xs font-black text-theme-text outline-none"
+                        >
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Preporučeno)</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Duboka analiza)</option>
+                            <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                            <option value="gpt-4o">OpenAI GPT-4o</option>
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => handleSaveConfig(false)}
+                            className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase"
+                        >
+                            Sačuvaj Lokalno
+                        </button>
+                        {isAdmin && (
+                            <button
+                                type="button"
+                                disabled={savingKey}
+                                onClick={() => handleSaveConfig(true)}
+                                className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-[10px] font-black uppercase flex items-center gap-1"
+                            >
+                                <ShieldCheck size={13} /> Sačuvaj za Firmu
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-theme-main custom-scrollbar">
-                {messages.map((msg, idx) => (
-                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] md:max-w-[75%] p-5 rounded-2xl shadow-md ${msg.role === 'user' ? 'bg-theme-panel text-theme-text rounded-tr-sm border border-theme-border' : 'bg-theme-card text-theme-text rounded-tl-sm border border-blue-500/20'}`}>
-                            {msg.role === 'ai' && <div className="text-[10px] text-blue-400 font-black mb-2 uppercase tracking-widest border-b border-slate-700/50 pb-1">AI Asistent</div>}
-                            <div className="text-sm font-medium leading-relaxed">{msg.role === 'user' ? msg.text : renderMarkdown(msg.text)}</div>
-                        </div>
-                    </div>
+            {/* Brzi galerija predložaka */}
+            <div className="px-4 py-2.5 bg-theme-panel/50 border-b border-theme-border/70 flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0">
+                <span className="text-[9px] font-black uppercase text-theme-muted whitespace-nowrap shrink-0 flex items-center gap-1">
+                    <BarChart3 size={11} /> Brzi izvještaji:
+                </span>
+                {STARTER_PROMPTS.map((sp, idx) => (
+                    <button
+                        key={idx}
+                        type="button"
+                        disabled={isTyping}
+                        data-testid={`ai-starter-chip-${idx}`}
+                        onClick={() => posaljiPoruku(sp.query)}
+                        className="px-3 py-1.5 rounded-full bg-theme-card hover:bg-theme-accent hover:text-white border border-theme-border text-[10px] font-black text-theme-text whitespace-nowrap transition-all shrink-0 disabled:opacity-50"
+                    >
+                        {sp.icon} {sp.label}
+                    </button>
                 ))}
-                
+            </div>
+
+            {/* Chat Stream */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-theme-main/70 custom-scrollbar">
+                {messages.map((msg) => {
+                    const isUser = msg.role === 'user';
+                    return (
+                        <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                            <div
+                                data-testid={isUser ? 'ai-user-bubble' : 'ai-assistant-bubble'}
+                                className={`rounded-3xl shadow-lg ${
+                                    isUser
+                                        ? 'max-w-[85%] md:max-w-[70%] px-5 py-3.5 bg-theme-accent text-white rounded-tr-md'
+                                        : 'w-full max-w-[96%] xl:max-w-[92%] p-5 bg-theme-card text-theme-text rounded-tl-md border border-theme-border'
+                                }`}
+                            >
+                                {isUser ? (
+                                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {/* Top bar AI poruke */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-theme-border/60">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Sparkles size={15} className="text-theme-accent shrink-0" />
+                                                <span className="text-xs font-black uppercase tracking-wider text-theme-text truncate">
+                                                    {msg.naslov || 'AI ERP Analiza'}
+                                                </span>
+                                                {msg.mode && msg.mode !== 'system' && (
+                                                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-theme-panel border border-theme-border text-theme-muted font-black uppercase">
+                                                        {msg.mode === 'gemini' ? 'Gemini AI' : msg.mode === 'openai' ? 'OpenAI' : 'ERP AI Motor'}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Dugmad za print, Excel i kopiranje izvještaja */}
+                                            {msg.id !== 'welcome' && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        data-testid="ai-msg-print-btn"
+                                                        onClick={() => handlePrintReport(msg)}
+                                                        className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/40 text-[10px] font-black uppercase flex items-center gap-1 transition-all"
+                                                    >
+                                                        <Printer size={11} /> PDF Print
+                                                    </button>
+                                                    {msg.tabela?.redovi?.length > 0 && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid="ai-msg-excel-btn"
+                                                            onClick={() => handleExportExcel(msg)}
+                                                            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[10px] font-black uppercase flex items-center gap-1 transition-all"
+                                                        >
+                                                            <FileSpreadsheet size={11} /> Excel
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyText(msg)}
+                                                        className="p-1.5 rounded-lg bg-theme-panel hover:bg-theme-card border border-theme-border text-theme-muted hover:text-theme-text transition-colors"
+                                                        title="Kopiraj tekst analize"
+                                                    >
+                                                        {copiedId === msg.id ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {msg.fallbackNotice && (
+                                            <div className="text-[10px] font-bold text-amber-300 bg-amber-950/30 border border-amber-500/30 rounded-xl px-3 py-1.5">
+                                                ⚠️ {msg.fallbackNotice}
+                                            </div>
+                                        )}
+
+                                        {/* Markdown tekstualna analiza */}
+                                        <div className="prose-sm max-w-none">
+                                            {renderMarkdownBlocks(msg.text)}
+                                        </div>
+
+                                        {/* KPI Kartice */}
+                                        {Array.isArray(msg.kpi) && msg.kpi.length > 0 && (
+                                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+                                                {msg.kpi.map((k, kIdx) => (
+                                                    <div
+                                                        key={kIdx}
+                                                        className={`p-3 rounded-2xl border shadow-sm ${KPI_STYLE_MAP[k.color] || KPI_STYLE_MAP.blue}`}
+                                                    >
+                                                        <span className="text-[9px] font-black uppercase tracking-wider text-theme-muted block truncate">
+                                                            {k.label}
+                                                        </span>
+                                                        <p className="text-base sm:text-lg font-black mt-0.5 truncate">{k.value}</p>
+                                                        {k.sub && <p className="text-[10px] text-theme-muted font-bold mt-0.5 truncate">{k.sub}</p>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Interaktivni SmartChart */}
+                                        {msg.chart && msg.chart.data?.length > 0 && (
+                                            <div className="bg-theme-panel/60 border border-theme-border rounded-2xl p-3.5">
+                                                <SmartChart
+                                                    chartId={msg.chartId}
+                                                    title={msg.chart.title}
+                                                    subtitle={msg.chart.subtitle}
+                                                    data={msg.chart.data}
+                                                    xKey={msg.chart.xKey || 'naziv'}
+                                                    series={msg.chart.series}
+                                                    defaultType={msg.chart.type || 'bar'}
+                                                    unit={msg.chart.unit || ''}
+                                                    height={250}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Detaljna Tabela */}
+                                        {msg.tabela && msg.tabela.kolone?.length > 0 && msg.tabela.redovi?.length > 0 && (
+                                            <div className="border border-theme-border rounded-2xl overflow-hidden bg-theme-panel/40">
+                                                <div className="px-3.5 py-2 border-b border-theme-border bg-theme-panel/70 flex items-center justify-between">
+                                                    <span className="text-[10px] font-black uppercase tracking-wider text-theme-text">
+                                                        {msg.tabela.naslov || 'Detaljni Podaci'}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-theme-muted">
+                                                        {msg.tabela.redovi.length} redova
+                                                    </span>
+                                                </div>
+                                                <div className="overflow-x-auto max-h-[260px] overflow-y-auto custom-scrollbar">
+                                                    <table className="w-full text-left border-collapse text-xs">
+                                                        <thead className="sticky top-0 bg-theme-panel text-[10px] uppercase font-black text-theme-muted border-b border-theme-border">
+                                                            <tr>
+                                                                {msg.tabela.kolone.map((c) => (
+                                                                    <th key={c.key} className={`p-2.5 whitespace-nowrap ${c.align === 'right' ? 'text-right' : ''}`}>
+                                                                        {c.label}
+                                                                    </th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-theme-border/50">
+                                                            {msg.tabela.redovi.map((row, rIdx) => (
+                                                                <tr key={rIdx} className="hover:bg-theme-card/70 transition-colors">
+                                                                    {msg.tabela.kolone.map((c) => {
+                                                                        const raw = row[c.key];
+                                                                        const disp = raw !== undefined && raw !== null && raw !== ''
+                                                                            ? `${raw}${c.suffix || ''}`
+                                                                            : '-';
+                                                                        return (
+                                                                            <td key={c.key} className={`p-2.5 ${c.align === 'right' ? 'text-right font-mono font-black' : 'font-bold'} text-theme-text`}>
+                                                                                {disp}
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Sljedeći prijedlozi za razgovor */}
+                                        {Array.isArray(msg.predlozi) && msg.predlozi.length > 0 && (
+                                            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-theme-border/40">
+                                                <span className="text-[9px] font-black uppercase text-theme-muted mr-1">Nastavi razgovor:</span>
+                                                {msg.predlozi.map((pr, pIdx) => (
+                                                    <button
+                                                        key={pIdx}
+                                                        type="button"
+                                                        disabled={isTyping}
+                                                        onClick={() => posaljiPoruku(pr)}
+                                                        className="px-2.5 py-1 rounded-xl bg-theme-panel hover:bg-theme-accent hover:text-white border border-theme-border text-[10px] font-bold text-theme-text transition-all disabled:opacity-50"
+                                                    >
+                                                        ↳ {pr}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+
                 {isTyping && (
                     <div className="flex justify-start">
-                        <div className="max-w-[75%] p-5 rounded-2xl rounded-tl-sm bg-theme-card border border-blue-500/20 flex items-center gap-2">
-                            <span className="text-xs text-blue-400 font-bold ml-2 animate-pulse">Čitam cijelu bazu podataka i analiziram...</span>
+                        <div className="px-5 py-3.5 rounded-3xl rounded-tl-md bg-theme-card border border-theme-accent/40 flex items-center gap-3 shadow-lg">
+                            <span className="w-2.5 h-2.5 rounded-full bg-theme-accent animate-ping" />
+                            <span className="text-xs font-black text-theme-text animate-pulse">
+                                Analiziram ERP bazu i pripremam izvještaj sa dijagramom...
+                            </span>
                         </div>
                     </div>
                 )}
                 <div ref={chatEndRef} />
             </div>
 
-            <div className="p-4 bg-theme-card border-t border-theme-border shrink-0">
-                <div className="relative flex items-center">
-                    <input 
-                        type="text" 
-                        value={input} 
-                        onChange={(e) => setInput(e.target.value)} 
-                        onKeyDown={(e) => { if (e.key === 'Enter') posaljiPoruku(); }} 
-                        placeholder="Pitaj nešto, npr: Koji nam je ukupni prinos i koliko imamo paketa u bazi?" 
-                        disabled={isTyping} 
-                        className="w-full p-5 pr-20 bg-theme-panel rounded-2xl text-sm text-theme-text font-bold outline-none border border-theme-border focus:border-blue-500 transition-all disabled:opacity-50" 
+            {/* Input Composer */}
+            <div className="p-3.5 sm:p-4 bg-theme-card border-t border-theme-border shrink-0">
+                <div className="relative flex items-end gap-2">
+                    <textarea
+                        ref={inputRef}
+                        rows={1}
+                        value={input}
+                        data-testid="ai-chat-input"
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                posaljiPoruku();
+                            }
+                        }}
+                        placeholder="Pitaj bilo šta, npr: Uporedi ovaj i prošli mjesec, ili Koji kupci kasne sa plaćanjem?"
+                        disabled={isTyping}
+                        className="flex-1 px-4 py-3.5 bg-theme-panel rounded-2xl text-sm text-theme-text font-bold outline-none border border-theme-border focus:border-theme-accent transition-all resize-none max-h-32 disabled:opacity-50"
                     />
-                    <button 
-                        onClick={posaljiPoruku} 
-                        disabled={!input.trim() || isTyping} 
-                        className="absolute right-2 top-2 bottom-2 px-5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl font-black transition-all"
-                        style={{ backgroundColor: input.trim() ? bojaAkcenta : '' }}
-                    >➤</button>
+                    <button
+                        type="button"
+                        data-testid="ai-chat-send-btn"
+                        onClick={() => posaljiPoruku()}
+                        disabled={!input.trim() || isTyping}
+                        className="px-5 py-3.5 rounded-2xl font-black text-xs uppercase text-white flex items-center gap-2 transition-all shadow-lg disabled:opacity-40 shrink-0"
+                        style={{ backgroundColor: bojaAkcenta }}
+                    >
+                        <Send size={15} />
+                        <span className="hidden sm:inline">Pošalji</span>
+                    </button>
                 </div>
             </div>
-            
         </div>
     );
 }

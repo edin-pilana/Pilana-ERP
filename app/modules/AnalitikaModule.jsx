@@ -1371,7 +1371,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             )}
 
             {/* TAB 6: AI KONTROLOR */}
-            {tab === 'AI' && <TabAiAnalitika saas={saas} />}
+            {tab === 'AI' && <TabAiAnalitika saas={saas} user={user} />}
         </div>
     );
 }
