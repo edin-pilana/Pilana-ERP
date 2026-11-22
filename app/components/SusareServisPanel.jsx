@@ -5,6 +5,7 @@ import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import { toLocalIso, prikazDatumaBHS } from '../utils/dateHelpers';
 import MasterSearch, { normalizujZaPretragu } from './MasterSearch';
+import DatumInput from './DatumInput';
 
 const SUSARE_KEY = 'susare_sarze';
 const SERVIS_KEY = 'servis_masina_pila';
@@ -234,11 +235,11 @@ export default function SusareServisPanel({ user }) {
                             </div>
                             <div>
                                 <label className="text-[9px] text-theme-muted uppercase font-black block mb-1">Datum ulaska</label>
-                                <input type="date" value={novaSarza.datum_ulaska} onChange={(e) => setNovaSarza((p) => ({ ...p, datum_ulaska: e.target.value }))} className="w-full p-3 rounded-xl bg-theme-panel border border-theme-border text-xs font-black text-theme-text" />
+                                <DatumInput value={novaSarza.datum_ulaska} onChange={(e) => setNovaSarza((p) => ({ ...p, datum_ulaska: e.target.value }))} className="w-full" />
                             </div>
                             <div>
                                 <label className="text-[9px] text-theme-muted uppercase font-black block mb-1">Planirani završetak</label>
-                                <input type="date" value={novaSarza.plan_zavrsetak} onChange={(e) => setNovaSarza((p) => ({ ...p, plan_zavrsetak: e.target.value }))} className="w-full p-3 rounded-xl bg-theme-panel border border-theme-border text-xs font-black text-theme-text" />
+                                <DatumInput value={novaSarza.plan_zavrsetak} onChange={(e) => setNovaSarza((p) => ({ ...p, plan_zavrsetak: e.target.value }))} className="w-full" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>

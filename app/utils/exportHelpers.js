@@ -1,5 +1,15 @@
 "use client";
 import { toast } from 'sonner';
+import { prikazDatumaBHS, formatBrojBHS } from './dateHelpers';
+
+const formatExcelStringCell = (v) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v).trim();
+    if (/^(19\d{2}|20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) {
+        return prikazDatumaBHS(s);
+    }
+    return String(v);
+};
 
 const escapeXml = (str) =>
     String(str ?? '')
@@ -70,7 +80,7 @@ export function exportToExcel({ filename, sheetName = 'Izvještaj', title = '', 
                             return `<Cell ss:StyleID="Number"><Data ss:Type="Number">${num}</Data></Cell>`;
                         }
                     }
-                    return `<Cell ss:StyleID="Cell"><Data ss:Type="String">${escapeXml(rawVal ?? '')}</Data></Cell>`;
+                    return `<Cell ss:StyleID="Cell"><Data ss:Type="String">${escapeXml(formatExcelStringCell(rawVal))}</Data></Cell>`;
                 })
                 .join('');
             return `<Row ss:Height="19">${cells}</Row>`;
@@ -178,8 +188,11 @@ export function exportToCsv({ filename, columns = [], rows = [] }) {
     const lines = rows.map((row) =>
         columns
             .map((c) => {
-                const val = typeof c.format === 'function' ? c.format(row[c.key], row) : row[c.key];
-                return esc(val);
+                const rawVal = typeof c.format === 'function' ? c.format(row[c.key], row) : row[c.key];
+                if (c.type === 'number' && rawVal !== '' && rawVal !== null && rawVal !== undefined && !isNaN(parseFloat(rawVal))) {
+                    return esc(formatBrojBHS(parseFloat(rawVal), 2));
+                }
+                return esc(formatExcelStringCell(rawVal));
             })
             .join(';')
     );

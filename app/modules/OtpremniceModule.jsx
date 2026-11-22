@@ -6,12 +6,13 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DatumInput from '../components/DatumInput';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { izracunajKarticuKupca, mozeUredjivatiKreditniLimit, DOZVOLA_KREDITNI_LIMIT } from '../utils/kupacKreditHelpers';
 import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
 import { ucitajFscPostavke, generisiFscPdfHtml, izracunajFscEudrZaOtpremnicu, izracunajTezinuTereta, GUSTOCA_DRVETA_KG_M3 } from '../utils/ekoFscHelpers';
-import { escapeHtml } from '../utils/dateHelpers';
+import { escapeHtml, formatBrojBHS } from '../utils/dateHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -1051,7 +1052,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         );
         if (polje.id === 'broj') return <input value={form.id} disabled={isEditingOtpremnica} onChange={e => setForm({ ...form, id: e.target.value.toUpperCase() })} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border font-black uppercase disabled:opacity-50" />;
         if (polje.id === 'veza') return <input value={form.broj_veze} onChange={e => setForm({ ...form, broj_veze: e.target.value.toUpperCase() })} placeholder="RN-... ili PON-..." className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-orange-400 outline-none border border-orange-500/30 font-black uppercase" />;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e => setForm({ ...form, datum: e.target.value })} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'datum') return <DatumInput value={form.datum} onChange={e => setForm({ ...form, datum: e.target.value })} className="w-full min-w-0 h-full min-h-[45px]" />;
         if (polje.id === 'vozac') return <input value={form.vozac} onChange={e => setForm({ ...form, vozac: e.target.value })} placeholder="Ime vozača / Firma" className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
         if (polje.id === 'registracija') return <input value={form.registracija} onChange={e => setForm({ ...form, registracija: e.target.value.toUpperCase() })} placeholder="npr. A12-K-345" className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border uppercase" />;
         if (polje.id === 'status') return (
@@ -1410,7 +1411,7 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                     </select>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <span>Neto: <b className="text-sky-400">{tezinaKamiona.netoKg.toLocaleString('de-DE')} kg</b></span>
+                                    <span>Neto: <b data-no-bhs-format="true" className="text-sky-400">{formatBrojBHS(tezinaKamiona.netoKg, 0)} kg</b></span>
                                     <span>Bruto: <b className={tezinaKamiona.pretovar ? 'text-red-400' : 'text-emerald-400'}>{tezinaKamiona.brutoTone.toFixed(2)} t</b> / 24.0 t</span>
                                     {tezinaKamiona.pretovar && <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[9px] uppercase">🚨 PRETOVAR KAMIONA!</span>}
                                 </div>

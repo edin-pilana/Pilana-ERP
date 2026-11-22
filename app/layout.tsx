@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import GlobalBhsFormatter from './components/GlobalBhsFormatter';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -23,7 +24,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="bs" suppressHydrationWarning>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <GlobalBhsFormatter />
+        {children}
+      </body>
     </html>
   );
 }

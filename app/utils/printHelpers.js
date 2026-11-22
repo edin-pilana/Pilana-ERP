@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 import { toast } from 'sonner';
-import { toLocalIso, escapeHtml, prikazDatumaBHS } from './dateHelpers';
+import { toLocalIso, escapeHtml, prikazDatumaBHS, formatirajHtmlBHS } from './dateHelpers';
 
 export const POSTAVKE = {
     imeAplikacije: "TTM DOO ERP",
@@ -30,8 +30,11 @@ const fetchPrintSettings = async () => {
 // 1. STANDARDNI DOKUMENTI (NALOZI, PONUDE, RAČUNI...)
 // ==========================================
 export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6', totaliHtml = null) => {
+    const datumBhs = datum ? prikazDatumaBHS(datum) : prikazDatumaBHS(toLocalIso(new Date()));
+    const htmlSadrzajBhs = formatirajHtmlBHS(htmlSadrzajTabela || '');
+    const totaliBhs = totaliHtml ? formatirajHtmlBHS(totaliHtml) : null;
     const originalTitle = document.title;
-    const nazivFajla = `${datum} ${tipDokumenta} ${brojDokumenta}`;
+    const nazivFajla = `${datumBhs} ${tipDokumenta} ${brojDokumenta}`;
     document.title = nazivFajla; 
 
     let trazenaLokacija = 'Svi PDF Dokumenti';
@@ -70,9 +73,9 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(brojDokumenta || '')}`;
     const printSkripta = decodeURIComponent('%3Cscript%3Ewindow.onload%3Dfunction()%7BsetTimeout(function()%7Bwindow.print()%3B%7D%2C2000)%3B%7D%3B%3C%2Fscript%3E');
 
-    const donjiDioHtml = totaliHtml ? `
+    const donjiDioHtml = totaliBhs ? `
         <div class="totals-section">
-            ${totaliHtml}
+            ${totaliBhs}
         </div>
     ` : '';
 
@@ -246,7 +249,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                         <div class="doc-title-area">
                             <div class="doc-title">${tipDokumenta}</div>
                             <div class="doc-subtitle">
-                                Broj: <span style="color: #0f172a; font-weight: 800;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datum}
+                                Broj: <span style="color: #0f172a; font-weight: 800;">${brojDokumenta}</span> &nbsp;|&nbsp; Datum: ${datumBhs}
                             </div>
                         </div>
                     </div>
@@ -255,7 +258,7 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                         <div class="qr-text">${brojDokumenta}</div>
                     </div>
                 </div>
-                ${htmlSadrzajTabela}
+                ${htmlSadrzajBhs}
                 ${donjiDioHtml}
                 ${firmaInfo.footer_tekst ? `<div class="global-footer-custom">${firmaInfo.footer_tekst}</div>` : ''}
             </div>

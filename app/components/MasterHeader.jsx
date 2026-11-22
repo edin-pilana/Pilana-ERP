@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabaseClient';
 import { toast } from 'sonner';
 import NotificationDetailModal from './NotificationDetailModal';
 import DesignStudioDrawer from './DesignStudioDrawer';
+import DatumInput from './DatumInput';
 import {
     getNazivModula,
     ocistiTekstDetalja,
@@ -199,7 +200,7 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                 {/* SREDINA: Datum, Mašine i Radnici */}
                 {header && (
                     <div className="flex flex-wrap items-center justify-center gap-2 lg:gap-3 flex-1 lg:flex-none">
-                        <input type="date" value={header.datum || ''} onChange={e => setHeader({ ...header, datum: e.target.value })} className="!p-3 text-xs font-black cursor-pointer w-full sm:w-auto bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-theme-accent" />
+                        <DatumInput data-testid="master-header-datum" value={header.datum || ''} onChange={e => setHeader({ ...header, datum: e.target.value })} className="w-full sm:w-auto" />
 
                         {!hideMasina && (
                             <>

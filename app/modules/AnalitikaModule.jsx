@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import TabAiAnalitika from '../components/TabAiAnalitika';
+import DatumInput from '../components/DatumInput';
 import SmartChart, { uhvatiSmartChartSvgHtml } from '../components/SmartChart';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
@@ -948,11 +949,11 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                             <button onClick={() => setModVremena('PERIOD')} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase ${modVremena === 'PERIOD' ? 'bg-theme-accent text-white' : 'text-slate-400'}`}>Period</button>
                         </div>
 
-                        <input type="date" value={datumOd} onChange={e => setDatumOd(e.target.value)} className="p-2.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black outline-none" />
+                        <DatumInput data-testid="analitika-datum-od" value={datumOd} onChange={e => setDatumOd(e.target.value)} />
                         {modVremena === 'PERIOD' && (
                             <>
                                 <span className="text-slate-500 font-black">→</span>
-                                <input type="date" value={datumDo} onChange={e => setDatumDo(e.target.value)} className="p-2.5 bg-theme-panel border border-theme-border rounded-xl text-xs text-theme-text font-black outline-none" />
+                                <DatumInput data-testid="analitika-datum-do" value={datumDo} onChange={e => setDatumDo(e.target.value)} />
                             </>
                         )}
 

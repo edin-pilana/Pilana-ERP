@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DatumInput from '../components/DatumInput';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -680,11 +681,14 @@ export default function PrijemModule({ user, header, setHeader, onExit }) {
         }
 
         if (actualId === 'otpremnica_datum') return (
-            <div className="flex items-center gap-1 bg-theme-panel border border-theme-border p-1 focus-within:border-theme-accent h-full w-full min-w-0 shadow-inner transition-colors" style={{ ...inputStyle, padding: '4px' }}>
-                <button type="button" onClick={() => setVal(shiftDateString(val, -1))} className="w-7 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">-</button>
-                <input ref={refs.otpremnica_datum} type="date" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="flex-1 min-w-0 w-full bg-transparent text-xs text-theme-text outline-none text-center uppercase [&::-webkit-calendar-picker-indicator]:invert font-black" style={{ fontFamily: saas.ui.font_family || 'inherit', color: saas.ui.input_color || 'inherit' }} />
-                <button type="button" onClick={() => setVal(shiftDateString(val, 1))} className="w-7 h-8 bg-black/20 rounded hover:bg-theme-accent text-theme-text font-black shrink-0 transition-colors">+</button>
-            </div>
+            <DatumInput
+                ref={refs.otpremnica_datum}
+                value={val}
+                onChange={e => setVal(e.target.value)}
+                onKeyDown={e => handleEnter(e, nextMap[actualId])}
+                className="w-full h-full min-h-[45px] min-w-0 shadow-inner"
+                style={{ ...inputStyle, padding: '4px' }}
+            />
         );
 
         if (actualId === 'otpremnica_broj') return <input ref={refs.otpremnica_broj} type="text" value={val} onChange={e => setVal(e.target.value.toUpperCase())} onBlur={(e) => provjeriOtpremnicu(e.target.value.toUpperCase())} onKeyDown={e => handleEnter(e, nextMap[actualId])} className="w-full h-full min-h-[45px] min-w-0 p-3 bg-theme-panel border border-theme-border outline-none focus:border-theme-accent shadow-inner uppercase transition-colors" style={inputStyle} placeholder="Unesi broj..." />;

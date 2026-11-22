@@ -6,6 +6,7 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DatumInput from '../components/DatumInput';
 import { printDokument } from '../utils/printHelpers';
 import { useSaaS } from '../utils/useSaaS';
 
@@ -841,8 +842,8 @@ export default function RadniNaloziModule({ user, header, setHeader, onExit }) {
         if (polje.id === 'ponuda') return <input value={form.broj_ponude} onChange={e => setForm({...form, broj_ponude: e.target.value.toUpperCase()})} className="w-full min-w-0 h-full min-h-[45px] p-3.5 bg-theme-card rounded-xl text-theme-text outline-none border border-theme-border uppercase focus:border-purple-500 shadow-inner" placeholder="Npr. PON-2026..." />;
         if (polje.id === 'broj') return <input value={form.id} disabled className="w-full min-w-0 h-full min-h-[45px] p-3.5 bg-theme-panel rounded-xl text-theme-text border border-theme-border font-black disabled:opacity-50" />;
         if (polje.id === 'kupac') return <div className="h-full min-h-[45px] w-full min-w-0"><MasterSearch data={kupci} poljaZaPretragu={['naziv']} value={form.kupac_naziv} onSelect={k => setForm({...form, kupac_naziv: k.naziv})} placeholder="Odaberi kupca..." /></div>;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3.5 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border font-black outline-none shadow-inner" />;
-        if (polje.id === 'rok') return <input type="date" value={form.rok_isporuke} onChange={e=>setForm({...form, rok_isporuke: e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3.5 bg-theme-panel rounded-xl text-xs text-theme-text border border-theme-border outline-none shadow-inner focus:border-purple-500" />;
+        if (polje.id === 'datum') return <DatumInput value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] shadow-inner" />;
+        if (polje.id === 'rok') return <DatumInput value={form.rok_isporuke} onChange={e=>setForm({...form, rok_isporuke: e.target.value})} className="w-full min-w-0 h-full min-h-[45px] shadow-inner" />;
         if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status: e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3.5 bg-theme-panel rounded-xl text-theme-accent font-black border border-purple-500/50 uppercase outline-none"><option value="U PROIZVODNJI">U proizvodnji</option><option value="ZAVRŠENO">Završeno</option></select>;
         return null;
     };

@@ -4,6 +4,7 @@ import { supabase, formatDbError } from '../utils/supabaseClient';
 import { posaljiNotifikaciju, oznacPovezaneNotifikacijeRijesenim } from '../utils/notificationHelpers';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
+import DatumInput from '../components/DatumInput';
 import { useSaaS } from '../utils/useSaaS';
 import { Users, CalendarCheck, Clock4, CalendarX2, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -753,7 +754,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                         </div>
                                         <div className="flex gap-2 md:gap-3 items-center w-full sm:w-auto">
                                             <button onClick={() => setShowRucniUpis(true)} className="flex-1 sm:flex-none bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl text-[9px] md:text-[10px] uppercase font-black border border-red-500/30 transition-colors">+ Upis Izostanka</button>
-                                            <input type="month" value={mjesecPrikaza} onChange={e=>setMjesecPrikaza(e.target.value)} className="min-w-[140px] sm:w-auto p-2 md:p-3 bg-theme-panel border border-blue-500/50 rounded-lg md:rounded-xl text-blue-400 outline-none font-black cursor-pointer shadow-inner uppercase text-[10px] md:text-xs" />
+                                            <DatumInput type="month" value={mjesecPrikaza} onChange={e=>setMjesecPrikaza(e.target.value)} className="min-w-[165px] sm:w-auto border-blue-500/50" />
                                         </div>
                                     </div>
 
@@ -762,8 +763,8 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                             <h4 className="text-red-400 font-black uppercase text-[9px] md:text-[10px] mb-3 md:mb-4 tracking-widest">Ručni upis izostanka (Admin)</h4>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
                                                 <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Tip</label><select value={formaUpis.tip_odsustva} onChange={e=>setFormaUpis({...formaUpis, tip_odsustva: e.target.value})} className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-theme-text font-bold text-[10px] md:text-xs outline-none"><option value="NEOPRAVDANO">Neopravdano</option><option value="OPRAVDANO">Opravdano (Slobodno)</option><option value="BOLOVANJE">Bolovanje</option></select></div>
-                                                <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Od Datuma</label><input type="date" value={formaUpis.datum_od} onChange={e=>setFormaUpis({...formaUpis, datum_od: e.target.value})} className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-theme-text font-bold text-[10px] md:text-xs outline-none" /></div>
-                                                <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Do Datuma</label><input type="date" value={formaUpis.datum_do} onChange={e=>setFormaUpis({...formaUpis, datum_do: e.target.value})} className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-theme-text font-bold text-[10px] md:text-xs outline-none" /></div>
+                                                <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Od Datuma</label><DatumInput value={formaUpis.datum_od} onChange={e=>setFormaUpis({...formaUpis, datum_od: e.target.value})} className="w-full" /></div>
+                                                <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Do Datuma</label><DatumInput value={formaUpis.datum_do} onChange={e=>setFormaUpis({...formaUpis, datum_do: e.target.value})} className="w-full" /></div>
                                                 <div><label className="text-[8px] md:text-[9px] text-slate-500 uppercase block mb-1">Napomena</label><input type="text" value={formaUpis.razlog} onChange={e=>setFormaUpis({...formaUpis, razlog: e.target.value})} placeholder="Razlog..." className="w-full min-w-0 p-2 md:p-3 bg-theme-card border border-theme-border rounded-lg text-theme-text font-bold text-[10px] md:text-xs outline-none" /></div>
                                             </div>
                                             <div className="flex gap-2"><button onClick={()=>setShowRucniUpis(false)} className="flex-1 md:flex-none px-4 py-2 bg-theme-card text-slate-400 rounded-lg text-[9px] md:text-[10px] uppercase font-black border border-theme-border">Odustani</button><button onClick={rucniUpisOdsustva} className="flex-[2] md:flex-none px-4 py-2 bg-red-600 text-white rounded-lg text-[9px] md:text-[10px] uppercase font-black">Zavedi Izostanak</button></div>
@@ -839,7 +840,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                         <div className="bg-theme-card p-4 md:p-6 rounded-2xl md:rounded-[2rem] border border-theme-border shadow-2xl h-fit" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                             <h3 className="text-purple-400 font-black uppercase text-xs md:text-sm mb-4 md:mb-6 border-b border-theme-border pb-3 md:pb-4">➕ Praznik ili Subota</h3>
                             <div className="space-y-3 md:space-y-4">
-                                <div><label className="text-[9px] md:text-[10px] text-slate-500 uppercase ml-1 md:ml-2 block mb-1">Ručni unos datuma</label><input type="date" value={formaPraznik.datum} onChange={e=>setFormaPraznik({...formaPraznik, datum: e.target.value})} className="w-full min-w-0 p-3 md:p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-purple-500 cursor-pointer" /></div>
+                                <div><label className="text-[9px] md:text-[10px] text-slate-500 uppercase ml-1 md:ml-2 block mb-1">Ručni unos datuma</label><DatumInput value={formaPraznik.datum} onChange={e=>setFormaPraznik({...formaPraznik, datum: e.target.value})} className="w-full" /></div>
                                 <div><label className="text-[9px] md:text-[10px] text-slate-500 uppercase ml-1 md:ml-2 block mb-1">Naziv (Npr. Prvi Maj, Radna Subota...)</label><input type="text" value={formaPraznik.naziv} onChange={e=>setFormaPraznik({...formaPraznik, naziv: e.target.value})} className="w-full min-w-0 p-3 md:p-4 bg-theme-panel border border-theme-border rounded-xl text-theme-text outline-none focus:border-purple-500 font-bold uppercase" placeholder="Naziv izuzetka" /></div>
                                 <div className="bg-theme-panel p-3 md:p-4 rounded-xl border border-theme-border flex items-center justify-between gap-2">
                                     <div><p className="text-[9px] md:text-[10px] text-theme-text font-black uppercase">Da li se radi ovaj dan?</p><p className="text-[7px] md:text-[8px] text-slate-500 uppercase mt-0.5">Utiče na skidanje godišnjeg</p></div>
@@ -852,7 +853,7 @@ export default function HrDashboardModule({ user, header, setHeader, onExit }) {
                                 <h4 className="text-[9px] md:text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Automatsko generisanje subota</h4>
                                 <div className="mb-3">
                                     <label className="text-[8px] text-slate-500 uppercase block mb-1">Primijeni pravilo od datuma:</label>
-                                    <input type="date" value={datumGenOd} onChange={e => setDatumGenOd(e.target.value)} className="w-full min-w-0 p-2 md:p-3 bg-theme-panel border border-theme-border rounded-lg text-theme-text text-[10px] outline-none focus:border-blue-500" />
+                                    <DatumInput value={datumGenOd} onChange={e => setDatumGenOd(e.target.value)} className="w-full" />
                                 </div>
                                 <button onClick={() => generisiSubote('SVE')} className="w-full py-2.5 md:py-3 bg-theme-panel text-theme-text text-[9px] md:text-[10px] font-black uppercase rounded-lg border border-theme-border hover:bg-slate-700 hover:text-white transition-colors">Sve subote su RADNE</button>
                                 <button onClick={() => generisiSubote('PRVA')} className="w-full py-2.5 md:py-3 bg-theme-panel text-theme-text text-[9px] md:text-[10px] font-black uppercase rounded-lg border border-theme-border hover:bg-slate-700 hover:text-white transition-colors">Samo prva subota u mjesecu je RADNA</button>

@@ -13,7 +13,7 @@ import {
 import { SlidersHorizontal, Maximize2, Minimize2, Printer, RotateCcw, Check, BarChart3, TrendingUp, PieChart as PieIcon, Activity, Layers, AlignLeft } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { printDokument } from '../utils/printHelpers';
-import { escapeHtml } from '../utils/dateHelpers';
+import { escapeHtml, formatBrojBHS, prikazDatumaBHS, toLocalIso } from '../utils/dateHelpers';
 
 export const SMART_PALETTE = [
     '#3b82f6', // Blue
@@ -90,9 +90,8 @@ const syncRemotePrefsOnce = async () => {
 const formatBroj = (val, unit = '') => {
     const n = Number(val);
     if (!Number.isFinite(n)) return String(val ?? '0');
-    const formatted = Math.abs(n) >= 100
-        ? n.toLocaleString('bs-BA', { maximumFractionDigits: 1 })
-        : n.toLocaleString('bs-BA', { maximumFractionDigits: 2 });
+    const maxDec = Math.abs(n) >= 100 ? 1 : 2;
+    const formatted = formatBrojBHS(n, maxDec, { minDecimale: 0 });
     return unit ? `${formatted} ${unit}` : formatted;
 };
 
@@ -454,7 +453,7 @@ export default function SmartChart({
                     <BarChart {...sizeProps} data={processedData} layout="vertical" margin={{ top: 6, right: 24, left: 10, bottom: 4 }} onClick={(d) => onItemClick && d?.activePayload?.[0] && onItemClick(d.activePayload[0].payload)}>
                         {renderDefs()}
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={gridStroke} opacity={printMode ? 0.6 : 0.28} />
-                        <XAxis type="number" stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
+                        <XAxis type="number" stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} tickFormatter={(v) => formatBroj(v)} />
                         <YAxis dataKey={xKey} type="category" stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} width={printMode ? 70 : 95} />
                         {!printMode && <Tooltip content={<GlassTooltip unit={unit} totalSum={totalSum} />} cursor={{ fill: 'rgba(148,163,184,0.08)' }} />}
                         {cfg.showLegend && activeSeriesList.length > 1 && <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />}
@@ -474,7 +473,7 @@ export default function SmartChart({
                         {renderDefs()}
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} opacity={printMode ? 0.6 : 0.28} />
                         <XAxis dataKey={xKey} stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
-                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
+                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} tickFormatter={(v) => formatBroj(v)} />
                         {!printMode && <Tooltip content={<GlassTooltip unit={unit} totalSum={totalSum} />} />}
                         {cfg.showLegend && activeSeriesList.length > 1 && <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />}
                         {activeSeriesList.map((s, idx) => (
@@ -499,7 +498,7 @@ export default function SmartChart({
                     <LineChart {...sizeProps} data={processedData} margin={{ top: 10, right: 12, left: -12, bottom: 4 }} onClick={(d) => onItemClick && d?.activePayload?.[0] && onItemClick(d.activePayload[0].payload)}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} opacity={printMode ? 0.6 : 0.28} />
                         <XAxis dataKey={xKey} stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
-                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
+                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} tickFormatter={(v) => formatBroj(v)} />
                         {!printMode && <Tooltip content={<GlassTooltip unit={unit} totalSum={totalSum} />} />}
                         {cfg.showLegend && activeSeriesList.length > 1 && <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />}
                         {activeSeriesList.map((s) => (
@@ -525,7 +524,7 @@ export default function SmartChart({
                         {renderDefs()}
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} opacity={printMode ? 0.6 : 0.28} />
                         <XAxis dataKey={xKey} stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
-                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} />
+                        <YAxis stroke={axisStroke} fontSize={fontSize} tickLine={false} axisLine={false} tickFormatter={(v) => formatBroj(v)} />
                         {!printMode && <Tooltip content={<GlassTooltip unit={unit} totalSum={totalSum} />} />}
                         {cfg.showLegend && <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />}
                         <Bar dataKey={primarySeries.key} name={primarySeries.name} fill={`url(#grad_${uid}_0)`} radius={[8, 8, 0, 0]} maxBarSize={38} isAnimationActive={anim}>
@@ -596,7 +595,7 @@ export default function SmartChart({
                 <tbody>${rows}</tbody>
             </table>
         `;
-        printDokument(title || 'ANALITIČKI DIJAGRAM', `CHART-${new Date().toISOString().slice(0, 10)}`, new Date().toLocaleDateString('bs-BA'), bodyHtml, primarySeries?.color || '#3b82f6');
+        printDokument(title || 'ANALITIČKI DIJAGRAM', `CHART-${toLocalIso(new Date())}`, prikazDatumaBHS(toLocalIso(new Date())), bodyHtml, primarySeries?.color || '#3b82f6');
     };
 
     const toggleSeries = (key) => {
@@ -852,7 +851,7 @@ export default function SmartChart({
     ) : null;
 
     return (
-        <div className="flex flex-col h-full w-full min-w-0" data-smartchart-id={chartId || undefined}>
+        <div className="flex flex-col h-full w-full min-w-0" data-smartchart-id={chartId || undefined} data-no-bhs-format="true">
             {renderToolbar(false)}
             <div className="relative w-full min-w-0" style={{ height: `${height}px` }}>
                 {renderChartBody(width, height)}

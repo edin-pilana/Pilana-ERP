@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from './utils/supabaseClient';
-import { toLocalIso } from './utils/dateHelpers';
+import { toLocalIso, prikazDatumaBHS, formatBrojBHS } from './utils/dateHelpers';
 import { ocistiTekstDetalja } from './utils/notificationHelpers';
 import { toast, Toaster } from 'sonner';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -238,7 +238,7 @@ export default function Page() {
                 return { id: rn, kupac: nalogInfo ? nalogInfo.kupac_naziv : 'Nepoznat Kupac', kolicina: spremnoMap[rn].toFixed(2) };
             }).sort((a,b) => parseFloat(b.kolicina) - parseFloat(a.kolicina));
             setDashboardData({
-                kpi: { ulaz: sumUlaz.toFixed(1), izlaz: sumIzlaz.toFixed(1), potrazivanja: sumOtvoreniDug.toLocaleString('bs-BA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+                kpi: { ulaz: formatBrojBHS(sumUlaz, 1), izlaz: formatBrojBHS(sumIzlaz, 1), potrazivanja: formatBrojBHS(sumOtvoreniDug, 2) },
                 feed: feedRes.data || [], trend: Object.values(trendMap), trupciChart, paketiChart, naloziCekanje, naloziProgres, spremnoZaIsporuku, topDuznici
             });
         } catch(e) {}
@@ -528,7 +528,7 @@ export default function Page() {
                             {dashboardData.naloziCekanje.length === 0 && <p className="text-xs text-slate-500 italic text-center py-4">Svi nalozi su u proizvodnji ili završeni.</p>}
                             {dashboardData.naloziCekanje.map(n => (
                                 <div key={n.id} onClick={() => setKontekstniMeni({ id: n.id, title: 'Nalog na čekanju', subtitle: n.kupac, actions: [{ label: '📅 Otvori u Planiranju', module: 'planiranje', action: 'planiraj' }, { label: '⚙️ Uredi Nalog', module: 'radni_nalozi', action: 'uredi' }, { label: '🕵️ X-Ray Forenzika', module: 'toranj', action: 'skeniraj' }]})} className="bg-theme-panel p-3 rounded-lg border border-theme-border flex justify-between items-center shadow-sm hover:border-amber-500/50 cursor-pointer transition-colors group">
-                                    <div><p className="text-xs font-black text-theme-text group-hover:text-amber-500 transition-colors">{n.id}</p><p className="text-[9px] text-slate-400 uppercase font-bold mt-1">Rok: <span className="text-amber-400">{new Date(n.rok).toLocaleDateString('de-DE')}</span></p></div>
+                                    <div><p className="text-xs font-black text-theme-text group-hover:text-amber-500 transition-colors">{n.id}</p><p className="text-[9px] text-slate-400 uppercase font-bold mt-1">Rok: <span className="text-amber-400">{prikazDatumaBHS(n.rok)}</span></p></div>
                                     <span className="text-[8px] bg-slate-800 text-slate-300 px-2 py-1 rounded font-black uppercase border border-slate-600">{n.status}</span>
                                 </div>
                             ))}
@@ -926,7 +926,7 @@ export default function Page() {
                                 <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto justify-end shrink-0">
                                     <div className="bg-theme-panel border border-theme-border px-4 py-2 rounded-xl text-center md:text-right hidden md:block shadow-inner">
                                         <p className="text-[10px] uppercase font-black text-slate-500">Današnji Datum</p>
-                                        <p className="text-theme-text font-black text-sm">{new Date().toLocaleDateString('bs-BA')}</p>
+                                        <p className="text-theme-text font-black text-sm">{prikazDatumaBHS(new Date())}</p>
                                     </div>
                                     {(loggedUser?.uloga === 'superadmin' || loggedUser?.uloga === 'admin') && (
                                         isEditMode ? (

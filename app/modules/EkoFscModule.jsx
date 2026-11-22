@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import SmartChart, { uhvatiSmartChartSvgHtml } from '../components/SmartChart';
+import DatumInput from '../components/DatumInput';
 import { useSaaS } from '../utils/useSaaS';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
@@ -706,9 +707,9 @@ export default function EkoFscModule({ user, header, setHeader, onExit }) {
             <div className="bg-theme-card p-4 rounded-2xl border border-theme-border shadow-xl flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[10px] uppercase font-black text-theme-muted">Period izvještaja:</span>
-                    <input type="date" value={datumOd} onChange={(e) => setDatumOd(e.target.value)} className="p-2.5 bg-theme-panel border border-theme-border rounded-xl text-xs font-black text-theme-text outline-none" />
+                    <DatumInput value={datumOd} onChange={(e) => setDatumOd(e.target.value)} />
                     <span className="text-theme-muted">→</span>
-                    <input type="date" value={datumDo} onChange={(e) => setDatumDo(e.target.value)} className="p-2.5 bg-theme-panel border border-theme-border rounded-xl text-xs font-black text-theme-text outline-none" />
+                    <DatumInput value={datumDo} onChange={(e) => setDatumDo(e.target.value)} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button type="button" data-testid="eko-excel-btn" onClick={izveziExcel} className="px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 rounded-xl text-[10px] font-black uppercase flex items-center gap-1.5 transition-all">
@@ -842,7 +843,7 @@ export default function EkoFscModule({ user, header, setHeader, onExit }) {
                                                             <input value={m.certBroj || ''} onChange={(e) => updateSumarijaMeta(s.naziv, 'certBroj', e.target.value.toUpperCase())} placeholder="npr. SGS-FM/COC-..." className="w-full p-2 rounded-lg bg-theme-panel border border-theme-border text-[11px] text-theme-text font-mono" />
                                                         </td>
                                                         <td className="p-2">
-                                                            <input type="date" value={m.vaziDo || ''} onChange={(e) => updateSumarijaMeta(s.naziv, 'vaziDo', e.target.value)} className={`w-full p-2 rounded-lg bg-theme-panel border text-[11px] text-theme-text ${istek.status === 'ISTEKAO' ? 'border-red-500' : istek.status === 'USKORO' ? 'border-amber-500' : 'border-theme-border'}`} />
+                                                            <DatumInput compact value={m.vaziDo || ''} onChange={(e) => updateSumarijaMeta(s.naziv, 'vaziDo', e.target.value)} className={`w-full ${istek.status === 'ISTEKAO' ? 'border-red-500' : istek.status === 'USKORO' ? 'border-amber-500' : 'border-theme-border'}`} />
                                                         </td>
                                                         <td className="p-2">
                                                             <input value={m.gpsLokacija || ''} onChange={(e) => updateSumarijaMeta(s.naziv, 'gpsLokacija', e.target.value)} placeholder="npr. 44.7068, 18.4882" className="w-full p-2 rounded-lg bg-theme-panel border border-theme-border text-[11px] text-theme-text font-mono" />
@@ -899,7 +900,7 @@ export default function EkoFscModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
                                     <div>
                                         <label className="text-[9px] text-theme-muted uppercase block mb-1">Mjesec</label>
-                                        <input type="month" value={noviCbam.mjesec} onChange={(e) => setNoviCbam((p) => ({ ...p, mjesec: e.target.value }))} className="w-full p-2.5 rounded-xl bg-theme-panel border border-theme-border text-xs font-black text-theme-text" />
+                                        <DatumInput type="month" value={noviCbam.mjesec} onChange={(e) => setNoviCbam((p) => ({ ...p, mjesec: e.target.value }))} className="w-full" />
                                     </div>
                                     <div>
                                         <label className="text-[9px] text-theme-muted uppercase block mb-1">Struja (kWh)</label>
@@ -1033,7 +1034,7 @@ export default function EkoFscModule({ user, header, setHeader, onExit }) {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                     <div>
                                         <label className="text-[9px] text-theme-muted uppercase block mb-1">Datum</label>
-                                        <input type="date" value={noviUtrosak.datum} onChange={(e) => setNoviUtrosak((p) => ({ ...p, datum: e.target.value }))} className="w-full p-2.5 rounded-xl bg-theme-panel border border-theme-border text-xs font-black text-theme-text" />
+                                        <DatumInput value={noviUtrosak.datum} onChange={(e) => setNoviUtrosak((p) => ({ ...p, datum: e.target.value }))} className="w-full" />
                                     </div>
                                     <div>
                                         <label className="text-[9px] text-theme-muted uppercase block mb-1">Vrsta Otpada / Biomase</label>

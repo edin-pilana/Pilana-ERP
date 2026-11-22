@@ -8,6 +8,7 @@ import ScannerOverlay from '../components/ScannerOverlay';
 import { useSaaS } from '../utils/useSaaS';
 import { AlertTriangle, CheckCircle2, XCircle, Search, ArrowRight, ShieldAlert, ScanLine, Package, ChevronDown, Check, Banknote, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatBrojBHS } from '../utils/dateHelpers';
 
 const TIP_REKLAMACIJE_OPCIJE = [
     { value: 'POVRAT', label: 'Fizički Povrat Robe', desc: 'Roba se vraća nazad u magacin firme', ikona: '📦' },
@@ -962,7 +963,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-lg">KUPAC: {imeKupca}</span>
                                             <span className="text-[10px] font-black text-blue-400 bg-blue-500/10 border border-blue-500/30 px-3 py-1 rounded-lg">
-                                                STANJE PAKETA: {Number(paket.kolicina_ulaz || 0).toLocaleString('bs-BA', { maximumFractionDigits: 2 })} {paket.jm || 'kom'} • {Number(paket.kolicina_final || 0).toFixed(3)} m³
+                                                STANJE PAKETA: {formatBrojBHS(Number(paket.kolicina_ulaz || 0), 2, { minDecimale: 0 })} {paket.jm || 'kom'} • {formatBrojBHS(Number(paket.kolicina_final || 0), 3)} m³
                                             </span>
                                             {povezaniRacun && (
                                                 <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-lg">
@@ -977,7 +978,7 @@ export default function ReklamacijeModule({ user, header, setHeader, onExit }) {
                                             {String(paket.jm || 'kom').toLowerCase() !== 'm3' && (
                                                 <>
                                                     <h3 className="text-2xl text-amber-400 font-black drop-shadow-md">
-                                                        {stvarnoPreostaloOrig.toLocaleString('bs-BA', { maximumFractionDigits: 2 })} <span className="text-xs uppercase">{paket.jm || 'kom'}</span>
+                                                        {formatBrojBHS(stvarnoPreostaloOrig, 2, { minDecimale: 0 })} <span className="text-xs uppercase">{paket.jm || 'kom'}</span>
                                                     </h3>
                                                     <span className="text-slate-500 font-black">/</span>
                                                 </>

@@ -7,6 +7,7 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DatumInput from '../components/DatumInput';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { izracunajKarticuKupca } from '../utils/kupacKreditHelpers';
@@ -808,8 +809,8 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
             </div>
         );
         if (polje.id === 'broj') return <input value={form.id} disabled={isEditingPonuda} onChange={e=>setForm({...form, id:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border font-black uppercase disabled:opacity-50" />;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
-        if (polje.id === 'rok') return <input type="date" value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'datum') return <DatumInput value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px]" />;
+        if (polje.id === 'rok') return <DatumInput value={form.rok_vazenja} onChange={e=>setForm({...form, rok_vazenja:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px]" />;
         if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border cursor-pointer"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
         if (polje.id === 'paritet') return <input value={form.paritet} onChange={e=>setForm({...form, paritet:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" placeholder="npr. FCA Srebrenik" />;
         if (polje.id === 'depozit') return <input type="number" step="0.01" value={form.depozit} onChange={e=>setForm({...form, depozit:e.target.value})} style={inputStyle} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/30" placeholder="0.00" />;

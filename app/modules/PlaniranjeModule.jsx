@@ -4,6 +4,7 @@ import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
 import SusareServisPanel from '../components/SusareServisPanel';
+import DatumInput from '../components/DatumInput';
 import { useSaaS } from '../utils/useSaaS';
 import { ChevronLeft, ChevronRight, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -506,7 +507,7 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                             </div>
                             <div className="w-full sm:w-auto bg-amber-900/10 border border-amber-500/30 p-2 md:p-3 rounded-xl shadow-inner">
                                 <label className="text-[9px] md:text-[10px] text-amber-500 uppercase font-black block mb-1 md:mb-2">Odaberi Datum</label>
-                                <input type="date" min={danasnjiDatum} value={planiranjeModal.datum} onChange={e => setPlaniranjeModal({ ...planiranjeModal, datum: e.target.value })} className="w-full p-2 md:p-3 bg-theme-panel text-amber-400 rounded-lg outline-none border border-amber-500/50 focus:border-amber-400 font-black text-xs md:text-sm uppercase cursor-pointer" />
+                                <DatumInput min={danasnjiDatum} value={planiranjeModal.datum} onChange={e => setPlaniranjeModal({ ...planiranjeModal, datum: e.target.value })} className="w-full border-amber-500/50" />
                             </div>
                         </div>
 

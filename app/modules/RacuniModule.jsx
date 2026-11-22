@@ -5,6 +5,7 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DatumInput from '../components/DatumInput';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
@@ -617,8 +618,8 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         );
         if (polje.id === 'broj') return <input value={form.id} disabled={isEditingRacun} onChange={e=>setForm({...form, id:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-theme-text outline-none border border-theme-border font-black uppercase disabled:opacity-50" />;
         if (polje.id === 'otpremnica') return <input value={form.broj_veze} onChange={e=>setForm({...form, broj_veze:e.target.value.toUpperCase()})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-card rounded-xl text-xs text-emerald-400 outline-none border border-emerald-500/30 font-black uppercase" />;
-        if (polje.id === 'datum') return <input type="date" value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
-        if (polje.id === 'rok') return <input type="date" value={form.rok_placanja} onChange={e=>setForm({...form, rok_placanja:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border" />;
+        if (polje.id === 'datum') return <DatumInput value={form.datum} onChange={e=>setForm({...form, datum:e.target.value})} className="w-full min-w-0 h-full min-h-[45px]" />;
+        if (polje.id === 'rok') return <DatumInput value={form.rok_placanja} onChange={e=>setForm({...form, rok_placanja:e.target.value})} className="w-full min-w-0 h-full min-h-[45px]" />;
         if (polje.id === 'valuta') return <select value={form.valuta} onChange={e=>setForm({...form, valuta:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border cursor-pointer"><option value="KM">BAM (KM)</option><option value="EUR">EUR (€)</option><option value="RSD">RSD</option></select>;
         if (polje.id === 'status') return <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})} className="w-full min-w-0 h-full min-h-[45px] p-3 bg-emerald-900/20 rounded-xl text-xs text-emerald-400 font-black outline-none border border-emerald-500/50 cursor-pointer"><option value="NENAPLAĆENO">⏳ NENAPLAĆENO</option><option value="DJELIMIČNO PLAĆENO">🌗 DJELIMIČNO PLAĆENO</option><option value="NAPLAĆENO">✅ NAPLAĆENO</option></select>;
         
