@@ -9,6 +9,7 @@ import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
 import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
+import { ucitajFscPostavke, generisiFscPdfHtml } from '../utils/ekoFscHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -568,7 +569,9 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
 
     const kreirajPDF = () => { kreirajPDFPrivremeni(form); };
 
-    const kreirajPDFPrivremeni = (podaci) => {
+    const kreirajPDFPrivremeni = async (podaci) => {
+        const fscPostavke = await ucitajFscPostavke();
+        const fscBannerHtml = generisiFscPdfHtml(fscPostavke);
         const stariNaslov = document.title; document.title = `racuni_${podaci.id}_${(podaci.kupac_naziv || 'Nepoznat_Kupac').replace(/\s+/g, '_')}`;
         const kupacZaPdf = kupci.find(k => k.naziv === podaci.kupac_naziv) || odabraniKupac || null;
         const cisteStavkeZaPdf = (podaci.stavke_jsonb || stavke || []).map(st => normalizujStavkuRacuna(st, katalog, kupacZaPdf));
@@ -596,7 +599,7 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
         const ukupnoSaPDV = sumaOsnovica + pdvIznos;
         const val = podaci.valuta || 'KM';
 
-        const htmlSadrzajTabela = `<style>table th, table td { padding: 4px 6px !important; } .footer { margin-top: 25px !important; font-size: 11px !important; display: flex; justify-content: space-between; } .napomena { width: 60%; color: #475569; line-height: 1.4; } .potpis { width: 30%; text-align: center; color: #64748b; }</style><div class="info-grid"><div class="info-col-left"><h4>Kupac / Klijent</h4><h2>${podaci.kupac_naziv}</h2><p>${kupacZaPdf?.adresa || 'Adresa nije unesena'}</p><p style="margin-top: 3px;">PDV / ID: <b style="color: #0f172a;">${kupacZaPdf?.pdv_broj || 'N/A'}</b></p></div><div class="info-col-right"><p>Vezni dokument: <b>${podaci.broj_veze || 'N/A'}</b></p><p style="margin-top: 2px;">Plaćanje: <b>${podaci.nacin_placanja}</b></p><p style="margin-top: 2px;">Valuta: <b>${val}</b></p><p style="color: #10b981; margin-top: 8px;">Rok plaćanja: <b>${formatirajDatum(podaci.rok_placanja)}</b></p></div></div><table><thead><tr><th style="width: 5%;">R.B.</th><th>Naziv Proizvoda i Šifra (Dimenzije u cm)</th><th style="text-align:center;">Količina</th><th class="num">Cijena</th><th class="num">Rabat</th><th class="num">Ukupno (${val})</th></tr></thead><tbody>${redovi}</tbody></table><div class="footer"><div class="napomena"><b style="color: #0f172a; text-transform: uppercase;">Napomena uz račun:</b><br/>${podaci.napomena || 'Nema dodatnih napomena.'}</div><div class="potpis"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis i pečat izdavaoca</div></div>`;
+        const htmlSadrzajTabela = `<style>table th, table td { padding: 4px 6px !important; } .footer { margin-top: 25px !important; font-size: 11px !important; display: flex; justify-content: space-between; } .napomena { width: 60%; color: #475569; line-height: 1.4; } .potpis { width: 30%; text-align: center; color: #64748b; }</style><div class="info-grid"><div class="info-col-left"><h4>Kupac / Klijent</h4><h2>${podaci.kupac_naziv}</h2><p>${kupacZaPdf?.adresa || 'Adresa nije unesena'}</p><p style="margin-top: 3px;">PDV / ID: <b style="color: #0f172a;">${kupacZaPdf?.pdv_broj || 'N/A'}</b></p></div><div class="info-col-right"><p>Vezni dokument: <b>${podaci.broj_veze || 'N/A'}</b></p><p style="margin-top: 2px;">Plaćanje: <b>${podaci.nacin_placanja}</b></p><p style="margin-top: 2px;">Valuta: <b>${val}</b></p><p style="color: #10b981; margin-top: 8px;">Rok plaćanja: <b>${formatirajDatum(podaci.rok_placanja)}</b></p></div></div><table><thead><tr><th style="width: 5%;">R.B.</th><th>Naziv Proizvoda i Šifra (Dimenzije u cm)</th><th style="text-align:center;">Količina</th><th class="num">Cijena</th><th class="num">Rabat</th><th class="num">Ukupno (${val})</th></tr></thead><tbody>${redovi}</tbody></table>${fscBannerHtml}<div class="footer"><div class="napomena"><b style="color: #0f172a; text-transform: uppercase;">Napomena uz račun:</b><br/>${podaci.napomena || 'Nema dodatnih napomena.'}</div><div class="potpis"><div style="border-bottom: 1px solid #cbd5e1; margin-bottom: 5px; height: 40px;"></div>Potpis i pečat izdavaoca</div></div>`;
 
         const donjiTotaliHtml = `<table class="totals-table"><tr><td class="lbl">Iznos bez rabata:</td><td class="val">${sumaBezRabata.toFixed(2)} ${val}</td></tr>${sumaRabata > 0 ? `<tr><td class="lbl" style="color: #10b981;">Uračunati rabat:</td><td class="val" style="color: #10b981;">- ${sumaRabata.toFixed(2)} ${val}</td></tr>` : ''}${imaPdv ? `<tr><td class="lbl">Osnovica za PDV:</td><td class="val">${sumaOsnovica.toFixed(2)} ${val}</td></tr><tr><td class="lbl">PDV iznos (17%):</td><td class="val">${pdvIznos.toFixed(2)} ${val}</td></tr>` : ''}<tr class="grand-total"><td class="lbl">ZA NAPLATU:</td><td class="val">${ukupnoSaPDV.toFixed(2)} ${val}</td></tr></table>`;
 
@@ -785,7 +788,10 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                                     <button
                                         type="button"
                                         data-testid="racun-whatsapp-btn"
-                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv) || odabraniKupac;
+                                            posaljiDokumentWhatsApp({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.telefon || '');
+                                        }}
                                         className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all shadow-sm"
                                     >
                                         💬 WhatsApp
@@ -793,7 +799,10 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
                                     <button
                                         type="button"
                                         data-testid="racun-email-btn"
-                                        onClick={() => posaljiDokumentEmail({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv) || odabraniKupac;
+                                            posaljiDokumentEmail({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.email || '');
+                                        }}
                                         className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all shadow-sm"
                                     >
                                         ✉️ Email

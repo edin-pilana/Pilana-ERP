@@ -10,6 +10,8 @@ import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { izracunajKarticuKupca, mozeUredjivatiKreditniLimit, DOZVOLA_KREDITNI_LIMIT } from '../utils/kupacKreditHelpers';
 import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
+import { ucitajFscPostavke, generisiFscPdfHtml, izracunajFscEudrZaOtpremnicu, izracunajTezinuTereta, GUSTOCA_DRVETA_KG_M3 } from '../utils/ekoFscHelpers';
+import { escapeHtml } from '../utils/dateHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -919,11 +921,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         return 0;
     };
 
-    const kreirajPDFPrivremeni = (podaci) => {
+    const kreirajPDFPrivremeni = async (podaci) => {
+        const fscPostavke = await ucitajFscPostavke();
+        const fscBannerHtml = generisiFscPdfHtml(fscPostavke);
         const stariNaslov = document.title;
         document.title = `otpremnica_${podaci.id}_${(podaci.kupac_naziv || 'Kupac').replace(/\s+/g, '_')}`;
         const listaStavki = podaci.stavke_jsonb || [];
         const ukupnoM3 = listaStavki.reduce((s, x) => s + izracunajStavkuM3(x), 0);
+        const tezinaPdf = izracunajTezinuTereta(ukupnoM3, vrstaDrvetaTezina, vlagaTezina);
 
         const redovi = listaStavki.map((s, i) => {
             const kolUnosPrikaz = s.kolicina_unos ?? s.kolicina_obracun ?? s.kolicina ?? 0;
@@ -963,8 +968,9 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                 <tbody>${redovi}</tbody>
             </table>
             <div style="margin-top:15px; text-align:right; font-size:14px; font-weight:900;">
-                UKUPNO OTPREMLJENO: ${ukupnoM3.toFixed(3)} m³
+                UKUPNO OTPREMLJENO: ${ukupnoM3.toFixed(3)} m³ <span style="font-size:11px; color:#475569; font-weight:700;">(Procjena težine: ~${tezinaPdf.brutoTone.toFixed(2)} t bruto / ${tezinaPdf.netoKg} kg neto)</span>
             </div>
+            ${fscBannerHtml}
             <div class="footer" style="margin-top:30px; display:flex; justify-content:space-between;">
                 <div style="width:45%;"><b>Napomena:</b><br/>${podaci.napomena || 'Nema napomene.'}</div>
                 <div style="width:25%; text-align:center;"><div style="border-bottom:1px solid #94a3b8; height:35px; margin-bottom:5px;"></div>Robu izdao</div>
@@ -973,6 +979,65 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         `;
         printDokument('OTPREMNICA', podaci.id, formatirajDatum(podaci.datum), html, '#f97316');
         setTimeout(() => { document.title = stariNaslov; }, 2000);
+    };
+
+    const stampajPackingList = async () => {
+        if (stavke.length === 0) return toast.warning('Dodajte stavke prije ispisa Packing Liste!');
+        const trace = await izracunajFscEudrZaOtpremnicu(stavke);
+        const fscPostavke = await ucitajFscPostavke();
+        const tezina = izracunajTezinuTereta(ukupnoOtpremnicaM3, vrstaDrvetaTezina, vlagaTezina);
+
+        const redovi = stavke.map((s, i) => {
+            const m3 = izracunajStavkuM3(s);
+            const kg = Math.round(m3 * tezina.gustoca);
+            return `
+                <tr>
+                    <td style="text-align:center;">${i + 1}.</td>
+                    <td><b>${escapeHtml(s.paket_id || s.sifra || '-')}</b></td>
+                    <td>${escapeHtml(s.naziv || '-')}</td>
+                    <td style="text-align:center;">${escapeHtml(s.dimenzije || '-')} cm</td>
+                    <td style="text-align:center;">${s.kolicina_unos ?? s.kolicina_obracun ?? 0} ${escapeHtml(s.jm_unos || s.jm_obracun || 'kom')}</td>
+                    <td class="num"><b>${m3.toFixed(3)} m³</b></td>
+                    <td class="num">${kg} kg</td>
+                </tr>
+            `;
+        }).join('');
+
+        const eudrHtml = trace.sumarije.length > 0 ? `
+            <div style="margin-top:14px; padding:10px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc;">
+                <div style="font-size:10px; font-weight:900; text-transform:uppercase; color:#0f172a; margin-bottom:6px;">🌍 EUDR / Porijeklo Sirovina (Geolokacija sječe)</div>
+                <table style="margin:0; font-size:10px;">
+                    <thead><tr><th>Šumarija / Izvor</th><th>FSC Status</th><th>Certifikat</th><th>EUDR GPS / Odjel</th></tr></thead>
+                    <tbody>
+                        ${trace.sumarije.map((sm) => `<tr><td><b>${escapeHtml(sm.naziv)}</b></td><td>${escapeHtml(sm.fscStatus)}</td><td>${escapeHtml(sm.certBroj || '-')}</td><td>${escapeHtml([sm.gpsLokacija, sm.eudrOdjel].filter(Boolean).join(' | ') || 'Nije uneseno u EKO/FSC')}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        ` : '';
+
+        const html = `
+            <div class="info-grid">
+                <div class="info-col-left">
+                    <h4>Izvozna Specifikacija (PACKING LIST / CMR)</h4>
+                    <h2>${escapeHtml(form.kupac_naziv || 'Kupac')}</h2>
+                    <p>Otpremnica: <b>${escapeHtml(form.id)}</b> | Veza: <b>${escapeHtml(form.broj_veze || '-')}</b></p>
+                </div>
+                <div class="info-col-right">
+                    <p>Vozač / Kamion: <b>${escapeHtml(form.vozac || '-')} (${escapeHtml(form.registracija || '-')})</b></p>
+                    <p>Ukupna Zapremina: <b>${ukupnoOtpremnicaM3.toFixed(3)} m³ (${stavke.length} stavki/paketa)</b></p>
+                    <p>Neto / Bruto Težina: <b>${tezina.netoKg} kg / ${tezina.brutoKg} kg (${tezina.brutoTone.toFixed(2)} t)</b></p>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr><th style="width:5%; text-align:center;">#</th><th>Paket ID</th><th>Proizvod</th><th style="text-align:center;">Dimenzije</th><th style="text-align:center;">Količina</th><th class="num">Volumen</th><th class="num">Neto kg</th></tr>
+                </thead>
+                <tbody>${redovi}</tbody>
+            </table>
+            ${generisiFscPdfHtml(fscPostavke, trace.claim)}
+            ${eudrHtml}
+        `;
+        printDokument('PACKING LIST / IZVOZ', `PL-${form.id}`, formatirajDatum(form.datum), html, '#0f766e');
     };
 
     const renderPoljeZaglavlja = (polje) => {
@@ -1021,7 +1086,14 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         );
     }, [slobodniPaketi, pretragaLagera]);
 
+    const [vrstaDrvetaTezina, setVrstaDrvetaTezina] = useState('CETINARI');
+    const [vlagaTezina, setVlagaTezina] = useState('SIROVO');
+
     const ukupnoOtpremnicaM3 = useMemo(() => stavke.reduce((s, x) => s + izracunajStavkuM3(x), 0), [stavke, katalog]);
+    const tezinaKamiona = useMemo(
+        () => izracunajTezinuTereta(ukupnoOtpremnicaM3, vrstaDrvetaTezina, vlagaTezina),
+        [ukupnoOtpremnicaM3, vrstaDrvetaTezina, vlagaTezina]
+    );
 
     return (
         <div className="p-4 max-w-6xl mx-auto space-y-6 font-bold animate-in fade-in pb-24" style={{ color: saas.ui.boja_slova }}>
@@ -1291,8 +1363,20 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                 <div className="flex flex-wrap items-center gap-2">
                                     <button
                                         type="button"
+                                        data-testid="otpremnica-packing-list-btn"
+                                        onClick={stampajPackingList}
+                                        className="bg-teal-600/20 hover:bg-teal-600 text-teal-400 hover:text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black border border-teal-500/40 transition-all"
+                                        title="Izvozna Packing Lista sa težinom kamiona, FSC i EUDR porijeklom"
+                                    >
+                                        📦 Packing List (FSC/EUDR)
+                                    </button>
+                                    <button
+                                        type="button"
                                         data-testid="otpremnica-whatsapp-btn"
-                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv);
+                                            posaljiDokumentWhatsApp({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³ (~${tezinaKamiona.brutoTone} t)`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.telefon || '');
+                                        }}
                                         className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all"
                                     >
                                         💬 WhatsApp
@@ -1300,12 +1384,35 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                     <button
                                         type="button"
                                         data-testid="otpremnica-email-btn"
-                                        onClick={() => posaljiDokumentEmail({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv);
+                                            posaljiDokumentEmail({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³ (~${tezinaKamiona.brutoTone} t)`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.email || '');
+                                        }}
                                         className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all"
                                     >
                                         ✉️ Email
                                     </button>
                                     <span className="text-emerald-400 font-black text-base ml-1">Ukupno: {ukupnoOtpremnicaM3.toFixed(3)} m³</span>
+                                </div>
+                            </div>
+
+                            {/* 🚚 KALKULATOR TONAŽE KAMIONA (ZAŠTITA OD PRETOVARA > 24t) */}
+                            <div data-testid="otpremnica-tezina-bar" className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs font-black ${tezinaKamiona.pretovar ? 'bg-red-950/40 border-red-500 text-red-300 animate-pulse' : tezinaKamiona.blizuLimita ? 'bg-amber-950/30 border-amber-500/60 text-amber-300' : 'bg-theme-panel border-theme-border text-theme-text'}`}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span>🚚 Težina tereta:</span>
+                                    <select value={vrstaDrvetaTezina} onChange={(e) => setVrstaDrvetaTezina(e.target.value)} className="px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-[10px] font-black text-theme-text">
+                                        {Object.entries(GUSTOCA_DRVETA_KG_M3).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                    </select>
+                                    <select value={vlagaTezina} onChange={(e) => setVlagaTezina(e.target.value)} className="px-2 py-1 rounded-lg bg-theme-card border border-theme-border text-[10px] font-black text-theme-text">
+                                        <option value="SIROVO">Sirovo</option>
+                                        <option value="PROSUSENO">Prosušeno (AD)</option>
+                                        <option value="SUSENO">Sušeno (KD 10-12%)</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span>Neto: <b className="text-sky-400">{tezinaKamiona.netoKg.toLocaleString('de-DE')} kg</b></span>
+                                    <span>Bruto: <b className={tezinaKamiona.pretovar ? 'text-red-400' : 'text-emerald-400'}>{tezinaKamiona.brutoTone.toFixed(2)} t</b> / 24.0 t</span>
+                                    {tezinaKamiona.pretovar && <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[9px] uppercase">🚨 PRETOVAR KAMIONA!</span>}
                                 </div>
                             </div>
 

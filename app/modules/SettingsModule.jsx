@@ -1178,15 +1178,25 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
 
     const pokreniIzmjenu = (kupac) => {
         const rabati = kupac.rabati_jsonb || {};
+        const kontakt = rabati.kontakt || {};
         const rProizvodi = Object.entries(rabati.proizvodi || {}).map(([sifra, rabat]) => ({sifra, rabat}));
         const rKategorije = Object.entries(rabati.kategorije || {}).map(([kategorija, rabat]) => ({kategorija, rabat}));
-        setForm({ id: kupac.id, naziv: kupac.naziv, pdv: kupac.pdv_broj || '', adresa: kupac.adresa || '', ukupni_rabat: rabati.ukupni || '' });
+        setForm({
+            id: kupac.id,
+            naziv: kupac.naziv,
+            pdv: kupac.pdv_broj || '',
+            adresa: kupac.adresa || '',
+            ukupni_rabat: rabati.ukupni || '',
+            kontakt_osoba: kontakt.osoba || '',
+            telefon: kontakt.telefon || '',
+            email: kontakt.email || '',
+        });
         setRabatiProizvodi(rProizvodi); setRabatiKategorije(rKategorije);
         setIsEditing(true); setDuplicateWarning(null); window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const ponistiIzmjenu = () => {
-        setForm({ id: null, naziv: '', pdv: '', adresa: '', ukupni_rabat: '' }); setRabatiProizvodi([]); setRabatiKategorije([]); setIsEditing(false); setDuplicateWarning(null);
+        setForm({ id: null, naziv: '', pdv: '', adresa: '', ukupni_rabat: '', kontakt_osoba: '', telefon: '', email: '' }); setRabatiProizvodi([]); setRabatiKategorije([]); setIsEditing(false); setDuplicateWarning(null);
     };
 
     const addR_Proizvod = () => {
@@ -1230,7 +1240,12 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
         const rabati_json = {
             ukupni: ukupniR,
             proizvodi: rabatiProizvodi.reduce((acc, c) => ({...acc, [c.sifra]: parseFloat(c.rabat)}), {}),
-            kategorije: rabatiKategorije.reduce((acc, c) => ({...acc, [c.kategorija]: parseFloat(c.rabat)}), {})
+            kategorije: rabatiKategorije.reduce((acc, c) => ({...acc, [c.kategorija]: parseFloat(c.rabat)}), {}),
+            kontakt: {
+                osoba: (form.kontakt_osoba || '').trim(),
+                telefon: (form.telefon || '').trim(),
+                email: (form.email || '').trim(),
+            }
         };
         const payload = { naziv: form.naziv, pdv_broj: form.pdv, adresa: form.adresa, rabati_jsonb: rabati_json };
         if (isEditing) {
@@ -1301,6 +1316,9 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
                         </div>
                         <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">PDV Broj</label><input value={form.pdv} onChange={e=>setForm({...form, pdv:e.target.value})} className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-amber-500 shadow-inner" /></div>
                         <div><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">Adresa / Lokacija</label><input value={form.adresa} onChange={e=>setForm({...form, adresa:e.target.value})} className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-amber-500 shadow-inner" /></div>
+                        <div><label className="text-[8px] text-emerald-500 uppercase ml-2 block mb-1 font-black">📱 Telefon / WhatsApp (za 1-klik slanje)</label><input value={form.telefon || ''} onChange={e=>setForm({...form, telefon:e.target.value})} placeholder="npr. +387 61 123 456" className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-emerald-500/40 focus:border-emerald-400 shadow-inner" /></div>
+                        <div><label className="text-[8px] text-blue-400 uppercase ml-2 block mb-1 font-black">✉️ Email Kupca (za Ponude / Račune)</label><input type="email" value={form.email || ''} onChange={e=>setForm({...form, email:e.target.value})} placeholder="kupac@firma.ba" className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-blue-500/40 focus:border-blue-400 shadow-inner" /></div>
+                        <div className="md:col-span-2"><label className="text-[8px] text-slate-500 uppercase ml-2 block mb-1">👤 Kontakt Osoba</label><input value={form.kontakt_osoba || ''} onChange={e=>setForm({...form, kontakt_osoba:e.target.value})} placeholder="Ime i prezime kontakt osobe..." className="w-full min-w-0 p-3 bg-theme-panel rounded-xl text-xs text-theme-text outline-none border border-theme-border focus:border-amber-500 shadow-inner" /></div>
                         <div className="md:col-span-2 mt-2">
                             <label className="text-[10px] text-amber-500 uppercase ml-2 block mb-2 font-black">🌟 UKUPNI RABAT NA SVE PROIZVODE (%)</label>
                             <input type="number" value={form.ukupni_rabat} onChange={e=>setForm({...form, ukupni_rabat:e.target.value})} className="w-full min-w-0 p-4 bg-amber-900/20 rounded-xl text-lg text-amber-400 font-black outline-none border border-amber-500/50 focus:border-amber-400 text-center shadow-inner" placeholder="0" />
@@ -1371,6 +1389,11 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
                                 <p className="text-[9px] text-slate-400 uppercase mt-2 font-bold tracking-widest leading-relaxed">
                                     Ukupni Rabat: <b className="text-amber-400 text-xs ml-1">{k.rabati_jsonb?.ukupni || 0}%</b> <br/> 
                                     Spec. proizvoda: <span className="text-theme-text">{Object.keys(k.rabati_jsonb?.proizvodi || {}).length}</span> | Kategorija: <span className="text-theme-text">{Object.keys(k.rabati_jsonb?.kategorije || {}).length}</span>
+                                    {(k.rabati_jsonb?.kontakt?.telefon || k.rabati_jsonb?.kontakt?.email) && (
+                                        <span className="block text-emerald-400/90 mt-1 normal-case tracking-normal">
+                                            {[k.rabati_jsonb?.kontakt?.telefon && `📱 ${k.rabati_jsonb.kontakt.telefon}`, k.rabati_jsonb?.kontakt?.email && `✉️ ${k.rabati_jsonb.kontakt.email}`].filter(Boolean).join(' • ')}
+                                        </span>
+                                    )}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2 ml-2 shrink-0">
@@ -1408,7 +1431,7 @@ function TabRadnici({ prikaziDialog, zatvoriDialog, currentUser }) {
     const sviModuliKategorisano = {
         "📦 PROIZVODNJA": ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje', 'Planiranje (Samo Pregled)'],
         "💼 PRODAJA I WMS": ['Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi', 'Reklamacije i Povrati'],
-        "📊 NADZOR I LAGER": ['Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca', 'HR Dashboard', 'Prijava na Rad'],
+        "📊 NADZOR I LAGER": ['Kontrolni Toranj', 'Analitika', 'EKO / FSC / CBAM', 'Lager Paketa', 'Lager Trupaca', 'HR Dashboard', 'Prijava na Rad'],
         "💰 FINANSIJE": ['Blagajna (Keš)', DOZVOLA_KREDITNI_LIMIT],
         "⚙️ ŠIFARNICI (ADMIN)": ['Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)']
     };

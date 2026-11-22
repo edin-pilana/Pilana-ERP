@@ -43,6 +43,7 @@ const ReklamacijeModule = dynamic(() => import('./modules/ReklamacijeModule'), {
 const KioskModule = dynamic(() => import('./modules/KioskModule'), { ssr: false, loading: ModuleLoadingFallback });
 const HrDashboardModule = dynamic(() => import('./modules/HrDashboardModule'), { ssr: false, loading: ModuleLoadingFallback });
 const NadzorModule = dynamic(() => import('./modules/NadzorModule'), { ssr: false, loading: ModuleLoadingFallback });
+const EkoFscModule = dynamic(() => import('./modules/EkoFscModule'), { ssr: false, loading: ModuleLoadingFallback });
 
 const PALETA = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -64,6 +65,7 @@ const defaultModuli = [
     { id: 'kiosk', naziv: 'Prijava na Rad', ikona: '🕒', hex_boja: '#2563eb' },
     { id: 'hr', naziv: 'HR Dashboard', ikona: '👥', hex_boja: '#f59e0b' },
     { id: 'reklamacije', naziv: 'Reklamacije', ikona: '⚠️', hex_boja: '#ef4444' },
+    { id: 'eko_fsc', naziv: 'EKO / FSC / CBAM', ikona: '🌿', hex_boja: '#16a34a' },
     // 🟢 DODAN TAJNI NADZORNI CENTAR
     { id: 'nadzor', naziv: 'Nadzorni Centar', ikona: '🛡️', hex_boja: '#dc2626' }
 ];
@@ -1037,6 +1039,7 @@ export default function Page() {
                 : activeModule === 'kiosk' ? <KioskModule />
                 : activeModule === 'hr' ? <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'reklamacije' ? <ReklamacijeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
+                : activeModule === 'eko_fsc' ? <EkoFscModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'podesavanja' ? <SettingsModule user={loggedUser} onExit={() => setActiveModule('home')} />
                 : activeModule === 'nadzor' && loggedUser?.uloga === 'superadmin' ? <NadzorModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : null}

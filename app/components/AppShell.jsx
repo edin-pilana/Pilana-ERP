@@ -495,7 +495,8 @@ export default function AppShell({
             'podesavanja': 'Podešavanja',
             'kiosk': 'Prijava na Rad',
             'hr': 'HR Dashboard',
-            'reklamacije': 'Reklamacije i Povrati'
+            'reklamacije': 'Reklamacije i Povrati',
+            'eko_fsc': 'EKO / FSC / CBAM'
         };
 
         return radnikDozvole.includes(mapaDozvola[modulId]);

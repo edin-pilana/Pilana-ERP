@@ -133,6 +133,31 @@ export default function GlobalCommandPalette({ isOpen, onClose, user, modules = 
             });
         }
 
+        // Brze akcije za EKO / FSC / CBAM / Biomasa / Dobavljači
+        if (isAdminOrSuper || dozvole.includes('EKO / FSC / CBAM')) {
+            [
+                { id: 'act_fsc', tab: 'FSC', kw: 'fsc eudr certifikat gps sljedivost chain custody', naslov: 'FSC & EUDR Izvještaji', pod: 'Maseni bilans, konverzijski faktor, certifikati šumarija i GPS lokacije', ikona: '🌲' },
+                { id: 'act_cbam', tab: 'CBAM', kw: 'cbam co2 emisije struja dizel energenti carbon', naslov: 'CBAM & CO₂ Otisak (Energenti)', pod: 'Scope 1 & 2 emisije po m³, troškovi struje i goriva', ikona: '🌍' },
+                { id: 'act_bio', tab: 'BIOMASA', kw: 'biomasa otpad piljevina okorak peci kotlovnica grijanje susara', naslov: 'Biomasa, Okorak & Piljevina (Peći)', pod: 'Utrošak otpada u pećima za sušare/objekte, prodaja i ušteda energije', ikona: '🔥' },
+                { id: 'act_dob', tab: 'DOBAVLJACI', kw: 'dobavljaci sumarije prevoznici dug dugovanja kartica', naslov: 'Kartica Dobavljača (Šumarije & Prevoznici)', pod: 'Zaduženja po prijemu trupaca, isplate iz blagajne i otvoreni saldo', ikona: '🤝' },
+            ].forEach((a) => {
+                if (match(a.kw)) {
+                    out.push({
+                        id: a.id,
+                        grupa: 'BRZE AKCIJE',
+                        naslov: a.naslov,
+                        podnaslov: a.pod,
+                        ikona: a.ikona,
+                        akcija: () => {
+                            localStorage.setItem('eko_fsc_auto_tab', a.tab);
+                            onNavigateModule('eko_fsc');
+                            onClose();
+                        },
+                    });
+                }
+            });
+        }
+
         if (tokeni.length === 0) {
             return out.slice(0, 12);
         }

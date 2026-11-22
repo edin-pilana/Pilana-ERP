@@ -1110,7 +1110,10 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                                     <button
                                         type="button"
                                         data-testid="ponuda-whatsapp-btn"
-                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv) || odabraniKupac;
+                                            posaljiDokumentWhatsApp({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.telefon || '');
+                                        }}
                                         className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all shadow-sm"
                                     >
                                         💬 WhatsApp
@@ -1118,7 +1121,10 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                                     <button
                                         type="button"
                                         data-testid="ponuda-email-btn"
-                                        onClick={() => posaljiDokumentEmail({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        onClick={() => {
+                                            const kObj = kupci.find(k => k.naziv === form.kupac_naziv) || odabraniKupac;
+                                            posaljiDokumentEmail({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena }, kObj?.rabati_jsonb?.kontakt?.email || '');
+                                        }}
                                         className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all shadow-sm"
                                     >
                                         ✉️ Email
