@@ -73,14 +73,14 @@ export function parsirajPeriodIzUpita(pitanje, danasIso) {
         return { tip: 'DAN', od: isoMatch[0], do: isoMatch[0], label: prikazDatumaBHS(isoMatch[0]) };
     }
 
-    if (/\b(danas|danasnj|ovaj dan)\b/.test(q)) {
+    if (/\b(danas|danasnj[a-z]*|ovaj dan)\b/.test(q)) {
         return { tip: 'DAN', od: danasIso, do: danasIso, label: `Danas (${prikazDatumaBHS(danasIso)})` };
     }
-    if (/\b(juce|jucer|jucerasnj)\b/.test(q)) {
+    if (/\b(juce|jucer|jucerasnj[a-z]*)\b/.test(q)) {
         const juce = toLocalIso(new Date(y, m, d - 1));
         return { tip: 'DAN', od: juce, do: juce, label: `Juče (${prikazDatumaBHS(juce)})` };
     }
-    if (/\b(prekjuce|prekjucer)\b/.test(q)) {
+    if (/\b(prekjuce|prekjucer|prekjucerasnj[a-z]*)\b/.test(q)) {
         const pk = toLocalIso(new Date(y, m, d - 2));
         return { tip: 'DAN', od: pk, do: pk, label: `Prekjuče (${prikazDatumaBHS(pk)})` };
     }
