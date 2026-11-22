@@ -1,12 +1,15 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify, LogOut, Move, Eye, EyeOff, Save, Sliders, Bell } from 'lucide-react';
+import { LayoutDashboard, Settings, Menu, X, User, MonitorSmartphone, Sun, Crown, Palette, Cpu, AlignJustify, LogOut, Move, Eye, EyeOff, Save, Sliders, Bell, Search, WifiOff, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Toaster, toast } from 'sonner';
 import { supabase } from '../utils/supabaseClient';
 import PametniDialog from './PametniDialog';
 import NotificationDetailModal from './NotificationDetailModal';
+import GlobalCommandPalette from './GlobalCommandPalette';
+import KupacKarticaModal from './KupacKarticaModal';
+import { ucitajOfflineRed, sinhronizujOfflineRed, daLiJeOffline } from '../utils/offlineQueue';
 import {
     MODUL_META,
     odrediModuleNotifikacije,
@@ -55,6 +58,13 @@ export default function AppShell({
     const [isLoaded, setIsLoaded] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true));
     const [logoutDialog, setLogoutDialog] = useState(false);
+
+    // ⌘ Globalna Ctrl+K komandna paleta, globalna Finansijska kartica kupca & Offline red hale
+    const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false);
+    const [karticaKupcaNaziv, setKarticaKupcaNaziv] = useState(null);
+    const [isOffline, setIsOffline] = useState(false);
+    const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+    const [syncingOffline, setSyncingOffline] = useState(false);
 
     // 🔔 Lični centar obavještenja za svakog prijavljenog korisnika (strogo izolovano po korisniku)
     const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
@@ -147,6 +157,56 @@ export default function AppShell({
             pokreniPametnaPodsjetnica(user).catch(() => {});
         }
     }, [user, initSettings]);
+
+    // ⌘ Ctrl+K / Cmd+K prečica, globalna kartica kupca i Offline-First auto-sync
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        setIsOffline(daLiJeOffline());
+        setOfflineQueueCount(ucitajOfflineRed().length);
+
+        const onKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'k') {
+                e.preventDefault();
+                setIsCmdPaletteOpen((v) => !v);
+            }
+        };
+        const onOpenPalette = () => setIsCmdPaletteOpen(true);
+        const onOpenKartica = (ev) => {
+            const naziv = ev?.detail?.kupacNaziv;
+            if (naziv) setKarticaKupcaNaziv(naziv);
+        };
+        const onQueueUpdate = () => setOfflineQueueCount(ucitajOfflineRed().length);
+        const onOffline = () => setIsOffline(true);
+        const onOnline = async () => {
+            setIsOffline(false);
+            if (ucitajOfflineRed().length > 0) {
+                setSyncingOffline(true);
+                await sinhronizujOfflineRed({ silentIfEmpty: true });
+                setOfflineQueueCount(ucitajOfflineRed().length);
+                setSyncingOffline(false);
+            }
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('open_command_palette', onOpenPalette);
+        window.addEventListener('otvori_karticu_kupca', onOpenKartica);
+        window.addEventListener('offline_queue_updated', onQueueUpdate);
+        window.addEventListener('offline', onOffline);
+        window.addEventListener('online', onOnline);
+
+        if (!daLiJeOffline() && ucitajOfflineRed().length > 0) {
+            onOnline();
+        }
+
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('open_command_palette', onOpenPalette);
+            window.removeEventListener('otvori_karticu_kupca', onOpenKartica);
+            window.removeEventListener('offline_queue_updated', onQueueUpdate);
+            window.removeEventListener('offline', onOffline);
+            window.removeEventListener('online', onOnline);
+        };
+    }, []);
 
     const prikaziInAppNotifikaciju = useCallback((novi) => {
         if (!novi || !novi.id || !daLiJeNotifikacijaZaKorisnika(novi, user)) return;
@@ -553,6 +613,21 @@ export default function AppShell({
 
         return (
             <div className={isCollapsed ? "flex flex-col gap-2" : "grid grid-cols-6 gap-2"}>
+                <button
+                    type="button"
+                    data-testid="open-command-palette-btn"
+                    title={isCollapsed ? 'Brza pretraga (Ctrl+K)' : 'Globalna pretraga (Ctrl+K)'}
+                    onClick={() => { setIsCmdPaletteOpen(true); setMobileMenuOpen(false); }}
+                    style={{ fontSize: `${Math.max(10, menuStyle.fontSize - 1)}px` }}
+                    className={`col-span-6 flex items-center gap-2.5 ${padClass} rounded-xl font-bold uppercase transition-all tracking-wider bg-theme-panel/80 text-theme-muted hover:bg-theme-accent hover:text-white border border-theme-border/80 ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}
+                >
+                    <span className="flex items-center gap-2 min-w-0">
+                        <Search size={Math.max(14, menuStyle.iconSize - 2)} className="shrink-0" />
+                        {!isCollapsed && <span className="truncate">Pretraga...</span>}
+                    </span>
+                    {!isCollapsed && <kbd className="text-[9px] px-1.5 py-0.5 rounded bg-theme-card border border-theme-border text-theme-muted font-mono shrink-0">Ctrl+K</kbd>}
+                </button>
+
                 <button
                     type="button"
                     title={isCollapsed ? 'POČETNA' : ''}
@@ -1176,6 +1251,34 @@ export default function AppShell({
 
                 {/* JEDAN STABILAN <main> ZA SVE LAYOUTE — NACRTI SE NIKADA NE BRIŠU! */}
                 <main style={mainStyle} className={mainClass}>
+                    {(isOffline || offlineQueueCount > 0) && (
+                        <div data-testid="offline-status-banner" className={`mb-4 px-4 py-2.5 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs font-black shadow-lg ${isOffline ? 'bg-amber-950/50 border-amber-500/60 text-amber-300' : 'bg-blue-950/40 border-blue-500/50 text-blue-300'}`}>
+                            <div className="flex items-center gap-2">
+                                <WifiOff size={16} className="shrink-0" />
+                                <span>
+                                    {isOffline
+                                        ? `OFFLINE REŽIM — Rad u hali se sigurno čuva lokalno${offlineQueueCount > 0 ? ` (${offlineQueueCount} na čekanju)` : ''}.`
+                                        : `📶 Signal se vratio — ${offlineQueueCount} lokalnih zapisa čeka sinhronizaciju.`}
+                                </span>
+                            </div>
+                            {!isOffline && offlineQueueCount > 0 && (
+                                <button
+                                    type="button"
+                                    disabled={syncingOffline}
+                                    onClick={async () => {
+                                        setSyncingOffline(true);
+                                        await sinhronizujOfflineRed({ silentIfEmpty: false });
+                                        setOfflineQueueCount(ucitajOfflineRed().length);
+                                        setSyncingOffline(false);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase flex items-center gap-1.5"
+                                >
+                                    <RefreshCw size={12} className={syncingOffline ? 'animate-spin' : ''} />
+                                    {syncingOffline ? 'Sinhronizujem...' : 'Sinhronizuj sada'}
+                                </button>
+                            )}
+                        </div>
+                    )}
                     {children}
                 </main>
 
@@ -1243,6 +1346,23 @@ export default function AppShell({
                     user={user}
                     onClose={() => setSelectedNotif(null)}
                     onActionComplete={ucitajMojeNotifikacije}
+                />
+            )}
+
+            <GlobalCommandPalette
+                isOpen={isCmdPaletteOpen}
+                onClose={() => setIsCmdPaletteOpen(false)}
+                user={user}
+                modules={visibleMenuItems}
+                onNavigateModule={(modId) => onModuleChange(modId)}
+                onOpenKupacKartica={(naziv) => setKarticaKupcaNaziv(naziv)}
+            />
+
+            {karticaKupcaNaziv && (
+                <KupacKarticaModal
+                    kupacNaziv={karticaKupcaNaziv}
+                    user={user}
+                    onClose={() => setKarticaKupcaNaziv(null)}
                 />
             )}
         </div>

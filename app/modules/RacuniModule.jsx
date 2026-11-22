@@ -8,6 +8,7 @@ import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
+import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -769,7 +770,37 @@ export default function RacuniModule({ user, header, setHeader, onExit }) {
 
                     {stavke.length > 0 && (
                         <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl animate-in slide-in-from-bottom" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                            <div className="flex justify-between items-center mb-4"><h3 className="text-emerald-500 font-black uppercase text-xs">3. Stavke na računu i obračun</h3><button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button></div>
+                            <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+                                <h3 className="text-emerald-500 font-black uppercase text-xs">3. Stavke na računu i obračun</h3>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {form.kupac_naziv && (
+                                        <button
+                                            type="button"
+                                            onClick={() => window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: form.kupac_naziv } }))}
+                                            className="bg-amber-600/20 hover:bg-amber-600 text-amber-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-amber-500/40 transition-all shadow-sm"
+                                        >
+                                            💳 Kartica
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        data-testid="racun-whatsapp-btn"
+                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all shadow-sm"
+                                    >
+                                        💬 WhatsApp
+                                    </button>
+                                    <button
+                                        type="button"
+                                        data-testid="racun-email-btn"
+                                        onClick={() => posaljiDokumentEmail({ tip: 'RAČUN', broj: form.id, datum: formatirajDatum(form.datum), rok: formatirajDatum(form.rok_placanja), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all shadow-sm"
+                                    >
+                                        ✉️ Email
+                                    </button>
+                                    <button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button>
+                                </div>
+                            </div>
                             <div className="space-y-2 mb-6">
                                 {stavke.map((raw) => {
                                     const s = normalizujStavkuRacuna(raw);

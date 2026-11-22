@@ -109,12 +109,16 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     const [rawBlagajnaBaza, setBlagajnaBaza] = useState([]);
     const [radniSatiBaza, setRadniSatiBaza] = useState([]);
     const [radniciBaza, setRadniciBaza] = useState([]);
+    const [rawRadniNaloziBaza, setRadniNaloziBaza] = useState([]);
+    const [ponudeBaza, setPonudeBaza] = useState([]);
+    const [racuniBaza, setRacuniBaza] = useState([]);
 
     const trupciBaza = useMemo(() => (ignorisiQaTest ? rawTrupciBaza.filter((x) => !jeQaTestniZapis(x)) : rawTrupciBaza), [rawTrupciBaza, ignorisiQaTest]);
     const prorezLogBaza = useMemo(() => (ignorisiQaTest ? rawProrezLogBaza.filter((x) => !jeQaTestniZapis(x)) : rawProrezLogBaza), [rawProrezLogBaza, ignorisiQaTest]);
     const paketiBaza = useMemo(() => (ignorisiQaTest ? rawPaketiBaza.filter((x) => !jeQaTestniZapis(x)) : rawPaketiBaza), [rawPaketiBaza, ignorisiQaTest]);
     const reklamacijeBaza = useMemo(() => (ignorisiQaTest ? rawReklamacijeBaza.filter((x) => !jeQaTestniZapis(x)) : rawReklamacijeBaza), [rawReklamacijeBaza, ignorisiQaTest]);
     const blagajnaBaza = useMemo(() => (ignorisiQaTest ? rawBlagajnaBaza.filter((x) => !jeQaTestniZapis(x)) : rawBlagajnaBaza), [rawBlagajnaBaza, ignorisiQaTest]);
+    const radniNaloziBaza = useMemo(() => (ignorisiQaTest ? rawRadniNaloziBaza.filter((x) => !jeQaTestniZapis(x)) : rawRadniNaloziBaza), [rawRadniNaloziBaza, ignorisiQaTest]);
     const brojSkrivenihQa = useMemo(() => {
         if (!ignorisiQaTest) return 0;
         return (rawPaketiBaza.length - paketiBaza.length) + (rawTrupciBaza.length - trupciBaza.length) + (rawReklamacijeBaza.length - reklamacijeBaza.length);
@@ -132,7 +136,7 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
     const ucitajPodatke = async () => {
         setLoading(true);
         try {
-            const [mRes, tRes, prRes, pkRes, dmRes, katRes, rekRes, blRes, rsRes, radRes] = await Promise.all([
+            const [mRes, tRes, prRes, pkRes, dmRes, katRes, rekRes, blRes, rsRes, radRes, rnRes, ponRes, racRes] = await Promise.all([
                 supabase.from('masine').select('*').order('naziv'),
                 supabase.from('trupci').select('*'),
                 supabase.from('prorez_log').select('*'),
@@ -142,7 +146,10 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 supabase.from('reklamacije').select('*'),
                 supabase.from('blagajna').select('*'),
                 supabase.from('radni_sati').select('*'),
-                supabase.from('radnici').select('id, ime_prezime, uloga, bruto_satnica, godisnji_ukupno, preostalo_godisnjeg')
+                supabase.from('radnici').select('id, ime_prezime, uloga, bruto_satnica, godisnji_ukupno, preostalo_godisnjeg'),
+                supabase.from('radni_nalozi').select('*').order('datum', { ascending: false }),
+                supabase.from('ponude').select('id, kupac_naziv, ukupno_sa_pdv, ukupno_bez_pdv, valuta, stavke_jsonb'),
+                supabase.from('racuni').select('id, broj_veze, kupac_naziv, ukupno_sa_pdv, ukupno_bez_pdv, valuta, status')
             ]);
 
             setMasineBaza(mRes.data || []);
@@ -155,6 +162,9 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             setBlagajnaBaza(blRes.data || []);
             setRadniSatiBaza(rsRes.data || []);
             setRadniciBaza(radRes.data || []);
+            setRadniNaloziBaza(rnRes.data || []);
+            setPonudeBaza(ponRes.data || []);
+            setRacuniBaza(racRes.data || []);
         } catch (e) {
             console.error("Greška pri učitavanju analitike:", e);
             toast.error("Greška pri učitavanju podataka analitike.");
@@ -574,6 +584,127 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
         };
     }, [paketiBaza, katalogBaza, prorezLogBaza, trupciBaza, blagajnaBaza, reklamacijeBaza, efektivniOd, efektivniDo]);
 
+    // =========================================================================
+    // 5. JOB COSTING — PROFIT PO RADNOM NALOGU (RN)
+    // =========================================================================
+    const analitikaProfitPoNalogu = useMemo(() => {
+        const trupciMap = new Map(trupciBaza.map((t) => [t.id, t]));
+        const ponudeMap = new Map(ponudeBaza.map((p) => [p.id, p]));
+        const satnice = radniciBaza.map((r) => parseFloat(r.bruto_satnica || 0)).filter((v) => v > 0);
+        const prosjecnaSatnicaKM = satnice.length > 0 ? satnice.reduce((s, v) => s + v, 0) / satnice.length : 12;
+
+        const naloziUPeriodu = radniNaloziBaza.filter((rn) => uOpseguDatuma(rn.datum, rn.created_at));
+
+        const redovi = naloziUPeriodu.map((rn) => {
+            const vezaniPaketi = paketiBaza.filter((p) => p.rn_id === rn.id || p.broj_veze === rn.id);
+            const proizvedenoM3 = vezaniPaketi.reduce((s, p) => s + izracunajTacanVolumenStavkePaketa(p), 0);
+
+            let prihodKM = 0;
+            let izvorPrihoda = 'Katalog';
+            const vezanaPonuda = rn.ponuda_id ? ponudeMap.get(rn.ponuda_id) : null;
+            const vezaniRacun = racuniBaza.find((r) => r.broj_veze === rn.id || (rn.ponuda_id && r.broj_veze === rn.ponuda_id));
+
+            if (vezaniRacun && parseFloat(vezaniRacun.ukupno_bez_pdv || vezaniRacun.ukupno_sa_pdv || 0) > 0) {
+                const raw = parseFloat(vezaniRacun.ukupno_bez_pdv || vezaniRacun.ukupno_sa_pdv || 0);
+                prihodKM = String(vezaniRacun.valuta || 'KM').toUpperCase() === 'EUR' ? raw * 1.95583 : raw;
+                izvorPrihoda = `Račun ${vezaniRacun.id}`;
+            } else if (vezanaPonuda && parseFloat(vezanaPonuda.ukupno_bez_pdv || vezanaPonuda.ukupno_sa_pdv || 0) > 0) {
+                const raw = parseFloat(vezanaPonuda.ukupno_bez_pdv || vezanaPonuda.ukupno_sa_pdv || 0);
+                prihodKM = String(vezanaPonuda.valuta || 'KM').toUpperCase() === 'EUR' ? raw * 1.95583 : raw;
+                izvorPrihoda = `Ponuda ${vezanaPonuda.id}`;
+            } else {
+                vezaniPaketi.forEach((p) => {
+                    const m3 = izracunajTacanVolumenStavkePaketa(p);
+                    const kat = katalogBaza.find((k) => k.naziv === p.naziv_proizvoda || k.sifra === p.naziv_proizvoda);
+                    const cijena = parseFloat(kat?.cijena || 580);
+                    prihodKM += m3 * cijena;
+                });
+                if (prihodKM === 0 && Array.isArray(rn.stavke_jsonb)) {
+                    rn.stavke_jsonb.forEach((st) => {
+                        const kat = katalogBaza.find((k) => k.sifra === st.sifra || k.naziv === st.naziv);
+                        const kol = parseFloat(st.kolicina_obracun || st.kolicina || 0);
+                        prihodKM += kol * parseFloat(kat?.cijena || 580);
+                    });
+                    if (prihodKM > 0) izvorPrihoda = 'Plan RN';
+                }
+            }
+
+            const trupciIds = new Set();
+            vezaniPaketi.forEach((p) => {
+                if (Array.isArray(p.ulaz_trupci_ids)) p.ulaz_trupci_ids.forEach((tid) => trupciIds.add(tid));
+            });
+
+            let trosakSirovineKM = 0;
+            if (trupciIds.size > 0) {
+                trupciIds.forEach((tid) => {
+                    const tr = trupciMap.get(tid);
+                    const nab = parseFloat(tr?.nabavna_vrijednost || 0);
+                    if (nab > 0) trosakSirovineKM += nab;
+                    else trosakSirovineKM += (parseFloat(tr?.kontrolna_zapremina || tr?.zapremina || 0) * 185);
+                });
+            } else if (proizvedenoM3 > 0) {
+                trosakSirovineKM = (proizvedenoM3 / 0.62) * 185;
+            }
+
+            const trosakRadaKM = proizvedenoM3 > 0 ? proizvedenoM3 * 1.6 * prosjecnaSatnicaKM : 0;
+
+            const paketIdsSet = new Set(vezaniPaketi.map((p) => p.paket_id));
+            let trosakReklamacijaKM = 0;
+            reklamacijeBaza
+                .filter((r) => r.status === 'ODOBRENO' && paketIdsSet.has(r.paket_id))
+                .forEach((r) => {
+                    const finMatch = (r.napomena || '').match(/\[FinIznos:\s*([0-9.,]+)\s*(\w+)\]/i);
+                    if (finMatch) {
+                        const val = parseFloat(finMatch[1].replace(',', '.')) || 0;
+                        const valuta = String(finMatch[2] || 'KM').toUpperCase();
+                        trosakReklamacijaKM += (valuta === 'EUR' || valuta === '€') ? val * 1.95583 : val;
+                    } else {
+                        trosakReklamacijaKM += parseFloat(r.kolicina || 0) * 580;
+                    }
+                });
+
+            const ukupniTrosakKM = trosakSirovineKM + trosakRadaKM + trosakReklamacijaKM;
+            const netoProfitKM = prihodKM - ukupniTrosakKM;
+            const marzaProc = prihodKM > 0 ? (netoProfitKM / prihodKM) * 100 : 0;
+
+            return {
+                rn_id: rn.id,
+                kupac: rn.kupac_naziv || 'Nepoznat kupac',
+                datum: rn.datum || '',
+                status: rn.status || 'U TOKU',
+                izvorPrihoda,
+                proizvedenoM3: parseFloat(proizvedenoM3.toFixed(3)),
+                prihodKM: parseFloat(prihodKM.toFixed(2)),
+                trosakSirovineKM: parseFloat(trosakSirovineKM.toFixed(2)),
+                trosakRadaKM: parseFloat(trosakRadaKM.toFixed(2)),
+                trosakReklamacijaKM: parseFloat(trosakReklamacijaKM.toFixed(2)),
+                ukupniTrosakKM: parseFloat(ukupniTrosakKM.toFixed(2)),
+                netoProfitKM: parseFloat(netoProfitKM.toFixed(2)),
+                marzaProc: parseFloat(marzaProc.toFixed(1)),
+            };
+        }).sort((a, b) => b.netoProfitKM - a.netoProfitKM);
+
+        const ukupnoPrihod = redovi.reduce((s, r) => s + r.prihodKM, 0);
+        const ukupnoTrosak = redovi.reduce((s, r) => s + r.ukupniTrosakKM, 0);
+        const ukupnoProfit = redovi.reduce((s, r) => s + r.netoProfitKM, 0);
+        const prosjecnaMarza = ukupnoPrihod > 0 ? (ukupnoProfit / ukupnoPrihod) * 100 : 0;
+        const chartData = redovi.slice(0, 12).map((r) => ({
+            nalog: r.rn_id,
+            Prihod: r.prihodKM,
+            Trosak: r.ukupniTrosakKM,
+            Profit: r.netoProfitKM,
+        }));
+
+        return {
+            redovi,
+            ukupnoPrihod: parseFloat(ukupnoPrihod.toFixed(2)),
+            ukupnoTrosak: parseFloat(ukupnoTrosak.toFixed(2)),
+            ukupnoProfit: parseFloat(ukupnoProfit.toFixed(2)),
+            prosjecnaMarza: parseFloat(prosjecnaMarza.toFixed(1)),
+            chartData,
+        };
+    }, [radniNaloziBaza, paketiBaza, ponudeBaza, racuniBaza, trupciBaza, katalogBaza, radniciBaza, reklamacijeBaza, efektivniOd, efektivniDo]);
+
     const stampajIzvjestaj = () => {
         const periodTekst = `${formatDatumBHS(efektivniOd)} - ${formatDatumBHS(efektivniDo)}`;
         let html = '';
@@ -649,6 +780,32 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </table>
             `;
             printDokument('MATERIJALNI BILANS', `UKUPNO-${efektivniOd}`, formatDatumBHS(danas), html, '#3b82f6');
+        } else if (tab === 'PROFIT_NALOG') {
+            const chartHtml = uhvatiSmartChartSvgHtml('analitika_profit_nalog', 'Profitabilnost po Radnom Nalogu (KM)', periodTekst);
+            const redoviHtml = analitikaProfitPoNalogu.redovi.map((r, i) => `
+                <tr>
+                    <td>${i + 1}.</td>
+                    <td><b>${escapeHtml(r.rn_id)}</b></td>
+                    <td>${escapeHtml(r.kupac)}</td>
+                    <td class="num">${r.proizvedenoM3.toFixed(3)} m³</td>
+                    <td class="num">${r.prihodKM.toFixed(2)} KM</td>
+                    <td class="num">${r.ukupniTrosakKM.toFixed(2)} KM</td>
+                    <td class="num"><b>${r.netoProfitKM.toFixed(2)} KM</b></td>
+                    <td class="num"><b>${r.marzaProc.toFixed(1)}%</b></td>
+                </tr>
+            `).join('');
+            html = `
+                <div class="info-grid">
+                    <div class="info-col-left"><h4>Profitabilnost po Radnom Nalogu (Job Costing)</h4><h2>Period: ${periodTekst}</h2></div>
+                    <div class="info-col-right"><p>Ukupni Profit: <b>${analitikaProfitPoNalogu.ukupnoProfit.toFixed(2)} KM</b></p><p>Prosječna Marža: <b>${analitikaProfitPoNalogu.prosjecnaMarza.toFixed(1)}%</b></p></div>
+                </div>
+                ${chartHtml}
+                <table>
+                    <thead><tr><th>#</th><th>Radni Nalog</th><th>Kupac</th><th class="num">Proizvedeno</th><th class="num">Prihod</th><th class="num">Trošak</th><th class="num">Neto Profit</th><th class="num">Marža</th></tr></thead>
+                    <tbody>${redoviHtml}</tbody>
+                </table>
+            `;
+            printDokument('PROFIT PO NALOGU', `JOB-${efektivniOd}`, formatDatumBHS(danas), html, '#8b5cf6');
         } else {
             const chartHtml = uhvatiSmartChartSvgHtml('analitika_finansije_bilans', 'Finansijski Bilans Proizvodnje (KM)', periodTekst);
             html = `
@@ -722,6 +879,32 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                     { stavka: 'Kalo od Krojenja Trupaca na Placu', vrijednost: parseFloat(analitikaUkupno.kaloKrojenjaM3.toFixed(3)), jm: 'm³' },
                 ],
             });
+        } else if (tab === 'PROFIT_NALOG') {
+            exportToExcel({
+                filename: `Analitika_ProfitPoNalogu_${efektivniOd}_${efektivniDo}`,
+                sheetName: 'Profit po Nalogu',
+                title: `Job Costing — Profit po Radnom Nalogu (${periodTekst})`,
+                columns: [
+                    { key: 'rn_id', label: 'Radni Nalog', width: 120 },
+                    { key: 'kupac', label: 'Kupac', width: 185 },
+                    { key: 'datum', label: 'Datum', width: 95 },
+                    { key: 'status', label: 'Status', width: 95 },
+                    { key: 'proizvedenoM3', label: 'Proizvedeno (m³)', type: 'number', width: 110 },
+                    { key: 'prihodKM', label: 'Prihod (KM)', type: 'number', width: 115 },
+                    { key: 'trosakSirovineKM', label: 'Sirovina (KM)', type: 'number', width: 115 },
+                    { key: 'trosakRadaKM', label: 'Rad (KM)', type: 'number', width: 100 },
+                    { key: 'trosakReklamacijaKM', label: 'Reklamacije (KM)', type: 'number', width: 115 },
+                    { key: 'netoProfitKM', label: 'Neto Profit (KM)', type: 'number', width: 125 },
+                    { key: 'marzaProc', label: 'Marža (%)', type: 'number', width: 85 },
+                ],
+                rows: analitikaProfitPoNalogu.redovi,
+                summaryRow: {
+                    rn_id: 'UKUPNO',
+                    prihodKM: analitikaProfitPoNalogu.ukupnoPrihod,
+                    netoProfitKM: analitikaProfitPoNalogu.ukupnoProfit,
+                    marzaProc: analitikaProfitPoNalogu.prosjecnaMarza,
+                },
+            });
         } else {
             exportToExcel({
                 filename: `Analitika_Finansije_${efektivniOd}_${efektivniDo}`,
@@ -750,9 +933,10 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
             <div className="flex flex-wrap bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner gap-1">
                 <button onClick={() => setTab('PROREZ')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'PROREZ' ? 'bg-red-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>🪚 PROREZ</button>
                 <button onClick={() => setTab('DORADA')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'DORADA' ? 'bg-amber-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>🔄 DORADA</button>
-                <button onClick={() => setTab('UKUPNO')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'UKUPNO' ? 'bg-blue-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>📊 UKUPNO</button>
-                <button onClick={() => setTab('FINANSIJE')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'FINANSIJE' ? 'bg-emerald-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>💰 FINANSIJE</button>
-                <button onClick={() => setTab('AI')} className={`flex-1 min-w-[140px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'AI' ? 'bg-indigo-600 text-white shadow-lg' : 'text-indigo-400 hover:bg-indigo-950/30'}`}>🤖 AI KONTROLOR</button>
+                <button onClick={() => setTab('UKUPNO')} className={`flex-1 min-w-[115px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'UKUPNO' ? 'bg-blue-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>📊 UKUPNO</button>
+                <button onClick={() => setTab('FINANSIJE')} className={`flex-1 min-w-[115px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'FINANSIJE' ? 'bg-emerald-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text'}`}>💰 FINANSIJE</button>
+                <button data-testid="analitika-tab-profit-nalog" onClick={() => setTab('PROFIT_NALOG')} className={`flex-1 min-w-[135px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'PROFIT_NALOG' ? 'bg-purple-600 text-white shadow-lg' : 'text-purple-400 hover:bg-purple-950/30'}`}>💎 PROFIT PO NALOGU</button>
+                <button onClick={() => setTab('AI')} className={`flex-1 min-w-[130px] py-3 rounded-xl text-[10px] uppercase font-black transition-all flex items-center justify-center gap-1.5 ${tab === 'AI' ? 'bg-indigo-600 text-white shadow-lg' : 'text-indigo-400 hover:bg-indigo-950/30'}`}>🤖 AI KONTROLOR</button>
             </div>
 
             {/* FILTER TRAKA (Prikazuje se za sve tabove osim AI Kontrolora) */}
@@ -1085,7 +1269,108 @@ export default function AnalitikaModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
-            {/* TAB 5: AI KONTROLOR */}
+            {/* TAB 5: PROFIT PO RADNOM NALOGU (JOB COSTING) */}
+            {tab === 'PROFIT_NALOG' && (
+                <div data-testid="analitika-profit-nalog-panel" className="space-y-6 animate-in slide-in-from-bottom">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-theme-card p-5 rounded-2xl border border-blue-500/40 shadow-xl">
+                            <span className="text-[10px] text-blue-400 uppercase font-black block mb-1">Ukupni Prihod Naloga</span>
+                            <p className="text-2xl font-black text-theme-text">{analitikaProfitPoNalogu.ukupnoPrihod.toFixed(2)} <span className="text-xs text-blue-400">KM</span></p>
+                            <span className="text-[10px] text-theme-muted font-bold">{analitikaProfitPoNalogu.redovi.length} radnih naloga u periodu</span>
+                        </div>
+                        <div className="bg-theme-card p-5 rounded-2xl border border-amber-500/40 shadow-xl">
+                            <span className="text-[10px] text-amber-400 uppercase font-black block mb-1">Ukupni Trošak (Sirovina + Rad + Rekl.)</span>
+                            <p className="text-2xl font-black text-amber-400">- {analitikaProfitPoNalogu.ukupnoTrosak.toFixed(2)} <span className="text-xs">KM</span></p>
+                            <span className="text-[10px] text-theme-muted font-bold">Stvarna nabavna cijena trupaca + satnice</span>
+                        </div>
+                        <div className="bg-theme-card p-5 rounded-2xl border-2 border-emerald-500/60 shadow-xl">
+                            <span className="text-[10px] text-emerald-400 uppercase font-black block mb-1">Neto Profit po Nalozima</span>
+                            <p className={`text-2xl font-black ${analitikaProfitPoNalogu.ukupnoProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{analitikaProfitPoNalogu.ukupnoProfit.toFixed(2)} <span className="text-xs">KM</span></p>
+                            <span className="text-[10px] text-theme-muted font-bold">Čista zarada nakon svih troškova</span>
+                        </div>
+                        <div className="bg-theme-card p-5 rounded-2xl border border-purple-500/40 shadow-xl">
+                            <span className="text-[10px] text-purple-400 uppercase font-black block mb-1">Prosječna Neto Marža</span>
+                            <p className={`text-2xl font-black ${analitikaProfitPoNalogu.prosjecnaMarza >= 20 ? 'text-emerald-400' : analitikaProfitPoNalogu.prosjecnaMarza >= 10 ? 'text-amber-400' : 'text-red-400'}`}>{analitikaProfitPoNalogu.prosjecnaMarza.toFixed(1)}%</p>
+                            <span className="text-[10px] text-theme-muted font-bold">Ciljana marža: &gt; 20%</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-2xl">
+                        <SmartChart
+                            chartId="analitika_profit_nalog"
+                            title="💎 Profitabilnost po Radnom Nalogu (Prihod vs Trošak vs Neto Profit)"
+                            subtitle="Top 12 radnih naloga u periodu — klikni za PDF ili Excel izvoz"
+                            data={analitikaProfitPoNalogu.chartData}
+                            xKey="nalog"
+                            series={[
+                                { key: 'Prihod', name: 'Prihod', color: '#3b82f6', unit: 'KM' },
+                                { key: 'Trosak', name: 'Trošak', color: '#f59e0b', unit: 'KM' },
+                                { key: 'Profit', name: 'Neto Profit', color: '#10b981', unit: 'KM' },
+                            ]}
+                            defaultType="bar"
+                            unit="KM"
+                            height={280}
+                        />
+                    </div>
+
+                    <div className="bg-theme-card p-6 rounded-2xl border border-theme-border shadow-xl">
+                        <h3 className="text-xs font-black uppercase text-purple-400 mb-4">📋 Detaljna Kalkulacija Profita po Radnom Nalogu</h3>
+                        <div className="overflow-x-auto max-h-[460px] custom-scrollbar">
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-theme-panel text-slate-400 uppercase text-[10px] sticky top-0">
+                                    <tr>
+                                        <th className="p-3">Radni Nalog</th>
+                                        <th className="p-3">Kupac</th>
+                                        <th className="p-3 text-right">Proizvedeno</th>
+                                        <th className="p-3 text-right">Prihod (KM)</th>
+                                        <th className="p-3 text-right">Sirovina</th>
+                                        <th className="p-3 text-right">Rad</th>
+                                        <th className="p-3 text-right">Rekl.</th>
+                                        <th className="p-3 text-right">Neto Profit</th>
+                                        <th className="p-3 text-center">Marža</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-theme-border">
+                                    {analitikaProfitPoNalogu.redovi.length === 0 && (
+                                        <tr><td colSpan="9" className="p-8 text-center text-slate-500 italic">Nema radnih naloga u odabranom periodu.</td></tr>
+                                    )}
+                                    {analitikaProfitPoNalogu.redovi.map((r) => (
+                                        <tr key={r.rn_id} className="hover:bg-theme-panel/60 transition-colors">
+                                            <td className="p-3 font-black text-purple-400">
+                                                {r.rn_id}
+                                                <span className="block text-[9px] text-theme-muted font-bold">{r.izvorPrihoda}</span>
+                                            </td>
+                                            <td className="p-3 font-bold text-theme-text">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: r.kupac } }))}
+                                                    className="hover:underline text-left"
+                                                    title="Otvori finansijsku karticu kupca"
+                                                >
+                                                    {r.kupac}
+                                                </button>
+                                            </td>
+                                            <td className="p-3 text-right font-mono text-slate-300">{r.proizvedenoM3.toFixed(3)} m³</td>
+                                            <td className="p-3 text-right font-black text-blue-400">{r.prihodKM.toFixed(2)}</td>
+                                            <td className="p-3 text-right text-amber-400">-{r.trosakSirovineKM.toFixed(2)}</td>
+                                            <td className="p-3 text-right text-slate-400">-{r.trosakRadaKM.toFixed(2)}</td>
+                                            <td className="p-3 text-right text-red-400">{r.trosakReklamacijaKM > 0 ? `-${r.trosakReklamacijaKM.toFixed(2)}` : '0.00'}</td>
+                                            <td className={`p-3 text-right font-black ${r.netoProfitKM >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.netoProfitKM.toFixed(2)} KM</td>
+                                            <td className="p-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${r.marzaProc >= 20 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40' : r.marzaProc >= 10 ? 'bg-amber-500/15 text-amber-400 border-amber-500/40' : 'bg-red-500/15 text-red-400 border-red-500/40'}`}>
+                                                    {r.marzaProc.toFixed(1)}%
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 6: AI KONTROLOR */}
             {tab === 'AI' && <TabAiAnalitika saas={saas} />}
         </div>
     );

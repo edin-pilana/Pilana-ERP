@@ -5,7 +5,9 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import DimBox from '../components/DimBox';
 import { printDeklaracijaPaketa, printFaznaDeklaracijaPaketa } from '../utils/printHelpers';
+import { dodajUOfflineRed, daLiJeOffline, daLiJeMreznaGreska } from '../utils/offlineQueue';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -62,15 +64,6 @@ function sumirajStavkePaketa(stavke = []) {
         jmGrupe,
         unesenoTekst: jmGrupe.length > 0 ? jmGrupe.map((g) => g.label).join(' + ') : '',
     };
-}
-
-function DimBox({ label, val, set, disabled }) {
-    return (
-        <div data-ds="dim-box" className={`bg-theme-panel p-2.5 sm:p-3 rounded-xl border border-theme-border shadow-inner font-bold text-center flex flex-col items-center justify-center focus-within:border-theme-accent transition-colors min-w-0 ${disabled ? 'opacity-50' : ''}`}>
-            <span data-ds="dim-label" className="text-[9px] text-theme-muted uppercase block mb-1 font-black tracking-widest">{label}</span>
-            <input data-ds="dim-input" type="number" value={val} onChange={e => set(e.target.value)} disabled={disabled} className="w-full min-w-0 px-2 py-1.5 bg-transparent text-theme-text font-black outline-none text-base sm:text-xl md:text-2xl text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0" />
-        </div>
-    );
 }
 
 function SaaS_DnevnikMasine({ modul, header, user, saas, updatePolje, toggleVelicina, spremiDimenzije, handleDragStart, handleDragEnter, handleDrop, prikaziDialog, zatvoriDialog }) {
@@ -722,8 +715,42 @@ export default function PilanaModule({ user, header, setHeader, onExit }) {
                 vrijeme_tekst: timeNow, datum_yyyy_mm: header.datum, oznake: odabraneOznake, je_nusproizvod: isNusProizvod,
                 planirano_m3: parseFloat(form.naruceno) || 0
             };
-            const res = await supabase.from('paketi').insert([payload]);
+
+            if (daLiJeOffline()) {
+                dodajUOfflineRed({
+                    tip: 'PILANA_PAKET_INSERT',
+                    opis: `Paket ${selectedIzlazId} — ${form.naziv} (${qtyZaPaket.toFixed(3)} m³)`,
+                    data: { payload },
+                });
+                setForm(f => ({ ...f, kolicina_ulaz: '' })); setOdabraneOznake([]); setActiveEditItem(null);
+                return;
+            }
+
+            let res = { error: null };
+            try {
+                res = await supabase.from('paketi').insert([payload]);
+            } catch (netErr) {
+                if (daLiJeMreznaGreska(netErr)) {
+                    dodajUOfflineRed({
+                        tip: 'PILANA_PAKET_INSERT',
+                        opis: `Paket ${selectedIzlazId} — ${form.naziv} (${qtyZaPaket.toFixed(3)} m³)`,
+                        data: { payload },
+                    });
+                    setForm(f => ({ ...f, kolicina_ulaz: '' })); setOdabraneOznake([]); setActiveEditItem(null);
+                    return;
+                }
+                res = { error: netErr };
+            }
             error = res.error;
+            if (error && daLiJeMreznaGreska(error)) {
+                dodajUOfflineRed({
+                    tip: 'PILANA_PAKET_INSERT',
+                    opis: `Paket ${selectedIzlazId} — ${form.naziv} (${qtyZaPaket.toFixed(3)} m³)`,
+                    data: { payload },
+                });
+                setForm(f => ({ ...f, kolicina_ulaz: '' })); setOdabraneOznake([]); setActiveEditItem(null);
+                return;
+            }
             if (!error) {
                 // Ako se dodaje nova stavka u ranije zaključen paket, ponovo otvori sve njegove redove radi konzistentnog statusa
                 await supabase.from('paketi').update({ closed_at: null }).eq('paket_id', selectedIzlazId).not('closed_at', 'is', null);

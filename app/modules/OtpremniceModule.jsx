@@ -8,6 +8,8 @@ import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
+import { izracunajKarticuKupca, mozeUredjivatiKreditniLimit, DOZVOLA_KREDITNI_LIMIT } from '../utils/kupacKreditHelpers';
+import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -763,6 +765,31 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         if (!form.kupac_naziv) return prikaziDialog({ tip: 'upozorenje', naslov: 'Kupac Obavezan', poruka: "Morate odabrati kupca!", onCancel: zatvoriDialog });
         if (stavke.length === 0) return prikaziDialog({ tip: 'upozorenje', naslov: 'Nema Stavki', poruka: "Otpremnica mora imati stavke!", onCancel: zatvoriDialog });
 
+        // 💳 Provjera kreditnog limita i zakašnjenja kod isporuke (samo Superadmin ili ovlaštena osoba može zaobići blokadu)
+        if (form.status === 'ISPORUČENO') {
+            try {
+                const svjezaKartica = await izracunajKarticuKupca(form.kupac_naziv);
+                if (svjezaKartica?.zahtijevaBlokadu) {
+                    const imaOvlastenje = mozeUredjivatiKreditniLimit(currentUser);
+                    const razlog = [
+                        svjezaKartica.prekoracenLimit ? `Otvoreni dug (${svjezaKartica.otvoreniDugKM.toFixed(2)} KM) prelazi kreditni limit (${svjezaKartica.limitPostavka.limitKM.toFixed(2)} KM).` : '',
+                        svjezaKartica.kasniPrekoLimita ? `Kupac ima neplaćene račune starije od ${svjezaKartica.limitPostavka.maxKasnjenjeDana} dana (max kašnjenje: ${svjezaKartica.maxKasnjenjeKupca} dana).` : '',
+                    ].filter(Boolean).join('\n');
+
+                    if (!imaOvlastenje) {
+                        return prikaziDialog({
+                            tip: 'greska',
+                            naslov: '🔒 BLOKADA OTPREME (Kreditni Limit)',
+                            poruka: `Isporuka kupcu "${form.kupac_naziv}" je blokirana!\n\n${razlog}\n\nOdobrenje može izvršiti isključivo Superadmin ili osoba sa ovlaštenjem "${DOZVOLA_KREDITNI_LIMIT}".`,
+                            onCancel: zatvoriDialog
+                        });
+                    } else {
+                        toast.warning(`⚠️ Kreditna blokada zaobiđena vašim ovlaštenjem (${form.kupac_naziv}).`);
+                    }
+                }
+            } catch (e) {}
+        }
+
         const otpId = form.id.toUpperCase().trim();
         let konacneStavke = stavke.map(s => ({ ...s }));
 
@@ -971,6 +998,19 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
         return null;
     };
 
+    const [kupacKredit, setKupacKredit] = useState(null);
+    useEffect(() => {
+        let cancelled = false;
+        if (!form?.kupac_naziv) {
+            setKupacKredit(null);
+            return;
+        }
+        izracunajKarticuKupca(form.kupac_naziv).then((k) => {
+            if (!cancelled) setKupacKredit(k);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [form?.kupac_naziv]);
+
     const filtriraniSlobodniPaketi = useMemo(() => {
         if (!pretragaLagera.trim()) return slobodniPaketi;
         const q = pretragaLagera.toUpperCase().trim();
@@ -1134,6 +1174,29 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
                                 );
                             })}
                         </div>
+                        {form.kupac_naziv && kupacKredit && (
+                            <div data-testid="otpremnica-kredit-bar" className={`mt-2 p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-[11px] font-black ${kupacKredit.zahtijevaBlokadu ? 'bg-red-950/35 border-red-500/60 text-red-300' : kupacKredit.prekoracenLimit || kupacKredit.kasniPrekoLimita ? 'bg-amber-950/30 border-amber-500/50 text-amber-300' : 'bg-theme-panel border-theme-border text-theme-text'}`}>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <span>💳 Otvoreni dug: <b className={kupacKredit.otvoreniDugKM > 0 ? 'text-amber-400' : 'text-emerald-400'}>{kupacKredit.otvoreniDugKM.toFixed(2)} KM</b></span>
+                                    {kupacKredit.limitPostavka?.limitKM > 0 && (
+                                        <span>Limit: <b className="text-blue-400">{kupacKredit.limitPostavka.limitKM.toFixed(2)} KM</b></span>
+                                    )}
+                                    {kupacKredit.dospjeliDugKM > 0 && (
+                                        <span className="text-red-400">⚠️ Dospjelo: {kupacKredit.dospjeliDugKM.toFixed(2)} KM (max {kupacKredit.maxKasnjenjeKupca}d)</span>
+                                    )}
+                                    {kupacKredit.zahtijevaBlokadu && (
+                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[9px] uppercase">🔒 Blokada otpreme aktivna</span>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: form.kupac_naziv } }))}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[9px] font-black uppercase transition-all"
+                                >
+                                    💳 Kartica & Aging
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* DODAVANJE SA LAGERA ILI RUČNO */}
@@ -1223,9 +1286,27 @@ export default function OtpremniceModule({ user, header, setHeader, onExit }) {
 
                     {stavke.length > 0 && (
                         <div className="bg-theme-card p-6 rounded-box border border-orange-500/30 shadow-2xl space-y-4" style={{ backgroundColor: saas.ui.boja_kartice }}>
-                            <div className="flex justify-between items-center">
+                            <div className="flex flex-wrap justify-between items-center gap-2">
                                 <h3 className="text-orange-400 font-black uppercase text-xs">3. Stavke na Otpremnici ({stavke.length})</h3>
-                                <span className="text-emerald-400 font-black text-base">Ukupno: {ukupnoOtpremnicaM3.toFixed(3)} m³</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        data-testid="otpremnica-whatsapp-btn"
+                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³`, napomena: form.napomena })}
+                                        className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all"
+                                    >
+                                        💬 WhatsApp
+                                    </button>
+                                    <button
+                                        type="button"
+                                        data-testid="otpremnica-email-btn"
+                                        onClick={() => posaljiDokumentEmail({ tip: 'OTPREMNICA', broj: form.id, datum: form.datum, kupac: form.kupac_naziv, stavke, ukupnoTekst: `${ukupnoOtpremnicaM3.toFixed(3)} m³`, napomena: form.napomena })}
+                                        className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-1.5 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all"
+                                    >
+                                        ✉️ Email
+                                    </button>
+                                    <span className="text-emerald-400 font-black text-base ml-1">Ukupno: {ukupnoOtpremnicaM3.toFixed(3)} m³</span>
+                                </div>
                             </div>
 
                             <div className="space-y-2">

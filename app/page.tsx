@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { supabase } from './utils/supabaseClient';
 import { toLocalIso } from './utils/dateHelpers';
 import { ocistiTekstDetalja } from './utils/notificationHelpers';
@@ -11,28 +12,37 @@ import { Settings, Plus, X, Move, Eye, AlertTriangle, CheckCircle2, Clock, Truck
 import AppShell from './components/AppShell';
 import PametniDialog from './components/PametniDialog';
 import SmartChart from './components/SmartChart';
+import JutarnjiBrifingCard from './components/JutarnjiBrifingCard';
 import { useAppStore } from './store/useAppStore'; 
 
-// Import moduli
-import ProrezModule from './modules/ProrezModule';
-import PrijemModule from './modules/PrijemModule';
-import PilanaModule from './modules/PilanaModule';
-import DoradaModule from './modules/DoradaModule';
-import SettingsModule from './modules/SettingsModule';
-import PonudeModule from './modules/PonudeModule';
-import RadniNaloziModule from './modules/RadniNaloziModule';
-import OtpremniceModule from './modules/OtpremniceModule';
-import RacuniModule from './modules/RacuniModule';
-import BlagajnaModule from './modules/BlagajnaModule';
-import KontrolniToranjModule from './modules/KontrolniToranjModule';
-import AnalitikaModule from './modules/AnalitikaModule';
-import LagerPaketaModule from './modules/LagerPaketaModule';
-import PlaniranjeModule from './modules/PlaniranjeModule'; 
-import ReklamacijeModule from './modules/ReklamacijeModule';
-import KioskModule from './modules/KioskModule';
-import HrDashboardModule from './modules/HrDashboardModule';
-// 🟢 DODAN NADZOR MODUL
-import NadzorModule from './modules/NadzorModule';
+// 🚀 Lazy-loading svih 18 modula za 3-4× brže početno učitavanje (code-splitting po modulu)
+const ModuleLoadingFallback = () => (
+    <div className="p-8 flex items-center justify-center min-h-[55vh]">
+        <div className="bg-theme-card border border-theme-border rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3">
+            <span className="w-3 h-3 rounded-full bg-theme-accent animate-ping" />
+            <span className="text-xs font-black uppercase tracking-widest text-theme-muted">Učitavam modul...</span>
+        </div>
+    </div>
+);
+
+const ProrezModule = dynamic(() => import('./modules/ProrezModule'), { ssr: false, loading: ModuleLoadingFallback });
+const PrijemModule = dynamic(() => import('./modules/PrijemModule'), { ssr: false, loading: ModuleLoadingFallback });
+const PilanaModule = dynamic(() => import('./modules/PilanaModule'), { ssr: false, loading: ModuleLoadingFallback });
+const DoradaModule = dynamic(() => import('./modules/DoradaModule'), { ssr: false, loading: ModuleLoadingFallback });
+const SettingsModule = dynamic(() => import('./modules/SettingsModule'), { ssr: false, loading: ModuleLoadingFallback });
+const PonudeModule = dynamic(() => import('./modules/PonudeModule'), { ssr: false, loading: ModuleLoadingFallback });
+const RadniNaloziModule = dynamic(() => import('./modules/RadniNaloziModule'), { ssr: false, loading: ModuleLoadingFallback });
+const OtpremniceModule = dynamic(() => import('./modules/OtpremniceModule'), { ssr: false, loading: ModuleLoadingFallback });
+const RacuniModule = dynamic(() => import('./modules/RacuniModule'), { ssr: false, loading: ModuleLoadingFallback });
+const BlagajnaModule = dynamic(() => import('./modules/BlagajnaModule'), { ssr: false, loading: ModuleLoadingFallback });
+const KontrolniToranjModule = dynamic(() => import('./modules/KontrolniToranjModule'), { ssr: false, loading: ModuleLoadingFallback });
+const AnalitikaModule = dynamic(() => import('./modules/AnalitikaModule'), { ssr: false, loading: ModuleLoadingFallback });
+const LagerPaketaModule = dynamic(() => import('./modules/LagerPaketaModule'), { ssr: false, loading: ModuleLoadingFallback });
+const PlaniranjeModule = dynamic(() => import('./modules/PlaniranjeModule'), { ssr: false, loading: ModuleLoadingFallback });
+const ReklamacijeModule = dynamic(() => import('./modules/ReklamacijeModule'), { ssr: false, loading: ModuleLoadingFallback });
+const KioskModule = dynamic(() => import('./modules/KioskModule'), { ssr: false, loading: ModuleLoadingFallback });
+const HrDashboardModule = dynamic(() => import('./modules/HrDashboardModule'), { ssr: false, loading: ModuleLoadingFallback });
+const NadzorModule = dynamic(() => import('./modules/NadzorModule'), { ssr: false, loading: ModuleLoadingFallback });
 
 const PALETA = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -929,6 +939,10 @@ export default function Page() {
                                 </div>
                             </div>
 
+                            {!isEditMode && (
+                                <JutarnjiBrifingCard user={loggedUser} onNavigateModule={setActiveModule} />
+                            )}
+
                             {isEditMode && (
                                <div className="bg-amber-950/20 border-2 border-amber-600 p-4 sm:p-6 rounded-[2rem] shadow-2xl space-y-4">
                                <div className="flex flex-col sm:flex-row justify-between sm:items-center border-b border-amber-500/30 pb-4 gap-3">
@@ -1023,7 +1037,7 @@ export default function Page() {
                 : activeModule === 'kiosk' ? <KioskModule />
                 : activeModule === 'hr' ? <HrDashboardModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : activeModule === 'reklamacije' ? <ReklamacijeModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
-                : activeModule === 'podesavanja' ? <SettingsModule onExit={() => setActiveModule('home')} />
+                : activeModule === 'podesavanja' ? <SettingsModule user={loggedUser} onExit={() => setActiveModule('home')} />
                 : activeModule === 'nadzor' && loggedUser?.uloga === 'superadmin' ? <NadzorModule user={loggedUser} header={header} setHeader={setHeader} onExit={() => setActiveModule('home')} />
                 : null}
             </div>

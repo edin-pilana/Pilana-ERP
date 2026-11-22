@@ -9,6 +9,8 @@ import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
 import SettingsModule from './SettingsModule';
 import { printDokument } from '../utils/printHelpers';
+import { izracunajKarticuKupca } from '../utils/kupacKreditHelpers';
+import { posaljiDokumentWhatsApp, posaljiDokumentEmail } from '../utils/shareHelpers';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -130,6 +132,19 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
     
     const [isEditingPonuda, setIsEditingPonuda] = useState(false);
     const [odabraniKupac, setOdabraniKupac] = useState(null);
+    const [kupacKredit, setKupacKredit] = useState(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!form?.kupac_naziv) {
+            setKupacKredit(null);
+            return;
+        }
+        izracunajKarticuKupca(form.kupac_naziv).then((k) => {
+            if (!cancelled) setKupacKredit(k);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [form?.kupac_naziv]);
     const [stavke, setStavke] = useState([]);
     const [povezaniRN, setPovezaniRN] = useState(null);
     const [globalRabat, setGlobalRabat] = useState('');
@@ -965,6 +980,29 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                                 );
                             })}
                         </div>
+                        {form.kupac_naziv && kupacKredit && (
+                            <div data-testid="ponuda-kredit-bar" className={`mt-2 p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-[11px] font-black ${kupacKredit.zahtijevaBlokadu ? 'bg-red-950/35 border-red-500/60 text-red-300' : kupacKredit.prekoracenLimit || kupacKredit.kasniPrekoLimita ? 'bg-amber-950/30 border-amber-500/50 text-amber-300' : 'bg-theme-panel border-theme-border text-theme-text'}`}>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <span>💳 Otvoreni dug: <b className={kupacKredit.otvoreniDugKM > 0 ? 'text-amber-400' : 'text-emerald-400'}>{kupacKredit.otvoreniDugKM.toFixed(2)} KM</b></span>
+                                    {kupacKredit.limitPostavka?.limitKM > 0 && (
+                                        <span>Limit: <b className="text-blue-400">{kupacKredit.limitPostavka.limitKM.toFixed(2)} KM</b></span>
+                                    )}
+                                    {kupacKredit.dospjeliDugKM > 0 && (
+                                        <span className="text-red-400">⚠️ Dospjelo: {kupacKredit.dospjeliDugKM.toFixed(2)} KM (max {kupacKredit.maxKasnjenjeKupca}d)</span>
+                                    )}
+                                    {kupacKredit.zahtijevaBlokadu && (
+                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[9px] uppercase">🔒 Blokada otpreme aktivna</span>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: form.kupac_naziv } }))}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/40 text-[9px] font-black uppercase transition-all"
+                                >
+                                    💳 Kartica & Aging
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-4 sm:p-6 rounded-box border border-theme-border shadow-2xl space-y-4 relative z-[30]" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
@@ -1066,7 +1104,28 @@ export default function PonudeModule({ user, header, setHeader, onExit }) {
                     </div>
                     {stavke.length > 0 && (
                         <div className="bg-theme-card backdrop-blur-[var(--glass-blur)] p-6 rounded-box border border-emerald-500/30 shadow-2xl animate-in slide-in-from-bottom" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
-                            <div className="flex justify-between items-center mb-4"><h3 className="text-emerald-500 font-black uppercase text-xs">3. Pregled Ponude i PDF</h3><button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button></div>
+                            <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+                                <h3 className="text-emerald-500 font-black uppercase text-xs">3. Pregled Ponude i PDF</h3>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        type="button"
+                                        data-testid="ponuda-whatsapp-btn"
+                                        onClick={() => posaljiDokumentWhatsApp({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        className="bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-emerald-500/40 transition-all shadow-sm"
+                                    >
+                                        💬 WhatsApp
+                                    </button>
+                                    <button
+                                        type="button"
+                                        data-testid="ponuda-email-btn"
+                                        onClick={() => posaljiDokumentEmail({ tip: 'PONUDA', broj: form.id, datum: formatirajDatum(form.datum), kupac: form.kupac_naziv, stavke, ukupnoTekst: `${totals.za_naplatu} ${form.valuta}`, napomena: form.napomena })}
+                                        className="bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white px-3 py-2 rounded-xl text-[10px] uppercase font-black border border-blue-500/40 transition-all shadow-sm"
+                                    >
+                                        ✉️ Email
+                                    </button>
+                                    <button onClick={kreirajPDF} className="bg-theme-panel text-theme-text px-4 py-2 rounded-xl text-[10px] uppercase font-black border border-slate-600 hover:bg-white hover:text-black transition-all shadow-md">🖨️ Kreiraj PDF</button>
+                                </div>
+                            </div>
                             <div className="space-y-2 mb-6">
                                 {stavke.map((raw) => {
                                     const s = normalizujStavkuPonude(raw);

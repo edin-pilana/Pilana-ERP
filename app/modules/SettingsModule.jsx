@@ -8,6 +8,7 @@ import {
     spasiPravilaNotifikacija,
     getEfektivnaPravilaZaKorisnika,
 } from '../utils/notificationHelpers';
+import { DOZVOLA_KREDITNI_LIMIT } from '../utils/kupacKreditHelpers';
 import { toast } from 'sonner';
 
 function SettingsSearchable({ label, value, onChange, list = [], placeholder="..." }) {
@@ -1372,7 +1373,21 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
                                     Spec. proizvoda: <span className="text-theme-text">{Object.keys(k.rabati_jsonb?.proizvodi || {}).length}</span> | Kategorija: <span className="text-theme-text">{Object.keys(k.rabati_jsonb?.kategorije || {}).length}</span>
                                 </p>
                             </div>
-                            <button onClick={(e)=>obrisiKupca(k.id, k.naziv, e)} className="text-red-400 font-black px-4 py-3 bg-red-900/20 hover:bg-red-500 hover:text-white rounded-xl transition-all shadow-sm text-xs ml-2">✕</button>
+                            <div className="flex items-center gap-2 ml-2 shrink-0">
+                                <button
+                                    type="button"
+                                    data-testid={`kupac-kartica-btn-${k.id}`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.dispatchEvent(new CustomEvent('otvori_karticu_kupca', { detail: { kupacNaziv: k.naziv } }));
+                                    }}
+                                    className="text-emerald-400 font-black px-3 py-3 bg-emerald-900/20 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 rounded-xl transition-all shadow-sm text-[10px] uppercase whitespace-nowrap"
+                                    title="Finansijska kartica kupca, Aging 30/60/90 i kreditni limit"
+                                >
+                                    💳 Kartica / Limit
+                                </button>
+                                <button onClick={(e)=>obrisiKupca(k.id, k.naziv, e)} className="text-red-400 font-black px-4 py-3 bg-red-900/20 hover:bg-red-500 hover:text-white rounded-xl transition-all shadow-sm text-xs">✕</button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -1381,18 +1396,20 @@ function TabKupci({ prikaziDialog, zatvoriDialog }) {
     );
 }
 
-function TabRadnici({ prikaziDialog, zatvoriDialog }) {
+function TabRadnici({ prikaziDialog, zatvoriDialog, currentUser }) {
     const [radnici, setRadnici] = useState([]);
     const [editId, setEditId] = useState(null); 
     const [form, setForm] = useState({ ime_prezime: '', username: '', password: '', uloga: 'operater', bruto_satnica: '', preostalo_godisnjeg: 20, dozvole: [], qr_kod: '' });
     const [notifPravila, setNotifPravila] = useState({});
     const [savingMatrix, setSavingMatrix] = useState(false);
 
+    const jeSuperadmin = currentUser?.uloga === 'superadmin';
+
     const sviModuliKategorisano = {
         "📦 PROIZVODNJA": ['Prijem trupaca', 'Prorez (Trupci)', 'Pilana (Izlaz)', 'Dorada (Ulaz/Izlaz)', 'Planiranje Proizvodnje', 'Planiranje (Samo Pregled)'],
         "💼 PRODAJA I WMS": ['Ponude', 'Radni Nalozi', 'Otpremnice i Izdatnice', 'Računi', 'Reklamacije i Povrati'],
         "📊 NADZOR I LAGER": ['Kontrolni Toranj', 'Analitika', 'Lager Paketa', 'Lager Trupaca', 'HR Dashboard', 'Prijava na Rad'],
-        "💰 FINANSIJE": ['Blagajna (Keš)'],
+        "💰 FINANSIJE": ['Blagajna (Keš)', DOZVOLA_KREDITNI_LIMIT],
         "⚙️ ŠIFARNICI (ADMIN)": ['Podešavanja', 'Baza Kupaca (Edit)', 'Katalog Proizvoda (Edit)']
     };
     const sviModuli = Object.values(sviModuliKategorisano).flat();
@@ -1440,6 +1457,9 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
     };
 
     const toggleDozvola = (modul) => {
+        if (modul === DOZVOLA_KREDITNI_LIMIT && !jeSuperadmin) {
+            return toast.error('🔒 Ovo ovlaštenje smije dodijeliti ili ukinuti ISKLJUČIVO Superadmin!');
+        }
         setForm(prev => {
             const imaDozvolu = prev.dozvole.includes(modul);
             return { ...prev, dozvole: imaDozvolu ? prev.dozvole.filter(m => m !== modul) : [...prev.dozvole, modul] };
@@ -1479,6 +1499,14 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             ? form.qr_kod.trim()
             : (postojeci?.qr_kod || `RAD-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`);
 
+        // Sigurnosna zaštita: samo Superadmin smije promijeniti dozvolu za Kreditne Limite!
+        let finalneDozvole = Array.isArray(form.dozvole) ? [...form.dozvole] : [];
+        if (!jeSuperadmin) {
+            const imaoRanije = Array.isArray(postojeci?.dozvole) && postojeci.dozvole.includes(DOZVOLA_KREDITNI_LIMIT);
+            finalneDozvole = finalneDozvole.filter(d => d !== DOZVOLA_KREDITNI_LIMIT);
+            if (imaoRanije) finalneDozvole.push(DOZVOLA_KREDITNI_LIMIT);
+        }
+
         const payload = {
             ime_prezime: form.ime_prezime.trim(),
             username: form.username.trim().toLowerCase(),
@@ -1486,7 +1514,7 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
             bruto_satnica: satnica,
             godisnji_ukupno: godisnjiUkupno,
             preostalo_godisnjeg: preostaloIzracunato,
-            dozvole: Array.isArray(form.dozvole) ? form.dozvole : [],
+            dozvole: finalneDozvole,
             qr_kod: siguranQrKod
         };
         if (form.password && String(form.password).trim() !== '') {
@@ -1620,9 +1648,24 @@ function TabRadnici({ prikaziDialog, zatvoriDialog }) {
                                         <div className="flex flex-wrap gap-2">
                                             {moduli.map(modul => {
                                                 const aktivan = form.dozvole.includes(modul);
+                                                const jeSamoSuperadmin = modul === DOZVOLA_KREDITNI_LIMIT;
+                                                const zakljucano = jeSamoSuperadmin && !jeSuperadmin;
                                                 return (
-                                                    <button key={modul} type="button" onClick={(e) => { e.preventDefault(); toggleDozvola(modul); }} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${aktivan ? 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]' : 'bg-theme-card border-theme-border text-slate-500 hover:border-slate-400'}`}>
-                                                        {aktivan ? '✓ ' : '+ '} {modul}
+                                                    <button
+                                                        key={modul}
+                                                        type="button"
+                                                        disabled={zakljucano}
+                                                        title={jeSamoSuperadmin ? '👑 Samo Superadmin može dodijeliti/ukinuti ovlaštenje za kreditne limite kupaca' : modul}
+                                                        onClick={(e) => { e.preventDefault(); toggleDozvola(modul); }}
+                                                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${
+                                                            zakljucano
+                                                                ? 'bg-theme-card/40 border-amber-500/30 text-slate-500 opacity-60 cursor-not-allowed'
+                                                                : aktivan
+                                                                    ? (jeSamoSuperadmin ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_10px_rgba(16,185,129,0.3)]')
+                                                                    : 'bg-theme-card border-theme-border text-slate-500 hover:border-slate-400'
+                                                        }`}
+                                                    >
+                                                        {jeSamoSuperadmin ? (zakljucano ? '🔒 ' : '👑 ') : ''}{aktivan ? '✓ ' : '+ '} {modul}
                                                     </button>
                                                 );
                                             })}
@@ -2127,11 +2170,20 @@ function TabBrending({ prikaziDialog, zatvoriDialog }) {
     );
 }
 
-export default function SettingsModule({ onExit, lockedTab }) {
+export default function SettingsModule({ user, onExit, lockedTab }) {
     const [tab, setTab] = useState(lockedTab || 'sumarije');
     const [dialog, setDialog] = useState({ isOpen: false });
     const prikaziDialog = (opcije) => setDialog({ isOpen: true, confirmText: 'POTVRDI', cancelText: 'ZATVORI', ...opcije });
     const zatvoriDialog = () => setDialog({ isOpen: false });
+
+    const currentUser = useMemo(() => {
+        if (user?.uloga || user?.username) return user;
+        try {
+            return JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('smart_timber_user') || '{}' : '{}');
+        } catch (e) {
+            return {};
+        }
+    }, [user]);
 
     const tabs = ['sumarije', 'prevoznici', 'masine', 'katalog', 'kupci', 'radnici', 'blagajna', 'brending'];
     const labels = { sumarije: '🌲 Šumarije', prevoznici: '🚚 Prevoznici', masine: '⚙️ Mašine', katalog: '📦 Katalog', kupci: '🤝 Kupci', radnici: '👷 Radnici', blagajna: '🗂️ Kase / Kat.', brending: '🎨 Brending / Print' };
@@ -2165,7 +2217,7 @@ export default function SettingsModule({ onExit, lockedTab }) {
             {tab === 'masine' && <TabMasine prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
             {tab === 'katalog' && <TabKatalog prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
             {tab === 'kupci' && <TabKupci prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
-            {tab === 'radnici' && <TabRadnici prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
+            {tab === 'radnici' && <TabRadnici prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} currentUser={currentUser} />}
             {tab === 'blagajna' && <TabKategorijeBlagajne prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
             {tab === 'brending' && <TabBrending prikaziDialog={prikaziDialog} zatvoriDialog={zatvoriDialog} />}
         </div>

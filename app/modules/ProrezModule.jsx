@@ -5,6 +5,7 @@ import MasterHeader from '../components/MasterHeader';
 import MasterSearch, { normalizujZaPretragu } from '../components/MasterSearch';
 import PametniDialog from '../components/PametniDialog';
 import ScannerOverlay from '../components/ScannerOverlay';
+import { dodajUOfflineRed, daLiJeOffline, daLiJeMreznaGreska } from '../utils/offlineQueue';
 import { useSaaS } from '../utils/useSaaS';
 import { toast } from 'sonner';
 
@@ -547,12 +548,40 @@ export default function ProrezModule({ user, header, setHeader, onExit }) {
         setScan(''); 
         setTimeout(() => inputRef.current?.focus(), 100);
 
-        const { data: updTrupac, error: errUpd } = await supabase
-            .from('trupci')
-            .update({ status: 'prorezano' })
-            .eq('id', logPayload.trupac_id)
-            .eq('status', 'na_lageru')
-            .select('id');
+        if (daLiJeOffline()) {
+            dodajUOfflineRed({
+                tip: 'PROREZ_TRUPAC',
+                opis: `Prorez trupca ${logPayload.trupac_id} (${logPayload.zapremina} m³)`,
+                data: { logPayload },
+            });
+            setDostupniTrupci(prev => prev.filter(t => t.id !== logPayload.trupac_id));
+            return;
+        }
+
+        let updTrupac = null;
+        let errUpd = null;
+        try {
+            const res = await supabase
+                .from('trupci')
+                .update({ status: 'prorezano' })
+                .eq('id', logPayload.trupac_id)
+                .eq('status', 'na_lageru')
+                .select('id');
+            updTrupac = res.data;
+            errUpd = res.error;
+        } catch (netErr) {
+            errUpd = netErr;
+        }
+
+        if (errUpd && daLiJeMreznaGreska(errUpd)) {
+            dodajUOfflineRed({
+                tip: 'PROREZ_TRUPAC',
+                opis: `Prorez trupca ${logPayload.trupac_id} (${logPayload.zapremina} m³)`,
+                data: { logPayload },
+            });
+            setDostupniTrupci(prev => prev.filter(t => t.id !== logPayload.trupac_id));
+            return;
+        }
 
         if (errUpd || !updTrupac || updTrupac.length === 0) {
             setProrezaniLista(prev => prev.filter(p => p.id !== tempId));

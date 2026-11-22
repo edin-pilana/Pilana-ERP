@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, formatDbError } from '../utils/supabaseClient';
 import MasterHeader from '../components/MasterHeader';
 import PametniDialog from '../components/PametniDialog';
+import SusareServisPanel from '../components/SusareServisPanel';
 import { useSaaS } from '../utils/useSaaS';
 import { ChevronLeft, ChevronRight, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -39,6 +40,13 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
     const isReadOnly = user?.uloga !== 'admin' && user?.uloga !== 'superadmin' && !(user?.dozvole || []).includes('Planiranje Proizvodnje');
 
     const [loading, setLoading] = useState(true);
+    const [planPodTab, setPlanPodTab] = useState(() => {
+        if (typeof window !== 'undefined' && localStorage.getItem('planiranje_auto_tab') === 'susare') {
+            localStorage.removeItem('planiranje_auto_tab');
+            return 'susare';
+        }
+        return 'raspored';
+    });
     const [masine, setMasine] = useState([]);
     const [odabranaMasina, setOdabranaMasina] = useState('');
     const [kapacitetMasine, setKapacitetMasine] = useState(30);
@@ -535,6 +543,30 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                 </div>
             )}
 
+            {/* GLAVNI TABOVI PLANIRANJA: RASPORED PROIZVODNJE | SUŠARE & SERVIS PILA */}
+            <div className="flex bg-theme-panel p-1.5 rounded-2xl border border-theme-border shadow-inner gap-1.5 shrink-0">
+                <button
+                    type="button"
+                    data-testid="planiranje-tab-raspored"
+                    onClick={() => setPlanPodTab('raspored')}
+                    className={`flex-1 py-3 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all ${planPodTab === 'raspored' ? 'bg-amber-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text hover:bg-theme-card'}`}
+                >
+                    📅 Raspored Proizvodnje
+                </button>
+                <button
+                    type="button"
+                    data-testid="planiranje-tab-susare"
+                    onClick={() => setPlanPodTab('susare')}
+                    className={`flex-1 py-3 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all ${planPodTab === 'susare' ? 'bg-orange-600 text-white shadow-lg' : 'text-theme-muted hover:text-theme-text hover:bg-theme-card'}`}
+                >
+                    🔥 Sušare & Servis Pila / Mašina
+                </button>
+            </div>
+
+            {planPodTab === 'susare' ? (
+                <SusareServisPanel user={user} />
+            ) : (
+            <>
             <div className="flex flex-wrap justify-between items-center bg-theme-card backdrop-blur-[var(--glass-blur)] p-3 md:p-4 rounded-xl md:rounded-2xl border border-theme-border shadow-lg gap-3 shrink-0 w-full max-w-full overflow-hidden" style={{ backgroundColor: saas.ui.boja_kartice || undefined }}>
                 <div className="flex items-center gap-2 min-w-0">
                     <h2 className="text-amber-500 font-black tracking-widest uppercase text-xs md:text-sm flex items-center gap-2 truncate"><span>📅</span> Planer Proizvodnje (Dimenzije u cm)</h2>
@@ -691,6 +723,8 @@ export default function PlaniranjeModule({ user, header, setHeader, onExit }) {
                     })}
                 </div>
             </div>
+            </>
+            )}
         </div>
     );
 }
