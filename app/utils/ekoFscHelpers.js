@@ -166,14 +166,16 @@ export async function izracunajFscEudrZaOtpremnicu(stavke = []) {
 
     const { data: paketiRows } = await supabase
         .from('paketi')
-        .select('paket_id, ulaz_trupci_ids, ulaz_paketi_ids')
+        .select('*')
         .in('paket_id', paketIds);
 
     const trupciIds = new Set();
     const ulazniPaketiIds = new Set();
     (paketiRows || []).forEach((p) => {
         if (Array.isArray(p.ulaz_trupci_ids)) p.ulaz_trupci_ids.forEach((id) => trupciIds.add(id));
-        if (Array.isArray(p.ulaz_paketi_ids)) p.ulaz_paketi_ids.forEach((id) => ulazniPaketiIds.add(id));
+        const uPak = p.ulaz_paketi_ids || p.ulazni_paketi_ids || p.ulazni_paketi;
+        if (Array.isArray(uPak)) uPak.forEach((id) => ulazniPaketiIds.add(id));
+        if (p.ulazni_paket_id) ulazniPaketiIds.add(p.ulazni_paket_id);
     });
 
     // Ako je paket iz Dorade, povuci trupce iz njegovih ulaznih paketa (2-stepena sljedivost!)

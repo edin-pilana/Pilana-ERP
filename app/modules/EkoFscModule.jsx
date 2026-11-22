@@ -96,9 +96,9 @@ export default function EkoFscModule({ user, header, setHeader, onExit }) {
             const [sRes, podRes, tRes, prRes, pkRes, oRes, blRes, susRes, fscP, bioP, cbamP] = await Promise.all([
                 supabase.from('sumarije').select('*').order('naziv'),
                 supabase.from('podruznice').select('*'),
-                supabase.from('trupci').select('id, sumarija, podruznica, prevoznik, vrsta, datum_prijema, created_at, zapremina, kontrolna_zapremina, nabavna_vrijednost, trosak_prevoza, status'),
-                supabase.from('prorez_log').select('id, trupac_id, datum, created_at, zapremina, masina'),
-                supabase.from('paketi').select('paket_id, naziv_proizvoda, datum_yyyy_mm, created_at, kolicina_final, ulaz_trupci_ids, ulaz_paketi_ids, otpremnica_id, status'),
+                supabase.from('trupci').select('*'),
+                supabase.from('prorez_log').select('*'),
+                supabase.from('paketi').select('*'),
                 supabase.from('otpremnice').select('id, kupac_naziv, datum, status, stavke_jsonb').order('datum', { ascending: false }).limit(200),
                 supabase.from('blagajna').select('id, datum, tip, iznos, kategorija, opis, created_at'),
                 supabase.from('ui_postavke').select('postavke_jsonb').eq('modul_ime', 'susare_sarze').maybeSingle(),
