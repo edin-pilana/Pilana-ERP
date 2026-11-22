@@ -59,16 +59,19 @@ export default function JutarnjiBrifingCard({ user, onNavigateModule }) {
                 const neprocitaniKrit = (logRes.data || []).filter((l) => l.nivo_alarma === 'CRVENO' || l.nivo_alarma === 'ŽUTO').length;
 
                 // Sušare spremne ili pri kraju (<= 1 dan do planiranog kraja)
-                const sarze = Array.isArray(susRes.data?.postavke_jsonb?.sarze) ? susRes.data.postavke_jsonb.sarze : [];
-                const aktivneSarze = sarze.filter((s) => s.status === 'SUŠENJE');
+                const sarze = Array.isArray(susRes.data?.postavke_jsonb?.lista)
+                    ? susRes.data.postavke_jsonb.lista
+                    : (Array.isArray(susRes.data?.postavke_jsonb?.sarze) ? susRes.data.postavke_jsonb.sarze : []);
+                const aktivneSarze = sarze.filter((s) => s.status === 'U SUŠENJU' || s.status === 'SUŠENJE');
                 const susareSpremne = aktivneSarze.filter((s) => {
-                    if (!s.planirani_kraj) return false;
-                    const diff = Math.ceil((new Date(s.planirani_kraj).getTime() - new Date(danasIso).getTime()) / 86400000);
+                    const kraj = s.plan_zavrsetak || s.planirani_kraj;
+                    if (!kraj) return false;
+                    const diff = Math.ceil((new Date(kraj).getTime() - new Date(danasIso).getTime()) / 86400000);
                     return diff <= 1;
                 }).length;
 
-                // Servis mašina/pila (ukupan broj aktivnih mašina u evidenciji)
-                const servisi = Array.isArray(srvRes.data?.postavke_jsonb?.servisi) ? srvRes.data.postavke_jsonb.servisi : [];
+                // Servis mašina/pila
+                const servisi = Array.isArray(srvRes.data?.postavke_jsonb?.lista) ? srvRes.data.postavke_jsonb.lista : [];
                 const servisiUpozorenje = servisi.filter((s) => s.status === 'POTREBAN_SERVIS').length;
 
                 setBrifing({

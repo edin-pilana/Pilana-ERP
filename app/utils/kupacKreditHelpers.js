@@ -216,15 +216,19 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
     const prekoracenoKasnjenje = maxKasnjenjeDana > 0 && najstarijeKasnjenjeDana > maxKasnjenjeDana;
     const iskoristenostProc = limitKM > 0 ? Math.min(999, parseFloat(((otvoreniDugKM / limitKM) * 100).toFixed(1))) : 0;
 
+    const dospjeliDugKM = parseFloat((aging.d1_30 + aging.d31_60 + aging.d61_90 + aging.d90plus).toFixed(2));
+
     return {
         kupac: kupacObj,
         limitPostavka,
         ukupnoFakturisanoKM: parseFloat(ukupnoFakturisanoKM.toFixed(2)),
         ukupnoNaplacenoKM: parseFloat(ukupnoNaplacenoKM.toFixed(2)),
         otvoreniDugKM: parseFloat(otvoreniDugKM.toFixed(2)),
+        dospjeliDugKM,
         projektovaniDugKM,
         povratReklamacijeKM: parseFloat(povratReklamacijeKM.toFixed(2)),
         najstarijeKasnjenjeDana,
+        maxKasnjenjeKupca: najstarijeKasnjenjeDana,
         aging: {
             uRoku: parseFloat(aging.uRoku.toFixed(2)),
             d1_30: parseFloat(aging.d1_30.toFixed(2)),
@@ -235,6 +239,7 @@ export async function izracunajKarticuKupca(kupacNaziv, noviIznosKM = 0) {
         iskoristenostProc,
         prekoracenLimit,
         prekoracenoKasnjenje,
+        kasniPrekoLimita: prekoracenoKasnjenje,
         zahtijevaBlokadu: Boolean(limitPostavka.blokirajPrekoracenje && (prekoracenLimit || prekoracenoKasnjenje)),
         racuni: racuniDetalji,
         uplate: uplateKupca.slice(0, 30),
