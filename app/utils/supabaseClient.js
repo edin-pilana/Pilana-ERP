@@ -56,7 +56,7 @@ export const posaljiEksterniPushAlarm = async (zapis) => {
         }).catch(() => {});
     }
 
-    if (jeLicnaInfo || !jeHitno) return;
+    if (jeLicnaInfo || !jeHitno || akcija === 'TEST_OBAVJESTENJA' || rawDetalji.includes('"target_user"')) return;
 
     const ikona = nivo === 'CRVENO' ? '🚨' : '⚠️';
     const porukaTekst = `${ikona} <b>PILANA ERP ALARM (${escapeTelegramHtml(nivo)})</b>\n\n👤 <b>Radnik:</b> ${escapeTelegramHtml(zapis.korisnik || 'Nepoznat')}\n📋 <b>Akcija:</b> ${escapeTelegramHtml(akcija)}\n📝 <b>Detalji:</b> ${escapeTelegramHtml(cistiDetalji || '-')}\n🕒 <b>Vrijeme:</b> ${escapeTelegramHtml(new Date().toLocaleString('bs-BA'))}`;
