@@ -70,6 +70,55 @@ const spasiSvePretplate = async (mapa) => {
         .upsert([{ modul_ime: PUSH_PREF_KEY, postavke_jsonb: mapa }], { onConflict: 'modul_ime' });
 };
 
+const getActiveSwRegistration = async () => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+    try {
+        const direct = await navigator.serviceWorker.getRegistration('/');
+        if (direct) return direct;
+        const all = await navigator.serviceWorker.getRegistrations();
+        return all.find((r) => r?.active?.scriptURL?.includes('/sw.js')) || all[0] || null;
+    } catch (e) {
+        return null;
+    }
+};
+
+const arraysEqual = (a, b) => {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
+};
+
+/**
+ * Suptilan Web Audio zvučni signal (bez vanjskih audio fajlova) kada stigne novo obavještenje.
+ */
+export const svirajZvukNotifikacije = (urgent = false) => {
+    if (typeof window === 'undefined') return;
+    try {
+        if (localStorage.getItem('erp_notif_sound') === 'off') return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+        const freqs = urgent ? [880, 1174.66, 1318.5] : [659.25, 880];
+        freqs.forEach((f, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(f, now + idx * 0.11);
+            gain.gain.setValueAtTime(0.0001, now + idx * 0.11);
+            gain.gain.exponentialRampToValueAtTime(0.09, now + idx * 0.11 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.11 + 0.22);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + idx * 0.11);
+            osc.stop(now + idx * 0.11 + 0.24);
+        });
+        setTimeout(() => { try { ctx.close(); } catch (e) {} }, 800);
+    } catch (e) {}
+};
+
 /**
  * Registruje (ili ažurira) Web Push pretplatu za trenutno prijavljenog korisnika.
  * Čuva ZADNJI prijavljeni računar (`desktop`) i ZADNJI prijavljeni mobitel (`mobile`) po korisniku.
@@ -92,11 +141,19 @@ export const aktivirajPushNaUredjaju = async (user, { silentIfDenied = false } =
         const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
         await navigator.serviceWorker.ready;
 
+        const expectedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
         let sub = await reg.pushManager.getSubscription();
+        if (sub?.options?.applicationServerKey) {
+            const currentKey = new Uint8Array(sub.options.applicationServerKey);
+            if (!arraysEqual(currentKey, expectedKey)) {
+                await sub.unsubscribe().catch(() => {});
+                sub = null;
+            }
+        }
         if (!sub) {
             sub = await reg.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+                applicationServerKey: expectedKey,
             });
         }
 
@@ -152,7 +209,7 @@ export const aktivirajPushNaUredjaju = async (user, { silentIfDenied = false } =
 export const ukloniPushSaOvogUredjaja = async (user = null) => {
     if (!jePushPodrzan()) return { ok: true };
     try {
-        const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+        const reg = await getActiveSwRegistration();
         const sub = reg ? await reg.pushManager.getSubscription() : null;
         const endpoint = sub?.endpoint;
 
@@ -196,7 +253,7 @@ export const provjeriPushStatusKorisnika = async (user) => {
             mobileLabel = entry?.mobile?.label || null;
 
             if (supported && permission === 'granted') {
-                const reg = await navigator.serviceWorker.getRegistration('/sw.js');
+                const reg = await getActiveSwRegistration();
                 const sub = reg ? await reg.pushManager.getSubscription() : null;
                 if (sub?.endpoint) {
                     thisDeviceActive =
@@ -228,4 +285,43 @@ export const posaljiTestnuPushNotifikaciju = async (user) => {
         }),
     });
     return res.json();
+};
+
+/**
+ * End-to-end test cijelog kanala obavještenja (In-App zvonce + Zvuk + Browser notifikacija + Pozadinski Web Push).
+ */
+export const posaljiKompletnoTestObavjestenje = async (user) => {
+    const userName = user?.ime_prezime || user?.username || 'Korisnik';
+    const meta = {
+        target_user: userName,
+        target_username: user?.username || '',
+        entity_type: 'test_notif',
+    };
+    const detalji = `Testno obavještenje za ${userName} (${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}) — In-App zvonce, zvuk i push kanal su povezani. [[META:${JSON.stringify(meta)}]]`;
+
+    const { data: inserted, error: insertError } = await supabase
+        .from('sistem_audit_log')
+        .insert([{
+            korisnik: userName,
+            akcija: 'TEST_OBAVJESTENJA',
+            nivo_alarma: 'ŽUTO',
+            detalji,
+            pregledano: false,
+        }])
+        .select('*')
+        .maybeSingle();
+
+    let pushRes = { ok: false, sent: 0 };
+    try {
+        pushRes = await posaljiTestnuPushNotifikaciju(user);
+    } catch (e) {
+        pushRes = { ok: false, sent: 0, error: e?.message };
+    }
+
+    return {
+        ok: !insertError,
+        inserted,
+        insertError: insertError?.message || null,
+        pushRes,
+    };
 };

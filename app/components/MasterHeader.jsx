@@ -22,8 +22,9 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
     const [otvorenTab, setOtvorenTab] = useState(false);
     const [noviRadnik, setNoviRadnik] = useState('');
 
-    // 🔔 State za modul-specifična obavještenja i modal sa kompletnom historijom
+    // 🔔 State za modul-specifična obavještenja + globalni brojač svih nepročitanih
     const [brojAlarma, setBrojAlarma] = useState(0);
+    const [brojGlobalnihAlarma, setBrojGlobalnihAlarma] = useState(0);
     const [listaAlarma, setListaAlarma] = useState([]);
     const [otvorenoZvonce, setOtvorenoZvonce] = useState(false);
     const [zvonceTab, setZvonceTab] = useState('AKTIVNA'); // 'AKTIVNA' | 'HISTORIJA'
@@ -57,8 +58,12 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
 
     const ucitajAlarme = useCallback(async () => {
         if (!isLoggedIn) return;
-        const neprocitane = await ucitajNotifikacijeZaKorisnika(currentUser, modulIme, { includeRead: false, limit: 30 });
+        const [neprocitane, globalne] = await Promise.all([
+            ucitajNotifikacijeZaKorisnika(currentUser, modulIme, { includeRead: false, limit: 30 }),
+            ucitajNotifikacijeZaKorisnika(currentUser, null, { includeRead: false, limit: 50 }),
+        ]);
         setBrojAlarma(neprocitane.length);
+        setBrojGlobalnihAlarma(globalne.length);
         if (zvonceTab === 'HISTORIJA') {
             const sve = await ucitajNotifikacijeZaKorisnika(currentUser, modulIme, { includeRead: true, limit: 30 });
             setListaAlarma(sve);
@@ -234,12 +239,15 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                 data-testid="module-notification-bell"
                                 onClick={() => setOtvorenoZvonce(!otvorenoZvonce)}
                                 className={`relative w-10 h-10 rounded-xl border flex items-center justify-center text-lg transition-transform shadow-inner cursor-pointer ${otvorenoZvonce ? 'bg-theme-accent text-white border-theme-accent scale-105' : 'bg-theme-panel border-theme-border hover:scale-105'}`}
-                                title={`Obavještenja za modul: ${nazivModula}`}
+                                title={`Obavještenja za modul: ${nazivModula} (Ukupno u sistemu: ${brojGlobalnihAlarma})`}
                             >
                                 🔔
-                                {brojAlarma > 0 && (
-                                    <span data-testid="module-bell-badge" className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-theme-card shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce">
-                                        {brojAlarma > 99 ? '99+' : brojAlarma}
+                                {(brojAlarma > 0 || brojGlobalnihAlarma > 0) && (
+                                    <span
+                                        data-testid="module-bell-badge"
+                                        className={`absolute -top-1.5 -right-1.5 text-white text-[9px] font-black min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full border-2 border-theme-card ${brojAlarma > 0 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] animate-bounce' : 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.75)]'}`}
+                                    >
+                                        {(brojAlarma > 0 ? brojAlarma : brojGlobalnihAlarma) > 99 ? '99+' : (brojAlarma > 0 ? brojAlarma : brojGlobalnihAlarma)}
                                     </span>
                                 )}
                             </button>
@@ -280,6 +288,19 @@ export default function MasterHeader({ header, setHeader, onExit, user, hideMasi
                                                 Historija modula
                                             </button>
                                         </div>
+
+                                        <button
+                                            type="button"
+                                            data-testid="open-global-notif-center-btn"
+                                            onClick={() => {
+                                                setOtvorenoZvonce(false);
+                                                window.dispatchEvent(new CustomEvent('open_global_notif_drawer'));
+                                            }}
+                                            className="w-full py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 text-[9px] font-black uppercase tracking-wider transition-all flex items-center justify-between"
+                                        >
+                                            <span>📲 Sva obavještenja & Push postavke</span>
+                                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/30 text-white">{brojGlobalnihAlarma} →</span>
+                                        </button>
                                     </div>
 
                                     <div className="max-h-80 overflow-y-auto custom-scrollbar">

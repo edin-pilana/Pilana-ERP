@@ -31,6 +31,8 @@ import {
     ukloniPushSaOvogUredjaja,
     provjeriPushStatusKorisnika,
     posaljiTestnuPushNotifikaciju,
+    posaljiKompletnoTestObavjestenje,
+    svirajZvukNotifikacije,
 } from '../utils/pushConfig';
 import { ucitajGlobalniDizajn } from '../utils/designTokens';
 import { pokreniPametnaPodsjetnica } from '../utils/smartReminders';
@@ -82,6 +84,8 @@ export default function AppShell({
     // 📲 Pozadinski Web Push status za trenutno prijavljenog korisnika (zadnji računar & zadnji mobitel)
     const [pushStatus, setPushStatus] = useState({ supported: false, permission: 'default', thisDeviceActive: false, deviceType: 'desktop', desktopLabel: null, mobileLabel: null });
     const [pushBusy, setPushBusy] = useState(false);
+    const [notifSoundOn, setNotifSoundOn] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_notif_sound') !== 'off' : true));
+    const [pushPromptDismissed, setPushPromptDismissed] = useState(() => (typeof window !== 'undefined' ? sessionStorage.getItem('erp_push_banner_dismissed') === '1' : false));
 
     // State za uređivanje menija sa backup snapshotom (da Odustani zaista vrati prethodno stanje)
     const [isMenuEditMode, setIsMenuEditMode] = useState(false);
@@ -206,11 +210,15 @@ export default function AppShell({
             onOnline();
         }
 
+        const onOpenGlobalNotif = () => setIsNotifDrawerOpen(true);
+        window.addEventListener('open_global_notif_drawer', onOpenGlobalNotif);
+
         return () => {
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('open_command_palette', onOpenPalette);
             window.removeEventListener('otvori_karticu_kupca', onOpenKartica);
             window.removeEventListener('fokus_obavjestenja', onFokusObavjestenja);
+            window.removeEventListener('open_global_notif_drawer', onOpenGlobalNotif);
             window.removeEventListener('offline_queue_updated', onQueueUpdate);
             window.removeEventListener('offline', onOffline);
             window.removeEventListener('online', onOnline);
@@ -229,11 +237,34 @@ export default function AppShell({
         if (typeof window !== 'undefined' && window.navigator?.vibrate) {
             window.navigator.vibrate([180, 90, 180]);
         }
+        svirajZvukNotifikacije(novi.nivo_alarma === 'CRVENO');
 
         const tekst = ocistiTekstDetalja(novi.detalji);
         const jeLicno = daLiJeLicnaNotifikacijaZaKorisnika(novi, user);
+
+        // Ako korisnik ima otvoren tab u pozadini i odobrio je notifikacije, prikaži i nativnu OS notifikaciju odmah
+        try {
+            if (
+                typeof window !== 'undefined' &&
+                'Notification' in window &&
+                Notification.permission === 'granted' &&
+                document.visibilityState !== 'visible'
+            ) {
+                const osNotif = new Notification(`${novi.nivo_alarma === 'CRVENO' ? '🚨' : '🔔'} ${novi.akcija || 'Pilana ERP'}`, {
+                    body: tekst || 'Novo obavještenje u ERP sistemu.',
+                    icon: '/favicon.ico',
+                    tag: `pilana-live-${novi.id}`,
+                });
+                osNotif.onclick = () => {
+                    window.focus();
+                    setSelectedNotif(novi);
+                    osNotif.close();
+                };
+            }
+        } catch (e) {}
+
         const toastOpts = {
-            duration: novi.nivo_alarma === 'CRVENO' ? 8500 : 6500,
+            duration: novi.nivo_alarma === 'CRVENO' ? 9000 : 6800,
             action: {
                 label: 'Otvori',
                 onClick: () => setSelectedNotif(novi),
@@ -258,9 +289,26 @@ export default function AppShell({
         const neprocitane = await ucitajNotifikacijeZaKorisnika(user, null, { includeRead: false, limit: 50 });
 
         if (!initialNotifLoadedRef.current) {
-            // Na prvom učitavanju zapamti postojeće ID-eve da prijava ne zatrpa ekran starim popupovima
+            // Na prvom učitavanju zapamti postojeće ID-eve da prijava ne zatrpa ekran starim popupovima,
+            // ali obavijesti korisnika jednim čistim sažetkom ako ima nepročitanih alarma!
             neprocitane.forEach((n) => { if (n?.id) seenToastIdsRef.current.add(n.id); });
             initialNotifLoadedRef.current = true;
+            if (neprocitane.length > 0 && typeof window !== 'undefined' && !sessionStorage.getItem('erp_initial_notif_shown')) {
+                sessionStorage.setItem('erp_initial_notif_shown', '1');
+                const hitnih = neprocitane.filter((n) => n.nivo_alarma === 'CRVENO').length;
+                toast.info(
+                    hitnih > 0
+                        ? `🔔 Imate ${neprocitane.length} nepročitanih obavještenja (${hitnih} hitnih)!`
+                        : `🔔 Imate ${neprocitane.length} nepročitanih obavještenja.`,
+                    {
+                        duration: 6000,
+                        action: {
+                            label: 'Otvori zvonce',
+                            onClick: () => setIsNotifDrawerOpen(true),
+                        },
+                    }
+                );
+            }
         } else if (emitNewToasts) {
             const nove = neprocitane.filter((n) => n?.id && !seenToastIdsRef.current.has(n.id));
             if (nove.length > 0) {
@@ -360,17 +408,40 @@ export default function AppShell({
         }
     };
 
+    const handleToggleSound = () => {
+        const next = !notifSoundOn;
+        setNotifSoundOn(next);
+        try { localStorage.setItem('erp_notif_sound', next ? 'on' : 'off'); } catch (e) {}
+        if (next) {
+            svirajZvukNotifikacije(false);
+            toast.success('🔊 Zvuk obavještenja je uključen.');
+        } else {
+            toast.info('🔇 Zvuk obavještenja je isključen.');
+        }
+    };
+
     const handleTestPush = async () => {
         setPushBusy(true);
         try {
-            const res = await posaljiTestnuPushNotifikaciju(user);
-            if (res?.ok && res.sent > 0) {
-                toast.success(`📲 Testna push notifikacija poslana na ${res.sent} uređaj(a)!`);
+            const res = await posaljiKompletnoTestObavjestenje(user);
+            if (res?.inserted) {
+                prikaziInAppNotifikaciju(res.inserted);
             } else {
-                toast.warning(res?.error || 'Nema aktivnih push uređaja. Prvo uključite Push iznad.');
+                svirajZvukNotifikacije(false);
+            }
+            await ucitajMojeNotifikacije({ emitNewToasts: false });
+            window.dispatchEvent(new CustomEvent('notifikacije_updated'));
+
+            const pushSent = res?.pushRes?.sent || 0;
+            if (res?.ok && pushSent > 0) {
+                toast.success(`✅ Kompletan test uspio! In-App zvonce + zvuk + Push na ${pushSent} uređaj(a).`);
+            } else if (res?.ok) {
+                toast.info('✅ In-App obavještenje i zvuk rade! Za pozadinski Push kada je app zatvoren, kliknite "Uključi na ovom uređaju" iznad.');
+            } else {
+                toast.error(res?.insertError || 'Greška pri testiranju obavještenja.');
             }
         } catch (e) {
-            toast.error('Greška pri slanju test push poruke.');
+            toast.error('Greška pri slanju testnog obavještenja.');
         } finally {
             setPushBusy(false);
         }
@@ -779,17 +850,31 @@ export default function AppShell({
                             </button>
                         </div>
 
-                        {/* 📲 POZADINSKE PUSH NOTIFIKACIJE (I KAD JE APLIKACIJA ZATVORENA — RAČUNAR + MOBITEL) */}
+                        {/* 📲 POZADINSKE PUSH NOTIFIKACIJE & DIJAGNOSTIKA KANALA */}
                         <div className="mb-3 p-3 rounded-2xl bg-theme-panel border border-theme-border space-y-2">
                             <div className="flex items-center justify-between gap-2">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-theme-text">
-                                    📲 Push i kad je app zatvoren
+                                    📲 Push & Zvuk obavještenja
                                 </span>
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${pushStatus.thisDeviceActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'}`}>
-                                    {pushStatus.thisDeviceActive ? '● Aktivan' : '○ Isključen'}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={handleToggleSound}
+                                        data-testid="toggle-notif-sound-btn"
+                                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border transition-colors ${notifSoundOn ? 'bg-blue-500/15 text-blue-400 border-blue-500/30' : 'bg-theme-card text-theme-muted border-theme-border'}`}
+                                        title="Uključi ili isključi zvučni signal"
+                                    >
+                                        {notifSoundOn ? '🔊 Zvuk' : '🔇 Tiho'}
+                                    </button>
+                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${pushStatus.thisDeviceActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : pushStatus.permission === 'denied' ? 'bg-red-500/20 text-red-400 border border-red-500/40' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'}`}>
+                                        {pushStatus.thisDeviceActive ? '● Aktivan' : pushStatus.permission === 'denied' ? '✕ Blokiran' : '○ Isključen'}
+                                    </span>
+                                </div>
                             </div>
                             <div className="flex flex-wrap gap-1.5 text-[9px] text-theme-muted font-bold">
+                                <span className="px-2 py-0.5 rounded-lg border bg-emerald-950/30 border-emerald-500/30 text-emerald-400">
+                                    ⚡ In-App uživo
+                                </span>
                                 <span className={`px-2 py-0.5 rounded-lg border ${pushStatus.desktopLabel ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' : 'bg-theme-card border-theme-border'}`}>
                                     💻 {pushStatus.desktopLabel || 'Računar nije vezan'}
                                 </span>
@@ -797,6 +882,11 @@ export default function AppShell({
                                     📱 {pushStatus.mobileLabel || 'Mobitel nije vezan'}
                                 </span>
                             </div>
+                            {pushStatus.permission === 'denied' && (
+                                <p className="text-[10px] text-red-400 font-bold leading-snug bg-red-950/25 border border-red-500/30 rounded-xl px-2.5 py-1.5">
+                                    Preglednik trenutno blokira Push za ovu stranicu. Kliknite ikonu lokota/podešavanja pored web adrese → Obavještenja → Dozvoli, pa osvježite stranicu.
+                                </p>
+                            )}
                             <div className="flex gap-1.5 pt-0.5">
                                 <button
                                     type="button"
@@ -807,17 +897,16 @@ export default function AppShell({
                                 >
                                     {pushStatus.thisDeviceActive ? '🔕 Isključi ovaj uređaj' : '🔔 Uključi na ovom uređaju'}
                                 </button>
-                                {(pushStatus.desktopLabel || pushStatus.mobileLabel) && (
-                                    <button
-                                        type="button"
-                                        disabled={pushBusy}
-                                        onClick={handleTestPush}
-                                        className="py-2 px-3 rounded-xl bg-theme-card border border-theme-border text-[9px] font-black uppercase text-theme-text hover:border-theme-accent transition-all disabled:opacity-50"
-                                        title="Pošalji testnu push poruku na vaše prijavljene uređaje"
-                                    >
-                                        🧪 Test
-                                    </button>
-                                )}
+                                <button
+                                    type="button"
+                                    disabled={pushBusy}
+                                    onClick={handleTestPush}
+                                    data-testid="test-notifications-btn"
+                                    className="py-2 px-3 rounded-xl bg-theme-card border border-theme-border text-[9px] font-black uppercase text-theme-text hover:border-theme-accent transition-all disabled:opacity-50 shrink-0"
+                                    title="Pošalji testno obavještenje (In-App zvonce + zvuk + Push)"
+                                >
+                                    🧪 Testiraj
+                                </button>
                             </div>
                         </div>
 
@@ -1315,6 +1404,40 @@ export default function AppShell({
                                     {syncingOffline ? 'Sinhronizujem...' : 'Sinhronizuj sada'}
                                 </button>
                             )}
+                        </div>
+                    )}
+                    {pushStatus.supported && !pushStatus.thisDeviceActive && !pushPromptDismissed && (
+                        <div data-testid="push-activation-banner" className="mb-4 px-4 py-2.5 rounded-2xl bg-indigo-950/35 border border-indigo-500/40 flex flex-wrap items-center justify-between gap-2 text-xs shadow-lg">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <Bell size={16} className="text-indigo-400 shrink-0" />
+                                <span className="font-bold text-theme-text">
+                                    {pushStatus.permission === 'denied'
+                                        ? 'Obavještenja su blokirana u pregledniku — kliknite ikonu lokota pored adrese → Dozvoli obavještenja.'
+                                        : 'Push obavještenja nisu aktivirana na ovom uređaju (zato ne stižu alarmi kad aplikacija nije u fokusu).'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {pushStatus.permission !== 'denied' && (
+                                    <button
+                                        type="button"
+                                        disabled={pushBusy}
+                                        onClick={handleTogglePush}
+                                        className="px-3 py-1.5 rounded-xl bg-theme-accent hover:opacity-90 text-white text-[10px] font-black uppercase shadow-md disabled:opacity-50"
+                                    >
+                                        🔔 Uključi Push sada
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPushPromptDismissed(true);
+                                        try { sessionStorage.setItem('erp_push_banner_dismissed', '1'); } catch (e) {}
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-theme-panel border border-theme-border text-theme-muted hover:text-theme-text text-[10px] font-black uppercase"
+                                >
+                                    Kasnije
+                                </button>
+                            </div>
                         </div>
                     )}
                     {fokusObavjestenje?.notification && (

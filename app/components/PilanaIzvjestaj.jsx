@@ -83,22 +83,54 @@ export default function PilanaIzvjestaj({ data, datum, lokacija, smjena }) {
     );
   };
 
+  const handleSinglePagePrint = () => {
+    const el = document.querySelector('.print-izolacija');
+    if (!el) {
+      window.print();
+      return;
+    }
+    const prevZoom = el.style.zoom;
+    const prevMaxH = el.style.maxHeight;
+    const prevOverflow = el.style.overflow;
+    const h = el.scrollHeight;
+    const A4_PX = 1045;
+    if (h > A4_PX && h <= A4_PX * 1.65) {
+      const scale = Math.max(0.64, Math.floor((A4_PX / h) * 985) / 1000);
+      el.style.zoom = String(scale);
+      el.style.maxHeight = `${Math.floor(280 / scale)}mm`;
+      el.style.overflow = 'hidden';
+    }
+    const cleanup = () => {
+      el.style.zoom = prevZoom || '';
+      el.style.maxHeight = prevMaxH || '';
+      el.style.overflow = prevOverflow || '';
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(() => {
+      window.print();
+      setTimeout(cleanup, 1500);
+    }, 60);
+  };
+
   return (
     <>
-      {/* MAGIJA: CSS koji izoluje samo ovaj izvještaj prilikom printanja! */}
+      {/* MAGIJA: CSS koji izoluje samo ovaj izvještaj i garantuje 1 A4 stranicu prilikom printanja! */}
       <style>{`
         @media print {
           body * { visibility: hidden; }
           .print-izolacija, .print-izolacija * { visibility: visible; }
           .print-izolacija { 
             position: absolute; left: 0; top: 0; width: 100%; 
-            margin: 0 !important; padding: 0 !important; box-shadow: none !important;
+            min-height: auto !important;
+            margin: 0 !important; padding: 2mm !important; box-shadow: none !important;
+            page-break-after: avoid !important;
           }
-          @page { size: A4 portrait; margin: 10mm; }
+          @page { size: A4 portrait; margin: 7mm; }
         }
       `}</style>
 
-      <div className="print-izolacija bg-white text-black p-6 mx-auto max-w-[210mm] min-h-[297mm] shadow-2xl relative font-sans flex flex-col justify-between" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+      <div className="print-izolacija bg-white text-black p-5 mx-auto max-w-[210mm] min-h-[260mm] shadow-2xl relative font-sans flex flex-col justify-between" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
         
         <div>
           {/* 1. HEADER */}
@@ -229,8 +261,8 @@ export default function PilanaIzvjestaj({ data, datum, lokacija, smjena }) {
         
         {/* Print dugme - automatski se skriva pri printanju */}
         <div className="mt-8 text-center print:hidden">
-          <button onClick={() => window.print()} className="px-6 py-2.5 text-white font-bold rounded-xl shadow-lg hover:opacity-90" style={{ backgroundColor: limetaZelena }}>
-            🖨️ Isprintaj Dnevni Izvještaj
+          <button onClick={handleSinglePagePrint} className="px-6 py-2.5 text-white font-bold rounded-xl shadow-lg hover:opacity-90" style={{ backgroundColor: limetaZelena }}>
+            🖨️ Isprintaj Dnevni Izvještaj (1 A4 Stranica)
           </button>
         </div>
       </div>

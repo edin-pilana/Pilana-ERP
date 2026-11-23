@@ -121,7 +121,7 @@ export const uhvatiSmartChartSvgHtml = (chartId, naslov = '', podnaslov = '') =>
     const h = Math.max(180, Math.round(rect.height || 260));
     clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
     clone.setAttribute('width', '100%');
-    clone.setAttribute('height', `${Math.min(280, h)}px`);
+    clone.setAttribute('height', `${Math.min(205, h)}px`);
     clone.style.maxWidth = '100%';
     clone.style.display = 'block';
 
@@ -138,19 +138,19 @@ export const uhvatiSmartChartSvgHtml = (chartId, naslov = '', podnaslov = '') =>
         const txt = (li.textContent || '').trim();
         const iconPath = li.querySelector('path, rect, circle');
         const col = iconPath?.getAttribute('stroke') || iconPath?.getAttribute('fill') || '#3b82f6';
-        return txt ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:9px;font-weight:800;color:#334155;"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${escapeHtml(col)};"></span>${escapeHtml(txt)}</span>` : '';
+        return txt ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:800;color:#334155;"><span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${escapeHtml(col)};"></span>${escapeHtml(txt)}</span>` : '';
     }).filter(Boolean);
     const legendHtml = legendItems.length > 0
-        ? `<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;">${legendItems.join('')}</div>`
+        ? `<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:5px;padding-top:4px;border-top:1px solid #e2e8f0;">${legendItems.join('')}</div>`
         : '';
 
     const serializer = new XMLSerializer();
     const svgMarkup = serializer.serializeToString(clone);
 
     return `
-        <div style="border:1px solid #cbd5e1; border-radius:10px; padding:12px 14px; margin:14px 0; background:#ffffff; page-break-inside:avoid;">
-            ${naslov ? `<div style="font-size:11px; font-weight:900; text-transform:uppercase; color:#0f172a; margin-bottom:2px;">${escapeHtml(naslov)}</div>` : ''}
-            ${podnaslov ? `<div style="font-size:9px; color:#64748b; font-weight:700; margin-bottom:8px;">${escapeHtml(podnaslov)}</div>` : ''}
+        <div class="smartchart-print-box" style="border:1px solid #cbd5e1; border-radius:9px; padding:8px 10px; margin:8px 0; background:#ffffff; page-break-inside:avoid;">
+            ${naslov ? `<div style="font-size:10.5px; font-weight:900; text-transform:uppercase; color:#0f172a; margin-bottom:2px;">${escapeHtml(naslov)}</div>` : ''}
+            ${podnaslov ? `<div style="font-size:8.5px; color:#64748b; font-weight:700; margin-bottom:5px;">${escapeHtml(podnaslov)}</div>` : ''}
             <div style="width:100%; overflow:hidden;">${svgMarkup}</div>
             ${legendHtml}
         </div>

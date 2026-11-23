@@ -29,13 +29,14 @@ const fetchPrintSettings = async () => {
 // ==========================================
 // 1. STANDARDNI DOKUMENTI (NALOZI, PONUDE, RAČUNI...)
 // ==========================================
-export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6', totaliHtml = null) => {
+export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadrzajTabela, themeColor = '#3b82f6', totaliHtml = null, options = {}) => {
     const datumBhs = datum ? prikazDatumaBHS(datum) : prikazDatumaBHS(toLocalIso(new Date()));
     const htmlSadrzajBhs = formatirajHtmlBHS(htmlSadrzajTabela || '');
     const totaliBhs = totaliHtml ? formatirajHtmlBHS(totaliHtml) : null;
     const originalTitle = document.title;
     const nazivFajla = `${datumBhs} ${tipDokumenta} ${brojDokumenta}`;
-    document.title = nazivFajla; 
+    document.title = nazivFajla;
+    const autoFitSinglePage = options?.singlePage !== false;
 
     let trazenaLokacija = 'Svi PDF Dokumenti';
     if (tipDokumenta === 'PONUDA') trazenaLokacija = 'PDF Ponuda';
@@ -67,11 +68,105 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
     }
 
     const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
+    iframe.setAttribute('data-pilana-print-frame', 'true');
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
     document.body.appendChild(iframe);
 
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(brojDokumenta || '')}`;
-    const printSkripta = decodeURIComponent('%3Cscript%3Ewindow.onload%3Dfunction()%7BsetTimeout(function()%7Bwindow.print()%3B%7D%2C2000)%3B%7D%3B%3C%2Fscript%3E');
+    const autoFitFnBody = `
+        (function() {
+            var AUTO_FIT = ${autoFitSinglePage ? 'true' : 'false'};
+            var printed = false;
+
+            function izracunajJednuStranicu() {
+                var pc = document.querySelector('.page-container');
+                if (!pc) return;
+                if (!AUTO_FIT) {
+                    pc.setAttribute('data-fit-mode', 'multi-page');
+                    return;
+                }
+                // A4 visina na 96dpi je 1122.5px; koristimo 1108px kao sigurnu granicu bez prelaza na stranu 2
+                var A4_PX = 1108;
+                pc.style.zoom = '';
+                pc.style.width = '210mm';
+                pc.style.maxWidth = '210mm';
+                pc.classList.remove('fit-compact', 'single-page-locked');
+
+                var h1 = Math.ceil(pc.scrollHeight);
+                if (h1 <= A4_PX) {
+                    pc.classList.add('single-page-locked');
+                    pc.setAttribute('data-fit-mode', 'single-natural');
+                    pc.setAttribute('data-fit-scale', '1');
+                    pc.setAttribute('data-measured-height', String(h1));
+                    return;
+                }
+
+                // Korak 1: kompaktni raspored (bez umanjenja slova ispod čitljive granice)
+                pc.classList.add('fit-compact');
+                void pc.offsetHeight;
+                var h2 = Math.ceil(pc.scrollHeight);
+                if (h2 <= A4_PX) {
+                    pc.classList.add('single-page-locked');
+                    pc.setAttribute('data-fit-mode', 'single-compact');
+                    pc.setAttribute('data-fit-scale', '1');
+                    pc.setAttribute('data-measured-height', String(h2));
+                    return;
+                }
+
+                // Korak 2: precizno skaliranje za standardne izvještaje do ~1.65 stranice da stanu na tačno 1 A4 list pune širine
+                if (h2 <= A4_PX * 1.65) {
+                    var scale = Math.max(0.62, Math.floor((A4_PX / h2) * 985) / 1000);
+                    pc.style.width = (210 / scale).toFixed(2) + 'mm';
+                    pc.style.maxWidth = 'none';
+                    pc.style.zoom = String(scale);
+                    void pc.offsetHeight;
+                    var visualH = Math.ceil(pc.scrollHeight * scale);
+                    if (visualH > A4_PX && scale > 0.60) {
+                        var scale2 = Math.max(0.58, Math.floor((A4_PX / visualH) * scale * 985) / 1000);
+                        scale = scale2;
+                        pc.style.width = (210 / scale).toFixed(2) + 'mm';
+                        pc.style.zoom = String(scale);
+                        void pc.offsetHeight;
+                        visualH = Math.ceil(pc.scrollHeight * scale);
+                    }
+                    pc.style.height = (294.5 / scale).toFixed(2) + 'mm';
+                    pc.style.maxHeight = (294.5 / scale).toFixed(2) + 'mm';
+                    pc.style.overflow = 'hidden';
+                    pc.setAttribute('data-fit-mode', 'single-scaled');
+                    pc.setAttribute('data-fit-scale', String(scale));
+                    pc.setAttribute('data-measured-height', String(visualH));
+                    return;
+                }
+
+                // Vrlo dugi zbirni izvještaji (>1.65 stranice) ostaju čitljivi kroz više stranica sa ponavljajućim zaglavljem tabele
+                pc.setAttribute('data-fit-mode', 'multi-page');
+                pc.setAttribute('data-fit-scale', '1');
+                pc.setAttribute('data-measured-height', String(h2));
+            }
+
+            function pokreniPrint() {
+                if (printed) return;
+                printed = true;
+                try { izracunajJednuStranicu(); } catch (e) {}
+                setTimeout(function() {
+                    try { window.print(); } catch (e) {}
+                }, 180);
+            }
+
+            window.addEventListener('load', function() {
+                setTimeout(pokreniPrint, 700);
+            });
+            // Sigurnosni fallback ako vanjski QR/font kasni
+            setTimeout(pokreniPrint, 2200);
+        })();
+    `;
+    const printSkripta = '<scr' + 'ipt>' + autoFitFnBody + '</scr' + 'ipt>';
 
     const donjiDioHtml = totaliBhs ? `
         <div class="totals-section">
@@ -85,128 +180,143 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
             <title>${nazivFajla}</title>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-                @page { size: A4; margin: 0; }
+                @page { size: A4 portrait; margin: 0; }
+                html, body {
+                    padding: 0;
+                    margin: 0;
+                    background: #ffffff;
+                }
                 body { 
                     font-family: 'Inter', sans-serif; 
-                    padding: 0; 
-                    margin: 0; 
                     color: #1e293b; 
                     -webkit-print-color-adjust: exact; 
                     print-color-adjust: exact; 
                 }
                 .page-container { 
-                    padding: 20mm; 
-                    min-height: 297mm; 
+                    width: 210mm;
+                    max-width: 210mm;
+                    padding: 10mm 12mm 9mm 12mm; 
+                    min-height: auto; 
                     box-sizing: border-box;
                     display: flex; 
                     flex-direction: column; 
                     position: relative;
                 }
+                .page-container.single-page-locked {
+                    height: 294.5mm !important;
+                    max-height: 294.5mm !important;
+                    overflow: hidden !important;
+                    page-break-after: avoid !important;
+                    break-after: avoid !important;
+                }
                 .top-bar { 
                     position: absolute;
                     top: 0;
                     left: 0;
-                    height: 12px; 
+                    height: 8px; 
                     background-color: ${themeColor}; 
                     width: 100%; 
                 }
                 .full-width-banner {
                     width: 100%;
-                    margin-bottom: 8mm;
+                    margin-bottom: 4mm;
                     text-align: center;
                 }
                 .full-width-banner img {
                     width: 100%;
-                    max-height: 120px;
+                    max-height: 82px;
                     object-fit: contain;
                 }
                 .header { 
                     display: flex; 
                     justify-content: space-between; 
                     align-items: flex-start;
-                    padding-bottom: 5mm; 
+                    padding-bottom: 3.5mm; 
                     border-bottom: 2px solid #e2e8f0; 
-                    margin-bottom: 6mm; 
+                    margin-bottom: 4mm; 
                 }
-                .logo-area { display: flex; flex-direction: column; max-width: 70%; }
-                .company-name { font-size: 20px; font-weight: 900; color: #0f172a; }
+                .logo-area { display: flex; flex-direction: column; max-width: 74%; }
+                .company-name { font-size: 17px; font-weight: 900; color: #0f172a; }
                 .left-logo { 
-                    max-height: 70px; 
-                    max-width: 300px; 
+                    max-height: 52px; 
+                    max-width: 240px; 
                     object-fit: contain; 
-                    margin-bottom: 5px; 
+                    margin-bottom: 3px; 
                 }
-                .doc-title-area { margin-top: 15px; }
+                .doc-title-area { margin-top: 6px; }
                 .doc-title { 
-                    font-size: 32px; 
+                    font-size: 22px; 
                     font-weight: 900; 
                     color: ${themeColor}; 
                     text-transform: uppercase; 
                     margin: 0; 
-                    line-height: 1; 
+                    line-height: 1.05; 
                 }
-                .doc-subtitle { color: #64748b; font-size: 11px; font-weight: 600; margin-top: 4px; }
+                .doc-subtitle { color: #64748b; font-size: 10px; font-weight: 600; margin-top: 3px; }
                 .qr-wrapper { 
                     text-align: right; 
                     display: flex;
                     flex-direction: column;
                     align-items: flex-end;
                 }
-                .qr-wrapper img { width: 75px; height: 75px; margin-bottom: 3px; }
-                .qr-text { font-family: monospace; font-size: 9px; font-weight: 800; color: #475569; }
+                .qr-wrapper img { width: 58px; height: 58px; margin-bottom: 2px; }
+                .qr-text { font-family: monospace; font-size: 8.5px; font-weight: 800; color: #475569; }
                 .info-grid { 
                     display: flex; 
                     justify-content: space-between; 
                     background: #f8fafc; 
-                    padding: 4mm; 
-                    border-radius: 8px; 
+                    padding: 3mm 4mm; 
+                    border-radius: 7px; 
                     border: 1px solid #cbd5e1;
-                    border-left: 5px solid ${themeColor}; 
-                    margin-bottom: 6mm; 
+                    border-left: 4px solid ${themeColor}; 
+                    margin-bottom: 4mm; 
                 }
-                .info-col-left h4 { margin: 0 0 2px 0; font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 800; }
-                .info-col-left h2 { margin: 0 0 2px 0; font-size: 16px; color: #0f172a; font-weight: 900; text-transform: uppercase; }
-                .info-col-left p { margin: 0; font-size: 10px; color: #475569; line-height: 1.4; }
-                .info-col-right { text-align: right; font-size: 10px; color: #475569; display: flex; flex-direction: column; justify-content: center;}
+                .info-col-left h4 { margin: 0 0 2px 0; font-size: 8.5px; text-transform: uppercase; color: #64748b; font-weight: 800; }
+                .info-col-left h2 { margin: 0 0 2px 0; font-size: 14px; color: #0f172a; font-weight: 900; text-transform: uppercase; }
+                .info-col-left p { margin: 0; font-size: 9.5px; color: #475569; line-height: 1.35; }
+                .info-col-right { text-align: right; font-size: 9.5px; color: #475569; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+                .info-col-right p { margin: 0; }
                 .info-col-right b { color: #0f172a; font-weight: 800;}
                 table { 
                     width: 100%; 
                     border-collapse: collapse; 
-                    margin-top: 5px; 
-                    font-size: 10px; 
+                    margin-top: 4px; 
+                    font-size: 9.5px; 
                     page-break-inside: auto; 
                 }
+                thead { display: table-header-group; }
                 tr { page-break-inside: avoid; page-break-after: auto; }
                 th { 
                     background-color: ${themeColor}; 
                     color: white; 
-                    padding: 8px 6px; 
+                    padding: 5.5px 5px; 
                     text-transform: uppercase; 
-                    font-size: 9px; 
+                    font-size: 8.5px; 
                     font-weight: 800;
                     text-align: left; 
                 }
                 th.num { text-align: right; }
-                td { padding: 8px 6px; border-bottom: 1px solid #cbd5e1; color: #334155; vertical-align: top;}
-                td.num { text-align: right; font-weight: 800; font-size: 11px; color: #0f172a;}
-                .prod-sifra { font-size: 9px; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 2px;}
-                .prod-naziv { font-size: 12px; color: #0f172a; font-weight: 900; text-transform: uppercase; display: block;}
-                .prod-dim { font-size: 10px; color: #475569; font-weight: 600; display: block; margin-top: 2px;}
+                td { padding: 5px 5px; border-bottom: 1px solid #cbd5e1; color: #334155; vertical-align: top;}
+                td.num { text-align: right; font-weight: 800; font-size: 10px; color: #0f172a;}
+                .prod-sifra { font-size: 8.5px; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 1px;}
+                .prod-naziv { font-size: 10.5px; color: #0f172a; font-weight: 900; text-transform: uppercase; display: block;}
+                .prod-dim { font-size: 9px; color: #475569; font-weight: 600; display: block; margin-top: 1px;}
                 .totals-section {
                     display: flex;
                     justify-content: flex-end;
-                    margin-top: 6mm;
-                    padding-right: 6px;
+                    margin-top: 4mm;
+                    padding-right: 4px;
+                    page-break-inside: avoid;
                 }
                 .totals-table {
                     width: auto;
-                    min-width: 250px;
+                    min-width: 240px;
                     border-collapse: collapse;
                 }
                 .totals-table td {
-                    padding: 4px 0 4px 15px;
+                    padding: 3px 0 3px 14px;
                     border-bottom: none;
-                    font-size: 11px;
+                    font-size: 10px;
                 }
                 .totals-table td.lbl {
                     text-align: right;
@@ -219,9 +329,9 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                     font-weight: 800;
                 }
                 .totals-table tr.grand-total td {
-                    padding-top: 8px;
+                    padding-top: 6px;
                     border-top: 2px solid ${themeColor};
-                    font-size: 14px;
+                    font-size: 12.5px;
                     font-weight: 900;
                     text-transform: uppercase;
                 }
@@ -231,12 +341,42 @@ export const printDokument = async (tipDokumenta, brojDokumenta, datum, htmlSadr
                 .global-footer-custom { 
                     text-align: center; 
                     margin-top: auto;
-                    padding-top: 10px; 
+                    padding-top: 6px; 
                     border-top: 1px solid #e2e8f0; 
                     color: ${firmaInfo.footer_boja}; 
                     font-size: ${firmaInfo.footer_velicina}px; 
                     font-weight: 600; 
+                    page-break-inside: avoid;
                 }
+
+                /* Automatski kompaktni režim kada izvještaj malo prelazi 1 A4 stranicu */
+                .page-container.fit-compact {
+                    padding: 7.5mm 9.5mm 7mm 9.5mm;
+                }
+                .page-container.fit-compact .full-width-banner { margin-bottom: 2.5mm; }
+                .page-container.fit-compact .full-width-banner img { max-height: 62px; }
+                .page-container.fit-compact .header { padding-bottom: 2.5mm; margin-bottom: 3mm; }
+                .page-container.fit-compact .left-logo { max-height: 40px; }
+                .page-container.fit-compact .doc-title-area { margin-top: 3px; }
+                .page-container.fit-compact .doc-title { font-size: 18px; }
+                .page-container.fit-compact .doc-subtitle { font-size: 9px; }
+                .page-container.fit-compact .qr-wrapper img { width: 46px; height: 46px; }
+                .page-container.fit-compact .info-grid { padding: 2.2mm 3.2mm; margin-bottom: 3mm; }
+                .page-container.fit-compact .info-col-left h2 { font-size: 12.5px; }
+                .page-container.fit-compact .info-col-left p,
+                .page-container.fit-compact .info-col-right { font-size: 8.5px; }
+                .page-container.fit-compact table { font-size: 8.5px; margin-top: 3px; }
+                .page-container.fit-compact th { padding: 3.5px 4px !important; font-size: 7.8px !important; }
+                .page-container.fit-compact td { padding: 3px 4px !important; }
+                .page-container.fit-compact td.num { font-size: 8.8px !important; }
+                .page-container.fit-compact .prod-naziv { font-size: 9.5px; }
+                .page-container.fit-compact .totals-section { margin-top: 3mm; }
+                .page-container.fit-compact .totals-table td { padding: 2px 0 2px 10px !important; font-size: 9px; }
+                .page-container.fit-compact .totals-table tr.grand-total td { font-size: 11px; padding-top: 4px !important; }
+                .page-container.fit-compact svg { max-height: 165px !important; }
+                .page-container.fit-compact .smartchart-print-box { padding: 6px 8px !important; margin: 6px 0 !important; }
+                .page-container.fit-compact h2,
+                .page-container.fit-compact h3 { margin-top: 6px !important; margin-bottom: 4px !important; }
             </style>
         </head>
         <body>

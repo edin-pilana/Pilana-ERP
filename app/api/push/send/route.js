@@ -18,7 +18,7 @@ const VAPID_PRIVATE_KEY =
     process.env.VAPID_PRIVATE_KEY ||
     'yk7cC59MAOnvIYCTKL0aXsI5OqO1SShYem1U6Z9bJ34';
 
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@pilana-erp.local';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'https://pilana-erp.vercel.app';
 
 let cachedWebPush = null;
 async function getWebPush() {
@@ -31,6 +31,36 @@ async function getWebPush() {
 }
 
 const norm = (v) => String(v || '').trim().toLowerCase();
+
+export async function GET(request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const target = norm(searchParams.get('user'));
+        const { data } = await supabase
+            .from('ui_postavke')
+            .select('postavke_jsonb')
+            .eq('modul_ime', 'push_pretplate')
+            .maybeSingle();
+        const pretplate = (data?.postavke_jsonb && typeof data.postavke_jsonb === 'object') ? data.postavke_jsonb : {};
+        const entry = target
+            ? (pretplate[target] || Object.values(pretplate).find((e) => norm(e?.ime_prezime) === target || norm(e?.username) === target))
+            : null;
+        return NextResponse.json({
+            ok: true,
+            vapidReady: Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY),
+            vapidSubject: VAPID_SUBJECT,
+            totalSubscribedUsers: Object.keys(pretplate).length,
+            userDevices: entry
+                ? {
+                    desktop: entry.desktop?.label || null,
+                    mobile: entry.mobile?.label || null,
+                }
+                : null,
+        });
+    } catch (error) {
+        return NextResponse.json({ ok: false, error: error?.message || 'Status greška' }, { status: 500 });
+    }
+}
 
 export async function POST(request) {
     try {
@@ -116,6 +146,7 @@ export async function POST(request) {
         let sent = 0;
         let failed = 0;
         let pruned = false;
+        const errors = [];
 
         if (targets.length > 0) {
             const webpush = await getWebPush();
@@ -126,7 +157,12 @@ export async function POST(request) {
                         sent += 1;
                     } catch (err) {
                         failed += 1;
-                        const code = err?.statusCode;
+                        const code = err?.statusCode || null;
+                        errors.push({
+                            slot: t.slot,
+                            statusCode: code,
+                            message: err?.body || err?.message || 'Nepoznata push greška',
+                        });
                         if (code === 404 || code === 410) {
                             if (pretplate[t.userKey]?.[t.slot]) {
                                 delete pretplate[t.userKey][t.slot];
@@ -144,7 +180,14 @@ export async function POST(request) {
                 .upsert([{ modul_ime: 'push_pretplate', postavke_jsonb: pretplate }], { onConflict: 'modul_ime' });
         }
 
-        return NextResponse.json({ ok: true, sent, failed, totalTargets: targets.length });
+        return NextResponse.json({
+            ok: sent > 0 || targets.length === 0,
+            sent,
+            failed,
+            totalTargets: targets.length,
+            errors: errors.length > 0 ? errors : undefined,
+            error: failed > 0 && sent === 0 ? (errors[0]?.message || 'Slanje push poruke nije uspjelo.') : undefined,
+        });
     } catch (error) {
         return NextResponse.json({ ok: false, error: error?.message || 'Push server greška' }, { status: 500 });
     }
