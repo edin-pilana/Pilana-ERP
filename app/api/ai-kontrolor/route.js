@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../../utils/supabaseClient';
 
 const SYSTEM_INSTRUCTION = `Ti si vrhunski AI Direktorski Analitičar, Finansijski Kontrolor i Proizvodni Konsultant za pilanu i drvnu industriju (TTM Pilana-ERP).
 Komuniciraš prirodno, inteligentno, konkretno i direktno na bosanskom/hrvatskom jeziku — baš kao elitni lični savjetnik direktora (u stilu Antigravity asistenta).
@@ -20,7 +21,7 @@ STRIKTNA PRAVILA TAČNOSTI I FORMATIRANJA:
    - Udjeli (troškovi po kategoriji, status ponuda/reklamacija) → "donut"
 7. Odgovor MORA biti ISKLJUČIVO validan JSON objekat (bez ikakvog teksta prije/poslije) ove šeme:
 {
-  "naslov": "Jasan naslov izvještaja (npr. Analiza Profitabilnosti i Marži — Novembar 2026)",
+  "naslov": "Jasan naslov izvještaja",
   "odgovor": "Bogat konverzacijski odgovor u Markdownu (### podnaslovi, **podebljani brojevi**, - liste). Prirodan, pametan i bez suhoparnog ponavljanja tabele.",
   "kpi": [
     { "label": "Naziv metrike", "value": "12.450,00 KM", "sub": "kratki kontekst ili +14,2% vs prošli mj.", "color": "emerald|blue|amber|red|purple" }
@@ -56,24 +57,91 @@ STRIKTNA PRAVILA TAČNOSTI I FORMATIRANJA:
 }
 Ako korisnik samo kratko pozdravi ili postavi jednostavno pitanje bez potrebe za grafikonima/tabelom, stavi "chart": null i "tabela": null, ali "odgovor" i "predlozi" uvijek popuni.`;
 
+let dbConfigCache = null;
+let dbConfigFetchedAt = 0;
+
+async function ucitajDbAiConfig(force = false) {
+    const now = Date.now();
+    if (!force && dbConfigCache && now - dbConfigFetchedAt < 45000) {
+        return dbConfigCache;
+    }
+    try {
+        const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/ui_postavke?modul_ime=eq.ai_kontrolor_config&select=postavke_jsonb`,
+            {
+                headers: {
+                    apikey: SUPABASE_ANON_KEY,
+                    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                cache: 'no-store',
+            }
+        );
+        if (!res.ok) return dbConfigCache || {};
+        const rows = await res.json();
+        const cfg = Array.isArray(rows) && rows[0]?.postavke_jsonb ? rows[0].postavke_jsonb : {};
+        dbConfigCache = cfg;
+        dbConfigFetchedAt = now;
+        return cfg;
+    } catch (e) {
+        return dbConfigCache || {};
+    }
+}
+
 function detectProvider(apiKey) {
     const k = String(apiKey || '').trim();
     if (!k) return null;
-    if (k.startsWith('AIza')) return 'gemini';
     if (k.startsWith('gsk_')) return 'groq';
+    if (k.startsWith('AIza') || k.startsWith('AQ.')) return 'gemini';
     if (k.startsWith('sk-ant-')) return 'anthropic';
     if (k.startsWith('sk-or-')) return 'openrouter';
     if (k.startsWith('sk-')) return 'openai';
     return 'gemini';
 }
 
-function resolveServerKey() {
-    if (process.env.GEMINI_API_KEY) return { key: process.env.GEMINI_API_KEY.trim(), provider: 'gemini' };
-    if (process.env.GROQ_API_KEY) return { key: process.env.GROQ_API_KEY.trim(), provider: 'groq' };
-    if (process.env.OPENAI_API_KEY) return { key: process.env.OPENAI_API_KEY.trim(), provider: 'openai' };
-    if (process.env.ANTHROPIC_API_KEY) return { key: process.env.ANTHROPIC_API_KEY.trim(), provider: 'anthropic' };
-    if (process.env.OPENROUTER_API_KEY) return { key: process.env.OPENROUTER_API_KEY.trim(), provider: 'openrouter' };
-    return { key: '', provider: null };
+async function resolveAllKeys(body = {}, forceDb = false) {
+    const dbCfg = await ucitajDbAiConfig(forceDb);
+
+    let groqKey = String(body.groqKey || '').trim();
+    let geminiKey = String(body.geminiKey || '').trim();
+    let openaiKey = '';
+    let anthropicKey = '';
+    let openrouterKey = '';
+
+    // Ako je korisnik poslao jedan generički apiKey, razvrstaj ga po prefiksu
+    const singleKey = String(body.apiKey || '').trim();
+    if (singleKey) {
+        const p = detectProvider(singleKey);
+        if (p === 'groq' && !groqKey) groqKey = singleKey;
+        else if (p === 'gemini' && !geminiKey) geminiKey = singleKey;
+        else if (p === 'openai') openaiKey = singleKey;
+        else if (p === 'anthropic') anthropicKey = singleKey;
+        else if (p === 'openrouter') openrouterKey = singleKey;
+    }
+
+    // Popuni iz env varijabli i iz Supabase ui_postavke (nikad hardkodirano u git!)
+    if (!groqKey) groqKey = String(process.env.GROQ_API_KEY || dbCfg.groqKey || '').trim();
+    if (!geminiKey) geminiKey = String(process.env.GEMINI_API_KEY || dbCfg.geminiKey || '').trim();
+    if (!openaiKey) openaiKey = String(process.env.OPENAI_API_KEY || '').trim();
+    if (!anthropicKey) anthropicKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    if (!openrouterKey) openrouterKey = String(process.env.OPENROUTER_API_KEY || '').trim();
+
+    if (dbCfg.apiKey) {
+        const p = detectProvider(dbCfg.apiKey);
+        if (p === 'groq' && !groqKey) groqKey = String(dbCfg.apiKey).trim();
+        if (p === 'gemini' && !geminiKey) geminiKey = String(dbCfg.apiKey).trim();
+        if (p === 'openai' && !openaiKey) openaiKey = String(dbCfg.apiKey).trim();
+        if (p === 'anthropic' && !anthropicKey) anthropicKey = String(dbCfg.apiKey).trim();
+        if (p === 'openrouter' && !openrouterKey) openrouterKey = String(dbCfg.apiKey).trim();
+    }
+
+    return {
+        groqKey,
+        geminiKey,
+        openaiKey,
+        anthropicKey,
+        openrouterKey,
+        savedModel: String(dbCfg.model || '').trim(),
+    };
 }
 
 function parseJsonSafe(rawText) {
@@ -161,129 +229,200 @@ function sanitizeResponsePayload(parsed) {
     };
 }
 
+async function fetchWithTimeout(url, options, timeoutMs = 14000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function callGroq({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
+    const candidates = Array.from(new Set([
+        ...(requestedModel && (requestedModel.startsWith('openai/gpt-oss') || requestedModel.startsWith('qwen/')) ? [requestedModel] : []),
+        'openai/gpt-oss-120b',
+        'qwen/qwen3.8-27b',
+        'openai/gpt-oss-20b',
+    ]));
+
+    let lastErr = 'GROQ_UNAVAILABLE';
+    for (const model of candidates) {
+        try {
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                ...history.map((h) => ({
+                    role: h.role === 'user' ? 'user' : 'assistant',
+                    content: String(h.text || '').slice(0, 1600),
+                })),
+                { role: 'user', content: userPrompt },
+            ];
+
+            const resp = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                    model,
+                    temperature: 0.25,
+                    response_format: { type: 'json_object' },
+                    messages,
+                }),
+            }, 18000);
+
+            if (resp.ok) {
+                const json = await resp.json();
+                const rawText = json?.choices?.[0]?.message?.content || '';
+                if (rawText.trim()) return { ok: true, provider: 'groq', model, rawText };
+            } else {
+                const errTxt = await resp.text().catch(() => '');
+                lastErr = `GROQ_${resp.status}: ${errTxt.slice(0, 160)}`;
+                if (resp.status === 401 || resp.status === 403) break;
+            }
+        } catch (e) {
+            lastErr = `GROQ_ERR: ${e?.name === 'AbortError' ? 'TIMEOUT' : e?.message}`;
+        }
+    }
+    return { ok: false, provider: 'groq', error: lastErr };
+}
+
 async function callGemini({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
     const candidates = Array.from(new Set([
         ...(requestedModel && requestedModel.startsWith('gemini-') ? [requestedModel] : []),
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-1.5-flash',
+        'gemini-3.8-flash',
+        'gemini-3.7-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-flash-latest',
     ]));
 
     let lastErr = 'GEMINI_UNAVAILABLE';
     for (const model of candidates) {
-        const contents = [
-            ...history.map((h) => ({
-                role: h.role === 'user' ? 'user' : 'model',
-                parts: [{ text: String(h.text || '').slice(0, 1800) }],
-            })),
-            { role: 'user', parts: [{ text: userPrompt }] },
-        ];
+        try {
+            const contents = [
+                ...history.map((h) => ({
+                    role: h.role === 'user' ? 'user' : 'model',
+                    parts: [{ text: String(h.text || '').slice(0, 1600) }],
+                })),
+                { role: 'user', parts: [{ text: userPrompt }] },
+            ];
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                contents,
-                generationConfig: {
-                    temperature: 0.25,
-                    responseMimeType: 'application/json',
-                },
-            }),
-        });
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+            const resp = await fetchWithTimeout(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    contents,
+                    generationConfig: {
+                        temperature: 0.25,
+                        responseMimeType: 'application/json',
+                    },
+                }),
+            }, 10000);
 
-        if (resp.ok) {
-            const json = await resp.json();
-            const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            return { ok: true, model, rawText };
-        }
-
-        const errTxt = await resp.text().catch(() => '');
-        lastErr = `GEMINI_${resp.status}: ${errTxt.slice(0, 180)}`;
-        // Ako je nevažeći API ključ (400 API_KEY_INVALID ili 401/403), nema smisla pokušavati druge modele
-        if (resp.status === 401 || resp.status === 403 || errTxt.includes('API_KEY_INVALID')) {
-            break;
+            if (resp.ok) {
+                const json = await resp.json();
+                const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (rawText.trim()) return { ok: true, provider: 'gemini', model, rawText };
+            } else {
+                const errTxt = await resp.text().catch(() => '');
+                lastErr = `GEMINI_${resp.status}: ${errTxt.slice(0, 160)}`;
+                if (resp.status === 401 || resp.status === 403 || errTxt.includes('API_KEY_INVALID')) break;
+            }
+        } catch (e) {
+            lastErr = `GEMINI_ERR: ${e?.name === 'AbortError' ? 'TIMEOUT' : e?.message}`;
         }
     }
-    return { ok: false, error: lastErr };
+    return { ok: false, provider: 'gemini', error: lastErr };
 }
 
-async function callOpenAICompatible({ endpoint, apiKey, model, systemPrompt, history, userPrompt, extraHeaders = {} }) {
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        ...history.map((h) => ({
-            role: h.role === 'user' ? 'user' : 'assistant',
-            content: String(h.text || '').slice(0, 1800),
-        })),
-        { role: 'user', content: userPrompt },
-    ];
-
-    const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-            ...extraHeaders,
-        },
-        body: JSON.stringify({
-            model,
-            temperature: 0.25,
-            response_format: { type: 'json_object' },
-            messages,
-        }),
-    });
-
-    if (!resp.ok) {
-        const errTxt = await resp.text().catch(() => '');
-        return { ok: false, error: `HTTP_${resp.status}: ${errTxt.slice(0, 180)}` };
+async function callOpenAICompatible({ endpoint, provider, apiKey, model, systemPrompt, history, userPrompt, extraHeaders = {} }) {
+    try {
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            ...history.map((h) => ({
+                role: h.role === 'user' ? 'user' : 'assistant',
+                content: String(h.text || '').slice(0, 1600),
+            })),
+            { role: 'user', content: userPrompt },
+        ];
+        const resp = await fetchWithTimeout(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+                ...extraHeaders,
+            },
+            body: JSON.stringify({
+                model,
+                temperature: 0.25,
+                response_format: { type: 'json_object' },
+                messages,
+            }),
+        }, 18000);
+        if (!resp.ok) {
+            const errTxt = await resp.text().catch(() => '');
+            return { ok: false, provider, error: `HTTP_${resp.status}: ${errTxt.slice(0, 160)}` };
+        }
+        const json = await resp.json();
+        const rawText = json?.choices?.[0]?.message?.content || '';
+        return { ok: true, provider, model, rawText };
+    } catch (e) {
+        return { ok: false, provider, error: String(e?.message || e) };
     }
-    const json = await resp.json();
-    const rawText = json?.choices?.[0]?.message?.content || '';
-    return { ok: true, model, rawText };
 }
 
 async function callAnthropic({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
-    const model = requestedModel && requestedModel.startsWith('claude-') ? requestedModel : 'claude-sonnet-4-20250514';
-    const messages = [
-        ...history.map((h) => ({
-            role: h.role === 'user' ? 'user' : 'assistant',
-            content: String(h.text || '').slice(0, 1800),
-        })),
-        { role: 'user', content: userPrompt },
-    ];
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-            model,
-            max_tokens: 4096,
-            temperature: 0.25,
-            system: systemPrompt,
-            messages,
-        }),
-    });
-
-    if (!resp.ok) {
-        const errTxt = await resp.text().catch(() => '');
-        return { ok: false, error: `CLAUDE_${resp.status}: ${errTxt.slice(0, 180)}` };
+    try {
+        const model = requestedModel && requestedModel.startsWith('claude-') ? requestedModel : 'claude-sonnet-4-20250514';
+        const messages = [
+            ...history.map((h) => ({
+                role: h.role === 'user' ? 'user' : 'assistant',
+                content: String(h.text || '').slice(0, 1600),
+            })),
+            { role: 'user', content: userPrompt },
+        ];
+        const resp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({ model, max_tokens: 4096, temperature: 0.25, system: systemPrompt, messages }),
+        }, 20000);
+        if (!resp.ok) {
+            const errTxt = await resp.text().catch(() => '');
+            return { ok: false, provider: 'anthropic', error: `CLAUDE_${resp.status}: ${errTxt.slice(0, 160)}` };
+        }
+        const json = await resp.json();
+        return { ok: true, provider: 'anthropic', model, rawText: json?.content?.[0]?.text || '' };
+    } catch (e) {
+        return { ok: false, provider: 'anthropic', error: String(e?.message || e) };
     }
-    const json = await resp.json();
-    const rawText = json?.content?.[0]?.text || '';
-    return { ok: true, model, rawText };
 }
 
 export async function GET() {
-    const srv = resolveServerKey();
+    const keys = await resolveAllKeys({}, true);
+    const hasGroq = Boolean(keys.groqKey);
+    const hasGemini = Boolean(keys.geminiKey);
+    const hasOpenai = Boolean(keys.openaiKey);
+    const hasAnthropic = Boolean(keys.anthropicKey);
+    const hasOpenrouter = Boolean(keys.openrouterKey);
+    const hasAny = hasGroq || hasGemini || hasOpenai || hasAnthropic || hasOpenrouter;
+
+    const primary = hasGroq ? 'groq' : (hasGemini ? 'gemini' : (hasOpenai ? 'openai' : (hasAnthropic ? 'anthropic' : (hasOpenrouter ? 'openrouter' : null))));
     return NextResponse.json({
-        hasServerKey: Boolean(srv.key),
-        serverProvider: srv.provider,
+        hasServerKey: hasAny,
+        hasGroq,
+        hasGemini,
+        serverProvider: primary,
+        defaultModel: keys.savedModel || (hasGroq ? 'openai/gpt-oss-120b' : (hasGemini ? 'gemini-3.8-flash' : '')),
     });
 }
 
@@ -292,39 +431,43 @@ export async function POST(request) {
         const body = await request.json();
         const action = String(body?.action || 'chat');
         const message = String(body?.message || '').trim();
-        const history = Array.isArray(body?.history) ? body.history.slice(-12) : [];
+        const history = Array.isArray(body?.history) ? body.history.slice(-10) : [];
         const erpContext = body?.erpContext || {};
-        const userKey = String(body?.apiKey || '').trim();
         const requestedModel = String(body?.model || '').trim();
 
-        const serverFallback = resolveServerKey();
-        const effectiveKey = userKey || serverFallback.key;
-        if (!effectiveKey) {
+        const keys = await resolveAllKeys(body, action === 'test');
+        const hasAnyKey = Boolean(keys.groqKey || keys.geminiKey || keys.openaiKey || keys.anthropicKey || keys.openrouterKey);
+
+        if (!hasAnyKey) {
             return NextResponse.json({ ok: false, mode: 'local', reason: 'NO_API_KEY' }, { status: 200 });
         }
 
-        const provider = userKey ? detectProvider(userKey) : serverFallback.provider;
-
-        // Ping / Test mode za dugme "⚡ Testiraj Ključ"
+        // Test akcija: provjerava sve dostupne ključeve uživo!
         if (action === 'test') {
             const testPrompt = 'Vrati JSON: {"naslov":"Test","odgovor":"Veza aktivna.","kpi":[],"chart":null,"tabela":null,"predlozi":[]}';
-            let res;
-            if (provider === 'gemini') {
-                res = await callGemini({ apiKey: effectiveKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
-            } else if (provider === 'groq') {
-                res = await callOpenAICompatible({ endpoint: 'https://api.groq.com/openai/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.startsWith('llama-') ? requestedModel : 'llama-3.3-70b-versatile', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
-            } else if (provider === 'anthropic') {
-                res = await callAnthropic({ apiKey: effectiveKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
-            } else if (provider === 'openrouter') {
-                res = await callOpenAICompatible({ endpoint: 'https://openrouter.ai/api/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.includes('/') ? requestedModel : 'google/gemini-2.5-flash', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
-            } else {
-                res = await callOpenAICompatible({ endpoint: 'https://api.openai.com/v1/chat/completions', apiKey: effectiveKey, model: requestedModel.startsWith('gpt-') ? requestedModel : 'gpt-4o-mini', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+            const results = [];
+            if (keys.groqKey) {
+                const t0 = Date.now();
+                const r = await callGroq({ apiKey: keys.groqKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+                results.push({ provider: 'groq', ok: r.ok, model: r.model, ms: Date.now() - t0, error: r.error || null });
             }
+            if (keys.geminiKey) {
+                const t0 = Date.now();
+                const r = await callGemini({ apiKey: keys.geminiKey, requestedModel, systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+                results.push({ provider: 'gemini', ok: r.ok, model: r.model, ms: Date.now() - t0, error: r.error || null });
+            }
+            if (keys.openaiKey) {
+                const t0 = Date.now();
+                const r = await callOpenAICompatible({ endpoint: 'https://api.openai.com/v1/chat/completions', provider: 'openai', apiKey: keys.openaiKey, model: requestedModel.startsWith('gpt-') ? requestedModel : 'gpt-4o-mini', systemPrompt: 'Vrati isključivo validan JSON.', history: [], userPrompt: testPrompt });
+                results.push({ provider: 'openai', ok: r.ok, model: r.model, ms: Date.now() - t0, error: r.error || null });
+            }
+            const firstOk = results.find((x) => x.ok);
             return NextResponse.json({
-                ok: res.ok,
-                provider,
-                model: res.model || requestedModel,
-                error: res.ok ? null : res.error,
+                ok: Boolean(firstOk),
+                provider: firstOk?.provider || results[0]?.provider || null,
+                model: firstOk?.model || requestedModel,
+                results,
+                error: firstOk ? null : (results.map((r) => `${r.provider}: ${r.error}`).join(' | ') || 'FAILED'),
             }, { status: 200 });
         }
 
@@ -332,59 +475,64 @@ export async function POST(request) {
             return NextResponse.json({ ok: false, mode: 'local', reason: 'EMPTY_MESSAGE' }, { status: 200 });
         }
 
+        const tStart = Date.now();
         const contextBlock = `TRENUTNI PODACI IZ PILANA-ERP BAZE (JSON):\n${JSON.stringify(erpContext)}`;
         const userPrompt = `${contextBlock}\n\nPITANJE DIREKTORA / KORISNIKA:\n${message}`;
 
-        let llmRes;
-        if (provider === 'gemini') {
-            llmRes = await callGemini({ apiKey: effectiveKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
-        } else if (provider === 'groq') {
-            const groqModel = requestedModel.startsWith('llama-') || requestedModel.startsWith('qwen') ? requestedModel : 'llama-3.3-70b-versatile';
-            llmRes = await callOpenAICompatible({
-                endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-                apiKey: effectiveKey,
-                model: groqModel,
-                systemPrompt: SYSTEM_INSTRUCTION,
-                history,
-                userPrompt,
-            });
-        } else if (provider === 'anthropic') {
-            llmRes = await callAnthropic({ apiKey: effectiveKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
-        } else if (provider === 'openrouter') {
-            const orModel = requestedModel.includes('/') ? requestedModel : 'google/gemini-2.5-flash';
-            llmRes = await callOpenAICompatible({
-                endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-                apiKey: effectiveKey,
-                model: orModel,
-                systemPrompt: SYSTEM_INSTRUCTION,
-                history,
-                userPrompt,
-                extraHeaders: { 'HTTP-Referer': 'https://pilana-erp.vercel.app', 'X-Title': 'Pilana-ERP AI Kontrolor' },
-            });
-        } else {
-            const openaiModel = requestedModel.startsWith('gpt-') || requestedModel.startsWith('o3') || requestedModel.startsWith('o4') ? requestedModel : 'gpt-4o-mini';
-            llmRes = await callOpenAICompatible({
-                endpoint: 'https://api.openai.com/v1/chat/completions',
-                apiKey: effectiveKey,
-                model: openaiModel,
-                systemPrompt: SYSTEM_INSTRUCTION,
-                history,
-                userPrompt,
-            });
+        // Odredi redoslijed provajdera sa automatskim failoverom!
+        const wantsGeminiFirst = requestedModel.startsWith('gemini-');
+        const wantsOpenaiFirst = requestedModel.startsWith('gpt-');
+        const wantsClaudeFirst = requestedModel.startsWith('claude-');
+
+        const queue = [];
+        if (wantsGeminiFirst && keys.geminiKey) queue.push('gemini');
+        if (wantsOpenaiFirst && keys.openaiKey) queue.push('openai');
+        if (wantsClaudeFirst && keys.anthropicKey) queue.push('anthropic');
+
+        // Default primarni je Groq (openai/gpt-oss-120b — ultra-brz 0.4s!), pa Gemini, pa ostali
+        if (keys.groqKey && !queue.includes('groq')) queue.push('groq');
+        if (keys.geminiKey && !queue.includes('gemini')) queue.push('gemini');
+        if (keys.openaiKey && !queue.includes('openai')) queue.push('openai');
+        if (keys.anthropicKey && !queue.includes('anthropic')) queue.push('anthropic');
+        if (keys.openrouterKey && !queue.includes('openrouter')) queue.push('openrouter');
+
+        let llmRes = null;
+        const errors = [];
+
+        for (const prov of queue) {
+            let attempt;
+            if (prov === 'groq') {
+                attempt = await callGroq({ apiKey: keys.groqKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+            } else if (prov === 'gemini') {
+                attempt = await callGemini({ apiKey: keys.geminiKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+            } else if (prov === 'openai') {
+                attempt = await callOpenAICompatible({ endpoint: 'https://api.openai.com/v1/chat/completions', provider: 'openai', apiKey: keys.openaiKey, model: requestedModel.startsWith('gpt-') ? requestedModel : 'gpt-4o-mini', systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+            } else if (prov === 'anthropic') {
+                attempt = await callAnthropic({ apiKey: keys.anthropicKey, requestedModel, systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt });
+            } else if (prov === 'openrouter') {
+                attempt = await callOpenAICompatible({ endpoint: 'https://openrouter.ai/api/v1/chat/completions', provider: 'openrouter', apiKey: keys.openrouterKey, model: requestedModel.includes('/') ? requestedModel : 'google/gemini-3.8-flash', systemPrompt: SYSTEM_INSTRUCTION, history, userPrompt, extraHeaders: { 'HTTP-Referer': 'https://pilana-erp.vercel.app', 'X-Title': 'Pilana-ERP AI Kontrolor' } });
+            }
+
+            if (attempt?.ok) {
+                llmRes = attempt;
+                break;
+            }
+            if (attempt?.error) errors.push(attempt.error);
         }
 
-        if (!llmRes.ok) {
-            return NextResponse.json({ ok: false, mode: 'local', reason: llmRes.error || 'LLM_FAILED' }, { status: 200 });
+        if (!llmRes?.ok) {
+            return NextResponse.json({ ok: false, mode: 'local', reason: errors.join(' | ') || 'LLM_FAILED' }, { status: 200 });
         }
 
+        const elapsedMs = Date.now() - tStart;
         const parsed = sanitizeResponsePayload(parseJsonSafe(llmRes.rawText));
         if (!parsed) {
-            // Ako model vrati običan tekst umjesto JSON-a, sačuvaj taj moćan tekst umjesto da ga baciš!
             if (llmRes.rawText && llmRes.rawText.trim().length > 20) {
                 return NextResponse.json({
                     ok: true,
-                    mode: provider,
+                    mode: llmRes.provider,
                     model: llmRes.model,
+                    ms: elapsedMs,
                     data: {
                         naslov: 'AI ERP Analiza',
                         odgovor: llmRes.rawText.trim(),
@@ -398,7 +546,13 @@ export async function POST(request) {
             return NextResponse.json({ ok: false, mode: 'local', reason: 'INVALID_JSON' }, { status: 200 });
         }
 
-        return NextResponse.json({ ok: true, mode: provider, model: llmRes.model, data: parsed }, { status: 200 });
+        return NextResponse.json({
+            ok: true,
+            mode: llmRes.provider,
+            model: llmRes.model,
+            ms: elapsedMs,
+            data: parsed,
+        }, { status: 200 });
     } catch (err) {
         return NextResponse.json({ ok: false, mode: 'local', reason: 'SERVER_ERROR', detail: String(err?.message || err) }, { status: 200 });
     }

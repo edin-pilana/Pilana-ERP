@@ -54,14 +54,17 @@ const WELCOME_MSG = {
     ],
 };
 
-function detectProviderLabel(key, model, serverProvider) {
+function detectProviderLabel(key, model, serverStatus) {
     const k = String(key || '').trim();
     if (!k) {
-        if (serverProvider) return `Server AI (${serverProvider.toUpperCase()})`;
+        if (serverStatus?.hasGroq && serverStatus?.hasGemini) return `Dual AI: Groq 120B + Gemini`;
+        if (serverStatus?.hasGroq) return `Groq (${model || 'gpt-oss-120b'})`;
+        if (serverStatus?.hasGemini) return `Gemini (${model || 'gemini-3.8-flash'})`;
+        if (serverStatus?.serverProvider) return `Server AI (${serverStatus.serverProvider.toUpperCase()})`;
         return 'Ugrađeni ERP AI Motor';
     }
-    if (k.startsWith('AIza')) return `Gemini (${model || 'gemini-2.5-flash'})`;
-    if (k.startsWith('gsk_')) return 'Groq Llama 3.3 70B';
+    if (k.startsWith('gsk_')) return `Groq (${model || 'gpt-oss-120b'})`;
+    if (k.startsWith('AIza') || k.startsWith('AQ.')) return `Gemini (${model || 'gemini-3.8-flash'})`;
     if (k.startsWith('sk-ant-')) return 'Anthropic Claude';
     if (k.startsWith('sk-or-')) return 'OpenRouter AI';
     if (k.startsWith('sk-')) return `OpenAI (${model || 'gpt-4o-mini'})`;
@@ -130,8 +133,8 @@ export default function TabAiAnalitika({ saas, user }) {
     const [bezQaTesta, setBezQaTesta] = useState(true);
     const [showConfig, setShowConfig] = useState(false);
     const [apiKey, setApiKey] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_gemini_key') || '' : ''));
-    const [modelName, setModelName] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_ai_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash'));
-    const [serverStatus, setServerStatus] = useState({ hasServerKey: false, serverProvider: null });
+    const [modelName, setModelName] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('erp_ai_model') || 'openai/gpt-oss-120b' : 'openai/gpt-oss-120b'));
+    const [serverStatus, setServerStatus] = useState({ hasServerKey: false, hasGroq: false, hasGemini: false, serverProvider: null });
     const [savingKey, setSavingKey] = useState(false);
     const [testingKey, setTestingKey] = useState(false);
     const [testResult, setTestResult] = useState(null);
@@ -158,7 +161,15 @@ export default function TabAiAnalitika({ saas, user }) {
                 ]);
                 if (cancelled) return;
                 if (srvRes?.hasServerKey) {
-                    setServerStatus({ hasServerKey: true, serverProvider: srvRes.serverProvider || 'gemini' });
+                    setServerStatus({
+                        hasServerKey: true,
+                        hasGroq: Boolean(srvRes.hasGroq),
+                        hasGemini: Boolean(srvRes.hasGemini),
+                        serverProvider: srvRes.serverProvider || 'groq',
+                    });
+                    if (srvRes.defaultModel && !localStorage.getItem('erp_ai_model')) {
+                        setModelName(srvRes.defaultModel);
+                    }
                 }
                 const cfg = dbRes?.data?.postavke_jsonb;
                 if (cfg?.apiKey && !localStorage.getItem('erp_gemini_key')) {
@@ -249,7 +260,10 @@ export default function TabAiAnalitika({ saas, user }) {
             });
             const data = await resp.json();
             if (data.ok) {
-                setTestResult({ ok: true, msg: `Veza uspješna! Aktivni provajder: ${String(data.provider || '').toUpperCase()} (${data.model})` });
+                const det = Array.isArray(data.results)
+                    ? data.results.map((r) => `${r.provider.toUpperCase()}: ${r.ok ? `✅ ${r.model} (${r.ms}ms)` : `⚠️ ${r.error?.slice(0, 60)}`}`).join('  |  ')
+                    : `${String(data.provider || '').toUpperCase()} (${data.model})`;
+                setTestResult({ ok: true, msg: `Veza uspješna! ${det}` });
                 toast.success(`AI API veza uspješna (${data.model})!`);
             } else {
                 setTestResult({ ok: false, msg: `Greška provjere: ${data.error || 'Nevažeći API ključ ili ograničena kvota'}` });
@@ -272,9 +286,21 @@ export default function TabAiAnalitika({ saas, user }) {
         if (saveToCloud && isAdmin) {
             setSavingKey(true);
             try {
+                const { data: existing } = await supabase
+                    .from('ui_postavke')
+                    .select('postavke_jsonb')
+                    .eq('modul_ime', AI_CONFIG_KEY)
+                    .maybeSingle();
+                const prevCfg = existing?.postavke_jsonb || {};
+                const nextCfg = { ...prevCfg, model: modelName, updated_at: new Date().toISOString() };
+                if (cleanKey) {
+                    if (cleanKey.startsWith('gsk_')) nextCfg.groqKey = cleanKey;
+                    else if (cleanKey.startsWith('AIza') || cleanKey.startsWith('AQ.')) nextCfg.geminiKey = cleanKey;
+                    else nextCfg.apiKey = cleanKey;
+                }
                 const { error } = await supabase
                     .from('ui_postavke')
-                    .upsert([{ modul_ime: AI_CONFIG_KEY, postavke_jsonb: { apiKey: cleanKey, model: modelName, updated_at: new Date().toISOString() } }], { onConflict: 'modul_ime' });
+                    .upsert([{ modul_ime: AI_CONFIG_KEY, postavke_jsonb: nextCfg }], { onConflict: 'modul_ime' });
                 if (error) toast.error('Greška pri spremanju u bazu: ' + error.message);
                 else toast.success('AI API konfiguracija sačuvana za cijelu firmu!');
             } finally {
@@ -480,7 +506,7 @@ export default function TabAiAnalitika({ saas, user }) {
 
     const bojaAkcenta = saas?.ui?.boja_akcenta || '#3b82f6';
     const hasLlm = Boolean(apiKey.trim()) || serverStatus.hasServerKey;
-    const providerLabel = detectProviderLabel(apiKey, modelName, serverStatus.serverProvider);
+    const providerLabel = detectProviderLabel(apiKey, modelName, serverStatus);
 
     return (
         <div
@@ -591,10 +617,11 @@ export default function TabAiAnalitika({ saas, user }) {
                             onChange={(e) => setModelName(e.target.value)}
                             className="px-3 py-2.5 bg-theme-card border border-theme-border rounded-xl text-xs font-black text-theme-text outline-none"
                         >
-                            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Preporučeno)</option>
-                            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Najdublja analiza)</option>
-                            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                            <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B (Ultra-brz)</option>
+                            <option value="openai/gpt-oss-120b">Groq GPT-OSS 120B (Najbrži & Najjači — Preporučeno)</option>
+                            <option value="qwen/qwen3.8-27b">Groq Qwen 3.8 27B (Ultra-brz)</option>
+                            <option value="gemini-3.8-flash">Google Gemini 3.8 Flash</option>
+                            <option value="gemini-3.7-flash">Google Gemini 3.7 Flash</option>
+                            <option value="gemini-3.1-flash-lite">Google Gemini 3.1 Flash Lite</option>
                             <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
                             <option value="gpt-4o">OpenAI GPT-4o</option>
                             <option value="claude-sonnet-4-20250514">Anthropic Claude Sonnet 4</option>
