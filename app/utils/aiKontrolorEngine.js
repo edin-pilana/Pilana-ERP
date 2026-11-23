@@ -349,19 +349,116 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
         .map(([kategorija, iznos]) => ({ kategorija, iznos: parseFloat(iznos.toFixed(2)) }))
         .sort((a, b) => b.iznos - a.iznos);
 
+    const katalogPoSifri = {};
+    katalog.forEach((k) => {
+        if (k?.sifra) katalogPoSifri[String(k.sifra).trim().toUpperCase()] = k;
+    });
+
+    const izracunajStavkuKolicine = (st = {}) => {
+        const sifra = String(st.sifra || '').trim();
+        const kat = katalogPoSifri[sifra.toUpperCase()] || {};
+        const v = parseFloat(st.debljina || st.visina || kat.visina || 0) || 0;
+        const sir = parseFloat(st.sirina || kat.sirina || 0) || 0;
+        const d = parseFloat(st.duzina || kat.duzina || 0) || 0;
+        const dimenzije = st.dimenzije || (v > 0 && sir > 0 && d > 0 ? `${v}×${sir}×${d}` : '-');
+        const vol1kom = (v > 0 && sir > 0 && d > 0) ? (v / 100) * (sir / 100) * (d / 100) : 0;
+        const area1kom = (sir > 0 && d > 0) ? (sir / 100) * (d / 100) : 0;
+        const len1kom = d > 0 ? (d / 100) : 0;
+
+        const jmObr = String(st.jm_obracun || 'm3').toLowerCase().trim();
+        const jmUnos = String(st.jm_unos || jmObr || 'm3').toLowerCase().trim();
+        const kolObr = parseFloat(st.kolicina_obracun || 0) || 0;
+        const kolUnos = parseFloat(st.kolicina_unos ?? kolObr) || 0;
+
+        let m3 = 0;
+        if (jmObr === 'm3' && kolObr > 0) m3 = kolObr;
+        else if (jmUnos === 'm3' && kolUnos > 0) m3 = kolUnos;
+        else if (vol1kom > 0) {
+            if (jmUnos === 'kom') m3 = kolUnos * vol1kom;
+            else if (jmUnos === 'm2' && area1kom > 0) m3 = (kolUnos / area1kom) * vol1kom;
+            else if (jmUnos === 'm1' && len1kom > 0) m3 = (kolUnos / len1kom) * vol1kom;
+            else if (jmObr === 'kom') m3 = kolObr * vol1kom;
+        }
+
+        let kom = 0;
+        if (jmUnos === 'kom' && kolUnos > 0) kom = kolUnos;
+        else if (jmObr === 'kom' && kolObr > 0) kom = kolObr;
+        else if (vol1kom > 0 && m3 > 0) kom = Math.round(m3 / vol1kom);
+
+        return {
+            sifra: sifra || '-',
+            naziv: String(st.naziv || kat.naziv || 'Artikal').trim(),
+            dimenzije,
+            jm_unos: jmUnos,
+            kolicina_unos: parseFloat(kolUnos.toFixed(4)),
+            jm_obracun: jmObr,
+            kolicina_obracun: parseFloat(kolObr.toFixed(4)),
+            m3: parseFloat(m3.toFixed(4)),
+            kom: Math.round(kom),
+            iznosKM: parseFloat((parseFloat(st.ukupno || 0) || 0).toFixed(2)),
+        };
+    };
+
     const aging = { uRoku: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
     const kupciStatMapa = {};
+    const prodajaProizvodMapa = {};
     const otvoreniRacuni = [];
     let ukupnoFakturisanoKM = 0;
+    let ukupnoFakturisanoM3 = 0;
     let ukupnoOtvoreniDugKM = 0;
+
+    const getOrCreateKupac = (kupRaw) => {
+        const kup = (kupRaw || 'Nepoznat kupac').trim();
+        if (!kupciStatMapa[kup]) {
+            kupciStatMapa[kup] = {
+                kupac: kup,
+                fakturisanoKM: 0,
+                fakturisanoM3: 0,
+                fakturisanoKom: 0,
+                otpremljenoM3: 0,
+                ponudjenoM3: 0,
+                otvoreniDugKM: 0,
+                dospjeliDugKM: 0,
+                racuna: 0,
+                maxKasni: 0,
+                _proizvodiMapa: {},
+            };
+        }
+        return kupciStatMapa[kup];
+    };
 
     racuni.forEach((r) => {
         const iznKM = kmVal(r);
         ukupnoFakturisanoKM += iznKM;
-        const kup = (r.kupac_naziv || 'Nepoznat kupac').trim();
-        if (!kupciStatMapa[kup]) kupciStatMapa[kup] = { kupac: kup, fakturisanoKM: 0, otvoreniDugKM: 0, dospjeliDugKM: 0, racuna: 0, maxKasni: 0 };
-        kupciStatMapa[kup].fakturisanoKM += iznKM;
-        kupciStatMapa[kup].racuna += 1;
+        const kObj = getOrCreateKupac(r.kupac_naziv);
+        const kup = kObj.kupac;
+        kObj.fakturisanoKM += iznKM;
+        kObj.racuna += 1;
+
+        const stavkeArr = Array.isArray(r.stavke_jsonb) ? r.stavke_jsonb : [];
+        stavkeArr.forEach((st) => {
+            const qSt = izracunajStavkuKolicine(st);
+            kObj.fakturisanoM3 += qSt.m3;
+            kObj.fakturisanoKom += qSt.kom;
+            ukupnoFakturisanoM3 += qSt.m3;
+
+            const pKey = `${qSt.sifra}|${qSt.naziv}|${qSt.dimenzije}`;
+            if (!kObj._proizvodiMapa[pKey]) {
+                kObj._proizvodiMapa[pKey] = { sifra: qSt.sifra, naziv: qSt.naziv, dimenzije: qSt.dimenzije, m3: 0, kom: 0, iznosKM: 0, stavki: 0 };
+            }
+            kObj._proizvodiMapa[pKey].m3 += qSt.m3;
+            kObj._proizvodiMapa[pKey].kom += qSt.kom;
+            kObj._proizvodiMapa[pKey].iznosKM += qSt.iznosKM;
+            kObj._proizvodiMapa[pKey].stavki += 1;
+
+            if (!prodajaProizvodMapa[pKey]) {
+                prodajaProizvodMapa[pKey] = { sifra: qSt.sifra, naziv: qSt.naziv, dimenzije: qSt.dimenzije, prodatoM3: 0, prodatoKom: 0, prihodKM: 0, stavki: 0 };
+            }
+            prodajaProizvodMapa[pKey].prodatoM3 += qSt.m3;
+            prodajaProizvodMapa[pKey].prodatoKom += qSt.kom;
+            prodajaProizvodMapa[pKey].prihodKM += qSt.iznosKM;
+            prodajaProizvodMapa[pKey].stavki += 1;
+        });
 
         const st = String(r.status || '').toUpperCase().trim();
         if (st === 'NAPLAĆENO' || st === 'NAPLACENO' || st === 'PLAĆENO') return;
@@ -375,7 +472,7 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
         if (dugKM <= 0.5) return;
 
         ukupnoOtvoreniDugKM += dugKM;
-        kupciStatMapa[kup].otvoreniDugKM += dugKM;
+        kObj.otvoreniDugKM += dugKM;
 
         const rokIso = getRokIso(r);
         let kasniDana = 0;
@@ -389,8 +486,8 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
         else aging.d90plus += dugKM;
 
         if (kasniDana > 0) {
-            kupciStatMapa[kup].dospjeliDugKM += dugKM;
-            if (kasniDana > kupciStatMapa[kup].maxKasni) kupciStatMapa[kup].maxKasni = kasniDana;
+            kObj.dospjeliDugKM += dugKM;
+            if (kasniDana > kObj.maxKasni) kObj.maxKasni = kasniDana;
         }
 
         otvoreniRacuni.push({
@@ -406,14 +503,48 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
         });
     });
 
+    // Dodaj otpremljene i ponuđene količine po kupcu (čak i za kupce koji još nemaju račun!)
+    otpremnice.forEach((o) => {
+        const kObj = getOrCreateKupac(o.kupac_naziv);
+        (Array.isArray(o.stavke_jsonb) ? o.stavke_jsonb : []).forEach((st) => {
+            kObj.otpremljenoM3 += izracunajStavkuKolicine(st).m3;
+        });
+    });
+    ponude.forEach((p) => {
+        const kObj = getOrCreateKupac(p.kupac_naziv);
+        (Array.isArray(p.stavke_jsonb) ? p.stavke_jsonb : []).forEach((st) => {
+            kObj.ponudjenoM3 += izracunajStavkuKolicine(st).m3;
+        });
+    });
+
+    const prodajaPoProizvodima = Object.values(prodajaProizvodMapa)
+        .map((p) => ({
+            ...p,
+            prodatoM3: parseFloat(p.prodatoM3.toFixed(3)),
+            prihodKM: parseFloat(p.prihodKM.toFixed(2)),
+        }))
+        .sort((a, b) => b.prodatoM3 - a.prodatoM3);
+
     otvoreniRacuni.sort((a, b) => b.kasniDana - a.kasniDana || b.dugKM - a.dugKM);
     const kupciStat = Object.values(kupciStatMapa)
-        .map((k) => ({
-            ...k,
-            fakturisanoKM: parseFloat(k.fakturisanoKM.toFixed(2)),
-            otvoreniDugKM: parseFloat(k.otvoreniDugKM.toFixed(2)),
-            dospjeliDugKM: parseFloat(k.dospjeliDugKM.toFixed(2)),
-        }))
+        .map((k) => {
+            const kupljeniProizvodi = Object.values(k._proizvodiMapa || {})
+                .map((p) => ({ ...p, m3: parseFloat(p.m3.toFixed(4)), iznosKM: parseFloat(p.iznosKM.toFixed(2)) }))
+                .sort((a, b) => b.m3 - a.m3);
+            return {
+                kupac: k.kupac,
+                fakturisanoKM: parseFloat(k.fakturisanoKM.toFixed(2)),
+                fakturisanoM3: parseFloat(k.fakturisanoM3.toFixed(4)),
+                fakturisanoKom: Math.round(k.fakturisanoKom),
+                otpremljenoM3: parseFloat(k.otpremljenoM3.toFixed(4)),
+                ponudjenoM3: parseFloat(k.ponudjenoM3.toFixed(4)),
+                otvoreniDugKM: parseFloat(k.otvoreniDugKM.toFixed(2)),
+                dospjeliDugKM: parseFloat(k.dospjeliDugKM.toFixed(2)),
+                racuna: k.racuna,
+                maxKasni: k.maxKasni,
+                kupljeniProizvodi,
+            };
+        })
         .sort((a, b) => b.fakturisanoKM - a.fakturisanoKM);
     const topDuznici = [...kupciStat].filter((k) => k.otvoreniDugKM > 0.5).sort((a, b) => b.otvoreniDugKM - a.otvoreniDugKM);
 
@@ -488,7 +619,7 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
             marzaProc: parseFloat(marza.toFixed(1)),
         };
     }).filter((x) => x.prihodKM > 0 || x.proizvedenoM3 > 0)
-      .sort((a, b) => b.profitKM - a.profitKM);
+        .sort((a, b) => b.profitKM - a.profitKM);
 
     // Planiranje & Zaostatci
     const zaostatciPlaniranja = raspored.filter((r) => {
@@ -603,6 +734,7 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
         topRazloziZastoja,
         finansije: {
             ukupnoFakturisanoKM: parseFloat(ukupnoFakturisanoKM.toFixed(2)),
+            ukupnoFakturisanoM3: parseFloat(ukupnoFakturisanoM3.toFixed(3)),
             racuniUkupno: racuni.length,
             otvoreniRacuniBroj: otvoreniRacuni.length,
             otvoreniDugKM: parseFloat(ukupnoOtvoreniDugKM.toFixed(2)),
@@ -621,8 +753,10 @@ export function izgradiErpSnimak(baza, { bezQaTesta = true } = {}) {
             otvoreniRacuni,
             kupciStat,
             topDuznici,
+            prodajaPoProizvodima,
             blagajnaSve: blagajna,
             racuniSvi: racuni,
+            izracunajStavkuKolicine,
         },
         ponude: {
             ukupno: ponude.length,
@@ -689,13 +823,13 @@ function pronadjiSpomenuteEntitete(snimak, pitanje) {
     const ponudeHit = (snimak.ponude.lista || []).filter((p) => rijeci.includes(String(p.id || '').toUpperCase()));
     const otpHit = (snimak.otpremnice.lista || []).filter((o) => rijeci.includes(String(o.id || '').toUpperCase()));
 
-    // 2. Kupci (match na puni ili značajni dio naziva kupca, min 4 znaka)
+    // 2. Kupci (match na puni ili značajni dio naziva kupca, uključujući padeže npr. "Marića" -> "MARIĆ BAU")
     const kupciHit = (snimak.finansije.kupciStat || []).filter((k) => {
         const kn = normTxt(k.kupac);
-        if (kn.length < 4) return false;
+        if (kn.length < 3) return false;
         if (qNorm.includes(kn)) return true;
-        const rijeciKupca = kn.split(/\s+/).filter((w) => w.length >= 4 && !['d.o.o.', 'doo', 'firma', 'company', 'trade', 'gradnja', 'drvo', 'pilana'].includes(w));
-        return rijeciKupca.some((w) => qNorm.includes(w));
+        const rijeciKupca = kn.split(/\s+/).filter((w) => w.length >= 4 && !['d.o.o.', 'doo', 'firma', 'company', 'trade', 'gradnja', 'drvo', 'pilana', 'komerc', 'promet'].includes(w));
+        return rijeciKupca.some((w) => qNorm.includes(w) || (w.length >= 5 && qNorm.includes(w.slice(0, w.length - 1))));
     });
 
     // 3. Mašine
@@ -755,6 +889,7 @@ export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
         },
         finansije: {
             ukupnoFakturisanoKM: snimak.finansije.ukupnoFakturisanoKM,
+            ukupnoFakturisanoM3: snimak.finansije.ukupnoFakturisanoM3,
             racuniUkupno: snimak.finansije.racuniUkupno,
             otvoreniDugKM: snimak.finansije.otvoreniDugKM,
             dospjeliDugKM: snimak.finansije.dospjeliDugKM,
@@ -763,9 +898,10 @@ export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
             kasaUlazKM: snimak.finansije.kasaUlazKM,
             kasaIzlazKM: snimak.finansije.kasaIzlazKM,
             topTroskovi: snimak.finansije.troskoviPoKategoriji.slice(0, 12),
-            topKupci: snimak.finansije.kupciStat.slice(0, 20),
-            topDuznici: snimak.finansije.topDuznici.slice(0, 15),
+            topKupci: snimak.finansije.kupciStat.slice(0, 20).map(({ kupljeniProizvodi, ...rest }) => rest),
+            topDuznici: snimak.finansije.topDuznici.slice(0, 15).map(({ kupljeniProizvodi, ...rest }) => rest),
             topOtvoreniRacuni: snimak.finansije.otvoreniRacuni.slice(0, 15),
+            prodajaPoProizvodima: (snimak.finansije.prodajaPoProizvodima || []).slice(0, 20),
         },
         ponude: {
             ukupno: snimak.ponude.ukupno,
@@ -802,7 +938,61 @@ export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
             topRadniciSati: snimak.hr.poRadnikuMjesec.slice(0, 15),
         },
         pronadjeni_specificni_zapisi: {
-            kupci: hits.kupciHit.slice(0, 5),
+            kupci_detaljno: hits.kupciHit.slice(0, 3).map((k) => {
+                const kNorm = normTxt(k.kupac);
+                const izSt = snimak.finansije.izracunajStavkuKolicine;
+                const racK = (snimak.finansije.racuniSvi || []).filter((r) => normTxt(r.kupac_naziv) === kNorm).slice(0, 25).map((r) => {
+                    const stList = (Array.isArray(r.stavke_jsonb) ? r.stavke_jsonb : []).map(izSt);
+                    return {
+                        id: r.id,
+                        datum: prikazDatumaBHS(r.datum),
+                        status: r.status,
+                        ukupnoKM: parseFloat(kmVal(r).toFixed(2)),
+                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
+                        ukupnoKom: stList.reduce((s, x) => s + x.kom, 0),
+                        stavke: stList,
+                    };
+                });
+                const otpK = (snimak.otpremnice.lista || []).filter((o) => normTxt(o.kupac_naziv) === kNorm).slice(0, 20).map((o) => {
+                    const stList = (Array.isArray(o.stavke_jsonb) ? o.stavke_jsonb : []).map(izSt);
+                    return {
+                        id: o.id,
+                        datum: prikazDatumaBHS(o.datum),
+                        status: o.status,
+                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
+                        stavke: stList,
+                    };
+                });
+                const ponK = (snimak.ponude.lista || []).filter((p) => normTxt(p.kupac_naziv) === kNorm).slice(0, 15).map((p) => {
+                    const stList = (Array.isArray(p.stavke_jsonb) ? p.stavke_jsonb : []).map(izSt);
+                    return {
+                        id: p.id,
+                        datum: prikazDatumaBHS(p.datum),
+                        status: p.status,
+                        ukupnoKM: parseFloat(kmVal(p).toFixed(2)),
+                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
+                        stavke: stList,
+                    };
+                });
+                const rnK = (snimak.nalozi.lista || []).filter((n) => normTxt(n.kupac_naziv) === kNorm).slice(0, 15).map((n) => {
+                    const stList = (Array.isArray(n.stavke_jsonb) ? n.stavke_jsonb : []).map(izSt);
+                    return {
+                        id: n.id,
+                        datum: prikazDatumaBHS(n.datum),
+                        status: n.status,
+                        ciljM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
+                        stavke: stList,
+                    };
+                });
+                return {
+                    ...k,
+                    kupljeniProizvodi: (k.kupljeniProizvodi || []).slice(0, 20),
+                    racuni_detaljno: racK,
+                    otpremnice_detaljno: otpK,
+                    ponude_detaljno: ponK,
+                    radni_nalozi_detaljno: rnK,
+                };
+            }),
             masine: hits.masineHit.slice(0, 5),
             paketi: hits.paketiHit.slice(0, 6).map((p) => ({
                 paket_id: p.paket_id, proizvod: p.naziv_proizvoda, dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
@@ -895,24 +1085,39 @@ export function odgovoriLokalniAiKontrolor(snimak, pitanje = '') {
         }));
 
         return {
-            naslov: `360° Finansijski i Poslovni Dosije — ${k.kupac}`,
-            odgovor: `### Sažetak saradnje sa kupcem **${k.kupac}**:\n- **Ukupno fakturisano:** **${formatBrojBHS(k.fakturisanoKM, 2)} KM** kroz **${k.racuna} računa**.\n- **Otvoreni saldo:** **${formatBrojBHS(k.otvoreniDugKM, 2)} KM** (od toga dospjelo preko roka: **${formatBrojBHS(k.dospjeliDugKM, 2)} KM**, najstarije kašnjenje: **${k.maxKasni} dana**).\n- **Komercijala & Pogon:** **${ponK.length}** ponuda i **${nalK.length}** radnih naloga u historiji.\n${k.dospjeliDugKM > 0 ? `\n⚠️ **Preporuka:** Kupac ima dospjelih obaveza — provjeriti naplatu prije naredne isporuke.` : `\n✅ **Status:** Kupac je uredan platiša bez dospjelih kašnjenja.`}`,
+            naslov: `360° Finansijski i Količinski Dosije — ${k.kupac}`,
+            odgovor: `### Sažetak saradnje sa kupcem **${k.kupac}**:\n- **Ukupno kupljeno (fakturisano):** **${formatBrojBHS(k.fakturisanoM3, 3)} m³** (${formatBrojBHS(k.fakturisanoKom, 0)} kom) kroz **${k.racuna} računa** — ukupne vrijednosti **${formatBrojBHS(k.fakturisanoKM, 2)} KM**.\n- **Otpremnice / Ponude / Nalozi:** Otpremljeno **${formatBrojBHS(k.otpremljenoM3, 3)} m³** | Ponuđeno **${formatBrojBHS(k.ponudjenoM3, 3)} m³** (**${ponK.length}** ponuda, **${nalK.length}** radnih naloga).\n- **Otvoreni saldo:** **${formatBrojBHS(k.otvoreniDugKM, 2)} KM** (dospjelo preko roka: **${formatBrojBHS(k.dospjeliDugKM, 2)} KM**, max kašnjenje: **${k.maxKasni} dana**).\n${k.dospjeliDugKM > 0 ? `\n⚠️ **Preporuka:** Kupac ima dospjelih obaveza — provjeriti naplatu prije naredne isporuke.` : `\n✅ **Status:** Kupac je uredan platiša bez dospjelih kašnjenja.`}`,
             kpi: [
-                { label: 'Ukupni Promet', value: `${formatBrojBHS(k.fakturisanoKM, 2)} KM`, sub: `${k.racuna} računa`, color: 'blue' },
-                { label: 'Otvoreni Dug', value: `${formatBrojBHS(k.otvoreniDugKM, 2)} KM`, sub: `${racK.length} otvorenih`, color: k.otvoreniDugKM > 0 ? 'amber' : 'emerald' },
-                { label: 'Dospjelo (Kasni)', value: `${formatBrojBHS(k.dospjeliDugKM, 2)} KM`, sub: `Max kašnjenje: ${k.maxKasni} d`, color: k.dospjeliDugKM > 0 ? 'red' : 'emerald' },
-                { label: 'Ponude / Nalozi', value: `${ponK.length} / ${nalK.length}`, sub: 'Komercijalni tok', color: 'purple' },
+                { label: 'Kupljeno (m³)', value: `${formatBrojBHS(k.fakturisanoM3, 3)} m³`, sub: `${formatBrojBHS(k.fakturisanoKom, 0)} kom • ${k.racuna} računa`, color: 'emerald' },
+                { label: 'Ukupni Promet', value: `${formatBrojBHS(k.fakturisanoKM, 2)} KM`, sub: `Otpremljeno: ${formatBrojBHS(k.otpremljenoM3, 2)} m³`, color: 'blue' },
+                { label: 'Otvoreni Dug', value: `${formatBrojBHS(k.otvoreniDugKM, 2)} KM`, sub: `Dospjelo: ${formatBrojBHS(k.dospjeliDugKM, 2)} KM`, color: k.otvoreniDugKM > 0 ? 'amber' : 'emerald' },
+                { label: 'Ponude / Nalozi', value: `${ponK.length} / ${nalK.length}`, sub: `Ponuđeno: ${formatBrojBHS(k.ponudjenoM3, 2)} m³`, color: 'purple' },
             ],
             chart: {
-                title: `📈 6-Mjesečni Promet — ${k.kupac} (KM)`,
-                subtitle: 'Fakturisani prihod po mjesecima',
-                type: 'area',
-                xKey: 'mjesec',
-                unit: 'KM',
-                series: [{ key: 'promet', name: 'Fakturisano', color: '#3b82f6', unit: 'KM' }],
-                data: chartData,
+                title: (k.kupljeniProizvodi || []).length > 0 ? `📦 Kupljeni Proizvodi — ${k.kupac} (m³)` : `📈 6-Mjesečni Promet — ${k.kupac} (KM)`,
+                subtitle: (k.kupljeniProizvodi || []).length > 0 ? 'Struktura kupljenih količina po artiklu i dimenziji' : 'Fakturisani prihod po mjesecima',
+                type: (k.kupljeniProizvodi || []).length > 0 ? 'hbar' : 'area',
+                xKey: (k.kupljeniProizvodi || []).length > 0 ? 'artikal' : 'mjesec',
+                unit: (k.kupljeniProizvodi || []).length > 0 ? 'm³' : 'KM',
+                series: (k.kupljeniProizvodi || []).length > 0
+                    ? [{ key: 'm3', name: 'Kupljeno (m³)', color: '#10b981', unit: 'm³' }]
+                    : [{ key: 'promet', name: 'Fakturisano', color: '#3b82f6', unit: 'KM' }],
+                data: (k.kupljeniProizvodi || []).length > 0
+                    ? k.kupljeniProizvodi.slice(0, 10).map((p) => ({ artikal: `${p.sifra} (${p.dimenzije})`, m3: p.m3 }))
+                    : chartData,
             },
-            tabela: {
+            tabela: (k.kupljeniProizvodi || []).length > 0 ? {
+                naslov: `Kupljeni Artikli i Količine — ${k.kupac}`,
+                kolone: [
+                    { key: 'sifra', label: 'Šifra', type: 'string', align: 'left' },
+                    { key: 'naziv', label: 'Proizvod', type: 'string', align: 'left' },
+                    { key: 'dimenzije', label: 'Dimenzije', type: 'string', align: 'left' },
+                    { key: 'kom', label: 'Kom', type: 'number', align: 'right' },
+                    { key: 'm3', label: 'Količina (m³)', type: 'number', align: 'right', suffix: ' m³' },
+                    { key: 'iznosKM', label: 'Vrijednost', type: 'number', align: 'right', suffix: ' KM' },
+                ],
+                redovi: k.kupljeniProizvodi,
+            } : {
                 naslov: `Otvoreni / Nedavni Računi za ${k.kupac}`,
                 kolone: [
                     { key: 'id', label: 'Račun', type: 'string', align: 'left' },
