@@ -307,6 +307,7 @@ export const posaljiKompletnoTestObavjestenje = async (user) => {
             nivo_alarma: 'ŽUTO',
             detalji,
             pregledano: false,
+            vrijeme: new Date().toISOString(),
         }])
         .select('*')
         .maybeSingle();

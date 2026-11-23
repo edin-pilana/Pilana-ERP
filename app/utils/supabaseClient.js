@@ -125,8 +125,13 @@ if (!rawSupabase.__pilana_audit_patched) {
         if (table === 'sistem_audit_log') {
             const origInsert = builder.insert.bind(builder);
             builder.insert = (values, options) => {
-                const niz = Array.isArray(values) ? values : [values];
-                const query = origInsert(values, options);
+                const niz = (Array.isArray(values) ? values : [values]).map((row) =>
+                    row && typeof row === 'object' && !row.vrijeme
+                        ? { ...row, vrijeme: new Date().toISOString() }
+                        : row
+                );
+                const payload = Array.isArray(values) ? niz : niz[0];
+                const query = origInsert(payload, options);
                 const origThen = query.then.bind(query);
                 let alarmSent = false;
                 query.then = (onfulfilled, onrejected) => origThen((res) => {
