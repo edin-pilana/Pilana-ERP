@@ -850,43 +850,47 @@ function pronadjiSpomenuteEntitete(snimak, pitanje) {
 }
 
 export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
+    const q = normTxt(pitanje);
     const hits = pronadjiSpomenuteEntitete(snimak, pitanje);
     const period = parsirajPeriodIzUpita(pitanje, snimak.danasIso);
     const periodStat = period.tip !== 'SVE' ? snimak.izracunajPeriod(period.od, period.do, period.label) : null;
 
-    return {
+    const jeKonkretanKupac = hits.kupciHit.length > 0;
+    const jeTrendPitanje = /(mjesec|trend|godin|kretanj|upored|pored)/.test(q);
+    const jeHrPitanje = /(radnik|radnici|hr\b|sati|odsustv|odmor|bolovanj|prisustv)/.test(q);
+    const jeEkoPitanje = /(biomas|fsc|cbam|susar|servis|piljevin|okor|pec|eko)/.test(q);
+
+    const ctx = {
         datum_danas: prikazDatumaBHS(snimak.danasIso),
-        datum_danas_iso: snimak.danasIso,
         filter_bez_qa: snimak.bezQaTesta,
-        trazeni_period_iz_pitanja: periodStat,
+        ...(periodStat ? { trazeni_period: periodStat } : {}),
         danas: snimak.danasStat,
         juce: snimak.juceStat,
-        poredjenje_ovaj_vs_prosli_mjesec: {
-            ovaj_mjesec: snimak.ovajMjesec,
-            prosli_mjesec: snimak.prosliMjesec,
+        ovaj_vs_prosli_mjesec: {
+            ovaj: snimak.ovajMjesec,
+            prosli: snimak.prosliMjesec,
         },
-        trend_12_mjeseci: snimak.poMjesecima,
-        zadnjih_14_dana: snimak.dani30.slice(-14),
-        anomalije_i_rizici: snimak.anomalije,
-        trupci_sirovina: {
-            ...snimak.trupci,
-            poVrsti: snimak.trupci.poVrsti.slice(0, 10),
-            poDobavljacu: snimak.trupci.poDobavljacu.slice(0, 12),
+        trend_mjeseci: jeTrendPitanje ? snimak.poMjesecima : snimak.poMjesecima.slice(-6),
+        zadnjih_7_dana: snimak.dani7,
+        anomalije: snimak.anomalije.slice(0, 6),
+        trupci: {
+            naLageruM3: snimak.trupci.naLageruM3,
+            naLageruKom: snimak.trupci.naLageruKom,
+            prorezanoM3: snimak.trupci.prorezanoM3,
+            fscUdioProc: snimak.trupci.fscUdioProc,
+            poVrsti: snimak.trupci.poVrsti.slice(0, 6),
+            poDobavljacu: snimak.trupci.poDobavljacu.slice(0, 6),
         },
-        paketi_i_lager: {
-            ukupnoBroj: snimak.paketi.ukupnoBroj,
-            ukupnoM3: snimak.paketi.ukupnoM3,
-            naLageruBroj: snimak.paketi.naLageruBroj,
+        lager_i_paketi: {
             naLageruM3: snimak.paketi.naLageruM3,
+            naLageruBroj: snimak.paketi.naLageruBroj,
             uRaduBroj: snimak.paketi.uRaduBroj,
             otpremljeniBroj: snimak.paketi.otpremljeniBroj,
             globalYieldProc: snimak.paketi.globalYieldProc,
-            topLagerProizvodi: snimak.paketi.lagerPoProizvodu.slice(0, 15),
+            topLager: snimak.paketi.lagerPoProizvodu.slice(0, 8),
         },
-        masine_i_zastoji: {
-            poMasinama: snimak.masine.slice(0, 12),
-            topRazloziZastoja: snimak.topRazloziZastoja.slice(0, 8),
-        },
+        masine: snimak.masine.slice(0, 8),
+        topRazloziZastoja: snimak.topRazloziZastoja.slice(0, 5),
         finansije: {
             ukupnoFakturisanoKM: snimak.finansije.ukupnoFakturisanoKM,
             ukupnoFakturisanoM3: snimak.finansije.ukupnoFakturisanoM3,
@@ -895,33 +899,31 @@ export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
             dospjeliDugKM: snimak.finansije.dospjeliDugKM,
             aging: snimak.finansije.aging,
             stanjeKaseKM: snimak.finansije.stanjeKaseKM,
-            kasaUlazKM: snimak.finansije.kasaUlazKM,
-            kasaIzlazKM: snimak.finansije.kasaIzlazKM,
-            topTroskovi: snimak.finansije.troskoviPoKategoriji.slice(0, 12),
-            topKupci: snimak.finansije.kupciStat.slice(0, 20).map(({ kupljeniProizvodi, ...rest }) => rest),
-            topDuznici: snimak.finansije.topDuznici.slice(0, 15).map(({ kupljeniProizvodi, ...rest }) => rest),
-            topOtvoreniRacuni: snimak.finansije.otvoreniRacuni.slice(0, 15),
-            prodajaPoProizvodima: (snimak.finansije.prodajaPoProizvodima || []).slice(0, 20),
+            topTroskovi: snimak.finansije.troskoviPoKategoriji.slice(0, 6),
+            topKupci: snimak.finansije.kupciStat.slice(0, jeKonkretanKupac ? 6 : 12).map(({ kupljeniProizvodi, ...rest }) => rest),
+            topDuznici: snimak.finansije.topDuznici.slice(0, 8).map(({ kupljeniProizvodi, ...rest }) => rest),
+            topOtvoreniRacuni: snimak.finansije.otvoreniRacuni.slice(0, 8),
+            topProdajaProizvodi: (snimak.finansije.prodajaPoProizvodima || []).slice(0, 10),
         },
         ponude: {
             ukupno: snimak.ponude.ukupno,
             ukupnoKM: snimak.ponude.ukupnoKM,
             konverzijaProc: snimak.ponude.konverzijaProc,
             poStatusu: snimak.ponude.poStatusu,
-            visokiRabat: snimak.ponude.visokiRabat.slice(0, 8),
+            visokiRabat: snimak.ponude.visokiRabat.slice(0, 5),
         },
         otpremnice: {
             ukupno: snimak.otpremnice.ukupno,
             isporuceno: snimak.otpremnice.isporuceno,
             naCekanju: snimak.otpremnice.naCekanju,
         },
-        radni_nalozi_i_planiranje: {
+        nalozi_i_planiranje: {
             aktivni: snimak.nalozi.aktivni,
             kasneciRokovi: snimak.nalozi.kasneci,
             zaostatciPlaniranja: snimak.planiranje.zaostatciBroj,
             zaostatciM3: snimak.planiranje.zaostatciM3,
             planDanasM3: snimak.planiranje.planDanasM3,
-            topProfitNalozi: snimak.profitPoNalogu.slice(0, 15),
+            topProfitNalozi: snimak.profitPoNalogu.slice(0, 8),
         },
         reklamacije: {
             ukupno: snimak.reklamacije.ukupno,
@@ -929,79 +931,80 @@ export function napraviKompaktanKontekstZaLLM(snimak, pitanje = '') {
             naCekanju: snimak.reklamacije.naCekanju,
             ukupnoM3: snimak.reklamacije.ukupnoM3,
         },
-        susare_aktivne: snimak.susare.slice(0, 10),
-        servis_pila: snimak.servisi.slice(0, 10),
-        biomasa_i_fsc: snimak.biomasaMjesec,
-        hr_ovaj_mjesec: {
-            brojRadnika: snimak.hr.brojRadnika,
-            odsustvaNaCekanju: snimak.hr.odsustvaNaCekanju,
-            topRadniciSati: snimak.hr.poRadnikuMjesec.slice(0, 15),
-        },
-        pronadjeni_specificni_zapisi: {
-            kupci_detaljno: hits.kupciHit.slice(0, 3).map((k) => {
-                const kNorm = normTxt(k.kupac);
-                const izSt = snimak.finansije.izracunajStavkuKolicine;
-                const racK = (snimak.finansije.racuniSvi || []).filter((r) => normTxt(r.kupac_naziv) === kNorm).slice(0, 25).map((r) => {
-                    const stList = (Array.isArray(r.stavke_jsonb) ? r.stavke_jsonb : []).map(izSt);
-                    return {
-                        id: r.id,
-                        datum: prikazDatumaBHS(r.datum),
-                        status: r.status,
-                        ukupnoKM: parseFloat(kmVal(r).toFixed(2)),
-                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
-                        ukupnoKom: stList.reduce((s, x) => s + x.kom, 0),
-                        stavke: stList,
-                    };
-                });
-                const otpK = (snimak.otpremnice.lista || []).filter((o) => normTxt(o.kupac_naziv) === kNorm).slice(0, 20).map((o) => {
-                    const stList = (Array.isArray(o.stavke_jsonb) ? o.stavke_jsonb : []).map(izSt);
-                    return {
-                        id: o.id,
-                        datum: prikazDatumaBHS(o.datum),
-                        status: o.status,
-                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
-                        stavke: stList,
-                    };
-                });
-                const ponK = (snimak.ponude.lista || []).filter((p) => normTxt(p.kupac_naziv) === kNorm).slice(0, 15).map((p) => {
-                    const stList = (Array.isArray(p.stavke_jsonb) ? p.stavke_jsonb : []).map(izSt);
-                    return {
-                        id: p.id,
-                        datum: prikazDatumaBHS(p.datum),
-                        status: p.status,
-                        ukupnoKM: parseFloat(kmVal(p).toFixed(2)),
-                        ukupnoM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
-                        stavke: stList,
-                    };
-                });
-                const rnK = (snimak.nalozi.lista || []).filter((n) => normTxt(n.kupac_naziv) === kNorm).slice(0, 15).map((n) => {
-                    const stList = (Array.isArray(n.stavke_jsonb) ? n.stavke_jsonb : []).map(izSt);
-                    return {
-                        id: n.id,
-                        datum: prikazDatumaBHS(n.datum),
-                        status: n.status,
-                        ciljM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
-                        stavke: stList,
-                    };
-                });
-                return {
-                    ...k,
-                    kupljeniProizvodi: (k.kupljeniProizvodi || []).slice(0, 20),
-                    racuni_detaljno: racK,
-                    otpremnice_detaljno: otpK,
-                    ponude_detaljno: ponK,
-                    radni_nalozi_detaljno: rnK,
-                };
-            }),
-            masine: hits.masineHit.slice(0, 5),
-            paketi: hits.paketiHit.slice(0, 6).map((p) => ({
-                paket_id: p.paket_id, proizvod: p.naziv_proizvoda, dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
-                m3: parseFloat(p.kolicina_final || 0), masina: p.masina, rn: p.broj_veze, otpremnica: p.otpremnica_id,
-            })),
-            nalozi: hits.naloziHit.slice(0, 5).map((n) => ({ id: n.id, kupac: n.kupac_naziv, rok: prikazDatumaBHS(n.rok_isporuke), status: n.status })),
-            racuni: hits.racuniHit.slice(0, 5).map((r) => ({ id: r.id, kupac: r.kupac_naziv, datum: prikazDatumaBHS(r.datum), iznosKM: parseFloat(kmVal(r).toFixed(2)), status: r.status })),
-        },
+        ...(jeEkoPitanje ? {
+            susare: snimak.susare.slice(0, 8),
+            servis_pila: snimak.servisi.slice(0, 8),
+            biomasa: snimak.biomasaMjesec,
+        } : {
+            eko_sazetak: { susareAktivne: snimak.susare.length, servisi: snimak.servisi.length, biomasaMjesec: snimak.biomasaMjesec },
+        }),
+        ...(jeHrPitanje ? {
+            hr: { brojRadnika: snimak.hr.brojRadnika, odsustvaNaCekanju: snimak.hr.odsustvaNaCekanju, radniciMjesec: snimak.hr.poRadnikuMjesec.slice(0, 15) },
+        } : {
+            hr_sazetak: { brojRadnika: snimak.hr.brojRadnika, odsustvaNaCekanju: snimak.hr.odsustvaNaCekanju },
+        }),
     };
+
+    // Konkretni zapisi za entitete spomenute u pitanju (uvijek najprioritetniji podaci!)
+    const spec = {};
+    if (hits.kupciHit.length > 0) {
+        const izSt = snimak.finansije.izracunajStavkuKolicine;
+        spec.kupci_detaljno = hits.kupciHit.slice(0, 2).map((k) => {
+            const kNorm = normTxt(k.kupac);
+            const racK = (snimak.finansije.racuniSvi || []).filter((r) => normTxt(r.kupac_naziv) === kNorm).slice(0, 15).map((r) => {
+                const stList = (Array.isArray(r.stavke_jsonb) ? r.stavke_jsonb : []).map(izSt);
+                return {
+                    id: r.id,
+                    datum: prikazDatumaBHS(r.datum),
+                    status: r.status,
+                    km: parseFloat(kmVal(r).toFixed(2)),
+                    m3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)),
+                    kom: stList.reduce((s, x) => s + x.kom, 0),
+                    stavke: stList.map((s) => ({ sifra: s.sifra, naziv: s.naziv, dim: s.dimenzije, m3: s.m3, kom: s.kom })),
+                };
+            });
+            const otpK = (snimak.otpremnice.lista || []).filter((o) => normTxt(o.kupac_naziv) === kNorm).slice(0, 10).map((o) => {
+                const stList = (Array.isArray(o.stavke_jsonb) ? o.stavke_jsonb : []).map(izSt);
+                return { id: o.id, datum: prikazDatumaBHS(o.datum), status: o.status, m3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)) };
+            });
+            const ponK = (snimak.ponude.lista || []).filter((p) => normTxt(p.kupac_naziv) === kNorm).slice(0, 8).map((p) => {
+                const stList = (Array.isArray(p.stavke_jsonb) ? p.stavke_jsonb : []).map(izSt);
+                return { id: p.id, datum: prikazDatumaBHS(p.datum), status: p.status, m3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)), km: parseFloat(kmVal(p).toFixed(2)) };
+            });
+            const rnK = (snimak.nalozi.lista || []).filter((n) => normTxt(n.kupac_naziv) === kNorm).slice(0, 8).map((n) => {
+                const stList = (Array.isArray(n.stavke_jsonb) ? n.stavke_jsonb : []).map(izSt);
+                return { id: n.id, datum: prikazDatumaBHS(n.datum), status: n.status, ciljM3: parseFloat(stList.reduce((s, x) => s + x.m3, 0).toFixed(4)) };
+            });
+            return {
+                kupac: k.kupac,
+                fakturisanoM3: k.fakturisanoM3,
+                fakturisanoKom: k.fakturisanoKom,
+                fakturisanoKM: k.fakturisanoKM,
+                otpremljenoM3: k.otpremljenoM3,
+                ponudjenoM3: k.ponudjenoM3,
+                otvoreniDugKM: k.otvoreniDugKM,
+                dospjeliDugKM: k.dospjeliDugKM,
+                racuna: k.racuna,
+                kupljeniProizvodi: (k.kupljeniProizvodi || []).slice(0, 12),
+                racuni: racK,
+                otpremnice: otpK,
+                ponude: ponK,
+                radni_nalozi: rnK,
+            };
+        });
+    }
+    if (hits.masineHit.length > 0) spec.masine = hits.masineHit.slice(0, 4);
+    if (hits.paketiHit.length > 0) {
+        spec.paketi = hits.paketiHit.slice(0, 6).map((p) => ({
+            paket_id: p.paket_id, proizvod: p.naziv_proizvoda, dim: `${p.debljina}x${p.sirina}x${p.duzina}`,
+            m3: parseFloat(p.kolicina_final || 0), masina: p.masina, rn: p.broj_veze, otpremnica: p.otpremnica_id,
+        }));
+    }
+    if (hits.naloziHit.length > 0) spec.nalozi = hits.naloziHit.slice(0, 5).map((n) => ({ id: n.id, kupac: n.kupac_naziv, rok: prikazDatumaBHS(n.rok_isporuke), status: n.status }));
+    if (hits.racuniHit.length > 0) spec.racuni = hits.racuniHit.slice(0, 5).map((r) => ({ id: r.id, kupac: r.kupac_naziv, datum: prikazDatumaBHS(r.datum), km: parseFloat(kmVal(r).toFixed(2)), status: r.status }));
+
+    if (Object.keys(spec).length > 0) ctx.pronadjeni_specificni_zapisi = spec;
+    return ctx;
 }
 
 /**

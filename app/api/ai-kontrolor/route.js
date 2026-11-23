@@ -292,11 +292,9 @@ async function callGroq({ apiKey, requestedModel, systemPrompt, history, userPro
 async function callGemini({ apiKey, requestedModel, systemPrompt, history, userPrompt }) {
     const candidates = Array.from(new Set([
         ...(requestedModel && requestedModel.startsWith('gemini-') ? [requestedModel] : []),
+        'gemini-3.1-flash-lite',
         'gemini-3.8-flash',
         'gemini-3.7-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
-        'gemini-3.1-flash-lite',
         'gemini-flash-latest',
     ]));
 
@@ -431,7 +429,7 @@ export async function POST(request) {
         const body = await request.json();
         const action = String(body?.action || 'chat');
         const message = String(body?.message || '').trim();
-        const history = Array.isArray(body?.history) ? body.history.slice(-10) : [];
+        const history = Array.isArray(body?.history) ? body.history.slice(-6).map((h) => ({ role: h.role, text: String(h.text || '').slice(0, 600) })) : [];
         const erpContext = body?.erpContext || {};
         const requestedModel = String(body?.model || '').trim();
 
@@ -476,7 +474,29 @@ export async function POST(request) {
         }
 
         const tStart = Date.now();
-        const contextBlock = `TRENUTNI PODACI IZ PILANA-ERP BAZE (JSON):\n${JSON.stringify(erpContext)}`;
+        let ctxStr = JSON.stringify(erpContext);
+        if (ctxStr.length > 14000 && erpContext && typeof erpContext === 'object') {
+            const slim = {
+                datum_danas: erpContext.datum_danas,
+                trazeni_period: erpContext.trazeni_period,
+                ovaj_vs_prosli_mjesec: erpContext.ovaj_vs_prosli_mjesec,
+                anomalije: erpContext.anomalije,
+                pronadjeni_specificni_zapisi: erpContext.pronadjeni_specificni_zapisi,
+                finansije: erpContext.finansije ? {
+                    ukupnoFakturisanoKM: erpContext.finansije.ukupnoFakturisanoKM,
+                    ukupnoFakturisanoM3: erpContext.finansije.ukupnoFakturisanoM3,
+                    otvoreniDugKM: erpContext.finansije.otvoreniDugKM,
+                    dospjeliDugKM: erpContext.finansije.dospjeliDugKM,
+                    stanjeKaseKM: erpContext.finansije.stanjeKaseKM,
+                    aging: erpContext.finansije.aging,
+                    topKupci: (erpContext.finansije.topKupci || []).slice(0, 6),
+                } : undefined,
+                lager_i_paketi: erpContext.lager_i_paketi,
+                trupci: erpContext.trupci,
+            };
+            ctxStr = JSON.stringify(slim).slice(0, 14500);
+        }
+        const contextBlock = `TRENUTNI PODACI IZ PILANA-ERP BAZE (JSON):\n${ctxStr}`;
         const userPrompt = `${contextBlock}\n\nPITANJE DIREKTORA / KORISNIKA:\n${message}`;
 
         // Odredi redoslijed provajdera sa automatskim failoverom!
